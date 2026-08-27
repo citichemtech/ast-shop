@@ -26,7 +26,9 @@ self.addEventListener('fetch', function (e) {
       return res;
     }).catch(function () {
       return caches.match(e.request).then(function (hit) {
-        return hit || caches.match('./index.html');
+        // ตอนออฟไลน์ ต้องไม่เอาหน้าร้านไปแทนหลังร้าน พนักงานจะงงว่าทำไมเข้าไม่ได้
+        var admin = e.request.url.indexOf('admin.html') > -1;
+        return hit || caches.match(admin ? './admin.html' : './index.html');
       });
     })
   );
