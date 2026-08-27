@@ -176,6 +176,38 @@ input,select,textarea{font-family:inherit;font-size:16px}
 .alertbox.warn{background:#FFF6E6;border-color:#F7DFB2;color:#7A4E00}
 .alertbox b{display:block;margin-bottom:4px;font-weight:600}
 .stkline{font-size:12.5px;color:var(--gray);line-height:1.6;margin-top:2px}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 20px}
+@media (max-width:359px){.pgrid{grid-template-columns:1fr}}
+.pin-card{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff;display:flex;flex-direction:column;box-shadow:0 1px 3px rgba(20,24,33,.05)}
+.pin-img{position:relative;aspect-ratio:1/1;background:var(--soft);display:flex;align-items:center;justify-content:center}
+.pin-img img{width:100%;height:100%;object-fit:cover}
+.pin-out{position:absolute;inset:0;background:rgba(255,255,255,.72);display:flex;align-items:center;justify-content:center}
+.pin-out span{background:var(--red);color:#fff;font-size:13px;font-weight:600;padding:6px 14px;border-radius:999px}
+.pin-bd{padding:12px 13px 13px;display:flex;flex-direction:column;flex:1;gap:5px}
+.pin-bd h3{font-size:14.5px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pin-meta{font-size:11.5px;color:var(--gray);line-height:1.5}
+.pin-sku{font-weight:600;color:var(--blue)}
+.pin-price{font-size:19px;font-weight:700;margin-top:auto;padding-top:4px}
+.pin-price s{font-size:13px;font-weight:400;color:var(--gray);margin-left:6px}
+.pin-buy{width:100%;padding:11px;border-radius:11px;background:var(--red);color:#fff;font-size:14px;font-weight:600;margin-top:8px}
+.pin-buy:disabled{background:#D7DBE0;color:#8B939C;cursor:not-allowed}
+.ptable-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:12px;background:#fff}
+.ptable{border-collapse:collapse;width:100%;min-width:720px;font-size:12.5px}
+.ptable th{background:var(--soft);color:var(--gray);font-weight:600;text-align:left;padding:9px 10px;white-space:nowrap;border-bottom:1px solid var(--line)}
+.ptable td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.ptable tr:last-child td{border-bottom:0}
+.ptable .th-img{width:44px;height:44px;border-radius:8px;background:var(--soft);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:9px;color:#A8B0BA}
+.ptable .th-img img{width:100%;height:100%;object-fit:cover}
+.ptable .nm{min-width:190px;max-width:230px;font-weight:600;line-height:1.4}
+.ptable .acts2{display:flex;gap:4px;white-space:nowrap}
+.sq2{width:30px;height:30px;border-radius:8px;background:var(--soft);color:var(--ink);font-size:14px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.sq2.del{background:#FDE7E7;color:var(--red)}
+.sq2:disabled{opacity:.35}
+.tgl{padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.tgl.on{background:#E4F5EA;color:#0E7A3E}
+.tgl.off{background:var(--soft);color:var(--gray)}
+.picker-row{display:flex;gap:10px;align-items:center;padding:9px;border:1px solid var(--line);border-radius:11px;margin-bottom:8px;width:100%;text-align:left}
+.picker-row.taken{opacity:.45}
 .sq{width:36px;height:36px;border-radius:9px;background:var(--soft);display:flex;align-items:center;justify-content:center;font-size:16px}
 .sq.del{background:#FBE9E9;color:var(--red)}
 .bigbtn{display:block;width:100%;padding:15px;border-radius:13px;background:var(--blue);color:#fff;font-size:16px;font-weight:600;margin-top:6px}
@@ -2050,8 +2082,8 @@ input,select,textarea{font-family:inherit;font-size:16px}
 
   <div class="sec"><div class="sec-hd"><h2>Categories</h2><button class="seeall" data-go="shop">See all ›</button></div></div>
   <div class="cats" id="cats"></div>
-  <div class="sec"><div class="sec-hd"><h2>Featured Product</h2><button class="seeall" data-go="shop">See all ›</button></div></div>
-  <div class="grid" id="featured"></div>
+  <div class="sec" id="pin-sec"><div class="sec-hd"><h2>Featured Product</h2><button class="seeall" data-go="shop">See all ›</button></div></div>
+  <div class="pgrid" id="featured"></div>
   <div style="height:24px"></div>
 </section>
 
@@ -2105,6 +2137,7 @@ input,select,textarea{font-family:inherit;font-size:16px}
     <button data-tab="pay">ชำระเงิน/ขนส่ง</button>
     <button data-tab="prod">สินค้า</button>
     <button data-tab="stock">สต๊อก</button>
+    <button data-tab="pin">ปักตะกร้า</button>
     <button data-tab="cat">หมวดหมู่</button>
     <button data-tab="ban">แบนเนอร์</button>
     <button data-tab="file" class="on">ไฟล์</button>
@@ -2179,6 +2212,16 @@ input,select,textarea{font-family:inherit;font-size:16px}
       </div>
       <div id="stk-list"></div>
       <div class="card2" style="margin-top:14px"><h4>ความเคลื่อนไหวล่าสุด</h4><div id="stk-moves"></div></div>
+    </div>
+
+    <div class="ad-pane" id="t-pin">
+      <div class="tip"><b>จัดการสินค้าปักตะกร้า</b>สินค้าที่ปักไว้จะขึ้นบนหน้าแรกตามลำดับด้านล่าง ข้อมูลทั้งหมดดึงสดจากรายการสินค้า แก้ราคาหรือรูปที่เดียวแล้วหน้าร้านเปลี่ยนตามเอง</div>
+      <button class="bigbtn" id="add-pin" style="margin-bottom:10px">+ เพิ่มสินค้าปักตะกร้า</button>
+      <button class="bigbtn ghost" id="save-pin" style="margin-bottom:14px">บันทึกลำดับ</button>
+      <div class="ptable-wrap"><table class="ptable"><thead><tr>
+        <th>ลำดับ</th><th>รูป</th><th>SKU</th><th>ชื่อสินค้า</th><th>ราคา</th><th>สต๊อก</th><th>สถานะปัก</th><th>เปิด/ปิด</th><th>จัดการ</th>
+      </tr></thead><tbody id="pin-rows"></tbody></table></div>
+      <div class="hint" style="color:var(--gray);font-size:12.5px;margin-top:10px;line-height:1.55">เลื่อนตารางไปทางขวาเพื่อดูคอลัมน์ที่เหลือ · การเลื่อนขึ้น/ลง บันทึกให้ทันทีอยู่แล้ว ปุ่ม “บันทึกลำดับ” ใช้ยืนยันซ้ำได้</div>
     </div>
 
     <div class="ad-pane" id="t-cat">
@@ -2259,6 +2302,11 @@ async function load(){
   if(!CFG.moves) CFG.moves=[];
   if(CFG.expiryWarnDays===undefined) CFG.expiryWarnDays=90;
   initStockFields();
+  if(!CFG.pins){
+    /* ครั้งแรก: ยกสินค้าที่เคยตั้ง Featured ไว้มาเป็นรายการปัก จะได้ไม่หาย */
+    CFG.pins=(CFG.products||[]).filter(function(p){return p.feat}).map(function(p){return {id:p.id,on:1}});
+  }
+  pinList(); syncFeat();
   renderAll();
 }
 function showUsage(){
@@ -2322,8 +2370,7 @@ function renderHome(){
   $("#bn-cart").innerHTML=CFG.banners.cart?'<img src="'+CFG.banners.cart+'">':'<div class="ph">แบนเนอร์ท้ายตะกร้า</div>';
   var mb=$("#btn-member");
   if(mb) mb.style.display=CFG.member?"block":"none";
-  var f=CFG.products.filter(function(p){return p.feat});
-  $("#featured").innerHTML=(f.length?f:CFG.products.slice(0,2)).map(pcard).join("");
+  renderPinned();
 }
 function renderList(){
   var q=curQ.trim().toLowerCase();
@@ -2352,7 +2399,7 @@ function renderCart(){
   var n=ids.reduce(function(a,id){return a+cart[id]},0);
   $("#badge").textContent=n||"";
 }
-function renderAll(){renderCats();renderHome();renderList();renderCart();showUsage();}
+function renderAll(){renderCats();renderHome();renderList();renderCart();renderPins();showUsage();}
 
 /* ---------- nav ---------- */
 function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("on")},1900)}
@@ -2700,6 +2747,137 @@ function renderStock(){
     return '<div class="stkline" style="padding:7px 0;border-bottom:1px solid var(--line)">'+esc(m.date||"")+' · '+esc(pp?pp.name:"(ลบแล้ว)")
       +' <b style="color:'+(q<0?"var(--red)":"#0E7A3E")+'">'+(q>0?"+":"")+q+'</b>'+(m.ref?" · "+esc(m.ref):"")+'</div>';
   }).join("")||'<div class="stkline">ยังไม่มีการเคลื่อนไหว</div>';
+}
+/* ---------- ปักตะกร้าสินค้าหน้าร้าน ---------- */
+/* CFG.pins เก็บแค่ {id, on} เท่านั้น — ชื่อ/ราคา/รูป/SKU/สต๊อก อ่านสดจาก CFG.products ทุกครั้งที่วาด */
+function stockManaged(p){
+  /* ถือว่า "คุมสต๊อก" ก็ต่อเมื่อเจ้าของตั้งค่าเองจริงๆ เท่านั้น
+     การที่ระบบตั้ง track=1 ให้อัตโนมัติ (สินค้าเคมี) ยังไม่นับ จนกว่าจะรับล็อตแรกเข้ามา
+     ไม่งั้นสินค้าที่ยังไม่ได้กรอกข้อมูลจะกลายเป็น "สินค้าหมด" ทั้งที่ของมีอยู่ */
+  if(!p) return false;
+  if(Number(p.reorder)>0) return true;
+  if(Number(p.stock)>0) return true;
+  if(p.track && (CFG.lots||[]).some(function(l){return l.pid===p.id})) return true;
+  return false;
+}
+function soldOut(p){ return stockManaged(p) && stockOf(p)<=0 }
+function stockText(p){
+  if(!stockManaged(p)) return "ไม่ได้คุมสต๊อก";
+  var n=stockOf(p);
+  return n>0 ? (n+" ชิ้น") : "หมด";
+}
+function sizeText(p){
+  return String((p&&p.code)||"").split("|")
+    .map(function(x){return x.trim()})
+    .filter(function(x){return x && !/^SKU-/i.test(x)})
+    .join(" · ");
+}
+/* คืนเฉพาะรายการที่สินค้ายังมีอยู่จริง แล้วซ่อมรายการที่สินค้าถูกลบไปแล้ว */
+function pinList(){
+  CFG.pins=(CFG.pins||[]).filter(function(x){
+    return x && x.id && CFG.products.some(function(p){return p.id===x.id});
+  });
+  return CFG.pins;
+}
+function pinProduct(x){ return CFG.products.find(function(p){return p.id===x.id}) }
+function isPinned(id){ return (CFG.pins||[]).some(function(x){return x.id===id}) }
+function syncFeat(){
+  /* feat ยังใช้อยู่ในรายการสินค้าหลังบ้าน (★) และช็อกบ็อกซ์ในฟอร์มสินค้า — ทำให้ตรงกับ pins เสมอ */
+  (CFG.products||[]).forEach(function(p){ p.feat = isPinned(p.id) ? 1 : 0 });
+}
+function addPin(id){
+  if(isPinned(id)) return false;
+  CFG.pins=CFG.pins||[]; CFG.pins.push({id:id, on:1});
+  syncFeat(); return true;
+}
+function removePin(id){
+  CFG.pins=(CFG.pins||[]).filter(function(x){return x.id!==id});
+  syncFeat();
+}
+function movePin(id,dir){
+  var L=pinList(), i=L.findIndex(function(x){return x.id===id}), j=i+dir;
+  if(i<0 || j<0 || j>=L.length) return false;
+  var t=L[i]; L[i]=L[j]; L[j]=t; return true;
+}
+/* ---------- การ์ดหน้าร้าน ---------- */
+function pinCard(p){
+  var out=soldOut(p), sz=sizeText(p);
+  return '<article class="pin-card"><div class="pin-img">'+box(p.img,p.name)
+   +(out?'<div class="pin-out"><span>สินค้าหมด</span></div>':'')+'</div>'
+   +'<div class="pin-bd"><h3>'+esc(p.name)+'</h3>'
+   +(p.sku?'<div class="pin-meta"><span class="pin-sku">'+esc(p.sku)+'</span></div>':'')
+   +(sz?'<div class="pin-meta">'+esc(sz)+'</div>':'')
+   +'<div class="pin-meta">'+(out?'<b style="color:var(--red)">สินค้าหมด</b>'
+                                 :(stockManaged(p)?'คงเหลือ '+stockOf(p)+' ชิ้น':'พร้อมส่ง'))+'</div>'
+   +'<div class="pin-price">'+baht(p.price)+(p.old?'<s>'+baht(p.old)+'</s>':'')+'</div>'
+   +'<button class="pin-buy" data-add="'+p.id+'"'+(out?' disabled':'')+'>'
+     +(out?'สินค้าหมด':'เพิ่มลงตะกร้า')+'</button>'
+   +'</div></article>';
+}
+function renderPinned(){
+  var grid=$("#featured"); if(!grid) return;
+  var items=pinList().filter(function(x){return x.on}).map(pinProduct).filter(Boolean);
+  grid.innerHTML=items.map(pinCard).join("");
+  var sec=$("#pin-sec");
+  var show=items.length>0;
+  if(sec) sec.style.display=show?"":"none";
+  grid.style.display=show?"":"none";
+}
+/* ---------- ตารางหลังบ้าน ---------- */
+function renderPins(){
+  var tb=$("#pin-rows"); if(!tb) return;
+  var L=pinList();
+  tb.innerHTML=L.map(function(x,i){
+    var p=pinProduct(x); if(!p) return "";
+    return '<tr>'
+     +'<td><b>'+(i+1)+'</b></td>'
+     +'<td><div class="th-img">'+box(p.img,"ไม่มีรูป")+'</div></td>'
+     +'<td>'+(p.sku?esc(p.sku):'<span style="color:var(--gray)">—</span>')+'</td>'
+     +'<td class="nm">'+esc(p.name)+(sizeText(p)?'<div class="stkline">'+esc(sizeText(p))+'</div>':'')+'</td>'
+     +'<td style="white-space:nowrap">'+baht(p.price)+'</td>'
+     +'<td style="white-space:nowrap'+(soldOut(p)?';color:var(--red);font-weight:600':'')+'">'+esc(stockText(p))+'</td>'
+     +'<td><span class="tgl on">ปักอยู่</span></td>'
+     +'<td><button class="tgl '+(x.on?'on':'off')+'" data-pintgl="'+p.id+'">'+(x.on?'เปิด':'ปิด')+'</button></td>'
+     +'<td><div class="acts2">'
+       +'<button class="sq2" data-pinup="'+p.id+'"'+(i===0?' disabled':'')+'>▲</button>'
+       +'<button class="sq2" data-pindn="'+p.id+'"'+(i===L.length-1?' disabled':'')+'>▼</button>'
+       +'<button class="sq2" data-pinedit="'+p.id+'">✎</button>'
+       +'<button class="sq2 del" data-pindel="'+p.id+'">✕</button>'
+     +'</div></td></tr>';
+  }).join("")||'<tr><td colspan="9"><div class="empty" style="padding:34px 20px"><b>ยังไม่ได้ปักสินค้า</b>กดปุ่ม “+ เพิ่มสินค้าปักตะกร้า” ด้านบน</div></td></tr>';
+}
+/* ---------- เลือกสินค้าจากรายการจริงมาปัก ---------- */
+function openPinPicker(){
+  var html='<div class="fld"><input id="pk-q" placeholder="ค้นหาชื่อสินค้า หรือ SKU..."></div><div id="pk-list"></div>';
+  openModal("เลือกสินค้าที่จะปัก",html,function(){return true},"ปิด");
+  var draw=function(){
+    var q=($("#pk-q").value||"").trim().toLowerCase();
+    var L=CFG.products.filter(function(p){
+      if(!q) return true;
+      return String(p.name||"").toLowerCase().indexOf(q)>=0
+          || String(p.sku||"").toLowerCase().indexOf(q)>=0
+          || String(p.code||"").toLowerCase().indexOf(q)>=0;
+    }).slice(0,60);
+    $("#pk-list").innerHTML=L.map(function(p){
+      var taken=isPinned(p.id);
+      return '<button class="picker-row'+(taken?' taken':'')+'" data-pkpick="'+p.id+'"'+(taken?' disabled':'')+'>'
+        +'<div class="th-img">'+box(p.img,"ไม่มีรูป")+'</div>'
+        +'<div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600;line-height:1.35">'+esc(p.name)+'</div>'
+        +'<div class="stkline">'+(p.sku?esc(p.sku)+" · ":"")+baht(p.price)+(taken?' · ปักไว้แล้ว':'')+'</div></div>'
+        +'</button>';
+    }).join("")||'<div class="empty" style="padding:30px 10px"><b>ไม่พบสินค้า</b>ลองค้นด้วยคำอื่น</div>';
+  };
+  draw();
+  $("#pk-q").oninput=draw;
+  $("#pk-list").onclick=function(e){
+    var b=e.target.closest("[data-pkpick]"); if(!b||b.disabled) return;
+    var id=b.dataset.pkpick, p=CFG.products.find(function(x){return x.id===id});
+    if(addPin(id)){
+      renderPins(); renderPinned(); renderAdProds(); save(true);
+      toast("ปัก “"+(p?p.name:"")+"” แล้ว");
+      draw();
+    }
+  };
 }
 function askConfirm(msg,cb){
   openModal("ยืนยัน",'<div style="padding:10px 4px 6px;font-size:16px;line-height:1.6">'+esc(msg)+'</div>',function(){cb()});
@@ -3495,13 +3673,18 @@ function exportHTML(){
 
 /* ---------- events ---------- */
 document.addEventListener("click",function(e){
-  var t=e.target.closest("[data-go],[data-add],[data-inc],[data-dec],[data-cat],[data-fav],[data-tab],[data-pick],[data-clear],[data-ep],[data-dp],[data-ec],[data-dc],[data-po],[data-eo],[data-do],[data-db],[data-dcar],[data-lotadd],[data-lotedit],[data-lotdel],[data-adj],#btn-checkout,#btn-line");
+  var t=e.target.closest("[data-go],[data-add],[data-inc],[data-dec],[data-cat],[data-fav],[data-tab],[data-pick],[data-clear],[data-ep],[data-dp],[data-ec],[data-dc],[data-po],[data-eo],[data-do],[data-db],[data-dcar],[data-lotadd],[data-lotedit],[data-lotdel],[data-adj],[data-pintgl],[data-pinup],[data-pindn],[data-pinedit],[data-pindel],#btn-checkout,#btn-line");
   if(!t)return;
   var d=t.dataset;
   if(d.go){go(d.go);return}
   if(d.cat!==undefined){curCat=d.cat;curQ="";$("#q").value="";renderCats();renderList();go("shop");return}
   if(d.fav){favs[d.fav]=!favs[d.fav];t.classList.toggle("on");return}
-  if(d.add){cart[d.add]=(cart[d.add]||0)+1;renderCart();var p=CFG.products.find(function(x){return x.id===d.add});toast("เพิ่ม "+p.name+" แล้ว");return}
+  if(d.add){
+    var pa2=CFG.products.find(function(x){return x.id===d.add});
+    if(!pa2) return;
+    if(soldOut(pa2)){ toast(pa2.name+" — สินค้าหมด"); return; }
+    cart[d.add]=(cart[d.add]||0)+1; renderCart(); toast("เพิ่ม "+pa2.name+" แล้ว"); return;
+  }
   if(d.inc){cart[d.inc]++;renderCart();return}
   if(d.dec){cart[d.dec]--;if(cart[d.dec]<=0)delete cart[d.dec];renderCart();return}
   if(t.id==="btn-line"){window.open(CFG.line||"#");return}
@@ -3510,7 +3693,7 @@ document.addEventListener("click",function(e){
   if(d.tab){
     $$(".ad-tabs button").forEach(function(b){b.classList.toggle("on",b===t)});
     $$(".ad-pane").forEach(function(p){p.classList.toggle("on",p.id==="t-"+d.tab)});
-    if(d.tab==="prod")renderAdProds(); if(d.tab==="stock")renderStock(); if(d.tab==="cat")renderAdCats(); if(d.tab==="file")showUsage(); if(d.tab==="dash")renderDash(); if(d.tab==="pay")fillPay();
+    if(d.tab==="prod")renderAdProds(); if(d.tab==="stock")renderStock(); if(d.tab==="pin")renderPins(); if(d.tab==="cat")renderAdCats(); if(d.tab==="file")showUsage(); if(d.tab==="dash")renderDash(); if(d.tab==="pay")fillPay();
     $(".ad-bd").scrollTop=0; return;
   }
   if(d.pick){
@@ -3520,6 +3703,39 @@ document.addEventListener("click",function(e){
     return;
   }
   if(d.clear){ if(d.clear==="logo")CFG.logo=""; else CFG.banners[d.clear.slice(2)]=""; fillShop(); return }
+  if(d.pintgl){
+    var xg=(CFG.pins||[]).find(function(x){return x.id===d.pintgl});
+    if(xg){ xg.on = xg.on?0:1; renderPins(); renderPinned(); save(true);
+            toast(xg.on?"เปิดแสดงบนหน้าแรกแล้ว":"ปิดแสดงบนหน้าแรกแล้ว"); }
+    return;
+  }
+  if(d.pinup||d.pindn){
+    var mid=d.pinup||d.pindn;
+    if(movePin(mid, d.pinup?-1:1)){ renderPins(); renderPinned(); save(true); }
+    return;
+  }
+  if(d.pinedit){
+    var pe=CFG.products.find(function(x){return x.id===d.pinedit});
+    if(!pe) return;
+    var tmpe={img:pe.img};
+    openModal("แก้ไขสินค้า",prodForm(pe),function(){
+      var n=$("#m-name").value.trim(); if(!n){toast("ใส่ชื่อสินค้าด้วย");return false}
+      pe.name=n;pe.code=$("#m-code").value.trim();pe.cat=$("#m-cat").value;
+      pe.price=Number($("#m-price").value)||0;pe.old=Number($("#m-old").value)||0;
+      pe.feat=$("#m-feat").checked?1:0;pe.img=tmpe.img;
+      readProdStock(pe);
+      if(pe.feat) addPin(pe.id); else removePin(pe.id);
+      renderAdProds();renderStock();renderPins();renderAll();save(true);toast("บันทึกแล้ว");
+    });
+    bindModalPick(tmpe); return;
+  }
+  if(d.pindel){
+    var pd=CFG.products.find(function(x){return x.id===d.pindel});
+    askConfirm("ยกเลิกการปัก “"+(pd?pd.name:"")+"” ออกจากหน้าแรก? (สินค้ายังอยู่ในร้านตามปกติ)",function(){
+      removePin(d.pindel); renderPins(); renderPinned(); renderAdProds(); save(true); toast("ยกเลิกการปักแล้ว");
+    });
+    return;
+  }
   if(d.lotadd){
     openLotModal({id:uid("lt"),pid:d.lotadd,lot:"",exp:"",qty:0,cost:0,recv:today(),note:""},true);
     return;
@@ -3560,7 +3776,8 @@ document.addEventListener("click",function(e){
       p.price=Number($("#m-price").value)||0;p.old=Number($("#m-old").value)||0;
       p.feat=$("#m-feat").checked?1:0;p.img=tmp.img;
       readProdStock(p);
-      renderAdProds();renderStock();renderAll();save(true);
+      if(p.feat) addPin(p.id); else removePin(p.id);
+      renderAdProds();renderStock();renderPins();renderAll();save(true);
     });
     bindModalPick(tmp); return;
   }
@@ -3602,7 +3819,8 @@ document.addEventListener("click",function(e){
     askConfirm("ลบ “"+(dpz?dpz.name:"")+"” ออกจากร้าน?",function(){
       CFG.products=CFG.products.filter(function(x){return x.id!==d.dp});
       CFG.lots=(CFG.lots||[]).filter(function(x){return x.pid!==d.dp});
-      delete cart[d.dp];renderAdProds();renderStock();renderAll();save(true);toast("ลบแล้ว");
+      removePin(d.dp);
+      delete cart[d.dp];renderAdProds();renderStock();renderPins();renderAll();save(true);toast("ลบแล้ว");
     });
     return;
   }
@@ -3630,7 +3848,7 @@ document.addEventListener("click",function(e){
 
 $("#q").addEventListener("input",function(e){curQ=e.target.value;if(curQ)go("shop");else renderList()});
 
-function openAdmin(){fillShop();renderAdProds();renderAdCats();renderStock();showUsage();$("#admin").classList.add("on")}
+function openAdmin(){fillShop();renderAdProds();renderAdCats();renderStock();renderPins();showUsage();$("#admin").classList.add("on")}
 $("#btn-follow").onclick=function(){window.open(CFG.line||"#","_blank")};
 $("#btn-member").onclick=function(){if(CFG.member)window.open(CFG.member,"_blank")};
 $("#gear").onclick=function(){
@@ -3674,6 +3892,11 @@ $("#imp-prod").onclick=function(){
     importProducts(v); $("#modal").classList.remove("on");
   };
 };
+$("#add-pin").onclick=openPinPicker;
+$("#save-pin").onclick=function(){
+  pinList(); syncFeat(); renderPinned(); renderPins(); save(true);
+  toast("บันทึกลำดับแล้ว ("+pinList().length+" รายการ)");
+};
 $("#add-lot").onclick=function(){
   openLotModal({id:uid("lt"),pid:"",lot:"",exp:"",qty:0,cost:0,recv:today(),note:""},true);
 };
@@ -3690,7 +3913,9 @@ $("#add-prod").onclick=function(){
     p.price=Number($("#m-price").value)||0;p.old=Number($("#m-old").value)||0;
     p.feat=$("#m-feat").checked?1:0;p.img=tmp.img;
     readProdStock(p);
-    CFG.products.push(p);renderAdProds();renderStock();renderAll();save(true);toast("เพิ่มสินค้าแล้ว");
+    CFG.products.push(p);
+    if(p.feat) addPin(p.id);
+    renderAdProds();renderStock();renderPins();renderAll();save(true);toast("เพิ่มสินค้าแล้ว");
   });
   bindModalPick(tmp);
 };
