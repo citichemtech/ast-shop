@@ -277,7 +277,7 @@ input,select,textarea{font-family:inherit;font-size:16px}
  "line": "https://line.me/R/ti/p/@citiofficial",
  "tel": "0961929993",
  "shipping": 50,
- "freeOver": 1500,
+ "freeOver": 1000,
  "pin": "333666",
  "orders": [
   {
@@ -2293,7 +2293,11 @@ async function load(){
   }catch(e){}
   if(!CFG.orders) CFG.orders=[];
   if(!CFG.banks) CFG.banks=[];
-  if(!CFG.carriers) CFG.carriers=["Flash Express","Kerry Express","ไปรษณีย์ไทย"];
+  if(!CFG.carriers || !CFG.carriers.length) CFG.carriers=DEFAULT_CARRIERS.slice();
+  if(!CFG.carrierLinks){
+    CFG.carrierLinks={};
+    Object.keys(DEFAULT_CARRIER_LINKS).forEach(function(k){ CFG.carrierLinks[k]=DEFAULT_CARRIER_LINKS[k] });
+  }
   if(!CFG.sender) CFG.sender={name:CFG.brand,tel:"",addr:""};
   if(CFG.codFee===undefined) CFG.codFee=0;
   if(CFG.vatRate===undefined) CFG.vatRate=7;
@@ -2344,6 +2348,14 @@ function box(src,label,fit){
 }
 
 /* ---------- storefront render ---------- */
+/* ---------- ค่าจัดส่ง : สูตรเดียวใช้ทุกที่ ----------
+   โอน  < freeOver -> เก็บค่าส่ง        โอน  >= freeOver -> ฟรี
+   ปลายทาง (COD)   -> เก็บค่าส่งเสมอ ไม่ว่ายอดเท่าไหร่ และไม่บวกซ้ำ */
+function shipFee(sub,pay){
+  var base=Number(CFG.shipping||0);
+  if(pay==="cod") return base;
+  return (CFG.freeOver && sub>=Number(CFG.freeOver)) ? 0 : base;
+}
 function catName(id){var c=CFG.cats.find(function(x){return x.id===id});return c?c.name:""}
 function renderCats(){
   var h=CFG.cats.map(function(c){
@@ -2390,12 +2402,14 @@ function renderCart(){
       +'<div class="cat-lbl">'+esc(catName(p.cat))+'</div><h3>'+esc(p.name)+'</h3><div class="price">'+baht(p.price)+'</div></div>'
       +'<div class="qty"><button class="qbtn" data-dec="'+p.id+'">−</button><b>'+cart[id]+'</b><button class="qbtn" data-inc="'+p.id+'">+</button></div></div>';
   }).join(""):'<div class="empty"><b>ยังไม่มีสินค้าในตะกร้า</b>เลือกสินค้าที่ต้องการได้เลย<br><button class="gotoshop" data-go="shop">เลือกสินค้า</button></div>';
-  var ship=(!ids.length||(CFG.freeOver&&sub>=CFG.freeOver))?0:Number(CFG.shipping||0);
+  var ship=ids.length?shipFee(sub,"transfer"):0;
   $("#summary").innerHTML='<div class="srow"><span>ยอดรวมสินค้า</span><b>'+baht(sub)+'</b></div>'
     +'<div class="srow"><span>ค่าจัดส่ง</span><b>'+(ship?baht(ship):"ฟรี")+'</b></div>'
     +'<div class="srow total"><span>ยอดสุทธิ</span><span>'+baht(sub+ship)+'</span></div>'
     +'<button class="checkout" id="btn-checkout">Checkout</button>'
-    +'<div class="note">ราคารวม VAT แล้ว · ออกใบกำกับภาษีได้'+(CFG.freeOver?'<br>สั่งครบ '+baht(CFG.freeOver)+' ส่งฟรี':'')+'</div>';
+    +'<div class="note">ราคารวม VAT แล้ว · ออกใบกำกับภาษีได้'
+      +(CFG.freeOver?'<br>โอนก่อนส่ง สั่งครบ '+baht(CFG.freeOver)+' ส่งฟรี':'')
+      +(Number(CFG.shipping)?'<br>เก็บเงินปลายทาง ค่าจัดส่ง '+baht(CFG.shipping)+' ทุกยอด':'')+'</div>';
   var n=ids.reduce(function(a,id){return a+cart[id]},0);
   $("#badge").textContent=n||"";
 }
@@ -2446,14 +2460,24 @@ function readBanks(){
 }
 function renderAdCars(){
   $("#ad-cars").innerHTML=(CFG.carriers||[]).map(function(c,i){
-    return '<div class="row2"><div class="i"><input class="cr-name" data-i="'+i+'" value="'+esc(c)+'" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px"></div>'
-     +'<div class="acts"><button class="sq del" data-dcar="'+i+'">🗑</button></div></div>';
+    var lk=(CFG.carrierLinks||{})[c]||"";
+    return '<div class="row2" style="align-items:flex-start"><div class="i">'
+     +'<input class="cr-name" data-i="'+i+'" value="'+esc(c)+'" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px">'
+     +'<input class="cr-link" data-i="'+i+'" value="'+esc(lk)+'" placeholder="ลิงก์ติดตามพัสดุ ใช้ {T} แทนเลขพัสดุ" style="width:100%;padding:9px 10px;margin-top:7px;border:1px solid var(--line);border-radius:9px;font-size:12.5px">'
+     +'<div class="stkline">'+(lk?'ตัวอย่าง: '+esc(lk.replace("{T}","TH1234567890")):'ยังไม่ได้ตั้งลิงก์ — ข้อความแจ้งลูกค้าจะไม่มีบรรทัดลิงก์')+'</div>'
+     +'</div><div class="acts"><button class="sq del" data-dcar="'+i+'">🗑</button></div></div>';
   }).join("")||'<div class="hint" style="color:var(--gray)">ยังไม่มีขนส่ง</div>';
 }
 function readCars(){
-  var out=[];
-  $$(".cr-name").forEach(function(el){var v=el.value.trim(); if(v)out.push(v)});
-  CFG.carriers=out;
+  var out=[], links={};
+  var names=$$(".cr-name"), lks=$$(".cr-link");
+  names.forEach(function(el,i){
+    var v=el.value.trim(); if(!v) return;
+    out.push(v);
+    var l=(lks[i]&&lks[i].value.trim())||"";
+    if(l) links[v]=l;
+  });
+  CFG.carriers=out; CFG.carrierLinks=links;
 }
 function fillPay(){
   var s=CFG.sender||{};
@@ -2879,6 +2903,64 @@ function openPinPicker(){
     }
   };
 }
+/* ---------- ขนส่ง / ลิงก์ติดตามพัสดุ / ข้อความแจ้งลูกค้า ---------- */
+var DEFAULT_CARRIERS=["Flash Express","Kerry Express","ไปรษณีย์ไทย","J&T Express"];
+var DEFAULT_CARRIER_LINKS={
+  "Flash Express":"https://www.flashexpress.com/fle/tracking?se={T}",
+  "Kerry Express":"https://th.kerryexpress.com/th/track/?track={T}",
+  "ไปรษณีย์ไทย":"https://track.thailandpost.co.th/?trackNumber={T}",
+  "J&T Express":"https://www.jtexpress.co.th/service/track?billcode={T}"
+};
+function trackUrl(carrier,track){
+  if(!carrier||!track) return "";
+  var tpl=(CFG.carrierLinks||{})[carrier];
+  if(!tpl) return "";                       /* ไม่มีลิงก์ก็ไม่เดา */
+  return tpl.replace(/\{T\}/g, encodeURIComponent(String(track).trim()));
+}
+function thaiDate(iso){
+  if(!iso) return "";
+  var d=new Date(iso+"T00:00:00");
+  if(isNaN(d.getTime())) return String(iso);
+  var m=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  return d.getDate()+" "+m[d.getMonth()]+" "+(d.getFullYear()+543);
+}
+/* ข้อความแจ้งเลขพัสดุ — ทุกค่าดึงจากออเดอร์จริง */
+function shipMsg(o){
+  var url=trackUrl(o.carrier,o.track);
+  var t="📦 จัดส่งสินค้าเรียบร้อยแล้ว\n\n"
+   +"สวัสดีคุณ "+(o.cust||"ลูกค้า")+"\n"
+   +"ออเดอร์หมายเลข\n"
+   +"🧾 "+(o.no||o.id||"-")+"\n\n"
+   +"ทางร้านได้จัดส่งสินค้าเรียบร้อยแล้ว ✅\n\n"
+   +"🚚 ขนส่ง: "+(o.carrier||"-")+"\n"
+   +"🔎 เลขพัสดุ: "+(o.track||"-")+"\n"
+   +"📅 วันที่จัดส่ง: "+(thaiDate(o.shipped)||"-")+"\n";
+  if(url) t+="\nสามารถติดตามสถานะพัสดุได้ที่:\n"+url+"\n";
+  t+="\nขอบคุณที่อุดหนุนสินค้าของเราค่ะ 🙏";
+  return t;
+}
+/* คัดลอกข้อความ (กลไกเดียวกับหน้าสรุปคำสั่งซื้อ) */
+function copyText(text,okMsg){
+  var ta=document.createElement("textarea");
+  ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
+  document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,99999);
+  var done=false; try{done=document.execCommand("copy")}catch(e){}
+  document.body.removeChild(ta);
+  if(!done&&navigator.clipboard){navigator.clipboard.writeText(text).then(function(){toast(okMsg)});}
+  else toast(done?okMsg:"กดค้างที่ข้อความเพื่อคัดลอก");
+}
+function openShipMsg(o){
+  if(!o.track){ toast("ยังไม่มีเลขพัสดุ ใส่เลขพัสดุก่อน"); return; }
+  var msg=shipMsg(o), url=trackUrl(o.carrier,o.track);
+  openModal("ข้อความแจ้งลูกค้า",
+    '<textarea id="sm-text" rows="16" readonly>'+esc(msg)+'</textarea>'
+   +'<button class="bigbtn" id="sm-copy" style="margin-top:12px">คัดลอกข้อความแจ้งลูกค้า</button>'
+   +'<button class="bigbtn" id="sm-line" style="background:#00B900;margin-top:10px">ส่งทาง LINE</button>'
+   +(url?'':'<div class="hint" style="color:var(--red);font-size:12.5px;margin-top:10px;line-height:1.55">ขนส่ง “'+esc(o.carrier||"ไม่ระบุ")+'” ยังไม่ได้ตั้งลิงก์ติดตาม ข้อความจึงไม่มีบรรทัดลิงก์ — ตั้งได้ที่แท็บ “ชำระเงิน/ขนส่ง”</div>'),
+    function(){return true},"ปิด");
+  $("#sm-copy").onclick=function(){ copyText(msg,"คัดลอกข้อความแล้ว") };
+  $("#sm-line").onclick=function(){ openLineWith(msg) };
+}
 function askConfirm(msg,cb){
   openModal("ยืนยัน",'<div style="padding:10px 4px 6px;font-size:16px;line-height:1.6">'+esc(msg)+'</div>',function(){cb()});
 }
@@ -2931,7 +3013,7 @@ function payLabel(info){
 }
 function buildOrderText(info,no){
   var c=cartLines();
-  var ship=(CFG.freeOver&&c.sub>=CFG.freeOver)?0:Number(CFG.shipping||0);
+  var ship=shipFee(c.sub,info.pay);
   var cod=(info.pay==="cod")?Number(CFG.codFee||0):0;
   var rate=Number(CFG.vatRate===undefined?7:CFG.vatRate);
   var vat=info.wantTax?Math.round((c.sub+ship)*rate)/100:0;
@@ -3357,7 +3439,9 @@ function renderDash(){
        +'<span>'+esc(o.date)+' · '+esc(o.chan||"-")+(o.carrier?' · '+esc(o.carrier):'')+(o.track?' · '+esc(o.track):'')+(o.slip?' · 📎 สลิป':'')+(Number(o.disc)>0?' · ลด '+baht(o.disc):'')+(o.vat?' · 📄 VAT':'')+'</span><br>'
        +'<span style="color:var(--ink);font-weight:600">'+baht(o.amt)+'</span> '
        +'<span class="chip2 '+(o.status==="paid"?"paid":"wait")+'">'+(o.status==="paid"?"ชำระแล้ว":(o.pay==="cod"?"ปลายทาง":"รอชำระเงิน"))+'</span></div>'
-       +'<div class="acts"><button class="sq" data-po="'+o.id+'">🖨</button><button class="sq" data-eo="'+o.id+'">✎</button><button class="sq del" data-do="'+o.id+'">🗑</button></div></div>';
+       +'<div class="acts">'
+       +(o.track?'<button class="sq" data-smsg="'+o.id+'">📦</button>':'')
+       +'<button class="sq" data-po="'+o.id+'">🖨</button><button class="sq" data-eo="'+o.id+'">✎</button><button class="sq del" data-do="'+o.id+'">🗑</button></div></div>';
     }).join("")
     : '<div class="empty"><b>ยังไม่มีออเดอร์</b>กดปุ่มด้านบนเพื่อบันทึก</div>';
   $("#dash").innerHTML=h;
@@ -3482,7 +3566,8 @@ function ordForm(o){
    +'<div class="fld"><label>ธนาคารที่โอนเข้า</label><select id="o-bank"><option value="">— ไม่ระบุ —</option>'+bankOpts(o.bank)+'</select></div>'
    +'<div class="fld"><label>ขนส่ง</label><select id="o-car"><option value="">— ไม่ระบุ —</option>'+carOpts(o.carrier)+'</select></div>'
    +'<div class="fld"><label>สถานะ</label><select id="o-st"><option value="wait"'+(o.status!=="paid"?" selected":"")+'>รอชำระเงิน</option><option value="paid"'+(o.status==="paid"?" selected":"")+'>ชำระแล้ว</option></select></div>'
-   +'<div class="fld"><label>เลขพัสดุ</label><input id="o-track" value="'+esc(o.track||"")+'"></div>'
+   +'<div class="two"><div class="fld"><label>เลขพัสดุ</label><input id="o-track" value="'+esc(o.track||"")+'"></div>'
+   +'<div class="fld"><label>วันที่จัดส่ง</label><input id="o-shipped" type="date" value="'+esc(o.shipped||"")+'"><div class="hint">ใส่เลขพัสดุแล้วระบบเติมวันที่ให้เอง</div></div></div>'
    +'<div class="fld"><label>หมายเหตุ</label><input id="o-memo" value="'+esc(o.memo||"")+'"></div>'
    +'<div class="fld"><label>สลิปโอนเงิน</label><div class="picker"><div class="thumb" id="th-slip">'+(o.slip?'<img src="'+o.slip+'">':'ยังไม่มีสลิป')+'</div>'
    +'<div class="pbtns"><button class="mini" id="pick-slip">แนบสลิป</button><button class="mini grey" id="clr-slip">ลบสลิป</button></div></div></div>';
@@ -3496,7 +3581,7 @@ function bindOrdAuto(o){
   var recalcTotal=function(){
     var sub=Number($("#o-amt").value)||0;
     var disc=Number($("#o-disc").value)||0;
-    var ship=(CFG.freeOver&&sub>=CFG.freeOver)?0:Number(CFG.shipping||0);
+    var ship=shipFee(sub,$("#o-pay").value);
     var cod=($("#o-pay").value==="cod")?Number(CFG.codFee||0):0;
     var rate=Number(CFG.vatRate===undefined?7:CFG.vatRate);
     var vat=($("#o-vat")&&$("#o-vat").value==="1")?Math.round((sub+ship)*rate)/100:0;
@@ -3533,7 +3618,13 @@ function readOrd(o){
   o.bank=$("#o-bank").value;
   o.carrier=$("#o-car").value;
   o.status=$("#o-st").value;
+  var hadTrack=!!o.track;
   o.track=$("#o-track").value.trim();
+  o.shipped=$("#o-shipped")?$("#o-shipped").value:(o.shipped||"");
+  /* ใส่เลขพัสดุครั้งแรกแล้วยังไม่มีวันที่ -> เติมวันนี้ให้ ใส่ซ้ำไม่ทับของเดิม */
+  if(o.track && !o.shipped) o.shipped=today();
+  if(!o.track) o.shipped="";
+  o._justShipped = (!hadTrack && !!o.track);
   o.memo=$("#o-memo").value.trim();
   return o;
 }
@@ -3673,7 +3764,7 @@ function exportHTML(){
 
 /* ---------- events ---------- */
 document.addEventListener("click",function(e){
-  var t=e.target.closest("[data-go],[data-add],[data-inc],[data-dec],[data-cat],[data-fav],[data-tab],[data-pick],[data-clear],[data-ep],[data-dp],[data-ec],[data-dc],[data-po],[data-eo],[data-do],[data-db],[data-dcar],[data-lotadd],[data-lotedit],[data-lotdel],[data-adj],[data-pintgl],[data-pinup],[data-pindn],[data-pinedit],[data-pindel],#btn-checkout,#btn-line");
+  var t=e.target.closest("[data-go],[data-add],[data-inc],[data-dec],[data-cat],[data-fav],[data-tab],[data-pick],[data-clear],[data-ep],[data-dp],[data-ec],[data-dc],[data-po],[data-eo],[data-do],[data-db],[data-dcar],[data-lotadd],[data-lotedit],[data-lotdel],[data-adj],[data-pintgl],[data-pinup],[data-pindn],[data-pinedit],[data-pindel],[data-smsg],#btn-checkout,#btn-line");
   if(!t)return;
   var d=t.dataset;
   if(d.go){go(d.go);return}
@@ -3703,6 +3794,11 @@ document.addEventListener("click",function(e){
     return;
   }
   if(d.clear){ if(d.clear==="logo")CFG.logo=""; else CFG.banners[d.clear.slice(2)]=""; fillShop(); return }
+  if(d.smsg){
+    var os=CFG.orders.find(function(x){return x.id===d.smsg});
+    if(os) openShipMsg(os);
+    return;
+  }
   if(d.pintgl){
     var xg=(CFG.pins||[]).find(function(x){return x.id===d.pintgl});
     if(xg){ xg.on = xg.on?0:1; renderPins(); renderPinned(); save(true);
@@ -3800,8 +3896,10 @@ document.addEventListener("click",function(e){
     openModal("แก้ไขออเดอร์",ordForm(o),function(){
       readOrd(o);
       var she=applyOrderStock(o);
+      var justShipped=o._justShipped; delete o._justShipped;
       renderDash();renderStock();renderAdProds();save(true);
       stockToast(she,"บันทึกแล้ว");
+      if(justShipped) setTimeout(function(){ openShipMsg(o) },260);
     });
     bindOrdAuto(o);bindSlip(o);bindParse(o); return;
   }
@@ -3938,8 +4036,10 @@ $("#add-ord").onclick=function(){
     if(!o.amt){toast("ใส่ยอดรวมด้วย");return false}
     CFG.orders=CFG.orders||[]; CFG.orders.push(o);
     var sh=applyOrderStock(o);
+    var justShipped2=o._justShipped; delete o._justShipped;
     renderDash();renderStock();renderAdProds();save(true);
     stockToast(sh,"บันทึกออเดอร์แล้ว");
+    if(justShipped2) setTimeout(function(){ openShipMsg(o) },260);
   });
   bindOrdAuto(o);bindSlip(o);bindParse(o);
 };
