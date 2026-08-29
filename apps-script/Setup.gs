@@ -1,0 +1,204 @@
+/**
+ * ติดตั้งส่วนล็อต/วันหมดอายุเข้ากับชีทที่เจ้าของร้านทำไว้แล้ว
+ *
+ * สั่งครั้งเดียวจากเมนู Apps Script → เลือกฟังก์ชัน setup → Run
+ * สั่งซ้ำได้ ไม่พัง ไม่ลบข้อมูล — ฟังก์ชันนี้เขียนทับเฉพาะหัวตารางกับช่องสูตรเท่านั้น
+ *
+ * สิ่งที่ทำ
+ *   1. สร้างชีท "ล็อตสินค้า"  — ทะเบียนล็อต 1 ล็อต = 1 แถว
+ *   2. สร้างชีท "ตัดล็อต"     — สมุดบันทึกว่าออเดอร์ไหนตัดล็อตไหนไปเท่าไร (เขียนต่อท้ายอย่างเดียว)
+ *   3. เพิ่มคอลัมน์ Q "ล็อตที่ตัด" ที่ชีท ออเดอร์_รายการ เป็นสูตรดึงจากชีท ตัดล็อต
+ *
+ * 9 ชีทเดิมไม่ถูกแตะ ยกเว้นคอลัมน์ Q ที่เพิ่มต่อท้าย ออเดอร์_รายการ (คอลัมน์ว่างอยู่แล้ว)
+ */
+
+var LOT_LAST = 1005;   // ล็อตสินค้า รองรับ 1000 ล็อต
+var CUT_LAST = 3005;   // ตัดล็อต รองรับ 3000 บรรทัด
+var STOCK_LAST = 150;  // ขอบล่างของชีท สต๊อกคงเหลือ ที่ใช้ในสูตรตรวจยอด
+
+var C_HEAD_BG = '#1f3864';
+var C_HEAD_FG = '#ffffff';
+var C_CALC_BG = '#f2f2f2';
+var C_IN_FG = '#0000ff';
+var C_SUB_FG = '#555555';
+
+function setup() {
+  var ss = ss_();
+  var made = [];
+  made.push(setupLotSheet_(ss));
+  made.push(setupCutSheet_(ss));
+  made.push(setupItemLotColumn_(ss));
+  SpreadsheetApp.flush();
+  var msg = 'ติดตั้งเรียบร้อย\n\n' + made.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/* ---------------------------------------------------------------- ล็อตสินค้า */
+
+function setupLotSheet_(ss) {
+  var name = SH.lot.name;
+  var s = ss.getSheetByName(name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < LOT_LAST) s.insertRowsAfter(s.getMaxRows(), LOT_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 13) s.insertColumnsAfter(s.getMaxColumns(), 13 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('ทะเบียนล็อตสินค้า — สำหรับสินค้าที่มีวันหมดอายุ')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'สินค้าตัวไหนไม่ต้องคุมล็อต ไม่ต้องใส่ในชีทนี้  |  ระบบจะตัดล็อตที่หมดอายุก่อนให้อัตโนมัติ (FEFO)'
+  ).setFontColor(C_SUB_FG);
+
+  s.getRange('H3').setValue('SKU ที่ยอดล็อตไม่ตรงกับสต๊อก').setFontColor(C_SUB_FG)
+    .setHorizontalAlignment('right');
+  s.getRange('I3').setFormula(
+    '=SUMPRODUCT(--(COUNTIF($B$6:$B$' + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + STOCK_LAST + ')>0),' +
+    "--(ROUND(SUMIF($B$6:$B$" + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + STOCK_LAST +
+    ',$I$6:$I$' + LOT_LAST + "),3)<>ROUND('สต๊อกคงเหลือ'!$I$6:$I$" + STOCK_LAST + ',3)))'
+  ).setFontWeight('bold');
+  s.getRange('J3').setValue('← ถ้าไม่ใช่ 0 แปลว่ายอดล็อตกับยอดสต๊อกเริ่มเพี้ยน ต้องตรวจ')
+    .setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'รหัสสินค้า (SKU)', 'ชื่อสินค้า', 'เลขล็อต', 'วันหมดอายุ', 'วันรับเข้า',
+    'จำนวนรับ\n(ชิ้น)', 'ตัดออกแล้ว\n(ชิ้น)', 'คงเหลือ\n(ชิ้น)', 'สถานะล็อต', 'หมายเหตุ',
+    'คีย์ล็อต', 'ตรวจสอบ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = LOT_LAST - DATA_ROW + 1;
+  var L = LOT_LAST, C = CUT_LAST;
+
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+  fillFormula_(s, 3, n,
+    '=IF($B6="","",IFERROR(VLOOKUP($B6,\'ฐานสินค้า\'!$B$6:$D$200,3,FALSE),"ไม่พบ SKU"))');
+  fillFormula_(s, 8, n,
+    '=IF($L6="","",SUMIFS(\'' + SH.cut.name + '\'!$F$6:$F$' + C + ',\'' + SH.cut.name + '\'!$I$6:$I$' + C + ',$L6))');
+  fillFormula_(s, 9, n, '=IF($B6="","",IFERROR($G6-$H6,""))');
+  fillFormula_(s, 10, n,
+    '=IF($B6="","",IF(NOT(ISNUMBER($I6)),"",IF($I6<=0,"หมดแล้ว",' +
+    'IF($E6="","ไม่ระบุวันหมดอายุ",IF($E6<TODAY(),"หมดอายุแล้ว",' +
+    'IF($E6<=TODAY()+60,"ใกล้หมดอายุ","ปกติ"))))))');
+  fillFormula_(s, 12, n, '=IF(OR($B6="",$D6=""),"",$B6&"|"&$D6)');
+  fillFormula_(s, 13, n,
+    '=IF($B6="","",IF($D6="","ยังไม่ใส่เลขล็อต",' +
+    'IF(COUNTIF($L$6:$L$' + L + ',$L6)>1,"เลขล็อตซ้ำ",' +
+    'IF(NOT(ISNUMBER($G6)),"ยังไม่ใส่จำนวนรับ",' +
+    'IF($G6<=0,"จำนวนรับต้องมากกว่า 0",' +
+    'IF($H6>$G6,"ตัดออกเกินจำนวนที่รับเข้า",' +
+    'IF($C6="ไม่พบ SKU","SKU ไม่มีในฐานสินค้า","OK")))))))');
+
+  paintCols_(s, n, [2, 4, 5, 6, 7, 11], [1, 3, 8, 9, 10, 12, 13]);
+
+  s.getRange(DATA_ROW, 5, n, 2).setNumberFormat('dd/mm/yyyy');
+  s.getRange(DATA_ROW, 7, n, 3).setNumberFormat('#,##0');
+
+  var skuRange = ss.getSheetByName(SH.prod.name).getRange('B6:B200');
+  s.getRange(DATA_ROW, 2, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInRange(skuRange, true).setAllowInvalid(true).build()
+  );
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(2, 110); s.setColumnWidth(3, 300); s.setColumnWidth(4, 110);
+  s.setColumnWidth(5, 100); s.setColumnWidth(6, 100); s.setColumnWidth(11, 180);
+  s.hideColumns(12);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + (LOT_LAST - DATA_ROW + 1) + ' ล็อต)';
+}
+
+/* ------------------------------------------------------------------ ตัดล็อต */
+
+function setupCutSheet_(ss) {
+  var name = SH.cut.name;
+  var s = ss.getSheetByName(name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < CUT_LAST) s.insertRowsAfter(s.getMaxRows(), CUT_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 9) s.insertColumnsAfter(s.getMaxColumns(), 9 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('บันทึกการตัดล็อต — ระบบเขียนให้เอง')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'ทุกครั้งที่บันทึกออเดอร์ ระบบจะลงว่าตัดล็อตไหนไปกี่ชิ้น  |  ห้ามแก้ด้วยมือ ' +
+    'ถ้าต้องแก้ให้บันทึกเหตุผลที่ชีต Log ด้วย'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'เลขที่ออเดอร์', 'ลำดับในบิล', 'รหัสสินค้า (SKU)', 'เลขล็อต',
+    'จำนวนที่ตัด\n(ชิ้น)', 'วันที่', 'คีย์อ้างอิง', 'คีย์ล็อต'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = CUT_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+  fillFormula_(s, 8, n, '=IF($B6="","",$B6&"|"&$C6)');
+  fillFormula_(s, 9, n, '=IF(OR($D6="",$E6=""),"",$D6&"|"&$E6)');
+
+  paintCols_(s, n, [2, 3, 4, 5, 6, 7], [1, 8, 9]);
+  s.getRange(DATA_ROW, 7, n, 1).setNumberFormat('dd/mm/yyyy');
+  s.getRange(DATA_ROW, 6, n, 1).setNumberFormat('#,##0');
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(2, 130); s.setColumnWidth(4, 110); s.setColumnWidth(5, 110);
+  s.hideColumns(8, 2);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + (CUT_LAST - DATA_ROW + 1) + ' บรรทัด)';
+}
+
+/* ------------------------------------ คอลัมน์ "ล็อตที่ตัด" ที่ ออเดอร์_รายการ */
+
+function setupItemLotColumn_(ss) {
+  var s = ss.getSheetByName(SH.item.name);
+  if (!s) throw new Error('ไม่พบชีท ' + SH.item.name);
+  var col = SH.item.lot;  // 17 = Q
+
+  if (s.getMaxColumns() < col) s.insertColumnsAfter(s.getMaxColumns(), col - s.getMaxColumns());
+
+  var existing = String(s.getRange(HEAD_ROW, col).getValue() || '');
+  if (existing && existing !== 'ล็อตที่ตัด') {
+    throw new Error('คอลัมน์ Q ของชีท ' + SH.item.name + ' มีหัวข้อ "' + existing +
+      '" อยู่แล้ว — หยุดไว้ก่อน ไม่เขียนทับของเดิม');
+  }
+
+  s.getRange(HEAD_ROW, col).setValue('ล็อตที่ตัด')
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var last = formulaLimit_('item');
+  var n = last - DATA_ROW + 1;
+  if (n < 1) throw new Error('ชีท ' + SH.item.name + ' ไม่มีสูตรในแถวข้อมูลเลย — ชีทอาจถูกแก้');
+
+  var C = CUT_LAST;
+  fillFormula_(s, col, n,
+    '=IF($P6="","",IFERROR(TEXTJOIN(", ",TRUE,ARRAYFORMULA(' +
+    'IF(\'' + SH.cut.name + '\'!$H$6:$H$' + C + '=$P6,' +
+    '\'' + SH.cut.name + '\'!$E$6:$E$' + C + '&" x"&TEXT(\'' + SH.cut.name + '\'!$F$6:$F$' + C + ',"0"),""))),""))');
+
+  s.getRange(DATA_ROW, col, n, 1).setBackground(C_CALC_BG);
+  s.setColumnWidth(col, 200);
+
+  return 'เพิ่มคอลัมน์ Q "ล็อตที่ตัด" ที่ชีท ' + SH.item.name + ' ถึงแถว ' + last;
+}
+
+/* ------------------------------------------------------------------- helpers */
+
+/** ใส่สูตรเดียวกันทั้งคอลัมน์ ตั้งแต่แถว 6 ลงไป n แถว (อ้างอิงสัมพัทธ์ขยับตามแถวเอง) */
+function fillFormula_(s, col, n, formula) {
+  s.getRange(DATA_ROW, col).setFormula(formula);
+  if (n > 1) {
+    s.getRange(DATA_ROW, col).copyTo(s.getRange(DATA_ROW + 1, col, n - 1, 1));
+  }
+}
+
+/** ทาสีตามธรรมเนียมของชีทนี้ — ช่องกรอกตัวหนังสือน้ำเงิน ช่องสูตรพื้นเทา */
+function paintCols_(s, n, inCols, calcCols) {
+  for (var i = 0; i < inCols.length; i++) {
+    s.getRange(DATA_ROW, inCols[i], n, 1).setBackground(null).setFontColor(C_IN_FG);
+  }
+  for (var j = 0; j < calcCols.length; j++) {
+    s.getRange(DATA_ROW, calcCols[j], n, 1).setBackground(C_CALC_BG).setFontColor(null);
+  }
+}
