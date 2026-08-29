@@ -1,3 +1,12 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<!-- ลิงก์และการพิมพ์ต้องหลุดออกจาก iframe ของ Apps Script ไม่งั้นเปิดไม่ขึ้น -->
+<base target="_top">
+</head>
+<body>
+
 <style>
 :root{
   --ink:#15181d; --gray:#6b7280; --line:#e3e6ea; --bg:#f5f6f8; --card:#fff;
@@ -211,3 +220,6 @@ var STAFF_EMAIL = "<?= staffEmail ?>";
 <?!= include_('Parse'); ?>
 <?!= include_('Label'); ?>
 <?!= include_('App'); ?>
+
+</body>
+</html>

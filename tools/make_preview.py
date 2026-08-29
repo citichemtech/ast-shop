@@ -138,10 +138,23 @@ def main():
     mock = (MOCK.replace("__BOOT__", json.dumps(BOOT, ensure_ascii=False))
                 .replace("__ORDERS__", json.dumps(ORDERS, ensure_ascii=False)))
 
-    html = ('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width, initial-scale=1">'
-            '<title>ตัวอย่างหน้าคีย์ออเดอร์ (ข้อมูลสมมติ)</title></head><body>'
-            + mock + page + '</body></html>')
+    # ตัวจริงมีหัวเอกสารของตัวเองแล้ว (และ HtmlService เป็นคนเติม viewport ให้ตอนเสิร์ฟ)
+    # ที่นี่จึงเติม viewport กับ title ลงใน <head> เดิม แล้วแทรกของจำลองหลัง <body>
+    # ห้ามครอบ <html> ซ้อนอีกชั้น ไม่งั้นที่ทดสอบก็ไม่ใช่หน้าเดียวกับที่เอาไปวางจริง
+    if page.lstrip().startswith("<!DOCTYPE"):
+        extra = ('<meta name="viewport" content="width=device-width, initial-scale=1">'
+                 '<title>ตัวอย่างหน้าคีย์ออเดอร์ (ข้อมูลสมมติ)</title>')
+        html, n = re.subn(r"</head>", extra + "</head>", page, count=1)
+        if not n:
+            sys.exit("มี <!DOCTYPE> แต่ไม่เจอ </head> — โครงไฟล์เปลี่ยนไป")
+        html, n = re.subn(r"<body[^>]*>", lambda m: m.group(0) + mock, html, count=1)
+        if not n:
+            sys.exit("มี <!DOCTYPE> แต่ไม่เจอ <body> — โครงไฟล์เปลี่ยนไป")
+    else:
+        html = ('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                '<title>ตัวอย่างหน้าคีย์ออเดอร์ (ข้อมูลสมมติ)</title></head><body>'
+                + mock + page + '</body></html>')
     out.write_text(html, encoding="utf-8")
     print("เขียน %s (%.0f KB)" % (out, len(html.encode("utf-8")) / 1024))
 

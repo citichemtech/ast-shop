@@ -52,9 +52,14 @@ def main():
     page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub, index)
     if n == 0:
         sys.exit("ไม่เจอ include_() ใน Index.html — โครงไฟล์เปลี่ยนไป")
-    head = ("<!-- สร้างจาก apps-script/ ด้วย tools/bundle.py — อย่าแก้ที่นี่\n"
-            "     แก้ที่ไฟล์ต้นฉบับแล้วสั่ง bundle ใหม่ -->\n")
-    (out / "Index.html").write_text(head + page, encoding="utf-8")
+    # หมายเหตุต้องอยู่ "หลัง" <!DOCTYPE html> — อะไรก็ตามที่มาก่อนหัวเอกสาร
+    # ทำให้เบราว์เซอร์เก่าตกไปโหมด quirks แล้วหน้าจอเพี้ยน
+    note = ("\n<!-- สร้างจาก apps-script/ ด้วย tools/bundle.py — อย่าแก้ที่นี่\n"
+            "     แก้ที่ไฟล์ต้นฉบับแล้วสั่ง bundle ใหม่ -->")
+    page, k = re.subn(r"<!DOCTYPE html>", lambda m: m.group(0) + note, page, count=1)
+    if not k:
+        sys.exit("ไม่เจอ <!DOCTYPE html> ใน Index.html — หัวเอกสารหายไป")
+    (out / "Index.html").write_text(page, encoding="utf-8")
 
     # ---- appsscript.json ----
     (out / "appsscript.json").write_text(
