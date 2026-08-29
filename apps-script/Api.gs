@@ -25,29 +25,28 @@ function allowExtra_() {
 }
 
 /**
- * ใครที่แชร์ชีทให้แบบแก้ไขได้ ถือว่าใช้แอปได้
+ * ใครเปิดชีทของร้านได้ คนนั้นใช้แอปได้
  *
- * ทำแบบนี้เพราะมันตรงกับความจริงอยู่แล้ว — คนที่แก้ชีทได้ ก็ทำทุกอย่างที่แอปทำได้อยู่ดี
- * ผลคือเจ้าของร้านไม่ต้องมานั่งดูแลรายชื่อซ้ำสองที่ **แค่แชร์ชีทให้พนักงาน ก็ใช้แอปได้เลย**
- * และไม่ต้องรู้ว่าโดเมนบริษัทเป็น Google Workspace หรือเปล่า
+ * เดิมตรงนี้อ่านรายชื่อผู้แก้ไขจาก Drive มาเทียบ ซึ่งพังเงียบ ๆ กับของจริง:
+ * แอป deploy แบบ "ทำงานในชื่อผู้ใช้ที่เข้าถึง" ดังนั้น DriveApp จึงถามในนามพนักงาน
+ * ไม่ใช่ในนามเจ้าของ และคนที่เป็นแค่ผู้แก้ไขมักอ่านรายชื่อผู้ร่วมงานไม่ได้
+ * ผลคือได้รายชื่อว่าง แล้วปฏิเสธคนที่เจ้าของแชร์ชีทให้เรียบร้อยแล้วจริง ๆ
+ *
+ * จึงเปลี่ยนมาถามตรง ๆ ว่า "บัญชีนี้เปิดชีทได้ไหม" ให้ Google ตอบเอง ไม่ต้องอ่าน ACL
+ * ตรงกับความจริงกว่าเดิมด้วย เพราะสิ่งที่แอปทำได้ก็คือสิ่งที่บัญชีนั้นทำกับชีทได้อยู่แล้ว
+ * ส่วนการเขียนยังมี Google กันอีกชั้น คนที่มีสิทธิ์แค่ดูจะบันทึกออเดอร์ไม่ผ่านอยู่ดี
  */
-function sheetEditors_() {
-  var cache = CacheService.getScriptCache();
-  var hit = cache.get('editors');
-  if (hit) return hit.split(',');
-  var out = [];
+function canOpenSheet_() {
+  var cache = CacheService.getUserCache();      // แคชรายคน ไม่ใช่ก้อนเดียวใช้ร่วมกันทั้งระบบ
+  if (cache.get('sheetOk') === '1') return true;
   try {
-    var f = DriveApp.getFileById(SHEET_ID);
-    var list = f.getEditors().concat(f.getOwner() ? [f.getOwner()] : []);
-    for (var i = 0; i < list.length; i++) {
-      var e = String(list[i].getEmail() || '').trim().toLowerCase();
-      if (e && out.indexOf(e) < 0) out.push(e);
-    }
+    SpreadsheetApp.openById(SHEET_ID).getName();
   } catch (err) {
-    Logger.log('อ่านรายชื่อคนที่แชร์ชีทไม่ได้: ' + err.message);
+    Logger.log('เปิดชีทในนามผู้ใช้ไม่ได้: ' + err.message);
+    return false;   // ไม่แคชคำว่า "ไม่ได้" — พอเจ้าของแชร์ชีทให้ ต้องเข้าได้ทันทีไม่ต้องรอ
   }
-  cache.put('editors', out.join(','), 300);   // จำไว้ 5 นาที ไม่ต้องถาม Drive ทุกครั้ง
-  return out;
+  cache.put('sheetOk', '1', 300);
+  return true;
 }
 
 /**
@@ -55,7 +54,7 @@ function sheetEditors_() {
  * ห้ามแก้ให้ผ่านเมื่ออีเมลว่าง เพราะนั่นคือกรณีที่คนนอกเข้ามาพอดี
  *
  * ผ่านได้ 3 ทาง — ทางไหนก็ได้
- *   1. แชร์ชีทให้แล้ว (ทางปกติ ไม่ต้องตั้งอะไรเพิ่ม)
+ *   1. เปิดชีทของร้านได้ (ทางปกติ — เจ้าของแชร์ชีทให้ ก็ใช้ได้เลย)
  *   2. อีเมลลงท้ายด้วยโดเมนบริษัท
  *   3. มีชื่อใน ALLOW_EMAILS ที่ Script Properties
  */
@@ -65,7 +64,7 @@ function requireStaff_() {
     throw new Error('ระบบไม่ทราบว่าคุณเป็นใคร — ตอน deploy ให้เลือก "ทำงานในชื่อ: ' +
       'ผู้ใช้ที่เข้าถึงเว็บแอป" แล้วเปิดลิงก์ใหม่อีกครั้ง');
   }
-  if (sheetEditors_().indexOf(email) > -1) return email;
+  if (canOpenSheet_()) return email;
 
   var suffix = '@' + ALLOW_DOMAIN;
   var inDomain = ALLOW_DOMAIN && email.length > suffix.length &&
