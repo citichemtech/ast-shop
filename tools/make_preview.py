@@ -119,15 +119,17 @@ def main():
     out = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "out" / "preview.html"
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    index = (GS / "Index.html").read_text(encoding="utf-8")
+    # รับ Index.html ที่รวมไฟล์แล้วได้ด้วย เพื่อพิสูจน์ว่าตัวที่เอาไปวางจริงยังทำงานได้
+    src = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else GS / "Index.html"
+    index = src.read_text(encoding="utf-8")
 
     def sub_include(m):
         name = m.group(1)
         return (GS / (name + ".html")).read_text(encoding="utf-8")
 
     page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
-    if n != 4:
-        sys.exit("คาดว่าจะมี include 4 อัน แต่เจอ %d อัน — โครง Index.html เปลี่ยนไป" % n)
+    if n not in (0, 4):
+        sys.exit("คาดว่าจะมี include 4 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
 
     page = page.replace('"<?= staffEmail ?>"', json.dumps(BOOT["staff"]))
     if "<?" in page:
