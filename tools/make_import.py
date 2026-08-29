@@ -155,6 +155,19 @@ def main():
     if len(sys.argv) > 5:
         override = json.loads(pathlib.Path(sys.argv[5]).read_text(encoding='utf-8'))
 
+    # ชีทเวอร์ชันก่อน ใช้เป็น "สะพาน" อย่างเดียว
+    # บางบรรทัดในออเดอร์เก็บชื่อไว้แบบตัดหัวทิ้ง ("3.175-22-3.175-45L-1pcs")
+    # แต่มีรหัสของตอนนั้นติดมาด้วย จึงเอารหัสไปเปิดชีทเก่าเพื่อหาชื่อเต็ม
+    # แล้วค่อยเอาชื่อเต็มไปจับคู่กับชีทใหม่ — ไม่ได้เอารหัสเก่าไปลงชีทโดยตรง
+    import openpyxl
+    old_name = {}
+    if len(sys.argv) > 6:
+        wb_old = openpyxl.load_workbook(pathlib.Path(sys.argv[6]), data_only=True)['ฐานสินค้า']
+        for r in range(6, 200):
+            s = wb_old.cell(r, 2).value
+            if s:
+                old_name[str(s).strip()] = str(wb_old.cell(r, 4).value)
+
     import openpyxl
     d = json.loads(backup.read_text(encoding='utf-8'))
     ws = openpyxl.load_workbook(xlsx)['ฐานสินค้า']
@@ -166,6 +179,11 @@ def main():
                           'cost': ws.cell(r, 7).value, 'price': ws.cell(r, 8).value})
     have = {s['sku'] for s in sheet}
     P = {p['id']: p for p in d['products']}
+    by_old_sku = {}
+    for p in d['products']:
+        k = str(p.get('sku') or '').strip()
+        if k and k not in by_old_sku:
+            by_old_sku[k] = p
     problems = []
 
     # ---- ล็อตเคมี + รับเข้าคู่กัน ----
@@ -208,13 +226,29 @@ def main():
         lines, subtotal = [], 0.0
         for ix, it in enumerate(its, 1):
             p = P.get(it.get('pid') or '')
-            sku = (it.get('sku') or (p or {}).get('sku') or '').strip()
+            if not p and it.get('sku'):
+                # บางบรรทัดเก็บชื่อไว้แบบย่อ ("3.175-22-3.175-45L-1pcs")
+                # หารายการเต็มจากคลังสินค้าของแอปเดิมด้วยรหัสของ "แอปเดิม" ก่อน
+                # (ใช้แค่หาชื่อเต็ม ไม่ได้เอารหัสนั้นไปลงชีท)
+                p = by_old_sku.get(str(it['sku']).strip())
             name = (p or {}).get('name') or it.get('name') or ''
-            if sku not in have:
-                m = match_by_name(name, sheet)
-                if m:
-                    sku = m['sku']
-                elif name in override:
+
+            # ห้ามเชื่อรหัส SKU ที่ติดมากับแอปเดิมเด็ดขาด
+            # เจ้าของร้านเรียงรหัสในชีทใหม่ 44 จาก 97 รหัสที่ชื่อเดิมมี ตอนนี้ชี้ไปคนละสินค้า
+            # เช่น SKU-172 เคยเป็น Straight Endmill 2F 2.0-17 ตอนนี้เป็น Micro Square Endmill 0.6-1.2
+            # จับคู่ด้วยชื่อสินค้าอย่างเดียว ชีทคือความจริง
+            m = match_by_name(name, sheet)
+            if not m:
+                # ชื่อบนบรรทัดถูกตัดหัว — เอารหัสของตอนนั้นไปเปิดชีทเก่าหาชื่อเต็มก่อน
+                oldsku = str(it.get('sku') or (p or {}).get('sku') or '').strip()
+                full = old_name.get(oldsku)
+                if full:
+                    m = match_by_name(full, sheet)
+                    if m:
+                        name = full
+            sku = m['sku'] if m else ''
+            if not sku:
+                if name in override:
                     # คนตัดสินใจไว้แล้วว่าชื่อนี้คือ SKU ไหน
                     sku = override[name]
                     if sku != 'NEW' and sku not in have:

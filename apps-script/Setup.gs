@@ -29,6 +29,9 @@ function setup() {
   made.push(setupCutSheet_(ss));
   made.push(setupAppSheet_(ss));
   made.push(setupItemLotColumn_(ss));
+  // ซ่อมให้อัตโนมัติ แต่ห้ามล้มทั้ง setup ถ้าซ่อมไม่ได้ — ส่วนอื่นติดตั้งไปแล้ว
+  try { made.push(repairStockSheet()); }
+  catch (e) { made.push('ซ่อมชีทสต๊อกไม่สำเร็จ: ' + e.message); }
   SpreadsheetApp.flush();
   var msg = 'ติดตั้งเรียบร้อย\n\n' + made.join('\n');
   Logger.log(msg);
@@ -147,6 +150,68 @@ function setupCutSheet_(ss) {
   s.hideColumns(8, 2);
 
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + (CUT_LAST - DATA_ROW + 1) + ' บรรทัด)';
+}
+
+/* ------------------------------------------------- ซ่อมชีทสต๊อกที่ขึ้น #REF! */
+
+/**
+ * ซ่อมสูตรในชีท สต๊อกคงเหลือ ที่พังเป็น #REF!
+ *
+ * ต้นเหตุ: เวลาลบ "ทั้งแถว" ออกจากชีท ฐานสินค้า สูตรของชีทอื่นที่ชี้มาที่แถวนั้น
+ * จะกลายเป็น #REF! ถาวร — ตอนเอาสินค้าออก 33 ตัว ชีทสต๊อกพังไป 38 แถวแบบนี้
+ * ผลคือมูลค่าสต๊อกรวมในชีท สรุปยอดขาย ก็ขึ้น #REF! ตามไปด้วย
+ *
+ * วิธีซ่อม: ชีทนี้เป็นสูตรล้วนทุกช่อง เอาสูตรแถว 6 ที่ยังดีคัดลอกลงมาทับทั้งชีท
+ * อ้างอิงสัมพัทธ์จะขยับตามแถวเอง ทุกแถวจึงกลับไปชี้ ฐานสินค้า แถวตรงกัน
+ *
+ * ปลอดภัยเพราะไม่มีข้อมูลที่คนกรอกเองอยู่ในชีทนี้เลย ทุกช่องคำนวณจากที่อื่นทั้งหมด
+ *
+ * > เลี่ยงปัญหานี้ในอนาคต: เอาสินค้าออกด้วยการ **ลบค่าในช่อง** ไม่ใช่ **ลบทั้งแถว**
+ */
+function repairStockSheet() {
+  var s = sheet_('stock');
+  var cols = s.getLastColumn();
+  var tmpl = s.getRange(DATA_ROW, 1, 1, cols);
+  var f = tmpl.getFormulas()[0];
+
+  if (f.join('').indexOf('#REF') > -1 || f[1].indexOf(SH.prod.name) < 0) {
+    throw new Error('แถว 6 ของชีท ' + SH.stock.name + ' ก็เสียด้วย จึงไม่มีต้นแบบให้ซ่อม ' +
+      '— ต้องแก้แถว 6 ด้วยมือก่อน');
+  }
+
+  var before = countRef_(s, cols);
+  if (!before) return 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
+
+  tmpl.copyTo(s.getRange(DATA_ROW + 1, 1, STOCK_LAST - DATA_ROW, cols));
+  SpreadsheetApp.flush();
+  var after = countRef_(s, cols);
+
+  var extra = repairSummaryRange_();
+  return 'ชีท ' + SH.stock.name + ': ซ่อมสูตร #REF! ' + before + ' ช่อง เหลือ ' + after + extra;
+}
+
+function countRef_(s, cols) {
+  var f = s.getRange(DATA_ROW, 1, STOCK_LAST - DATA_ROW + 1, cols).getFormulas();
+  var n = 0;
+  for (var i = 0; i < f.length; i++) {
+    for (var j = 0; j < f[i].length; j++) if (f[i][j].indexOf('#REF') > -1) n++;
+  }
+  return n;
+}
+
+/**
+ * ช่อง "จำนวน SKU ทั้งหมด" ในชีท สรุปยอดขาย หดช่วงตามแถวที่ถูกลบ
+ * (จาก $B$150 เหลือ $B$117) ถ้าเพิ่มสินค้าเกินแถวนั้นจะนับไม่ครบเงียบ ๆ
+ */
+function repairSummaryRange_() {
+  var s = ss_().getSheetByName('สรุปยอดขาย');
+  if (!s) return '';
+  var cell = s.getRange('B23');
+  var f = String(cell.getFormula() || '');
+  var m = f.match(/COUNTA\('ฐานสินค้า'!\$B\$6:\$B\$(\d+)\)/);
+  if (!m || Number(m[1]) >= STOCK_LAST) return '';
+  cell.setFormula("=COUNTA('ฐานสินค้า'!$B$6:$B$" + STOCK_LAST + ')');
+  return ' · ขยายช่วงนับ SKU ในชีท สรุปยอดขาย จากแถว ' + m[1] + ' เป็น ' + STOCK_LAST;
 }
 
 /* -------------------------------------------------------------- ตั้งค่าแอป */
