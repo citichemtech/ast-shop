@@ -1,0 +1,195 @@
+<script>
+/* ตัวสร้างใบปะหน้าพัสดุ — ยกมาจาก admin.html ทั้งดุ้น ไม่แก้ตรรกะการวาดเลยสักบรรทัด
+   เพราะข้อกำหนดคือใบปะหน้าต้องออกมาเหมือนเดิมทุกจุด
+
+   ของเดิมอ่านค่าจาก CFG (localStorage) ตัวใหม่ป้อน CFG ให้จากชีทแทน
+   โดยคงชื่อฟิลด์เดิมไว้ทุกตัว (sender / codFee / logo / brand)
+   โค้ดข้างล่างจึงไม่ต้องแก้ และผลลัพธ์ที่ออกมาก็เทียบกับของเดิมได้ตรง ๆ */
+function carrierLogo(name){
+  var n=(name||"").toLowerCase();
+  if(n.indexOf("flash")>-1) return CARRIER_LOGOS.flash;
+  if(n.indexOf("kerry")>-1) return CARRIER_LOGOS.kerry;
+  if(n.indexOf("ไปรษณี")>-1||n.indexOf("post")>-1||n.indexOf("ems")>-1) return CARRIER_LOGOS.post;
+  if(n.indexOf("ด่วน")>-1||n.indexOf("ใกล้เคียง")>-1) return CARRIER_LOGOS.moto;
+  return "";
+}
+/* Code128-B barcode as SVG */
+function loadImg(src){
+  return new Promise(function(res){
+    if(!src) return res(null);
+    var im=new Image(); im.onload=function(){res(im)}; im.onerror=function(){res(null)}; im.src=src;
+  });
+}
+function wrapText(ctx,text,maxW){
+  var out=[];
+  String(text||"").split("\n").forEach(function(para){
+    var words=para.split(" "), line="";
+    words.forEach(function(w){
+      var t=line?line+" "+w:w;
+      if(ctx.measureText(t).width>maxW && line){ out.push(line); line=w; } else line=t;
+    });
+    // hard-wrap long Thai strings without spaces
+    while(ctx.measureText(line).width>maxW){
+      var cut=line.length;
+      while(cut>1 && ctx.measureText(line.slice(0,cut)).width>maxW) cut--;
+      out.push(line.slice(0,cut)); line=line.slice(cut);
+    }
+    out.push(line);
+  });
+  return out;
+}
+function drawImgFit(ctx,im,x,y,w,h){
+  if(!im) return;
+  var r=Math.min(w/im.width,h/im.height);
+  var dw=im.width*r, dh=im.height*r;
+  ctx.drawImage(im,x+(w-dw)/2,y+(h-dh)/2,dw,dh);
+}
+async function buildLabel(o){
+  var W=1181,H=1772,pad=30,IN=W-pad*2;
+  var c=document.createElement("canvas"); c.width=W; c.height=H;
+  var x=c.getContext("2d");
+  x.fillStyle="#fff"; x.fillRect(0,0,W,H);
+  x.textBaseline="top";
+  var F=function(sz,w){ return (w||400)+" "+sz+"px Prompt, sans-serif" };
+
+  var s=CFG.sender||{};
+  var isCod=(o.pay==="cod");
+  var codAmt=Number(o.total||0)||(Number(o.amt||0)+Number(CFG.codFee||0));
+  var code=o.track||o.no||o.id||"";
+
+  var carLogo=await loadImg(carrierLogo(o.carrier));
+  var astLogo=await loadImg(CFG.logo);
+
+  /* header box */
+  var hy=pad, hh=210;
+  x.strokeStyle="#000"; x.lineWidth=6;
+  x.strokeRect(pad,hy,IN,hh);
+  if(carLogo) drawImgFit(x,carLogo,pad+14,hy+14,260,hh-28);
+  else { x.fillStyle="#000"; x.font=F(26,600); x.fillText(o.carrier||"",pad+20,hy+80); }
+
+  x.fillStyle="#000"; x.textAlign="center"; x.font=F(30,700);
+  var cx=pad+300+(IN-300-280)/2;
+  x.fillText("CHEMICAL INNOVATION TECHNOLOGY",cx,hy+60);
+  x.fillText("AST CHEM-TOOLING SHOP",cx,hy+110);
+
+  x.textAlign="right"; x.font=F(22,400);
+  x.fillText("เลขที่ใบสั่งซื้อ",W-pad-16,hy+52);
+  x.font=F(34,700); x.fillText(o.no||o.id||"-",W-pad-16,hy+96);
+  x.textAlign="left";
+
+  var y=hy+hh+14;
+  var rule=function(){ x.fillStyle="#1449C4"; x.fillRect(pad,y,IN,7); y+=20; };
+  rule();
+
+  /* sender */
+  if(astLogo) drawImgFit(x,astLogo,pad+4,y,120,120);
+  var tx=pad+140, tw=IN-150;
+  x.fillStyle="#000"; x.font=F(30,700);
+  var ly=y;
+  wrapText(x,"ผู้ส่ง "+(s.name||CFG.brand||""),tw).forEach(function(l){ x.fillText(l,tx,ly); ly+=40; });
+  x.font=F(27,500);
+  ly+=4;
+  wrapText(x,s.addr,tw).forEach(function(l){ x.fillText(l,tx,ly); ly+=38; });
+  x.fillText("เบอร์โทร "+(s.tel||""),tx,ly); ly+=38;
+  y=Math.max(ly+16,y+145);
+  rule();
+
+  /* recipient — ตัวใหญ่กว่าผู้ส่ง เพราะเป็นข้อมูลที่ขนส่งต้องอ่าน */
+  x.font=F(40,700); x.fillText("ผู้รับ "+(o.cust||"-"),pad+4,y);
+  x.font=F(36,600);
+  ly=y+56;
+  wrapText(x,o.addr,IN-10).forEach(function(l){ x.fillText(l,pad+4,ly); ly+=48; });
+  x.font=F(38,700);
+  x.fillText("โทร "+(o.tel||"-"),pad+4,ly); ly+=50;
+  y=ly+16;
+  rule();
+
+  /* barcode + COD */
+  var boxW=330, bcW=IN-boxW-30;
+  var bits=barcodeBits(code);
+  if(bits){
+    var unit=bcW/bits.length, bx=pad+4;
+    x.fillStyle="#000";
+    for(var i=0;i<bits.length;i++){
+      if(bits[i]==="1") x.fillRect(bx+i*unit,y,Math.max(1,unit),110);
+    }
+    x.font=F(24,500); x.textAlign="left";
+    x.fillText(code,pad+4,y+120);
+  }
+  x.font=F(24,400);
+  x.fillText("วันที่สั่งซื้อ : "+(o.date||""),pad+4,y+162);
+
+  var bxx=W-pad-boxW;
+  x.lineWidth=6; x.strokeStyle="#000"; x.strokeRect(bxx,y-6,boxW,isCod?150:110);
+  x.textAlign="center"; x.fillStyle="#000";
+  if(isCod){
+    x.font=F(34,700); x.fillText("เก็บเงินปลายทาง",bxx+boxW/2,y+16);
+    x.font=F(40,700); x.fillText(baht(codAmt),bxx+boxW/2,y+74);
+  }else{
+    x.font=F(38,700); x.fillText("ไม่ต้องเก็บเงิน",bxx+boxW/2,y+26);
+  }
+  x.textAlign="left";
+  y=y+200;
+  rule();
+
+  /* items */
+  x.textAlign="center"; x.font=F(30,700); x.fillStyle="#000";
+  x.fillText("รายการสินค้า",W/2,y); y+=52;
+  x.textAlign="left";
+  var c1=pad+4, c2=pad+90, c3=W-pad-170;
+  var row=function(a,b,cc,bold,h){
+    x.strokeStyle="#1449C4"; x.lineWidth=3;
+    x.strokeRect(c1,y,IN-8,h);
+    x.beginPath(); x.moveTo(c2,y); x.lineTo(c2,y+h); x.moveTo(c3,y); x.lineTo(c3,y+h); x.stroke();
+    x.fillStyle="#000"; x.font=F(25,bold?600:400);
+    x.textAlign="center"; x.fillText(a,(c1+c2)/2,y+h/2+9);
+    x.textAlign="left";
+    var lines=wrapText(x,b,c3-c2-24);
+    var sy=y+h/2+9-((lines.length-1)*17);
+    lines.forEach(function(l){ x.fillText(l,c2+12,sy); sy+=34; });
+    x.textAlign="center"; x.fillText(cc,(c3+W-pad-4)/2,y+h/2+9);
+    x.textAlign="left";
+    y+=h;
+  };
+  row("#","สินค้า","จำนวน",true,56);
+  var all=(o.items&&o.items.length)?o.items:[{name:o.pname||"-",qty:o.qty||0}];
+  /* จำนวนรวมต้องนับจากรายการทั้งหมด ไม่ใช่เฉพาะที่พิมพ์ลงกระดาษ */
+  var tq=0; all.forEach(function(it){ tq+=Number(it.qty)||0 });
+  /* กระดาษพิมพ์ได้ 4 บรรทัด ถ้ามีมากกว่านั้นพิมพ์ 3 แล้วบอกว่าเหลืออีกกี่รายการ ไม่ตัดทิ้งเงียบ ๆ */
+  var its=all.length>4?all.slice(0,3):all;
+  its.forEach(function(it,ix){ row(String(ix+1), it.name||"-", String(it.qty||0), false, 92); });
+  if(all.length>4){
+    var restN=all.length-3, restQ=0;
+    all.slice(3).forEach(function(it){ restQ+=Number(it.qty)||0 });
+    row("", "และอีก "+restN+" รายการ", String(restQ), false, 92);
+  }
+  if(Number(o.disc)>0) row("", "ส่วนลด", "-"+baht(o.disc), false, 56);
+  x.strokeStyle="#1449C4"; x.lineWidth=3; x.strokeRect(c1,y,IN-8,56);
+  x.beginPath(); x.moveTo(c3,y); x.lineTo(c3,y+56); x.stroke();
+  x.fillStyle="#000"; x.font=F(25,600); x.textAlign="right";
+  x.fillText("จำนวนรวม",c3-16,y+37);
+  x.textAlign="center"; x.font=F(28,700);
+  x.fillText(String(tq||o.qty||0),(c3+W-pad-4)/2,y+38);
+  x.textAlign="left";
+
+  /* footer */
+  var fy=H-pad-190;
+  x.fillStyle="#EDEDED";
+  x.beginPath(); x.roundRect ? x.roundRect(pad,fy,IN,170,20) : x.rect(pad,fy,IN,170); x.fill();
+  x.fillStyle="#000"; x.textAlign="center"; x.font=F(22,400);
+  x.fillText("พิมพ์ติดหน้าพัสดุนี้และติดลงบนกล่องพัสดุ",W/2,fy+30);
+  x.fillText("*หากมีปัญหาเกี่ยวกับสินค้ากรุณาติดต่อบริษัทที่ท่านสั่งซื้อสินค้าโดยตรง",W/2,fy+70);
+  x.fillText("และหากพัสดุตีกลับ กรุณานำส่งตามชื่อผู้ฝากส่ง",W/2,fy+110);
+  x.textAlign="left";
+
+  return c.toDataURL("image/png");
+}
+function barcodeBits(txt){
+  txt=String(txt||"").replace(/[^\x20-\x7E]/g,"");
+  if(!txt) return "";
+  var codes=[104], sum=104;
+  for(var i=0;i<txt.length;i++){ var v=txt.charCodeAt(i)-32; codes.push(v); sum+=v*(i+1); }
+  codes.push(sum%103); codes.push(106);
+  return codes.map(function(cc){return C128[cc]}).join("");
+}
+</script>

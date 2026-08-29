@@ -1,0 +1,200 @@
+<script>
+/* ตัวอ่านข้อความสรุปออเดอร์จากไลน์ — ยกมาจาก admin.html ทั้งดุ้น
+   ผ่านชุดทดสอบ tools/t_parse_unit.js มาแล้ว จึงไม่แตะตรรกะ
+   อ่านสินค้าจาก CFG.products ซึ่งตัวใหม่ป้อนให้จากชีท (id = SKU) */
+function toNum(v){ var n=Number(String(v==null?"":v).replace(/[,฿\s]/g,"")); return isFinite(n)?n:0 }
+/* ปี พ.ศ. (>2400) แปลงเป็น ค.ศ. ให้ */
+function ceYear(y){ y=Number(y); if(y<100) y+=2000; return y>2400 ? y-543 : y }
+function toISODate(str){
+  var m=String(str||"").match(/(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  if(m) return ceYear(m[1])+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[3]).slice(-2);
+  m=String(str||"").match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  if(m) return ceYear(m[3])+"-"+("0"+m[2]).slice(-2)+"-"+("0"+m[1]).slice(-2);
+  return "";
+}
+function digitsOnly(s){ return String(s||"").replace(/\D/g,"") }
+function isThaiPhone(s){ return /^0\d{8,9}$/.test(digitsOnly(s)) }
+/* แยกที่อยู่ไทย: ต./ตำบล/แขวง · อ./อำเภอ/เขต · จังหวัด · รหัสไปรษณีย์ 5 หลัก */
+function splitThaiAddr(lines){
+  var r={addr:"",tambon:"",amphoe:"",province:"",zip:""}, rest=[];
+  lines.forEach(function(raw){
+    var ln=String(raw||"").trim(); if(!ln) return;
+    var touched=false;
+    var mz=ln.match(/(?:^|\s)(\d{5})(?:\s|$)/);
+    if(mz){ r.zip=mz[1]; ln=ln.replace(mz[0]," "); touched=true; }
+    var mt=ln.match(/(?:ตำบล|แขวง|ต\.)\s*([^\s,]+)/);
+    if(mt){ r.tambon=mt[1]; ln=ln.replace(mt[0]," "); touched=true; }
+    var ma=ln.match(/(?:อำเภอ|เขต|อ\.)\s*([^\s,]+)/);
+    if(ma){ r.amphoe=ma[1]; ln=ln.replace(ma[0]," "); touched=true; }
+    var mp=ln.match(/(?:จังหวัด|จ\.)\s*([^\s,]+)/);
+    if(mp){ r.province=mp[1]; ln=ln.replace(mp[0]," "); touched=true; }
+    ln=ln.replace(/\s{2,}/g," ").trim();
+    /* บรรทัดที่มีรหัสไปรษณีย์ ส่วนที่เหลือคือชื่อจังหวัด ถ้ายังไม่ได้จังหวัดมาจากที่อื่น */
+    if(touched && ln && !r.province && !/\d/.test(ln) && ln.length<=30){ r.province=ln; ln=""; }
+    if(ln) rest.push(ln);
+  });
+  r.addr=rest.join("\n");
+  return r;
+}
+/* อ่านจำนวนจากบรรทัดราคา เช่น "1 ชุด 10 ดอก 750 บาท" -> {pack:1, piece:10}
+   เก็บไว้ทั้งสองแบบ เพราะร้านขายทั้งแบบชิ้นเดียวและแบบชุด 10 ดอก */
+function qtyFromLine(ln){
+  var rp=/(\d+(?:\.\d+)?)\s*(?:ดอก|ชิ้น|อัน|ตัว|เส้น|ใบ|ก้าน|ท่อน)/g;
+  var rk=/(\d+(?:\.\d+)?)\s*(?:ชุด|กล่อง|แพ็ค|แพ็ก|โหล|ถุง|ห่อ|ขวด|กระป๋อง|แกลลอน)/g;
+  var m, piece=0, pack=0;
+  while((m=rp.exec(ln))) piece=Number(m[1]);
+  while((m=rk.exec(ln))) pack=Number(m[1]);
+  return {piece:piece, pack:pack};
+}
+/* จำนวนชิ้นต่อหน่วยขายที่เขียนไว้ในชื่อสินค้า เช่น "(10pcs)" -> 10 */
+function packSize(p){
+  var k=(String(p&&p.name||"")+" "+String(p&&p.code||"")).toLowerCase().replace(/\s+/g,"");
+  var m=k.match(/(\d+)pcs/);
+  return m?Number(m[1]):0;
+}
+/* จับคู่สินค้ากับของจริงในร้าน — ต้องเหลือตัวเดียวเท่านั้นถึงจะเลือกให้
+   เจอหลายตัวจะคัดด้วยจำนวนชิ้นต่อชุดที่เขียนไว้ในข้อความ (ไม่ใช่การเดา)
+   ถ้ายังเหลือหลายตัวหรือไม่เจอเลย ปล่อยว่างให้พนักงานเลือกเอง
+   คืน {p, qty} โดย qty คือจำนวนตาม "หน่วยขาย" ของสินค้าตัวนั้น
+   — สินค้าขายเป็นชุด 10 ดอก สั่ง 1 ชุด 10 ดอก => 1 (ไม่ใช่ 10)
+   — สินค้าขายเป็นดอกเดี่ยว สั่ง 10 ดอก      => 10 */
+function matchProduct(name,variant,piece,pack){
+  var key=function(x){ return String(x||"").toLowerCase().replace(/[×✕✖x]/g,"*").replace(/[()\[\]]/g,"").replace(/\s+/g,"") };
+  var kn=key(name), kv=key(variant);
+  if(!kn && !kv) return null;
+  var hit=(CFG.products||[]).filter(function(p){
+    var k=key(p.name)+"|"+key(p.code)+"|"+key(p.sku);
+    return (!kn || k.indexOf(kn)>-1) && (!kv || k.indexOf(kv)>-1);
+  });
+  piece=Number(piece)||0; pack=Number(pack)||0;
+  /* จำนวนชิ้นต่อหน่วยขายที่ลูกค้าสั่ง เช่น "1 ชุด 10 ดอก" = 10 ชิ้น/ชุด · "3 ดอก" = 1 ชิ้น/หน่วย */
+  var per=(pack>0 && piece>0 && piece%pack===0) ? piece/pack : (piece>0 ? 1 : 0);
+  if(hit.length>1 && per>0){
+    var narrow=hit.filter(function(p){ return (packSize(p)||1)===per });
+    if(narrow.length) hit=narrow;
+  }
+  if(hit.length!==1) return null;
+  var ps=packSize(hit[0])||1;
+  return {p:hit[0], qty: ps>1 ? (pack||Math.round((piece||ps)/ps)) : (piece||pack||0)};
+}
+function parseSummaryText(t){
+  var L=String(t).replace(/\r/g,"").split("\n"), o={items:[]}, addrLines=[], cur=null, inAddr=false;
+  var plain=function(ln){ return /^[\u0E00-\u0E7Fa-zA-Z0-9]/.test(ln) };
+  var bare=function(ln){ return ln.replace(/^[^\u0E00-\u0E7Fa-zA-Z0-9]+/,"").trim() };
+  var money=function(ln){ var m=ln.match(/([\d,]+(?:\.\d+)?)\s*(?:บาท|฿)?\s*$/); return m?toNum(m[1]):0 };
+  var head=function(ln,e){ return ln.indexOf(e)===0 };
+  for(var i=0;i<L.length;i++){
+    var ln=L[i].trim();
+    if(!ln){ if(inAddr && addrLines.length) inAddr=false; continue; }
+    var b=bare(ln);
+    if(/^ที่อยู่(จัดส่ง|ผู้รับ)?\s*[:：]?\s*$/.test(b)){ inAddr=true; continue; }
+    if(/^ที่อยู่(จัดส่ง|ผู้รับ)?\s*[:：]/.test(b)){ inAddr=true; var r0=b.split(/[:：]/).slice(1).join(":").trim(); if(r0) addrLines.push(r0); continue; }
+    if(/(รวมค่าสินค้า|ยอดรวมสินค้า|ราคาสินค้า|ค่าสินค้า)/.test(b)){ inAddr=false; o.amt=money(b); continue; }
+    if(/(ค่าจัดส่ง|ค่าขนส่ง|ค่าส่ง)/.test(b)){ inAddr=false; o.ship=money(b); continue; }
+    if(/(ยอดชำระทั้งหมด|ยอดชำระ|ยอดสุทธิ|ยอดรวมทั้งสิ้น|รวมทั้งสิ้น)/.test(b)){ inAddr=false; o.total=money(b); continue; }
+    if(/ส่วนลด/.test(b)){ inAddr=false; o.disc=money(b); continue; }
+    if(/วันที่/.test(b)){ inAddr=false; var d0=toISODate(b); if(d0) o.date=d0; continue; }
+    if(/(วิธีชำระ|ชำระเงิน|การชำระ)\s*[:：]/.test(b)){ inAddr=false; o.pay=/ปลายทาง|COD/i.test(b)?"cod":(/โอน/.test(b)?"transfer":""); continue; }
+    if(/(ขนส่ง|จัดส่งโดย)\s*[:：]/.test(b)){ inAddr=false; o.carrier=b.split(/[:：]/).slice(1).join(":").trim(); continue; }
+    if(/หมายเหตุ\s*[:：]/.test(b)){ inAddr=false; o.memo=b.split(/[:：]/).slice(1).join(":").trim(); continue; }
+    if(head(ln,"⚙")||head(ln,"🛠")||head(ln,"📦")||head(ln,"🔧")){ inAddr=false; cur={name:b,variant:"",qty:0,price:"",total:"",piece:0,pack:0}; o.items.push(cur); continue; }
+    if(head(ln,"🔹")||head(ln,"🔸")||head(ln,"▫")||head(ln,"◾")){ inAddr=false; if(cur) cur.variant=b; continue; }
+    if(head(ln,"💰")){ inAddr=false; if(cur){ var qf=qtyFromLine(b); cur.piece=qf.piece; cur.pack=qf.pack; cur.qty=qf.piece||qf.pack||0; cur.total=money(b); } continue; }
+    if(head(ln,"👤")||/^ชื่อ(ลูกค้า|ผู้สั่ง|ผู้รับ)?\s*[:：]/.test(b)){
+      inAddr=false; o.cust=b.replace(/^ชื่อ(ลูกค้า|ผู้สั่ง|ผู้รับ)?\s*[:：]\s*/,"").trim(); continue;
+    }
+    if(head(ln,"📞")||head(ln,"☎")||head(ln,"📱")||/^(เบอร์|โทร)/.test(b)){
+      inAddr=false; if(isThaiPhone(b)) o.tel=digitsOnly(b); continue;
+    }
+    if(inAddr){
+      if(isThaiPhone(ln)){ if(!o.tel) o.tel=digitsOnly(ln); continue; }
+      if(!plain(ln)){ inAddr=false; continue; }
+      addrLines.push(ln); continue;
+    }
+    if(plain(ln) && isThaiPhone(ln) && !o.tel){ o.tel=digitsOnly(ln); continue; }
+  }
+  var a=splitThaiAddr(addrLines);
+  o.addr=a.addr; o.tambon=a.tambon; o.amphoe=a.amphoe; o.province=a.province; o.zip=a.zip;
+  o.items.forEach(function(it){
+    var hit=matchProduct(it.name,it.variant,it.piece,it.pack);
+    if(hit){ it.pid=hit.p.id; it.sku=hit.p.sku||""; if(hit.qty>0) it.qty=hit.qty; }
+    delete it.piece; delete it.pack;
+    if(it.qty>0 && toNum(it.total)) it.price=Math.round((toNum(it.total)/it.qty)*100)/100;
+  });
+  o.qty=o.items.reduce(function(n,it){return n+(Number(it.qty)||0)},0);
+  if(o.amt===undefined && o.items.length) o.amt=o.items.reduce(function(n,it){return n+toNum(it.total)},0);
+  o.pname=o.items.length?o.items[0].name:"";
+  o.pid=(o.items[0]&&o.items[0].pid)||"";
+  if(o.pay===undefined) o.pay="";
+  o.vat=0; o.taxinfo="";
+  return o;
+}
+function parseOrderText(txt){
+  var t=String(txt||"").replace(/\r/g,""), L=t.split("\n"), o={};
+  /* ข้อความที่แอปสร้างเองใช้ทางเดิม · ข้อความสรุปแบบอิโมจิใช้ทางใหม่ */
+  if(!/ชื่อผู้สั่ง|ยอดรวมสินค้า/.test(t) && /ยอดชำระทั้งหมด|รวมค่าสินค้า|📍|ที่อยู่จัดส่ง/.test(t)) return parseSummaryText(t);
+  var grab=function(re){var m=t.match(re);return m?m[1].trim():""};
+  o.no      = grab(/คำสั่งซื้อ\s*([A-Za-z0-9\-]+)/);
+  o.cust    = grab(/ชื่อผู้สั่ง\s*[:：]\s*(.+)/);
+  o.tel     = grab(/เบอร์โทร\s*[:：]\s*(.+)/);
+  o.carrier = grab(/ขนส่ง\s*[:：]\s*(.+)/);
+  o.memo    = grab(/หมายเหตุ\s*[:：]\s*(.+)/);
+  var pay   = grab(/ชำระเงิน\s*[:：]\s*(.+)/);
+  o.pay = /ปลายทาง|COD/i.test(pay) ? "cod" : "transfer";
+
+  var num=function(re){var m=t.match(re);return m?Number(m[1].replace(/[,฿\s]/g,"")):0};
+  o.amt   = num(/ยอดรวมสินค้า\s*฿?\s*([\d,\.]+)/);
+  o.total = num(/ยอดสุทธิ\s*฿?\s*([\d,\.]+)/);
+
+  /* ที่อยู่ = บรรทัดหลัง "ที่อยู่จัดส่ง :" จนเจอหัวข้อถัดไป */
+  var addr=[], on=false;
+  for(var i=0;i<L.length;i++){
+    var ln=L[i];
+    if(/ที่อยู่จัดส่ง\s*[:：]/.test(ln)){on=true; var rest=ln.split(/[:：]/).slice(1).join(":").trim(); if(rest)addr.push(rest); continue;}
+    if(on){
+      if(/^\s*$/.test(ln)&&addr.length) {on=false; continue;}
+      if(/^(ชำระเงิน|ขนส่ง|ออกใบกำกับ|หมายเหตุ|รบกวน|จะโอน)/.test(ln.trim())){on=false; continue;}
+      if(ln.trim()) addr.push(ln.trim());
+    }
+  }
+  o.addr=addr.join("\n");
+
+  /* รายการสินค้า */
+  o.items=[]; var totQty=0;
+  for(var j=0;j<L.length;j++){
+    var m=L[j].match(/^\s*\d+\)\s*(.+)$/);
+    if(!m) continue;
+    var nm=m[1].replace(/\s*\[[^\]]*\]\s*$/,"").trim();
+    var q=1, k=j;
+    while(k<L.length && k<j+3){
+      var qm=L[k].match(/x\s*(\d+)\s*=/);
+      if(qm){q=Number(qm[1]); break;}
+      k++;
+    }
+    if(!nm && L[j+1]) nm=L[j+1].trim();
+    o.items.push({name:nm, qty:q});
+    totQty+=q;
+  }
+  o.qty=totQty||1;
+  var tm=t.match(/ขอใบกำกับภาษี[\s\S]*?(?=\n\s*\n|หมายเหตุ|รบกวน|จะโอน|$)/);
+  if(tm){ o.taxinfo=tm[0].replace(/^.*ขอใบกำกับภาษี\s*/,"").trim(); o.vat=1; }
+  else { o.taxinfo=""; o.vat=0; }
+  o.pname=o.items.length?o.items[0].name:"";
+  return o;
+}
+/* เลือกขนส่งใน <select> จากชื่อที่อ่านได้ — ตรงตัวก่อน แล้วค่อยเทียบคำแรก */
+function pickCarrier(sel,want){
+  if(!sel||!want) return false;
+  want=String(want).trim().toLowerCase();
+  for(var i=0;i<sel.options.length;i++){
+    if(sel.options[i].text.trim().toLowerCase()===want){ sel.selectedIndex=i; return true }
+  }
+  for(var j=0;j<sel.options.length;j++){
+    var opt=sel.options[j].text.trim().toLowerCase();
+    if(!opt||opt.indexOf("ไม่ระบุ")>-1) continue;
+    var key=opt.split(" ")[0];
+    if(key && (want.indexOf(key)>-1 || opt.indexOf(want.split(" ")[0])>-1)){ sel.selectedIndex=j; return true }
+  }
+  return false;
+}
+</script>

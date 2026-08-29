@@ -7,3 +7,6 @@ fixture.html
 backup*.json
 __pycache__/
 *.pyc
+
+# ไฟล์ที่ประกอบขึ้นมาเพื่อทดสอบหน้าจอ สร้างใหม่ได้ด้วย tools/make_preview.py
+out/

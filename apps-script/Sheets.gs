@@ -224,7 +224,7 @@ function appCfg_() {
   var s = ss_().getSheetByName(SH.app.name);
   var out = {
     sender: { name: '', addr: '', tel: '' },
-    shipFee: 0, freeOver: 0, codFee: 0,
+    shipFee: 0, freeOver: 0, codFee: 0, line: '',
     track: {}
   };
   if (!s) return out;
@@ -238,6 +238,7 @@ function appCfg_() {
     else if (k === 'ค่าจัดส่งเริ่มต้น') out.shipFee = Number(val || 0);
     else if (k === 'ส่งฟรีเมื่อยอดถึง') out.freeOver = Number(val || 0);
     else if (k === 'ค่าธรรมเนียมเก็บปลายทาง') out.codFee = Number(val || 0);
+    else if (k === 'ลิงก์ LINE ของร้าน') out.line = String(val || '');
 
     var car = String(v[i][3] || '').trim();
     if (car) out.track[car] = String(v[i][4] || '').trim();
