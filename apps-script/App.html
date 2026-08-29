@@ -38,6 +38,12 @@ function call(fn, args, done, fail){
 
 function boot(){
   $("#who").textContent = STAFF_EMAIL;
+  $("#btn-paste-open").onclick = function(){
+    var b = $("#paste-box"), open = b.style.display === "";
+    b.style.display = open ? "none" : "";
+    this.textContent = open ? "วางที่อยู่จากแชท" : "ซ่อนช่องวางข้อความ";
+    if (!open) $("#paste").focus();
+  };
   /* โลโก้บนหัวจอ ใส่ก่อนโหลดชีทเลย จะได้ไม่วูบตอนเปิด
      ใช้ตราของระบบตัดสต๊อก ถ้าไม่มีค่อยตกมาใช้โลโก้ร้าน */
   var hdLogo = (typeof APP_LOGO !== "undefined" && APP_LOGO) ? APP_LOGO
@@ -111,7 +117,11 @@ function addItem(v){
    +'<input class="i-std" readonly tabindex="-1" style="background:#f2f4f7;color:var(--gray)"></div>'
    +'<div><label style="font-size:11.5px;color:var(--gray)">ราคาขายจริง</label>'
    +'<input class="i-price" type="number" inputmode="decimal" min="0" placeholder="ปล่อยว่าง" value="'+(v.price||"")+'"></div>'
-   +'</div><div class="lotline"></div>';
+   +'</div>'
+   /* ของแถมต้องเป็นรายการสินค้าจริง ไม่ใช่ข้อความลอย ๆ สต๊อกจะได้ถูกตัดตามไปด้วย
+      ว่าแถมอะไรไปกี่ชิ้น — ติ๊กช่องนี้แล้วราคาขายจริงกลายเป็น 0 */
+   +'<label class="giftck"><input type="checkbox" class="i-gift"'+(v.gift?" checked":"")+'> แถมฟรี (ราคา 0 แต่ยังตัดสต๊อก)</label>'
+   +'<div class="lotline"></div>';
   $("#items").appendChild(d);
 
   d.querySelector(".rm").onclick = function(){
@@ -121,6 +131,12 @@ function addItem(v){
   d.querySelector(".i-sku").onchange = function(){ recalc() };
   d.querySelector(".i-qty").oninput  = function(){ recalc() };
   d.querySelector(".i-price").oninput= function(){ recalc() };
+  d.querySelector(".i-gift").onchange = function(){
+    var pr = d.querySelector(".i-price");
+    if (this.checked) { pr.value = "0"; pr.readOnly = true; pr.style.background = "#f2f4f7"; }
+    else { pr.value = ""; pr.readOnly = false; pr.style.background = ""; }
+    recalc();
+  };
   renumber();
   return d;
 }
@@ -132,7 +148,7 @@ function readItems(){
     return {
       sku:   r.querySelector(".i-sku").value,
       qty:   r.querySelector(".i-qty").value,
-      price: r.querySelector(".i-price").value
+      price: r.querySelector(".i-gift").checked ? "0" : r.querySelector(".i-price").value
     };
   });
 }
@@ -566,34 +582,76 @@ function trackUrlOf(carrier, track){
 
 /* ข้อความแจ้งเลขพัสดุ — ตัวอักษรเหมือนของเดิมทุกตัว */
 function shipMsg(o){
-  var url=trackUrlOf(o.carrier,o.track);
-  var t="📦 จัดส่งสินค้าเรียบร้อยแล้ว\n\n"
-   +"สวัสดีคุณ "+(o.cust||"ลูกค้า")+"\n"
-   +"ออเดอร์หมายเลข\n"
-   +"🧾 "+(o.no||"-")+"\n\n"
-   +"ทางร้านได้จัดส่งสินค้าเรียบร้อยแล้ว ✅\n\n"
-   +"🚚 ขนส่ง: "+(o.carrier||"-")+"\n"
-   +"🔎 เลขพัสดุ: "+(o.track||"-")+"\n"
-   +"📅 วันที่จัดส่ง: "+(thaiDate(o.date)||"-")+"\n";
-  if(url) t+="\nสามารถติดตามสถานะพัสดุได้ที่:\n"+url+"\n";
-  t+="\nขอบคุณที่อุดหนุนสินค้าของเราค่ะ 🙏";
+  /* รูปแบบเดียวกับที่ร้านส่งอยู่จริง ปิดท้ายด้วยขอฝากรีวิว */
+  var t = "📦 แจ้งเลขพัสดุสินค้า\n\n"
+   + "📅 วันที่ " + dmy_(o.date) + "\n\n"
+   + "🚛 ขนส่ง: " + (o.carrier||"-") + "\n\n"
+   + "📦 เลขพัสดุ: " + (o.track||"-") + "\n\n"
+   + "ขอบพระคุณที่อุดหนุนสินค้าจากทางร้านนะคะ 🙏💙 "
+   + "หากได้รับสินค้าเรียบร้อยแล้ว รบกวนแจ้งให้ทางร้านทราบ "
+   + "และหากพึงพอใจในสินค้าและการบริการ ฝากรีวิว ⭐⭐⭐⭐⭐ เป็นกำลังใจให้ทางร้านด้วยนะคะ";
+  var url = trackUrlOf(o.carrier, o.track);
+  if (url) t += "\n\nติดตามพัสดุ: " + url;
   return t;
 }
 
 /* ข้อความสรุปออเดอร์สำหรับส่งให้ลูกค้าตอนสั่ง */
+/**
+ * ข้อความสรุปออเดอร์ที่แอดมินส่งกลับให้ลูกค้า
+ *
+ * ยกรูปแบบมาจากที่ร้านพิมพ์เองในเพจทุกวัน — ของจริงหน้าตาแบบนี้
+ *
+ *   🛠 ชื่อรุ่น            ← ขึ้นครั้งเดียว ถ้าหลายไซซ์เป็นรุ่นเดียวกัน
+ *   🔷 ขนาด
+ *   💰 ราคา×จำนวน = รวม
+ *
+ * เหตุผลที่ต้องเหมือนเป๊ะ: ลูกค้าเก่าคุ้นกับหน้าตานี้แล้ว และแอดมินจะได้
+ * กดคัดลอกส่งได้เลยโดยไม่ต้องมานั่งแก้ทีละบรรทัด
+ */
+function splitName_(name){
+  /* ตัดชื่อสินค้าเป็น "รุ่น" กับ "ขนาด" ที่ตัวเลขขนาดตัวแรก
+     เช่น "End Mill Corn cut 2F  3.0*15*3.175*38L (1pcs)"
+          → รุ่น "End Mill Corn cut 2F" · ขนาด "3.0*15*3.175*38L (1pcs)" */
+  var m = /\d+(\.\d+)?\s*[*×xX]/.exec(name || "");
+  if (!m || !m.index) return { fam: (name||"").trim(), size: "" };
+  return {
+    fam:  name.slice(0, m.index).replace(/[\/\-\s]+$/, "").trim(),
+    size: name.slice(m.index).trim()
+  };
+}
+
+function dmy_(iso){
+  /* ข้อความที่ส่งลูกค้าใช้ 29/08/2026 ตามที่ร้านพิมพ์เอง ไม่ใช่ปี พ.ศ.
+     (ใบปะหน้ายังใช้ thaiDate เหมือนเดิม ไม่ไปแตะ) */
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso||""));
+  return m ? m[3] + "/" + m[2] + "/" + m[1] : String(iso||"");
+}
+
+function num_(n){
+  /* 89 ไม่ใช่ 89.00 · 89.5 ยังเป็น 89.5 — ข้อความที่ส่งลูกค้าต้องอ่านง่าย */
+  n = Math.round(Number(n||0) * 100) / 100;
+  return String(n);
+}
+
 function orderMsg(o){
-  var t="🧾 สรุปคำสั่งซื้อ\n📅 วันที่ "+thaiDate(o.date)+"\n\n"
-   +"👤 "+(o.cust||"-")+"\n";
-  if(o.tel)  t+="📞 "+o.tel+"\n";
-  if(o.addr) t+="\n📍 ที่อยู่จัดส่ง\n"+o.addr+"\n";
-  t+="\n";
+  var t = "📦 สรุปออเดอร์ลูกค้า\n📅 วันที่ " + dmy_(o.date) + "\n\n";
+  var lastFam = null;
   (o.items||[]).forEach(function(it){
-    t+="⚙️ "+(it.name||it.sku)+"\n💰 "+it.qty+" "+(it.unit||"ชิ้น")+" "+baht(it.total)+"\n";
+    var p = splitName_(it.name || it.sku);
+    if (p.fam && p.fam !== lastFam) { t += "🛠 " + p.fam + "\n"; lastFam = p.fam; }
+    if (p.size) t += "🔷 " + p.size + "\n";
+    /* ราคา 0 = ของแถม เขียนให้ลูกค้าอ่านรู้เรื่องว่าได้อะไรฟรีไปบ้าง */
+    if (Number(it.price) === 0)
+      t += "🎁 แถมฟรี " + num_(it.qty) + " " + (it.unit || "ชิ้น") + "\n";
+    else
+      t += "💰 " + num_(it.price) + "×" + num_(it.qty) + " = " + num_(it.total) + "\n";
   });
-  t+="\n💵 รวมค่าสินค้า : "+baht(o.subtotal)+"\n";
-  if(Number(o.discount)>0) t+="🏷️ ส่วนลด : "+baht(o.discount)+"\n";
-  t+="🚚 ค่าจัดส่ง : "+baht(o.ship)+"\n";
-  t+="✅ ยอดชำระทั้งหมด : "+baht(o.net)+"\n";
+  t += "━━━━━━━━━━━━━\n";
+  t += "💵 รวมค่าสินค้า : " + num_(o.subtotal) + " บาท\n";
+  if (Number(o.discount) > 0) t += "🏷️ ส่วนลด : " + num_(o.discount) + " บาท\n";
+  t += "🚚 ค่าจัดส่ง : " + num_(o.ship) + " บาท\n";
+  t += "✅ ยอดชำระทั้งหมด : " + num_(o.net) + " บาท\n";
+  if (o.addr) t += "━━━━━━━━━━━━━\n📍 ที่อยู่จัดส่ง\n" + o.addr + "\n";
   return t;
 }
 

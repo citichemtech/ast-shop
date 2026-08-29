@@ -118,6 +118,8 @@ textarea{resize:vertical}
 .empty{text-align:center;color:var(--gray);padding:34px 12px;font-size:14px}
 .empty b{display:block;color:var(--ink);margin-bottom:5px}
 .load{text-align:center;color:var(--gray);padding:40px 12px}
+.giftck{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--gray)}
+.giftck input{width:auto;transform:scale(1.15)}
 /* ปุ่มทำงานต่อหลังบันทึก — พิมพ์ใบปะหน้า / ส่งข้อความ อยู่ในกล่องเขียวเลย
    ไม่ต้องไปตามหาใบที่เพิ่งคีย์ในแท็บออเดอร์อีกที */
 .okact{display:flex;gap:8px;margin-top:11px}
@@ -142,14 +144,18 @@ textarea{resize:vertical}
     <div class="load" id="booting">กำลังโหลดข้อมูลสินค้าจากชีท…</div>
 
     <div id="form" style="display:none">
-      <div class="card">
-        <div class="fld">
-          <label>วางข้อความสรุปออเดอร์จากไลน์</label>
-          <textarea id="paste" rows="4" placeholder="คัดลอกข้อความจากแชทลูกค้ามาวางตรงนี้ แล้วกดปุ่มด้านล่าง"></textarea>
-          <button class="mini" id="btn-parse" style="margin-top:8px">อ่านข้อความให้</button>
-          <div class="hint">ระบบจะแสดงให้ตรวจก่อน ยังไม่กรอกลงฟอร์มจนกว่าจะกด “ใช้ข้อมูลนี้”</div>
+      <!-- ออเดอร์จากเพจ แอดมินเป็นคนสรุปเอง ไม่ได้อ่านจากข้อความลูกค้า
+           กล่องนี้จึงย่อเก็บไว้ เปิดใช้เฉพาะตอนลูกค้าวางที่อยู่มาเป็นก้อน -->
+      <div class="card" id="paste-card">
+        <button class="mini" id="btn-paste-open" style="width:100%">วางที่อยู่จากแชท</button>
+        <div id="paste-box" style="display:none;margin-top:10px">
+          <div class="fld">
+            <textarea id="paste" rows="4" placeholder="วางข้อความที่ลูกค้าส่งมา เช่น ชื่อ เบอร์ ที่อยู่"></textarea>
+            <button class="mini" id="btn-parse" style="margin-top:8px">อ่านข้อความให้</button>
+            <div class="hint">ระบบจะแสดงให้ตรวจก่อน ยังไม่กรอกลงฟอร์มจนกว่าจะกด “ใช้ข้อมูลนี้”</div>
+          </div>
+          <div id="pv-slot"></div>
         </div>
-        <div id="pv-slot"></div>
       </div>
 
       <div class="card">
