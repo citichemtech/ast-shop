@@ -117,7 +117,11 @@ function addItem(v){
    +'<input class="i-std" readonly tabindex="-1" style="background:#f2f4f7;color:var(--gray)"></div>'
    +'<div><label style="font-size:11.5px;color:var(--gray)">ราคาขายจริง</label>'
    +'<input class="i-price" type="number" inputmode="decimal" min="0" placeholder="ปล่อยว่าง" value="'+(v.price||"")+'"></div>'
-   +'</div><div class="lotline"></div>';
+   +'</div>'
+   /* ของแถมต้องเป็นรายการสินค้าจริง ไม่ใช่ข้อความลอย ๆ สต๊อกจะได้ถูกตัดตามไปด้วย
+      ว่าแถมอะไรไปกี่ชิ้น — ติ๊กช่องนี้แล้วราคาขายจริงกลายเป็น 0 */
+   +'<label class="giftck"><input type="checkbox" class="i-gift"'+(v.gift?" checked":"")+'> แถมฟรี (ราคา 0 แต่ยังตัดสต๊อก)</label>'
+   +'<div class="lotline"></div>';
   $("#items").appendChild(d);
 
   d.querySelector(".rm").onclick = function(){
@@ -127,6 +131,12 @@ function addItem(v){
   d.querySelector(".i-sku").onchange = function(){ recalc() };
   d.querySelector(".i-qty").oninput  = function(){ recalc() };
   d.querySelector(".i-price").oninput= function(){ recalc() };
+  d.querySelector(".i-gift").onchange = function(){
+    var pr = d.querySelector(".i-price");
+    if (this.checked) { pr.value = "0"; pr.readOnly = true; pr.style.background = "#f2f4f7"; }
+    else { pr.value = ""; pr.readOnly = false; pr.style.background = ""; }
+    recalc();
+  };
   renumber();
   return d;
 }
@@ -138,7 +148,7 @@ function readItems(){
     return {
       sku:   r.querySelector(".i-sku").value,
       qty:   r.querySelector(".i-qty").value,
-      price: r.querySelector(".i-price").value
+      price: r.querySelector(".i-gift").checked ? "0" : r.querySelector(".i-price").value
     };
   });
 }
@@ -263,7 +273,6 @@ function save(){
   }
   if(!$("#f-cust").value.trim()){ showErr("ยังไม่ได้ใส่ชื่อลูกค้า"); return }
 
-  var gift = $("#f-gift").value.trim();
   var payload = {
     clientKey: CLIENT_KEY,
     date: $("#f-date").value, channel: $("#f-channel").value,
@@ -273,9 +282,7 @@ function save(){
     vat: /^รับ/.test($("#f-vat").value||""),
     discount: Number($("#f-disc").value)||0,
     ship: Number($("#f-ship").value)||0,
-    status: $("#f-status").value,
-    note: [gift ? "แถมฟรี " + gift : "", $("#f-note").value.trim()]
-            .filter(function(x){ return x }).join(" · "),
+    status: $("#f-status").value, note: $("#f-note").value.trim(),
     items: items
   };
 
@@ -293,7 +300,7 @@ function save(){
     /* งานยังไม่จบตรงที่บันทึก — ต้องพิมพ์ใบปะหน้าและส่งข้อความให้ลูกค้าต่อ
        ฟอร์มถูกล้างไปแล้ว ถ้าไม่เก็บใบที่เพิ่งบันทึกไว้ตรงนี้ ต้องไปตามหาในแท็บออเดอร์
        จึงจับใบนี้ไว้แล้ววางปุ่มไว้ให้ทำต่อได้เลย */
-    LAST_SAVED = orderFromForm_(payload, r, gift);
+    LAST_SAVED = orderFromForm_(payload, r);
     showOk("บันทึกแล้ว เลขที่ <b>"+esc(r.no)+"</b> · ยอดสุทธิ "+baht(r.net)+lots
       +"<br>สต๊อกและกำไรในชีทอัปเดตให้เองแล้ว"
       +'<div class="okact">'
@@ -322,7 +329,7 @@ function save(){
  * ใบปะหน้ากับข้อความส่งลูกค้าจะได้ใช้ตัวเดียวกันได้ ไม่ต้องเขียนสองทาง
  * ยอดเงินใช้ตัวที่ชีทคำนวณกลับมา ไม่คิดเองซ้ำ จะได้ไม่มีทางเพี้ยนจากชีท
  */
-function orderFromForm_(payload, r, gift){
+function orderFromForm_(payload, r){
   var by = {};
   CFG.products.forEach(function(p){ by[p.sku] = p });
   var items = payload.items.map(function(it){
@@ -337,12 +344,12 @@ function orderFromForm_(payload, r, gift){
            carrier:payload.carrier, track:payload.track,
            vat: payload.vat ? "รับ VAT" : "ไม่รับ VAT",
            discount:payload.discount, ship:payload.ship,
-           status:payload.status, note:payload.note, gift:gift,
+           status:payload.status, note:payload.note,
            subtotal:r.subtotal, net:r.net, items:items };
 }
 
 function resetForm(){
-  ["f-cust","f-tel","f-addr","f-track","f-note","f-gift"].forEach(function(id){ $("#"+id).value="" });
+  ["f-cust","f-tel","f-addr","f-track","f-note"].forEach(function(id){ $("#"+id).value="" });
   $("#f-disc").value=0;
   $("#f-ship").value=0; $("#f-ship").dataset.touched="";
   $("#paste").value=""; $("#pv-slot").innerHTML="";
@@ -633,11 +640,12 @@ function orderMsg(o){
     var p = splitName_(it.name || it.sku);
     if (p.fam && p.fam !== lastFam) { t += "🛠 " + p.fam + "\n"; lastFam = p.fam; }
     if (p.size) t += "🔷 " + p.size + "\n";
-    t += "💰 " + num_(it.price) + "×" + num_(it.qty) + " = " + num_(it.total) + "\n";
+    /* ราคา 0 = ของแถม เขียนให้ลูกค้าอ่านรู้เรื่องว่าได้อะไรฟรีไปบ้าง */
+    if (Number(it.price) === 0)
+      t += "🎁 แถมฟรี " + num_(it.qty) + " " + (it.unit || "ชิ้น") + "\n";
+    else
+      t += "💰 " + num_(it.price) + "×" + num_(it.qty) + " = " + num_(it.total) + "\n";
   });
-  /* ใบที่อ่านกลับมาจากชีท ของแถมอยู่ในหมายเหตุ ดึงกลับออกมาให้ */
-  var gift = o.gift || (/แถมฟรี\s*([^·]+)/.exec(o.note || "") || [])[1];
-  if (gift) t += "แถมฟรี " + String(gift).trim() + "\n";
   t += "━━━━━━━━━━━━━\n";
   t += "💵 รวมค่าสินค้า : " + num_(o.subtotal) + " บาท\n";
   if (Number(o.discount) > 0) t += "🏷️ ส่วนลด : " + num_(o.discount) + " บาท\n";

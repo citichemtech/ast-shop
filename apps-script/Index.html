@@ -118,6 +118,8 @@ textarea{resize:vertical}
 .empty{text-align:center;color:var(--gray);padding:34px 12px;font-size:14px}
 .empty b{display:block;color:var(--ink);margin-bottom:5px}
 .load{text-align:center;color:var(--gray);padding:40px 12px}
+.giftck{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--gray)}
+.giftck input{width:auto;transform:scale(1.15)}
 /* ปุ่มทำงานต่อหลังบันทึก — พิมพ์ใบปะหน้า / ส่งข้อความ อยู่ในกล่องเขียวเลย
    ไม่ต้องไปตามหาใบที่เพิ่งคีย์ในแท็บออเดอร์อีกที */
 .okact{display:flex;gap:8px;margin-top:11px}
@@ -184,11 +186,6 @@ textarea{resize:vertical}
         <div class="two">
           <div class="fld"><label>ภาษี</label><select id="f-vat"></select></div>
           <div class="fld"><label>สถานะ</label><select id="f-status"></select></div>
-        </div>
-        <div class="fld">
-          <label>ของแถม (ถ้ามี)</label>
-          <input id="f-gift" placeholder="เช่น Adapter 6.35-3.175 1 ตัว">
-          <div class="hint">พิมพ์ไว้ตรงนี้ จะขึ้นเป็นบรรทัด “แถมฟรี …” ในข้อความที่ส่งลูกค้า</div>
         </div>
         <div class="fld"><label>หมายเหตุ</label><input id="f-note"></div>
 

@@ -118,6 +118,20 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ใส่ราคาขายจริงแล้วยอดเปลี่ยนตาม', await page.textContent('#s-sub'), '฿2,950.00');
   eq('ค่าส่งที่พิมพ์เองไม่ถูกทับ', await page.inputValue('#f-ship'), '50');
 
+  console.log('\n   ติ๊กแถมฟรี — ราคาเป็น 0 แต่ยังต้องตัดสต๊อก');
+  await page.click('#btn-add');
+  await page.selectOption('#items .it:nth-child(3) .i-sku', 'SKU-161');
+  await page.fill('#items .it:nth-child(3) .i-qty', '1');
+  await page.waitForTimeout(120);
+  var subBefore = await page.textContent('#s-sub');
+  await page.check('#items .it:nth-child(3) .i-gift');
+  await page.waitForTimeout(150);
+  eq('ราคาขายจริงถูกตั้งเป็น 0', await page.inputValue('#items .it:nth-child(3) .i-price'), '0');
+  truthy('ของแถมไม่ถูกคิดเงิน', (await page.textContent('#s-sub')) !== subBefore);
+  eq('ยอดสินค้ากลับไปเท่าก่อนเพิ่มของแถม', await page.textContent('#s-sub'), '฿2,950.00');
+  await page.click('#items .it:nth-child(3) .rm');
+  await page.waitForTimeout(120);
+
   console.log('\n   เปิด VAT');
   await page.selectOption('#f-vat', 'รับ VAT');
   await page.waitForTimeout(120);
