@@ -25,22 +25,55 @@ function allowExtra_() {
 }
 
 /**
+ * ใครที่แชร์ชีทให้แบบแก้ไขได้ ถือว่าใช้แอปได้
+ *
+ * ทำแบบนี้เพราะมันตรงกับความจริงอยู่แล้ว — คนที่แก้ชีทได้ ก็ทำทุกอย่างที่แอปทำได้อยู่ดี
+ * ผลคือเจ้าของร้านไม่ต้องมานั่งดูแลรายชื่อซ้ำสองที่ **แค่แชร์ชีทให้พนักงาน ก็ใช้แอปได้เลย**
+ * และไม่ต้องรู้ว่าโดเมนบริษัทเป็น Google Workspace หรือเปล่า
+ */
+function sheetEditors_() {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('editors');
+  if (hit) return hit.split(',');
+  var out = [];
+  try {
+    var f = DriveApp.getFileById(SHEET_ID);
+    var list = f.getEditors().concat(f.getOwner() ? [f.getOwner()] : []);
+    for (var i = 0; i < list.length; i++) {
+      var e = String(list[i].getEmail() || '').trim().toLowerCase();
+      if (e && out.indexOf(e) < 0) out.push(e);
+    }
+  } catch (err) {
+    Logger.log('อ่านรายชื่อคนที่แชร์ชีทไม่ได้: ' + err.message);
+  }
+  cache.put('editors', out.join(','), 300);   // จำไว้ 5 นาที ไม่ต้องถาม Drive ทุกครั้ง
+  return out;
+}
+
+/**
  * ปิดประตูแบบ fail-closed — ถ้าระบบไม่รู้ว่าใครเรียก ให้ปฏิเสธไว้ก่อน
  * ห้ามแก้ให้ผ่านเมื่ออีเมลว่าง เพราะนั่นคือกรณีที่คนนอกเข้ามาพอดี
+ *
+ * ผ่านได้ 3 ทาง — ทางไหนก็ได้
+ *   1. แชร์ชีทให้แล้ว (ทางปกติ ไม่ต้องตั้งอะไรเพิ่ม)
+ *   2. อีเมลลงท้ายด้วยโดเมนบริษัท
+ *   3. มีชื่อใน ALLOW_EMAILS ที่ Script Properties
  */
 function requireStaff_() {
   var email = whoami_();
   if (!email) {
-    throw new Error('ระบบไม่ทราบว่าคุณเป็นใคร — ให้ลงชื่อเข้าใช้ Google ด้วยบัญชีบริษัท ' +
-      '(@' + ALLOW_DOMAIN + ') แล้วเปิดลิงก์ใหม่อีกครั้ง');
+    throw new Error('ระบบไม่ทราบว่าคุณเป็นใคร — ตอน deploy ให้เลือก "ทำงานในชื่อ: ' +
+      'ผู้ใช้ที่เข้าถึงเว็บแอป" แล้วเปิดลิงก์ใหม่อีกครั้ง');
   }
+  if (sheetEditors_().indexOf(email) > -1) return email;
+
   var suffix = '@' + ALLOW_DOMAIN;
-  var inDomain = email.length > suffix.length &&
+  var inDomain = ALLOW_DOMAIN && email.length > suffix.length &&
     email.substring(email.length - suffix.length) === suffix;
-  if (!inDomain && allowExtra_().indexOf(email) < 0) {
-    throw new Error('บัญชี ' + email + ' ไม่มีสิทธิ์ใช้ระบบนี้ — ติดต่อผู้ดูแลให้เพิ่มสิทธิ์ก่อน');
-  }
-  return email;
+  if (inDomain || allowExtra_().indexOf(email) > -1) return email;
+
+  throw new Error('บัญชี ' + email + ' ยังไม่มีสิทธิ์ใช้ระบบนี้ — ' +
+    'ให้เจ้าของร้านแชร์ชีทให้บัญชีนี้แบบ "ผู้แก้ไข" แล้วลองใหม่');
 }
 
 /* ------------------------------------------------------------------ หน้าเว็บ */

@@ -279,6 +279,7 @@ function build(opts) {
 function load(fixture, opts) {
   opts = opts || {};
   var props = {};
+  var cache = {};
   var lockHeld = { v: false };
   var ctx = {
     console: console, Date: Date, Math: Math, JSON: JSON, String: String, Number: Number,
@@ -314,6 +315,29 @@ function load(fixture, opts) {
       }
     },
     Logger: { log: function () {} },
+    CacheService: {
+      getScriptCache: function () {
+        return {
+          get: function (k) { return Object.prototype.hasOwnProperty.call(cache, k) ? cache[k] : null; },
+          put: function (k, v) { cache[k] = String(v); }
+        };
+      }
+    },
+    /* คนที่แชร์ชีทให้ — ของจริงอ่านจาก Drive ตัวจำลองคืนรายชื่อคงที่
+       จงใจไม่ใส่อีเมลนอกบริษัท ข้อทดสอบเรื่องสิทธิ์จะได้ยังมีความหมาย */
+    DriveApp: {
+      getFileById: function () {
+        return {
+          getEditors: function () {
+            return (opts.editors || ['owner@chem-inno-tech.com']).map(function (e) {
+              return { getEmail: function () { return e; } };
+            });
+          },
+          getOwner: function () { return null; }
+        };
+      }
+    },
+
     HtmlService: {
       createHtmlOutput: function (h) { return { setTitle: function () { return { html: h }; }, html: h }; },
       createTemplateFromFile: function () { return { evaluate: function () { return { setTitle: function () { return this; }, addMetaTag: function () { return this; } }; } }; },

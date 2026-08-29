@@ -315,5 +315,22 @@ eq('มีชื่อผู้ส่ง', boot14.app.sender.name, 'AST Chem-Too
 eq('มีค่าจัดส่งเริ่มต้น', boot14.app.shipFee, 50);
 eq('มีลิงก์ติดตามของ Flash', /flashexpress/.test(boot14.app.track['Flash Express'] || ''), true);
 
+/* ============================== 15. แชร์ชีทให้ใคร คนนั้นใช้แอปได้ */
+console.log('\n15. สิทธิ์เดินตามการแชร์ชีท');
+var fx15 = FS.build();
+var api15 = FS.load(fx15, { email: 'freelance@gmail.com', editors: ['freelance@gmail.com'] });
+eq('อีเมลนอกบริษัทแต่ถูกแชร์ชีทให้ ใช้ได้', api15.createOrder(order()).ok, true);
+eq('ชื่อผู้บันทึกเป็นอีเมลจริง', fx15.sheets['ออเดอร์_หัวบิล'].cell(6, 19).v, 'freelance@gmail.com');
+
+var fx15b = FS.build();
+throws('ไม่ถูกแชร์ชีท และไม่ใช่โดเมนบริษัท → เข้าไม่ได้', function () {
+  FS.load(fx15b, { email: 'stranger@gmail.com', editors: ['owner@chem-inno-tech.com'] }).createOrder(order());
+}, 'ยังไม่มีสิทธิ์');
+eq('คนนอกยิงมาแล้วไม่มีอะไรลงชีท', rowsWith(fx15b.sheets['ออเดอร์_หัวบิล'], 1), []);
+
+throws('อ่านอีเมลไม่ออก → ปฏิเสธไว้ก่อน', function () {
+  FS.load(FS.build(), { email: '' }).createOrder(order());
+}, 'ไม่ทราบว่าคุณเป็นใคร');
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
