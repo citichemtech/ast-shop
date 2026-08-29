@@ -37,6 +37,8 @@ textarea{resize:vertical}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .wrap{padding:14px;max-width:720px;margin:0 auto}
+/* จอกว้าง (จอพับ แท็บเล็ต คอมออฟฟิศ) ใช้พื้นที่เต็ม ไม่เหลือขอบว่างสองข้าง */
+@media (min-width:900px){ .wrap{max-width:1100px;padding:18px 24px} }
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
 .fld{margin-bottom:11px}
 .fld label{display:block;font-size:12.5px;color:var(--gray);margin-bottom:5px;font-weight:600}
@@ -124,7 +126,7 @@ textarea{resize:vertical}
 </style>
 
 <div class="top">
-  <div class="logo" id="logo">AST</div>
+  <div class="logo" id="logo">STOCK</div>
   <div class="ttl">
     <b id="brand">AST Chem-Tooling</b>
     <span class="who" id="who"></span>

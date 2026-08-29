@@ -38,9 +38,11 @@ function call(fn, args, done, fail){
 
 function boot(){
   $("#who").textContent = STAFF_EMAIL;
-  /* โลโก้ร้าน — รูปเดียวกับที่ใบปะหน้าใช้ ใส่ก่อนโหลดชีทเลย จะได้ไม่วูบตอนเปิด */
-  if (typeof SHOP_LOGO !== "undefined" && SHOP_LOGO)
-    $("#logo").innerHTML = '<img src="' + SHOP_LOGO + '" alt="">';
+  /* โลโก้บนหัวจอ ใส่ก่อนโหลดชีทเลย จะได้ไม่วูบตอนเปิด
+     ใช้ตราของระบบตัดสต๊อก ถ้าไม่มีค่อยตกมาใช้โลโก้ร้าน */
+  var hdLogo = (typeof APP_LOGO !== "undefined" && APP_LOGO) ? APP_LOGO
+             : (typeof SHOP_LOGO !== "undefined" ? SHOP_LOGO : "");
+  if (hdLogo) $("#logo").innerHTML = '<img src="' + hdLogo + '" alt="">';
   call("getBootstrap", [], function(b){
     BOOT = b; APP = b.app || {};
     CFG.products = b.products.map(function(p){
