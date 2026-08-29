@@ -1,0 +1,574 @@
+/**
+ * ทางเข้าของระบบ — หน้าเว็บและฟังก์ชันที่หน้าจอเรียก
+ *
+ * แอปถูกเสิร์ฟจาก Apps Script เอง (HtmlService) ไม่ได้อยู่บน GitHub Pages แล้ว
+ * ผลคือ
+ *   - ล็อกอินเป็นของ Google ล้วน ๆ ไม่มีรหัสฝังในไฟล์ให้ใครอ่านได้อีก
+ *   - หน้าจอกับหลังบ้านอยู่โดเมนเดียวกัน ไม่ต้องยุ่งกับ CORS
+ *   - Session.getActiveUser() บอกได้จริงว่าใครกดบันทึก
+ */
+
+var ALLOW_DOMAIN = 'chem-inno-tech.com';
+
+/* --------------------------------------------------------------- สิทธิ์เข้าใช้ */
+
+function whoami_() {
+  var email = '';
+  try { email = Session.getActiveUser().getEmail() || ''; } catch (e) { email = ''; }
+  return String(email).trim().toLowerCase();
+}
+
+/** รายชื่อเพิ่มเติมที่อนุญาต เก็บที่ Script Properties คีย์ ALLOW_EMAILS คั่นด้วยจุลภาค */
+function allowExtra_() {
+  var raw = PropertiesService.getScriptProperties().getProperty('ALLOW_EMAILS') || '';
+  return raw.toLowerCase().split(/[\s,;]+/).filter(function (x) { return x.indexOf('@') > 0; });
+}
+
+/**
+ * ปิดประตูแบบ fail-closed — ถ้าระบบไม่รู้ว่าใครเรียก ให้ปฏิเสธไว้ก่อน
+ * ห้ามแก้ให้ผ่านเมื่ออีเมลว่าง เพราะนั่นคือกรณีที่คนนอกเข้ามาพอดี
+ */
+function requireStaff_() {
+  var email = whoami_();
+  if (!email) {
+    throw new Error('ระบบไม่ทราบว่าคุณเป็นใคร — ให้ลงชื่อเข้าใช้ Google ด้วยบัญชีบริษัท ' +
+      '(@' + ALLOW_DOMAIN + ') แล้วเปิดลิงก์ใหม่อีกครั้ง');
+  }
+  var suffix = '@' + ALLOW_DOMAIN;
+  var inDomain = email.length > suffix.length &&
+    email.substring(email.length - suffix.length) === suffix;
+  if (!inDomain && allowExtra_().indexOf(email) < 0) {
+    throw new Error('บัญชี ' + email + ' ไม่มีสิทธิ์ใช้ระบบนี้ — ติดต่อผู้ดูแลให้เพิ่มสิทธิ์ก่อน');
+  }
+  return email;
+}
+
+/* ------------------------------------------------------------------ หน้าเว็บ */
+
+function doGet() {
+  var email;
+  try {
+    email = requireStaff_();
+  } catch (err) {
+    return HtmlService.createHtmlOutput(
+      '<div style="font:16px/1.7 system-ui;padding:32px;max-width:520px;margin:auto">' +
+      '<h2 style="margin:0 0 12px">เข้าใช้ระบบไม่ได้</h2>' +
+      '<p>' + escapeHtml_(err.message) + '</p></div>'
+    ).setTitle('AST — เข้าใช้ระบบไม่ได้');
+  }
+  var t = HtmlService.createTemplateFromFile('Index');
+  t.staffEmail = email;
+  return t.evaluate()
+    .setTitle('AST — คีย์ออเดอร์')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+}
+
+function include_(name) {
+  return HtmlService.createHtmlOutputFromFile(name).getContent();
+}
+
+function escapeHtml_(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ------------------------------------------------- ข้อมูลตั้งต้นสำหรับหน้าจอ */
+
+/** สินค้าทั้งหมด + ยอดคงเหลือ + ตัวเลือก dropdown + ล็อตที่ยังมีของ */
+function getBootstrap() {
+  var email = requireStaff_();
+  var cfg = cfgGet_();
+  return {
+    staff: email,
+    shop: cfg.shop,
+    vatRate: cfg.vatRate,
+    lists: cfgLists_(),
+    app: appCfg_(),
+    products: readProducts_(),
+    lots: readLotSummary_(),
+    nextNo: peekNextOrderNo_()
+  };
+}
+
+function readProducts_() {
+  var rows = readAll_('prod');
+  var stock = readStock_();
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var sku = String(rows[i][SH.prod.IN.sku - 1] || '').trim();
+    if (!sku) continue;
+    out.push({
+      sku: sku,
+      group: String(rows[i][SH.prod.IN.group - 1] || ''),
+      name: String(rows[i][SH.prod.IN.name - 1] || ''),
+      unit: String(rows[i][SH.prod.IN.unit - 1] || 'ชิ้น'),
+      perPack: Number(rows[i][SH.prod.IN.perPack - 1] || 1),
+      price: Number(rows[i][SH.prod.IN.price - 1] || 0),
+      remain: stock[sku] === undefined ? null : stock[sku]
+    });
+  }
+  return out;
+}
+
+function readStock_() {
+  var s = sheet_('stock');
+  var last = s.getLastRow();
+  var map = {};
+  if (last < DATA_ROW) return map;
+  var v = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, SH.stock.remain).getValues();
+  for (var i = 0; i < v.length; i++) {
+    var sku = String(v[i][SH.stock.sku - 1] || '').trim();
+    if (sku) map[sku] = Number(v[i][SH.stock.remain - 1] || 0);
+  }
+  return map;
+}
+
+/** ล็อตที่ยังมีของ จัดกลุ่มตาม SKU พร้อมข้อมูลที่ FEFO ต้องใช้ */
+function readLots_() {
+  var s = sheet_('lot');
+  var last = formulaLimit_('lot');
+  var by = {};
+  if (last < DATA_ROW) return by;
+  var v = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, SH.lot.remain).getValues();
+  for (var i = 0; i < v.length; i++) {
+    var sku = String(v[i][SH.lot.IN.sku - 1] || '').trim();
+    var lotNo = String(v[i][SH.lot.IN.lotNo - 1] || '').trim();
+    if (!sku || !lotNo) continue;
+    var exp = v[i][SH.lot.IN.exp - 1];
+    var recv = v[i][SH.lot.IN.recv - 1];
+    (by[sku] = by[sku] || []).push({
+      row: DATA_ROW + i,
+      lotNo: lotNo,
+      exp: exp instanceof Date ? exp.getTime() : null,
+      recv: recv instanceof Date ? recv.getTime() : null,
+      remain: Number(v[i][SH.lot.remain - 1] || 0)
+    });
+  }
+  return by;
+}
+
+/** รูปย่อของล็อตสำหรับหน้าจอ — บอกว่า SKU ไหนคุมล็อต เหลือเท่าไร ใกล้หมดอายุอันไหน */
+function readLotSummary_() {
+  var by = readLots_();
+  var out = {};
+  for (var sku in by) {
+    var lots = fefoSort(by[sku]).filter(function (l) { return l.remain > 0; });
+    var total = 0;
+    for (var i = 0; i < lots.length; i++) total += lots[i].remain;
+    out[sku] = {
+      total: total,
+      next: lots.length ? { lotNo: lots[0].lotNo, exp: lots[0].exp, remain: lots[0].remain } : null,
+      count: lots.length
+    };
+  }
+  return out;
+}
+
+/* ------------------------------------------------------- อ่านออเดอร์ที่บันทึกไว้ */
+
+/**
+ * ออเดอร์ล่าสุด พร้อมรายการสินค้าของแต่ละใบ
+ * ใช้ทำใบปะหน้าพัสดุ · ข้อความแจ้งเลขพัสดุ · หน้ารายการออเดอร์
+ */
+function getOrders(limit) {
+  requireStaff_();
+  limit = Number(limit) || 40;
+
+  var hs = sheet_('head');
+  var hLast = formulaLimit_('head');
+  var heads = [];
+  if (hLast >= DATA_ROW) {
+    var hv = hs.getRange(DATA_ROW, 1, hLast - DATA_ROW + 1, 21).getValues();
+    for (var i = 0; i < hv.length; i++) {
+      var no = String(hv[i][SH.head.IN.no - 1] || '').trim();
+      if (!no) continue;
+      var d = hv[i][SH.head.IN.date - 1];
+      heads.push({
+        no: no,
+        date: d instanceof Date ? isoDate_(d) : String(d || ''),
+        channel: String(hv[i][SH.head.IN.channel - 1] || ''),
+        cust: String(hv[i][SH.head.IN.cust - 1] || ''),
+        tel: String(hv[i][SH.head.IN.tel - 1] || ''),
+        addr: String(hv[i][SH.head.IN.addr - 1] || ''),
+        carrier: String(hv[i][SH.head.IN.carrier - 1] || ''),
+        track: String(hv[i][SH.head.IN.track - 1] || ''),
+        vat: String(hv[i][SH.head.IN.vat - 1] || ''),
+        discount: Number(hv[i][SH.head.IN.discount - 1] || 0),
+        ship: Number(hv[i][SH.head.IN.ship - 1] || 0),
+        status: String(hv[i][SH.head.IN.status - 1] || ''),
+        staff: String(hv[i][SH.head.IN.staff - 1] || ''),
+        note: String(hv[i][SH.head.IN.note - 1] || ''),
+        subtotal: Number(hv[i][SH.head.subtotal - 1] || 0),
+        net: Number(hv[i][SH.head.net - 1] || 0),
+        check: String(hv[i][17] || ''),
+        items: []
+      });
+    }
+  }
+
+  heads.sort(function (a, b) {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return a.no < b.no ? 1 : -1;
+  });
+  heads = heads.slice(0, limit);
+
+  var want = {};
+  for (var h = 0; h < heads.length; h++) want[heads[h].no] = heads[h];
+
+  var is = sheet_('item');
+  var iLast = formulaLimit_('item');
+  if (iLast >= DATA_ROW) {
+    var iv = is.getRange(DATA_ROW, 1, iLast - DATA_ROW + 1, SH.item.lot).getValues();
+    for (var j = 0; j < iv.length; j++) {
+      var ono = String(iv[j][SH.item.IN.no - 1] || '').trim();
+      var owner = want[ono];
+      if (!owner) continue;
+      owner.items.push({
+        sku: String(iv[j][SH.item.IN.sku - 1] || ''),
+        name: String(iv[j][4] || ''),
+        unit: String(iv[j][5] || ''),
+        qty: Number(iv[j][SH.item.IN.qty - 1] || 0),
+        price: Number(iv[j][SH.item.IN.price - 1] || iv[j][7] || 0),
+        total: Number(iv[j][9] || 0),
+        lot: String(iv[j][SH.item.lot - 1] || '')
+      });
+    }
+  }
+  return heads;
+}
+
+function isoDate_(d) {
+  function p(n) { return n < 10 ? '0' + n : '' + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+/**
+ * ใส่เลขพัสดุและสถานะย้อนหลัง — งานที่เกิดหลังบันทึกออเดอร์เสมอ
+ * แก้เฉพาะสองช่องนี้ ช่องอื่นของออเดอร์ไม่ถูกแตะ และลง Log ไว้ว่าใครแก้
+ */
+function setTracking(no, track, status) {
+  var email = requireStaff_();
+  no = String(no || '').trim();
+  if (!no) throw new Error('ไม่ได้บอกว่าจะแก้ออเดอร์ไหน');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var s = sheet_('head');
+    var last = formulaLimit_('head');
+    var v = s.getRange(DATA_ROW, SH.head.IN.no, last - DATA_ROW + 1, 1).getValues();
+    var row = 0;
+    for (var i = 0; i < v.length; i++) if (String(v[i][0]) === no) { row = DATA_ROW + i; break; }
+    if (!row) throw new Error('ไม่พบออเดอร์ ' + no + ' ในชีท');
+
+    var before = String(s.getRange(row, SH.head.IN.track).getValue() || '');
+    var beforeStatus = String(s.getRange(row, SH.head.IN.status).getValue() || '');
+    var patch = {};
+    if (track !== undefined && track !== null) patch.track = String(track).trim();
+    if (status) patch.status = pickFrom_(status, cfgLists_().status, 'สถานะออเดอร์');
+    if (!Object.keys(patch).length) return { ok: true, no: no, changed: false };
+
+    writeRow_('head', row, patch);
+    SpreadsheetApp.flush();
+
+    if (patch.track !== undefined && patch.track !== before) {
+      writeLog_(email, 'ใส่เลขพัสดุ', SH.head.name, no, 'เลขพัสดุ', before, patch.track,
+        'ใส่จากแอปโดย ' + email);
+    }
+    if (patch.status && patch.status !== beforeStatus) {
+      writeLog_(email, 'เปลี่ยนสถานะ', SH.head.name, no, 'สถานะ', beforeStatus, patch.status,
+        'เปลี่ยนจากแอปโดย ' + email);
+    }
+    return { ok: true, no: no, changed: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* -------------------------------------------------------------- เลขที่ออเดอร์ */
+
+/** เลขถัดไปแบบดูเฉย ๆ — ยังไม่จอง ต้องเรียกใต้ lock อีกทีตอนบันทึกจริง */
+function peekNextOrderNo_() {
+  var cfg = cfgGet_();
+  var s = sheet_('head');
+  var last = formulaLimit_('head');
+  var max = 0;
+  if (last >= DATA_ROW) {
+    var v = s.getRange(DATA_ROW, SH.head.IN.no, last - DATA_ROW + 1, 1).getValues();
+    for (var i = 0; i < v.length; i++) {
+      var no = String(v[i][0] || '');
+      if (no.indexOf(cfg.prefix) !== 0) continue;
+      var n = parseInt(no.substring(cfg.prefix.length), 10);
+      if (!isNaN(n) && n > max) max = n;
+    }
+  }
+  return cfg.prefix + pad4_(max + 1);
+}
+
+function pad4_(n) {
+  var s = String(n);
+  while (s.length < 4) s = '0' + s;
+  return s;
+}
+
+/* ------------------------------------------------------------- บันทึกออเดอร์ */
+
+/**
+ * บันทึก 1 ออเดอร์ลงชีท
+ *
+ * ทุกอย่างอยู่ใต้ LockService — คนสองคนกดพร้อมกันจะไม่ได้เลขออเดอร์ซ้ำกัน
+ * ถ้าล้มกลางทาง แถวที่เพิ่งเขียนจะถูกล้างทิ้งทั้งหมด ไม่ทิ้งออเดอร์ครึ่งใบไว้ในชีท
+ *
+ * payload.clientKey ทำให้กดซ้ำหรือเน็ตหลุดแล้วยิงใหม่ ไม่เกิดออเดอร์ซ้ำ
+ */
+function createOrder(payload) {
+  var email = requireStaff_();
+  var p = payload || {};
+
+  var clientKey = String(p.clientKey || '').trim();
+  if (!clientKey) throw new Error('คำขอไม่มี clientKey — ระบบกันบันทึกซ้ำไม่ได้ ไม่บันทึกให้');
+
+  var props = PropertiesService.getScriptProperties();
+  var done = props.getProperty('ck_' + clientKey);
+  if (done) return { ok: true, no: done, duplicate: true };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('มีคนกำลังบันทึกออเดอร์อยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
+  }
+
+  var written = { head: 0, item: [], cut: [] };
+  try {
+    done = props.getProperty('ck_' + clientKey);
+    if (done) return { ok: true, no: done, duplicate: true };
+
+    var plan = planOrder_(p, email);
+    var no = reserveOrderNo_();
+    plan.no = no;
+
+    written = commitOrder_(plan);
+    SpreadsheetApp.flush();
+    verifyOrder_(plan);
+
+    props.setProperty('ck_' + clientKey, no);
+    writeLog_(email, 'บันทึกออเดอร์', SH.head.name, no,
+      'สร้างออเดอร์ใหม่', '', String(plan.items.length) + ' รายการ',
+      'คีย์ออเดอร์จากแอป โดย ' + email);
+
+    return { ok: true, no: no, subtotal: plan.subtotal, net: plan.net, lots: plan.lotNote };
+  } catch (err) {
+    rollback_(written);
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** ตรวจและเตรียมทุกอย่างให้ครบก่อน แล้วค่อยเริ่มเขียน — กันล้มกลางทางตั้งแต่ต้นทาง */
+function planOrder_(p, email) {
+  var cfg = cfgGet_();
+  var lists = cfgLists_();
+
+  var cust = String(p.cust || '').trim();
+  if (!cust) throw new Error('ยังไม่ได้ใส่ชื่อลูกค้า');
+
+  var rawItems = p.items || [];
+  if (!rawItems.length) throw new Error('ออเดอร์นี้ยังไม่มีรายการสินค้า');
+
+  var prods = {};
+  var plist = readProducts_();
+  for (var i = 0; i < plist.length; i++) prods[plist[i].sku] = plist[i];
+
+  var lotsBySku = readLots_();
+  var used = {};   // ตัดไปแล้วเท่าไรในออเดอร์นี้ กันสินค้าตัวเดียวกันหลายบรรทัดแย่งล็อตเดียวกัน
+  var items = [];
+  var cuts = [];
+  var subtotal = 0;
+  var lotNote = [];
+
+  for (var k = 0; k < rawItems.length; k++) {
+    var it = rawItems[k];
+    var sku = String(it.sku || '').trim();
+    var prod = prods[sku];
+    if (!prod) throw new Error('บรรทัดที่ ' + (k + 1) + ': ไม่พบ SKU "' + sku + '" ในฐานสินค้า');
+
+    var qty = Number(it.qty);
+    if (!(qty > 0) || qty !== Math.floor(qty)) {
+      throw new Error('บรรทัดที่ ' + (k + 1) + ' (' + sku + '): จำนวนต้องเป็นจำนวนเต็มมากกว่า 0');
+    }
+
+    var price = (it.price === '' || it.price === null || it.price === undefined)
+      ? null : Number(it.price);
+    if (price !== null && !(price >= 0)) {
+      throw new Error('บรรทัดที่ ' + (k + 1) + ' (' + sku + '): ราคาขายจริงไม่ถูกต้อง');
+    }
+    subtotal += round2_(qty * (price === null ? prod.price : price));
+
+    var lineNo = k + 1;
+    var pool = (lotsBySku[sku] || []).map(function (l) {
+      return { row: l.row, lotNo: l.lotNo, exp: l.exp, recv: l.recv, remain: l.remain - (used[l.row] || 0) };
+    });
+    var pick = fefoPick(pool, qty);
+    if (!pick.ok) {
+      if (pick.reason === 'short') {
+        throw new Error('บรรทัดที่ ' + lineNo + ' (' + sku + ' — ' + prod.name + '): ' +
+          'ล็อตมีของไม่พอ สั่ง ' + qty + ' แต่ในล็อตเหลือรวม ' + pick.have + ' ชิ้น ' +
+          '— ให้บันทึกล็อตที่รับเข้ามาใหม่ก่อน หรือแก้จำนวนในออเดอร์');
+      }
+      throw new Error('บรรทัดที่ ' + lineNo + ' (' + sku + '): จำนวนไม่ถูกต้อง');
+    }
+
+    var expired = fefoExpired(pick.picks, pool);
+    if (expired.length) {
+      var names = expired.map(function (e) { return e.lotNo; }).join(', ');
+      throw new Error('บรรทัดที่ ' + lineNo + ' (' + sku + '): ล็อต ' + names +
+        ' หมดอายุแล้ว ระบบไม่ตัดขายให้ — ให้ปรับลดล็อตนั้นออกที่ชีท ' + SH.recv.name + ' ก่อน');
+    }
+
+    for (var q = 0; q < pick.picks.length; q++) {
+      var pk = pick.picks[q];
+      used[pk.row] = (used[pk.row] || 0) + pk.take;
+      cuts.push({ lineNo: lineNo, sku: sku, lotNo: pk.lotNo, qty: pk.take });
+    }
+    if (pick.tracked) {
+      lotNote.push(sku + ': ' + pick.picks.map(function (x) { return x.lotNo + ' x' + x.take; }).join(', '));
+    }
+
+    items.push({ lineNo: lineNo, sku: sku, qty: qty, price: price, std: prod.price });
+  }
+
+  var date = parseDate_(p.date);
+  var channel = pickFrom_(p.channel, lists.channel, 'ช่องทางขาย');
+  var carrier = pickFrom_(p.carrier, lists.carrier, 'ช่องทางจัดส่ง');
+  var status = pickFrom_(p.status || lists.status[0], lists.status, 'สถานะออเดอร์');
+  var vat = p.vat ? 'รับ VAT' : 'ไม่รับ VAT';
+
+  return {
+    date: date, channel: channel, cust: cust,
+    tel: String(p.tel || '').trim(),
+    addr: String(p.addr || '').trim(),
+    carrier: carrier, track: String(p.track || '').trim(),
+    vat: vat,
+    discount: numOr0_(p.discount), ship: numOr0_(p.ship),
+    status: status, staff: email, note: String(p.note || '').trim(),
+    items: items, cuts: cuts,
+    subtotal: round2_(subtotal),
+    lotNote: lotNote
+  };
+}
+
+/** เขียนจริง — เรียกได้เฉพาะตอนถือ lock อยู่ */
+function commitOrder_(plan) {
+  var written = { head: 0, item: [], cut: [] };
+
+  var hRow = nextRow_('head', SH.head.IN.no);
+  if (!hRow) throw new Error('ชีท ' + SH.head.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
+    formulaLimit_('head') + ') — ต้องลากสูตรลงเพิ่มก่อนจึงบันทึกออเดอร์ใหม่ได้');
+
+  writeRow_('head', hRow, {
+    no: plan.no, date: plan.date, channel: plan.channel, cust: plan.cust,
+    tel: plan.tel, addr: plan.addr, carrier: plan.carrier, track: plan.track,
+    vat: plan.vat, discount: plan.discount, ship: plan.ship,
+    status: plan.status, staff: plan.staff, note: plan.note
+  });
+  written.head = hRow;
+
+  var iRows = nextRows_('item', SH.item.IN.no, plan.items.length);
+  if (!iRows.length) throw new Error('ชีท ' + SH.item.name + ' เหลือที่ว่างไม่พอ ' +
+    plan.items.length + ' บรรทัด (สูตรมีถึงแถว ' + formulaLimit_('item') + ') — ต้องลากสูตรลงเพิ่มก่อน');
+  for (var i = 0; i < plan.items.length; i++) {
+    var it = plan.items[i];
+    writeRow_('item', iRows[i], {
+      no: plan.no, sku: it.sku, qty: it.qty,
+      price: it.price === null ? undefined : it.price
+    });
+    written.item.push(iRows[i]);
+  }
+
+  if (plan.cuts.length) {
+    var cRows = nextRows_('cut', SH.cut.IN.no, plan.cuts.length);
+    if (!cRows.length) throw new Error('ชีท ' + SH.cut.name + ' เหลือที่ว่างไม่พอ ' +
+      plan.cuts.length + ' บรรทัด — ต้องลากสูตรลงเพิ่มก่อน');
+    for (var j = 0; j < plan.cuts.length; j++) {
+      var ct = plan.cuts[j];
+      writeRow_('cut', cRows[j], {
+        no: plan.no, lineNo: ct.lineNo, sku: ct.sku, lotNo: ct.lotNo,
+        qty: ct.qty, date: plan.date
+      });
+      written.cut.push(cRows[j]);
+    }
+  }
+
+  return written;
+}
+
+/**
+ * อ่านกลับมาดูว่าชีทคำนวณได้ตรงกับที่ตั้งใจไหม
+ * จับกรณีที่สูตรในชีทถูกลบหรือถูกเขียนทับไปแล้ว — ถ้าไม่ตรงให้ถอยทั้งใบ ดีกว่าปล่อยยอดผิดค้างไว้
+ */
+function verifyOrder_(plan) {
+  var s = sheet_('head');
+  var row = 0;
+  var last = formulaLimit_('head');
+  var v = s.getRange(DATA_ROW, SH.head.IN.no, last - DATA_ROW + 1, 1).getValues();
+  for (var i = 0; i < v.length; i++) if (String(v[i][0]) === plan.no) { row = DATA_ROW + i; break; }
+  if (!row) throw new Error('บันทึกแล้วแต่หาแถวออเดอร์ ' + plan.no + ' ไม่เจอ — ยกเลิกการบันทึก');
+
+  var got = Number(s.getRange(row, SH.head.subtotal).getValue() || 0);
+  if (Math.abs(got - plan.subtotal) > 0.05) {
+    throw new Error('ยอดสินค้าที่ชีทคำนวณได้ (' + got + ') ไม่ตรงกับที่ควรเป็น (' + plan.subtotal +
+      ') — สูตรในชีทอาจถูกแก้ ระบบยกเลิกการบันทึกใบนี้แล้ว');
+  }
+  plan.net = Number(s.getRange(row, SH.head.net).getValue() || 0);
+  plan.row = row;
+}
+
+/** ล้างเฉพาะแถวที่เพิ่งเขียน และล้างเฉพาะช่องกรอก สูตรของแถวนั้นยังอยู่ครบ */
+function rollback_(written) {
+  try {
+    for (var i = written.cut.length - 1; i >= 0; i--) clearRow_('cut', written.cut[i]);
+    for (var j = written.item.length - 1; j >= 0; j--) clearRow_('item', written.item[j]);
+    if (written.head) clearRow_('head', written.head);
+    SpreadsheetApp.flush();
+  } catch (e) {
+    Logger.log('ถอยกลับไม่สำเร็จ: ' + e.message + ' ' + JSON.stringify(written));
+  }
+}
+
+/** จองเลขออเดอร์ — เรียกได้เฉพาะตอนถือ lock อยู่ */
+function reserveOrderNo_() {
+  return peekNextOrderNo_();
+}
+
+function writeLog_(staff, type, sheetName, ref, field, before, after, why) {
+  var row = nextRow_('log', SH.log.IN.at);
+  if (!row) return;
+  writeRow_('log', row, {
+    at: new Date(), staff: staff, type: type, sheet: sheetName, ref: ref,
+    field: field, before: before, after: after, why: why
+  });
+}
+
+/* ------------------------------------------------------------------- helpers */
+
+function round2_(n) { return Math.round(Number(n) * 100) / 100; }
+
+function numOr0_(v) {
+  var n = Number(v);
+  return isNaN(n) ? 0 : n;
+}
+
+function parseDate_(s) {
+  if (s instanceof Date) return s;
+  var m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return new Date();
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+/** ค่าที่ส่งมาต้องเป็นหนึ่งในตัวเลือกของชีท ตั้งค่า ไม่งั้น dropdown กับสูตรจะเพี้ยน */
+function pickFrom_(v, list, label) {
+  var x = String(v || '').trim();
+  if (!x) return list[0] || '';
+  for (var i = 0; i < list.length; i++) if (list[i] === x) return x;
+  throw new Error(label + ' "' + x + '" ไม่มีในตัวเลือกของชีท ตั้งค่า — ' +
+    'ที่มีคือ ' + list.join(' / '));
+}

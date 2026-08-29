@@ -1,0 +1,676 @@
+<script>
+/* หน้าจอคีย์ออเดอร์
+ *
+ * หลักที่ยึดตลอดไฟล์นี้: บันทึกไม่สำเร็จ ต้องบอกให้เห็นชัดและคงข้อมูลในฟอร์มไว้เสมอ
+ * ห้ามกลืน error เงียบ ๆ เพราะพนักงานจะคิดว่าบันทึกแล้วทั้งที่ยังไม่ได้บันทึก
+ */
+
+var BOOT = null;          /* ข้อมูลจากชีท */
+var APP = {};             /* ตั้งค่าแอป (ผู้ส่ง ค่าส่ง ลิงก์ติดตาม) */
+var ORDERS = [];          /* ออเดอร์ที่โหลดมาล่าสุด */
+var SAVING = false;
+
+/* -------------------------------------------------------------- ข้อความแจ้ง */
+
+function showErr(msg){
+  var b=$("#err"); b.innerHTML=esc(msg); b.classList.add("on");
+  $("#ok").classList.remove("on");
+  b.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function showOk(msg){
+  var b=$("#ok"); b.innerHTML=msg; b.classList.add("on");
+  $("#err").classList.remove("on");
+  b.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function clearMsg(){ $("#err").classList.remove("on"); $("#ok").classList.remove("on") }
+
+/* เรียกฟังก์ชันฝั่งเซิร์ฟเวอร์ — ทุกจุดที่ล้มต้องมีทางออกที่ผู้ใช้เห็น */
+function call(fn, args, done, fail){
+  google.script.run
+    .withSuccessHandler(function(r){ try{ done(r) }catch(e){ showErr("แสดงผลไม่สำเร็จ: "+e.message) } })
+    .withFailureHandler(function(e){
+      var m=(e&&e.message)?e.message:String(e);
+      if(fail) fail(m); else showErr(m);
+    })[fn].apply(null, args||[]);
+}
+
+/* ------------------------------------------------------------------ เริ่มระบบ */
+
+function boot(){
+  $("#who").textContent = STAFF_EMAIL;
+  call("getBootstrap", [], function(b){
+    BOOT = b; APP = b.app || {};
+    CFG.products = b.products.map(function(p){
+      /* รูปทรงเดียวกับสินค้าในแอปเดิม ตัวอ่านข้อความจากไลน์จะได้ใช้ได้โดยไม่ต้องแก้ */
+      return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
+               unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group };
+    });
+    CFG.sender = APP.sender || CFG.sender;
+    CFG.codFee = Number(APP.codFee||0);
+    CFG.logo   = (typeof SHOP_LOGO!=="undefined") ? SHOP_LOGO : "";
+    CFG.brand  = b.shop || "AST Chem-Tooling";
+    CFG.carrierLinks = APP.track || {};
+    CFG.line   = APP.line || "";
+
+    fillSelect("#f-channel", b.lists.channel);
+    fillSelect("#f-carrier", b.lists.carrier);
+    fillSelect("#f-vat",     b.lists.vat);
+    fillSelect("#f-status",  b.lists.status);
+    $("#f-date").value = todayISO();
+    $("#next-no").textContent = b.nextNo;
+
+    $("#booting").style.display="none";
+    $("#form").style.display="";
+    if(!itemRows().length) addItem();
+    recalc();
+  }, function(m){
+    $("#booting").innerHTML='<div style="color:var(--red);line-height:1.7">โหลดข้อมูลจากชีทไม่สำเร็จ<br>'
+      +esc(m)+'<br><br><button class="mini" onclick="location.reload()">ลองใหม่</button></div>';
+  });
+}
+
+function fillSelect(sel, list){
+  $(sel).innerHTML = (list||[]).map(function(x){
+    return '<option value="'+esc(x)+'">'+esc(x)+'</option>';
+  }).join("");
+}
+function todayISO(){
+  var d=new Date(), p=function(n){return n<10?"0"+n:""+n};
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+}
+
+/* --------------------------------------------------------- รายการสินค้าหลายแถว */
+
+function prodOptions(sel){
+  return '<option value="">— เลือกสินค้า —</option>' + CFG.products.map(function(p){
+    var left = (p.remain===null||p.remain===undefined) ? "" : "  (เหลือ "+p.remain+")";
+    return '<option value="'+esc(p.sku)+'"'+(sel===p.sku?" selected":"")+'>'
+         + esc(p.sku+" · "+p.name+left)+'</option>';
+  }).join("");
+}
+function itemRows(){ return $$("#items .it") }
+
+function addItem(v){
+  v = v || {};
+  var d = document.createElement("div");
+  d.className = "it";
+  d.innerHTML =
+    '<div class="hd"><b>รายการที่ <span class="n"></span></b>'
+   +'<button class="mini red rm" type="button">ลบ</button></div>'
+   +'<div class="fld" style="margin-bottom:8px"><select class="i-sku">'+prodOptions(v.sku)+'</select></div>'
+   +'<div class="three">'
+   +'<div><label style="font-size:11.5px;color:var(--gray)">จำนวน</label>'
+   +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||"")+'"></div>'
+   +'<div><label style="font-size:11.5px;color:var(--gray)">ราคามาตรฐาน</label>'
+   +'<input class="i-std" readonly tabindex="-1" style="background:#f2f4f7;color:var(--gray)"></div>'
+   +'<div><label style="font-size:11.5px;color:var(--gray)">ราคาขายจริง</label>'
+   +'<input class="i-price" type="number" inputmode="decimal" min="0" placeholder="ปล่อยว่าง" value="'+(v.price||"")+'"></div>'
+   +'</div><div class="lotline"></div>';
+  $("#items").appendChild(d);
+
+  d.querySelector(".rm").onclick = function(){
+    if(itemRows().length<=1){ toast("ต้องมีสินค้าอย่างน้อย 1 รายการ"); return }
+    d.remove(); renumber(); recalc();
+  };
+  d.querySelector(".i-sku").onchange = function(){ recalc() };
+  d.querySelector(".i-qty").oninput  = function(){ recalc() };
+  d.querySelector(".i-price").oninput= function(){ recalc() };
+  renumber();
+  return d;
+}
+function renumber(){
+  itemRows().forEach(function(r,i){ r.querySelector(".n").textContent = i+1 });
+}
+function readItems(){
+  return itemRows().map(function(r){
+    return {
+      sku:   r.querySelector(".i-sku").value,
+      qty:   r.querySelector(".i-qty").value,
+      price: r.querySelector(".i-price").value
+    };
+  });
+}
+function prodBySku(sku){
+  for(var i=0;i<CFG.products.length;i++) if(CFG.products[i].sku===sku) return CFG.products[i];
+  return null;
+}
+
+/* ---------------------------------------------------------------- คิดยอดรวม */
+
+/* ค่าจัดส่งที่แนะนำ — สูตรเดียวกับแอปเดิม (โอน >= ยอดส่งฟรี = ฟรี) */
+function suggestShip(sub){
+  var base = Number(APP.shipFee||0);
+  return (APP.freeOver && sub >= Number(APP.freeOver)) ? 0 : base;
+}
+
+function recalc(){
+  var sub = 0, need = {};
+  itemRows().forEach(function(r){
+    var sku = r.querySelector(".i-sku").value;
+    var p   = prodBySku(sku);
+    var qty = Number(r.querySelector(".i-qty").value)||0;
+    var ov  = r.querySelector(".i-price").value;
+    r.querySelector(".i-std").value = p ? Number(p.price).toFixed(2) : "";
+    var unit = (ov==="" ? (p?Number(p.price):0) : Number(ov))||0;
+    if(p && qty>0) sub += Math.round(qty*unit*100)/100;
+    if(sku) need[sku] = (need[sku]||0) + qty;
+    lotLine(r, p, sku);
+  });
+  /* สินค้าตัวเดียวกันถูกสั่งหลายแถว ต้องดูยอดรวมทั้งใบด้วย
+     แถวเดียวไม่ต้องเขียนทับ เพราะข้อความรายแถวบอกละเอียดกว่าอยู่แล้ว */
+  var rowsPerSku = {};
+  itemRows().forEach(function(r){
+    var sku = r.querySelector(".i-sku").value;
+    if(sku) rowsPerSku[sku] = (rowsPerSku[sku]||0) + 1;
+  });
+  itemRows().forEach(function(r){
+    var sku = r.querySelector(".i-sku").value;
+    if(!sku || rowsPerSku[sku] < 2) return;
+    var lot = (BOOT&&BOOT.lots)?BOOT.lots[sku]:null;
+    if(lot && need[sku] > lot.total){
+      var el = r.querySelector(".lotline");
+      el.className = "lotline bad";
+      el.textContent = "สินค้าตัวนี้ถูกสั่งหลายแถว รวม "+need[sku]
+        +" ชิ้น แต่ในล็อตเหลือ "+lot.total+" ชิ้น ไม่พอ";
+    }
+  });
+
+  /* เติมค่าจัดส่งที่แนะนำให้ตราบใดที่พนักงานยังไม่ได้พิมพ์เอง
+     พอพิมพ์เองแล้วจะไม่ไปทับ ไม่งั้นค่าที่ตั้งใจกรอกจะหายตอนแก้รายการสินค้า */
+  var shipBox = $("#f-ship");
+  if(!shipBox.dataset.touched) shipBox.value = suggestShip(sub);
+
+  var disc = Number($("#f-disc").value)||0;
+  var ship = Number(shipBox.value)||0;
+  var isVat = /^รับ/.test($("#f-vat").value||"");
+  var vat = isVat ? Math.round((sub-disc)*Number(BOOT?BOOT.vatRate:0)*100)/100 : 0;
+
+  $("#s-sub").textContent  = baht(sub);
+  $("#s-disc").textContent = baht(disc);
+  $("#s-ship").textContent = baht(ship);
+  $("#s-vat").textContent  = baht(vat);
+  $("#s-vat-row").style.display = isVat ? "" : "none";
+  $("#s-net").textContent  = baht(sub-disc+ship+vat);
+}
+
+function lotLine(r, p, sku){
+  var el = r.querySelector(".lotline");
+  el.className = "lotline"; el.textContent = "";
+  if(!p || !sku) return;
+  var lot = (BOOT&&BOOT.lots)?BOOT.lots[sku]:null;
+  var qty = Number(r.querySelector(".i-qty").value)||0;
+  if(!lot){
+    if(p.remain!==null && p.remain!==undefined && qty>p.remain){
+      el.className="lotline warn";
+      el.textContent="สต๊อกในชีทเหลือ "+p.remain+" ชิ้น น้อยกว่าที่สั่ง";
+    }
+    return;
+  }
+  if(qty>lot.total){
+    el.className="lotline bad";
+    el.textContent="ล็อตเหลือรวม "+lot.total+" ชิ้น ไม่พอกับที่สั่ง";
+    return;
+  }
+  el.className="lotline ok";
+  el.textContent = "จะตัดล็อต "+lot.next.lotNo
+    + (lot.next.exp ? " (หมดอายุ "+thaiDate(isoOf(lot.next.exp))+")" : " (ไม่ระบุวันหมดอายุ)")
+    + " ก่อน · ล็อตทั้งหมดเหลือ "+lot.total+" ชิ้น";
+}
+function isoOf(ms){
+  var d=new Date(ms), p=function(n){return n<10?"0"+n:""+n};
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+}
+function thaiDate(iso){
+  if(!iso) return "";
+  var d=new Date(iso+"T00:00:00");
+  if(isNaN(d.getTime())) return String(iso);
+  var m=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  return d.getDate()+" "+m[d.getMonth()]+" "+(d.getFullYear()+543);
+}
+
+/* -------------------------------------------------------------- บันทึกออเดอร์ */
+
+/* clientKey ต่อ 1 ใบ — กดซ้ำหรือยิงใหม่หลังเน็ตหลุด จะได้ออเดอร์ใบเดิม ไม่ใช่ใบใหม่
+   ต้องคงตัวเดิมไว้จนกว่าจะบันทึกสำเร็จ ถึงค่อยเปลี่ยนเป็นใบถัดไป */
+var CLIENT_KEY = newKey();
+function newKey(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return "k"+Date.now()+"-"+Math.random().toString(36).slice(2);
+}
+
+function save(){
+  if(SAVING) return;
+  clearMsg();
+
+  var items = readItems().filter(function(it){ return it.sku });
+  if(!items.length){ showErr("ยังไม่ได้เลือกสินค้า"); return }
+  for(var i=0;i<items.length;i++){
+    var q=Number(items[i].qty);
+    if(!(q>0)){ showErr("รายการที่ "+(i+1)+": ยังไม่ได้ใส่จำนวน"); return }
+  }
+  if(!$("#f-cust").value.trim()){ showErr("ยังไม่ได้ใส่ชื่อลูกค้า"); return }
+
+  var payload = {
+    clientKey: CLIENT_KEY,
+    date: $("#f-date").value, channel: $("#f-channel").value,
+    cust: $("#f-cust").value.trim(), tel: $("#f-tel").value.trim(),
+    addr: $("#f-addr").value.trim(),
+    carrier: $("#f-carrier").value, track: $("#f-track").value.trim(),
+    vat: /^รับ/.test($("#f-vat").value||""),
+    discount: Number($("#f-disc").value)||0,
+    ship: Number($("#f-ship").value)||0,
+    status: $("#f-status").value, note: $("#f-note").value.trim(),
+    items: items
+  };
+
+  SAVING = true;
+  var btn=$("#btn-save");
+  btn.disabled = true; btn.textContent = "กำลังบันทึกลงชีท…";
+
+  call("createOrder", [payload], function(r){
+    SAVING=false; btn.disabled=false; btn.textContent="บันทึกออเดอร์ลงชีท";
+    if(r.duplicate){
+      showOk("ใบนี้บันทึกไปแล้ว เลขที่ <b>"+esc(r.no)+"</b> ระบบไม่บันทึกซ้ำให้");
+      return;
+    }
+    var lots = (r.lots&&r.lots.length) ? "<br>ตัดล็อต: "+esc(r.lots.join(" · ")) : "";
+    showOk("บันทึกแล้ว เลขที่ <b>"+esc(r.no)+"</b> · ยอดสุทธิ "+baht(r.net)+lots
+      +"<br>สต๊อกและกำไรในชีทอัปเดตให้เองแล้ว");
+    CLIENT_KEY = newKey();
+    resetForm();
+    ORDERS = [];
+    call("getBootstrap", [], function(b){
+      BOOT=b; $("#next-no").textContent=b.nextNo;
+      CFG.products = b.products.map(function(p){
+        return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
+                 unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group };
+      });
+    }, function(){ /* ตัวเลขคงเหลือไม่สดก็ไม่เป็นไร ออเดอร์บันทึกไปแล้ว */ });
+  }, function(m){
+    SAVING=false; btn.disabled=false; btn.textContent="บันทึกออเดอร์ลงชีท";
+    showErr("บันทึกไม่สำเร็จ — ข้อมูลในฟอร์มยังอยู่ครบ กดบันทึกใหม่ได้เลย\n\n" + m);
+  });
+}
+
+function resetForm(){
+  ["f-cust","f-tel","f-addr","f-track","f-note"].forEach(function(id){ $("#"+id).value="" });
+  $("#f-disc").value=0;
+  $("#f-ship").value=0; $("#f-ship").dataset.touched="";
+  $("#paste").value=""; $("#pv-slot").innerHTML="";
+  $("#items").innerHTML=""; addItem();
+  $("#f-date").value = todayISO();
+  recalc();
+}
+
+/* ------------------------------------------------- อ่านข้อความจากไลน์ + หน้าตรวจ */
+
+function doParse(){
+  var txt = $("#paste").value;
+  if(!txt.trim()){ toast("วางข้อความก่อน"); return }
+  var d = parseOrderText(txt);
+  if(!d.cust && !d.tel && !d.addr && !(d.items||[]).length){
+    toast("อ่านข้อความไม่ออก ลองคัดลอกมาใหม่ทั้งก้อน"); return;
+  }
+  showPreview(d);
+}
+
+/* แสดงให้ตรวจก่อน ยังไม่แตะฟอร์มจนกว่าจะกด "ใช้ข้อมูลนี้" */
+function showPreview(d){
+  var n=0, got=0;
+  var row=function(label,val,opt){
+    var ok=!(val===null||val===undefined||val==="");
+    if(!opt){ n++; if(ok) got++ }
+    return '<div class="r'+(ok?"":" miss")+(opt?" opt":"")+'"><i>'+esc(label)+'</i><b>'
+      +(ok?esc(String(val)):"อ่านไม่ได้ — กรอกเอง")+'</b></div>';
+  };
+  var addr=[d.addr,
+    [d.tambon?"ต."+d.tambon:"",d.amphoe?"อ."+d.amphoe:""].filter(Boolean).join(" "),
+    [d.province?"จ."+d.province:"",d.zip||""].filter(Boolean).join(" ")
+  ].filter(function(x){return x&&x.trim()}).join("\n");
+
+  var h = row("วันที่",d.date,true)
+        + row("ชื่อลูกค้า",d.cust)
+        + row("เบอร์โทร",d.tel)
+        + row("ที่อยู่",addr)
+        + row("ค่าจัดส่ง",d.ship===undefined?"":d.ship,true)
+        + row("ยอดสินค้า",d.amt===undefined?"":d.amt,true);
+
+  var its=d.items||[];
+  h += '<div style="font-size:12.5px;color:var(--gray);margin:8px 0 4px;font-weight:600">รายการสินค้า '+its.length+' รายการ</div>';
+  its.forEach(function(it,i){
+    var p = it.sku ? prodBySku(it.sku) : null;
+    n++; if(p) got++;
+    h += '<div class="r'+(p?"":" miss")+'"><i>'+(i+1)+'. '+esc(it.name||"-")+'</i><b>'
+       + (p ? esc(p.sku+" · จำนวน "+it.qty) : "จับคู่สินค้าในชีทไม่ได้ — เลือกเอง")
+       + '</b></div>';
+  });
+
+  $("#pv-slot").innerHTML =
+    '<div class="pv"><div style="font-weight:700;margin-bottom:8px">ตรวจก่อนใช้ — อ่านได้ '+got+' จาก '+n+' ช่อง</div>'
+    + h
+    + '<div class="hint" style="margin:10px 0 8px">ช่องที่อ่านไม่ได้จะไม่ถูกเขียนลงฟอร์ม ค่าที่กรอกไว้แล้วไม่หาย</div>'
+    + '<button class="btn" id="pv-use">ใช้ข้อมูลนี้</button>'
+    + '<button class="btn ghost" id="pv-no" style="margin-top:8px">ไม่ใช้</button></div>';
+
+  $("#pv-use").onclick = function(){ applyParsed(d, addr) };
+  $("#pv-no").onclick  = function(){ $("#pv-slot").innerHTML="" };
+}
+
+/* เขียนเฉพาะค่าที่อ่านได้จริง ค่าว่างไม่ไปล้างของที่กรอกไว้แล้ว */
+function applyParsed(d, addr){
+  var set=function(id,v){ if(v!==undefined && v!==null && v!=="") $("#"+id).value=v };
+  set("f-date", d.date);
+  set("f-cust", d.cust);
+  set("f-tel",  d.tel);
+  set("f-addr", addr);
+  /* ค่าส่งที่ลูกค้าตกลงไว้ในแชท ชนะค่าที่ระบบแนะนำเสมอ */
+  if(d.ship!==undefined && d.ship!==""){ $("#f-ship").value=d.ship; $("#f-ship").dataset.touched="1" }
+  if(d.carrier) pickOption("#f-carrier", d.carrier);
+
+  var its=(d.items||[]).filter(function(it){ return it.sku && prodBySku(it.sku) });
+  if(its.length){
+    $("#items").innerHTML="";
+    its.forEach(function(it){ addItem({sku:it.sku, qty:it.qty, price:it.price}) });
+  }
+  $("#pv-slot").innerHTML="";
+  recalc();
+  var miss=(d.items||[]).length - its.length;
+  toast(miss ? ("ใส่ให้แล้ว · ยังจับคู่สินค้าไม่ได้ "+miss+" รายการ ต้องเลือกเอง") : "ใส่ข้อมูลให้แล้ว ตรวจอีกครั้งก่อนบันทึก");
+}
+function pickOption(sel, want){
+  var s=$(sel), w=String(want||"").toLowerCase();
+  for(var i=0;i<s.options.length;i++){
+    var o=s.options[i].value.toLowerCase();
+    if(o===w || o.indexOf(w.split(" ")[0])>-1 || w.indexOf(o.split(" ")[0])>-1){ s.selectedIndex=i; return true }
+  }
+  return false;
+}
+
+/* ------------------------------------------------------------ รายการออเดอร์ */
+
+function loadOrders(force){
+  if(ORDERS.length && !force){ renderOrders(); return }
+  $("#list").innerHTML='<div class="load">กำลังโหลดออเดอร์จากชีท…</div>';
+  call("getOrders",[40],function(list){ ORDERS=list; renderOrders() },
+    function(m){ $("#list").innerHTML='<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'+esc(m)+'</div>' });
+}
+
+function statusTag(s){
+  if(s==="ส่งแล้ว") return "ok";
+  if(s==="ยกเลิก") return "bad";
+  if(s==="ชำระแล้ว"||s==="จัดของแล้ว") return "ok";
+  return "wait";
+}
+
+function renderOrders(){
+  if(!ORDERS.length){ $("#list").innerHTML='<div class="empty"><b>ยังไม่มีออเดอร์</b>กดแท็บ “คีย์ออเดอร์” เพื่อบันทึกใบแรก</div>'; return }
+  $("#list").innerHTML = ORDERS.map(function(o,i){
+    return '<div class="row"><div class="i">'
+      +'<b>'+esc(o.cust||"ไม่ระบุชื่อ")+'</b>'
+      +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))+' · '+esc(o.channel||"-")
+      + (o.track?' · '+esc(o.track):'')+'</span><br>'
+      +'<span style="color:var(--ink);font-weight:700">'+baht(o.net)+'</span> '
+      +'<span class="tag '+statusTag(o.status)+'">'+esc(o.status||"-")+'</span>'
+      + (o.check && o.check!=="OK" ? ' <span class="tag bad">'+esc(o.check)+'</span>' : '')
+      +'</div><div class="acts">'
+      +'<button class="sq" data-lb="'+i+'" title="ใบปะหน้า">🖨</button>'
+      +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
+      +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
+      +'</div></div>';
+  }).join("");
+}
+
+/* -------------------------------------------------------------- ใบปะหน้าพัสดุ */
+
+function openLabel(o){
+  /* ชีทไม่มีช่อง "เก็บเงินปลายทาง" จึงไม่เดาให้ — ให้คนพิมพ์ยืนยันเอง
+     พิมพ์ผิดว่าเก็บเงินปลายทางเท่าไร คือเงินจริงที่หายไป */
+  openModal("ใบปะหน้าพัสดุ — "+o.no,
+     '<div class="fld"><label><input type="checkbox" id="lb-cod" style="width:auto;margin-right:8px;transform:scale(1.25)">'
+    +'เก็บเงินปลายทาง '+baht(o.net)+'</label>'
+    +'<div class="hint">ไม่ติ๊ก = ใบปะหน้าจะพิมพ์ว่า “ไม่ต้องเก็บเงิน”</div></div>'
+    +'<button class="btn" id="lb-make">สร้างใบปะหน้า</button>'
+    +'<div id="lb-out" style="margin-top:12px"></div>');
+
+  $("#lb-make").onclick = function(){
+    var cod = $("#lb-cod").checked;
+    $("#lb-out").innerHTML='<div class="load">กำลังสร้าง…</div>';
+    buildLabel(labelData(o, cod)).then(function(url){
+      $("#lb-out").innerHTML =
+        '<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+       +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
+       +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+       +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+       +'<div class="hint" style="text-align:center;margin-top:10px">ขนาด 100×150 มม.</div>';
+      bindLabelButtons(url, "ใบปะหน้า-"+o.no+".png");
+    }, function(e){
+      $("#lb-out").innerHTML='<div style="color:var(--red)">สร้างไม่สำเร็จ: '+esc(e&&e.message?e.message:e)+'</div>';
+    });
+  };
+}
+
+/* แปลงออเดอร์จากชีทให้เป็นรูปทรงที่ buildLabel ตัวเดิมรู้จัก */
+function labelData(o, cod){
+  return {
+    no:o.no, id:o.no, date:o.date, cust:o.cust, tel:o.tel, addr:o.addr,
+    carrier:o.carrier, track:o.track, pay: cod?"cod":"transfer",
+    total:o.net, amt:o.subtotal, disc:o.discount,
+    qty:(o.items||[]).reduce(function(n,it){return n+(Number(it.qty)||0)},0),
+    items:(o.items||[]).map(function(it){ return {name:it.name||it.sku, qty:it.qty} })
+  };
+}
+
+function bindLabelButtons(url, name){
+  var toFile=function(){
+    var b=atob(url.split(",")[1]), n=b.length, u8=new Uint8Array(n);
+    while(n--) u8[n]=b.charCodeAt(n);
+    var blob=new Blob([u8],{type:"image/png"});
+    return {blob:blob, file:new File([blob],name,{type:"image/png"})};
+  };
+  $("#lb-share").onclick=async function(){
+    try{
+      var f=toFile();
+      if(navigator.canShare && navigator.canShare({files:[f.file]})){
+        await navigator.share({files:[f.file],title:"ใบปะหน้าพัสดุ"}); return;
+      }
+    }catch(e){ if(e&&e.name==="AbortError") return; }
+    try{ window.print() }catch(e){ toast("เครื่องนี้แชร์ไม่ได้ ลองปุ่มบันทึกลงเครื่องแทน") }
+  };
+  $("#lb-save").onclick=function(){
+    try{
+      var f=toFile(), href=URL.createObjectURL(f.blob);
+      var a=document.createElement("a"); a.href=href; a.download=name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){URL.revokeObjectURL(href)},4000);
+      toast("บันทึกแล้ว ดูในโฟลเดอร์ดาวน์โหลด");
+    }catch(e){ toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่") }
+  };
+  $("#lb-open").onclick=function(){
+    var w=window.open();
+    if(!w){ toast("เบราว์เซอร์บล็อกแท็บใหม่"); return }
+    w.document.write('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1">'
+      +'<style>@page{size:100mm 150mm;margin:0}body{margin:0}img{width:100%;display:block}</style>'
+      +'<img src="'+url+'">');
+    w.document.close();
+  };
+}
+
+/* ------------------------------------------------------- เลขพัสดุ + ข้อความแจ้ง */
+
+function openTracking(o){
+  openModal("เลขพัสดุ — "+o.no,
+     '<div class="fld"><label>เลขพัสดุ</label><input id="tk-no" value="'+esc(o.track||"")+'"></div>'
+    +'<div class="fld"><label>สถานะ</label><select id="tk-st"></select></div>'
+    +'<button class="btn" id="tk-save">บันทึกลงชีท</button>');
+  fillSelect("#tk-st", BOOT.lists.status);
+  $("#tk-st").value = o.status || BOOT.lists.status[0];
+
+  $("#tk-save").onclick = function(){
+    var b=$("#tk-save"); b.disabled=true; b.textContent="กำลังบันทึก…";
+    call("setTracking",[o.no, $("#tk-no").value.trim(), $("#tk-st").value], function(){
+      closeModal(); toast("บันทึกแล้ว"); loadOrders(true);
+    }, function(m){
+      b.disabled=false; b.textContent="บันทึกลงชีท";
+      toast("บันทึกไม่สำเร็จ: "+m);
+    });
+  };
+}
+
+function trackUrlOf(carrier, track){
+  if(!carrier||!track) return "";
+  var tpl=(APP.track||{})[carrier];
+  if(!tpl) return "";                    /* ไม่มีลิงก์ก็ไม่เดา */
+  var t=encodeURIComponent(String(track).trim());
+  return tpl.replace(/\{track\}/g,t).replace(/\{T\}/g,t);
+}
+
+/* ข้อความแจ้งเลขพัสดุ — ตัวอักษรเหมือนของเดิมทุกตัว */
+function shipMsg(o){
+  var url=trackUrlOf(o.carrier,o.track);
+  var t="📦 จัดส่งสินค้าเรียบร้อยแล้ว\n\n"
+   +"สวัสดีคุณ "+(o.cust||"ลูกค้า")+"\n"
+   +"ออเดอร์หมายเลข\n"
+   +"🧾 "+(o.no||"-")+"\n\n"
+   +"ทางร้านได้จัดส่งสินค้าเรียบร้อยแล้ว ✅\n\n"
+   +"🚚 ขนส่ง: "+(o.carrier||"-")+"\n"
+   +"🔎 เลขพัสดุ: "+(o.track||"-")+"\n"
+   +"📅 วันที่จัดส่ง: "+(thaiDate(o.date)||"-")+"\n";
+  if(url) t+="\nสามารถติดตามสถานะพัสดุได้ที่:\n"+url+"\n";
+  t+="\nขอบคุณที่อุดหนุนสินค้าของเราค่ะ 🙏";
+  return t;
+}
+
+/* ข้อความสรุปออเดอร์สำหรับส่งให้ลูกค้าตอนสั่ง */
+function orderMsg(o){
+  var t="🧾 สรุปคำสั่งซื้อ\n📅 วันที่ "+thaiDate(o.date)+"\n\n"
+   +"👤 "+(o.cust||"-")+"\n";
+  if(o.tel)  t+="📞 "+o.tel+"\n";
+  if(o.addr) t+="\n📍 ที่อยู่จัดส่ง\n"+o.addr+"\n";
+  t+="\n";
+  (o.items||[]).forEach(function(it){
+    t+="⚙️ "+(it.name||it.sku)+"\n💰 "+it.qty+" "+(it.unit||"ชิ้น")+" "+baht(it.total)+"\n";
+  });
+  t+="\n💵 รวมค่าสินค้า : "+baht(o.subtotal)+"\n";
+  if(Number(o.discount)>0) t+="🏷️ ส่วนลด : "+baht(o.discount)+"\n";
+  t+="🚚 ค่าจัดส่ง : "+baht(o.ship)+"\n";
+  t+="✅ ยอดชำระทั้งหมด : "+baht(o.net)+"\n";
+  return t;
+}
+
+function openMsg(o){
+  var ship = o.track ? shipMsg(o) : "";
+  var body = '<div class="fld"><label>ข้อความสรุปออเดอร์ (ส่งตอนลูกค้าสั่ง)</label>'
+    +'<textarea rows="12" id="mg-ord" readonly>'+esc(orderMsg(o))+'</textarea>'
+    +'<button class="mini" id="mg-c1" style="margin-top:8px">คัดลอก</button></div>';
+  if(ship){
+    body += '<div class="fld" style="margin-top:14px"><label>ข้อความแจ้งเลขพัสดุ (ส่งตอนจัดส่ง)</label>'
+      +'<textarea rows="12" id="mg-shp" readonly>'+esc(ship)+'</textarea>'
+      +'<button class="mini" id="mg-c2" style="margin-top:8px">คัดลอก</button>'
+      + (trackUrlOf(o.carrier,o.track) ? '' :
+         '<div class="hint" style="color:var(--red)">ขนส่ง “'+esc(o.carrier||"ไม่ระบุ")
+         +'” ยังไม่ได้ตั้งลิงก์ติดตามในชีท ตั้งค่าแอป ข้อความจึงไม่มีบรรทัดลิงก์</div>')
+      +'</div>';
+  }else{
+    body += '<div class="hint" style="margin-top:12px">ยังไม่มีเลขพัสดุ ใส่เลขพัสดุก่อนจึงจะมีข้อความแจ้งจัดส่ง</div>';
+  }
+  openModal("ข้อความส่งลูกค้า — "+o.no, body);
+  $("#mg-c1").onclick=function(){ copyText(orderMsg(o),"คัดลอกข้อความสรุปแล้ว") };
+  if(ship) $("#mg-c2").onclick=function(){ copyText(ship,"คัดลอกข้อความแจ้งพัสดุแล้ว") };
+}
+
+function copyText(text, okMsg){
+  var ta=document.createElement("textarea");
+  ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
+  document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0,99999);
+  var done=false; try{done=document.execCommand("copy")}catch(e){}
+  document.body.removeChild(ta);
+  if(!done && navigator.clipboard){ navigator.clipboard.writeText(text).then(function(){toast(okMsg)}) }
+  else toast(done?okMsg:"กดค้างที่ข้อความเพื่อคัดลอก");
+}
+
+/* ------------------------------------------------------------------ สรุปยอด */
+
+function loadSummary(){
+  $("#summary").innerHTML='<div class="load">กำลังโหลด…</div>';
+  call("getOrders",[200],function(list){
+    ORDERS = ORDERS.length?ORDERS:list;
+    var live=list.filter(function(o){ return o.status!=="ยกเลิก" });
+    var net=0, sub=0, byChan={}, byMonth={};
+    live.forEach(function(o){
+      net+=Number(o.net)||0; sub+=Number(o.subtotal)||0;
+      var c=o.channel||"ไม่ระบุ";
+      if(!byChan[c]) byChan[c]={n:0,net:0};
+      byChan[c].n++; byChan[c].net+=Number(o.net)||0;
+      var m=String(o.date||"").slice(0,7);
+      byMonth[m]=(byMonth[m]||0)+(Number(o.net)||0);
+    });
+    var h='<div class="subhd" style="margin-top:0">ภาพรวม (ไม่รวมที่ยกเลิก)</div>'
+      +'<div class="sum"><span>จำนวนออเดอร์</span><b>'+live.length+'</b></div>'
+      +'<div class="sum"><span>ยอดสินค้า</span><b>'+baht(sub)+'</b></div>'
+      +'<div class="sum big"><span>ยอดชำระสุทธิ</span><b>'+baht(net)+'</b></div>';
+
+    h+='<div class="subhd">ตามช่องทางขาย</div>';
+    Object.keys(byChan).sort(function(a,b){return byChan[b].net-byChan[a].net}).forEach(function(c){
+      h+='<div class="sum"><span>'+esc(c)+' ('+byChan[c].n+')</span><b>'+baht(byChan[c].net)+'</b></div>';
+    });
+
+    h+='<div class="subhd">รายเดือน</div>';
+    Object.keys(byMonth).sort().reverse().forEach(function(m){
+      h+='<div class="sum"><span>'+esc(m)+'</span><b>'+baht(byMonth[m])+'</b></div>';
+    });
+
+    h+='<div class="hint" style="margin-top:16px">ต้นทุนและกำไรดูได้ที่ชีท '
+      +'<b>สรุปยอดขาย</b> ซึ่งคำนวณให้เองจากออเดอร์ที่บันทึกผ่านแอปนี้</div>';
+    $("#summary").innerHTML=h;
+  }, function(m){
+    $("#summary").innerHTML='<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'+esc(m)+'</div>';
+  });
+}
+
+/* -------------------------------------------------------------------- modal */
+
+function openModal(title, html){
+  $("#m-title").textContent=title;
+  $("#m-body").innerHTML=html;
+  $("#modal").classList.add("on");
+}
+function closeModal(){ $("#modal").classList.remove("on"); $("#m-body").innerHTML="" }
+$("#modal").addEventListener("click", function(e){ if(e.target===this) closeModal() });
+$("#m-close").onclick = closeModal;
+document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModal() });
+
+/* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
+
+function go(page){
+  ["new","list","sum"].forEach(function(p){
+    $("#pg-"+p).style.display = (p===page)?"":"none";
+  });
+  $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===page) });
+  if(page==="list") loadOrders();
+  if(page==="sum")  loadSummary();
+}
+
+document.addEventListener("DOMContentLoaded", function(){
+  $$(".tabs button").forEach(function(b){ b.onclick=function(){ go(b.dataset.go) } });
+  $("#btn-add").onclick   = function(){ addItem(); recalc() };
+  $("#btn-parse").onclick = doParse;
+  $("#btn-save").onclick  = save;
+  ["f-disc","f-ship"].forEach(function(id){ $("#"+id).oninput = recalc });
+  ["f-vat","f-status"].forEach(function(id){ $("#"+id).onchange = recalc });
+  $("#f-disc").addEventListener("change", recalc);
+
+  /* ค่าจัดส่งแนะนำอัตโนมัติ เฉพาะตอนที่ยังไม่ได้พิมพ์เอง */
+  $("#f-ship").dataset.touched = "";
+  $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
+
+  $("#list").addEventListener("click", function(e){
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm]");
+    if(!b) return;
+    if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
+    else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
+    else if(b.dataset.sm!==undefined) openMsg(ORDERS[+b.dataset.sm]);
+  });
+
+  boot();
+});
+</script>
