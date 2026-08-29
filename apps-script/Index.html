@@ -142,14 +142,18 @@ textarea{resize:vertical}
     <div class="load" id="booting">กำลังโหลดข้อมูลสินค้าจากชีท…</div>
 
     <div id="form" style="display:none">
-      <div class="card">
-        <div class="fld">
-          <label>วางข้อความสรุปออเดอร์จากไลน์</label>
-          <textarea id="paste" rows="4" placeholder="คัดลอกข้อความจากแชทลูกค้ามาวางตรงนี้ แล้วกดปุ่มด้านล่าง"></textarea>
-          <button class="mini" id="btn-parse" style="margin-top:8px">อ่านข้อความให้</button>
-          <div class="hint">ระบบจะแสดงให้ตรวจก่อน ยังไม่กรอกลงฟอร์มจนกว่าจะกด “ใช้ข้อมูลนี้”</div>
+      <!-- ออเดอร์จากเพจ แอดมินเป็นคนสรุปเอง ไม่ได้อ่านจากข้อความลูกค้า
+           กล่องนี้จึงย่อเก็บไว้ เปิดใช้เฉพาะตอนลูกค้าวางที่อยู่มาเป็นก้อน -->
+      <div class="card" id="paste-card">
+        <button class="mini" id="btn-paste-open" style="width:100%">วางที่อยู่จากแชท</button>
+        <div id="paste-box" style="display:none;margin-top:10px">
+          <div class="fld">
+            <textarea id="paste" rows="4" placeholder="วางข้อความที่ลูกค้าส่งมา เช่น ชื่อ เบอร์ ที่อยู่"></textarea>
+            <button class="mini" id="btn-parse" style="margin-top:8px">อ่านข้อความให้</button>
+            <div class="hint">ระบบจะแสดงให้ตรวจก่อน ยังไม่กรอกลงฟอร์มจนกว่าจะกด “ใช้ข้อมูลนี้”</div>
+          </div>
+          <div id="pv-slot"></div>
         </div>
-        <div id="pv-slot"></div>
       </div>
 
       <div class="card">
@@ -180,6 +184,11 @@ textarea{resize:vertical}
         <div class="two">
           <div class="fld"><label>ภาษี</label><select id="f-vat"></select></div>
           <div class="fld"><label>สถานะ</label><select id="f-status"></select></div>
+        </div>
+        <div class="fld">
+          <label>ของแถม (ถ้ามี)</label>
+          <input id="f-gift" placeholder="เช่น Adapter 6.35-3.175 1 ตัว">
+          <div class="hint">พิมพ์ไว้ตรงนี้ จะขึ้นเป็นบรรทัด “แถมฟรี …” ในข้อความที่ส่งลูกค้า</div>
         </div>
         <div class="fld"><label>หมายเหตุ</label><input id="f-note"></div>
 

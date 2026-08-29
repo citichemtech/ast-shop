@@ -69,6 +69,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
 
   /* ---------- 2. วางข้อความจากไลน์ ---------- */
   console.log('\n2. วางข้อความจากไลน์แล้วให้ระบบอ่าน');
+  // กล่องวางข้อความถูกย่อเก็บไว้ ต้องกดเปิดก่อนเหมือนที่คนใช้ทำ
+  await page.click('#btn-paste-open');
   await page.fill('#paste', SAMPLE);
   await page.click('#btn-parse');
   await page.waitForSelector('.pv', { timeout: 4000 });
@@ -250,13 +252,21 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.click('#list .row .sq[data-sm="0"]');
   await page.waitForSelector('#mg-ord', { timeout: 3000 });
   var ord = await page.inputValue('#mg-ord');
-  truthy('มีหัวข้อสรุปคำสั่งซื้อ', ord.indexOf('🧾 สรุปคำสั่งซื้อ') === 0);
-  truthy('มียอดชำระทั้งหมด', /✅ ยอดชำระทั้งหมด : ฿800.00/.test(ord));
+  /* รูปแบบต้องตรงกับที่ร้านพิมพ์เองในเพจทุกวัน ไม่ใช่รูปแบบที่เราคิดเอง */
+  truthy('ขึ้นต้นแบบเดียวกับที่ร้านส่งจริง', ord.indexOf('📦 สรุปออเดอร์ลูกค้า') === 0);
+  truthy('แยกรุ่นกับขนาดคนละบรรทัด', /🛠 [^\n]+\n🔷 [^\n]+\n/.test(ord));
+  truthy('บรรทัดราคาเป็น ราคา×จำนวน = รวม', /💰 750×1 = 750/.test(ord));
+  truthy('รวมค่าสินค้า', /💵 รวมค่าสินค้า : 750 บาท/.test(ord));
+  truthy('ค่าจัดส่ง', /🚚 ค่าจัดส่ง : 50 บาท/.test(ord));
+  truthy('ยอดชำระทั้งหมด ไม่มีทศนิยมเกิน', /✅ ยอดชำระทั้งหมด : 800 บาท/.test(ord));
+  truthy('ปิดท้ายด้วยที่อยู่จัดส่ง', /📍 ที่อยู่จัดส่ง\n/.test(ord));
+
   var shp = await page.inputValue('#mg-shp');
-  truthy('ข้อความแจ้งพัสดุขึ้นต้นเหมือนเดิม', shp.indexOf('📦 จัดส่งสินค้าเรียบร้อยแล้ว') === 0);
-  truthy('มีเลขพัสดุ', /🔎 เลขพัสดุ: TH0000000001/.test(shp));
+  truthy('ข้อความแจ้งพัสดุขึ้นต้นเหมือนของร้าน', shp.indexOf('📦 แจ้งเลขพัสดุสินค้า') === 0);
+  truthy('มีชื่อขนส่ง', /🚛 ขนส่ง: Flash Express/.test(shp));
+  truthy('มีเลขพัสดุ', /📦 เลขพัสดุ: TH0000000001/.test(shp));
   truthy('มีลิงก์ติดตามของ Flash', /flashexpress\.com/.test(shp));
-  truthy('ปิดท้ายเหมือนเดิม', /ขอบคุณที่อุดหนุนสินค้าของเราค่ะ 🙏$/.test(shp));
+  truthy('ขอฝากรีวิวท้ายข้อความ', /ฝากรีวิว ⭐⭐⭐⭐⭐/.test(shp));
   await page.click('#m-close');
 
   /* ---------- 12. ใส่เลขพัสดุ ---------- */
