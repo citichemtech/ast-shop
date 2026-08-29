@@ -198,8 +198,8 @@ eq('ตอนถอยกลับ ต้องไม่ไปล้างสู
 /* ==================================================== 9. สิทธิ์เข้าใช้งาน */
 console.log('\n9. สิทธิ์เข้าใช้งาน');
 var fx9 = FS.build();
-throws('อีเมลนอกบริษัท เข้าไม่ได้', function () {
-  FS.load(fx9, { email: 'someone@gmail.com' }).createOrder(order());
+throws('อีเมลนอกบริษัท ที่ไม่ได้ถูกแชร์ชีท เข้าไม่ได้', function () {
+  FS.load(fx9, { email: 'someone@gmail.com', canOpen: false }).createOrder(order());
 }, 'ไม่มีสิทธิ์');
 throws('ระบบไม่รู้ว่าใคร ต้องปฏิเสธไว้ก่อน', function () {
   FS.load(fx9, { email: '' }).createOrder(order());
@@ -314,6 +314,30 @@ var boot14 = api14.getBootstrap();
 eq('มีชื่อผู้ส่ง', boot14.app.sender.name, 'AST Chem-Tooling');
 eq('มีค่าจัดส่งเริ่มต้น', boot14.app.shipFee, 50);
 eq('มีลิงก์ติดตามของ Flash', /flashexpress/.test(boot14.app.track['Flash Express'] || ''), true);
+
+/* ============================== 15. เปิดชีทได้ = ใช้แอปได้ */
+console.log('\n15. สิทธิ์เดินตามการแชร์ชีท');
+var fx15 = FS.build();
+var api15 = FS.load(fx15, { email: 'freelance@gmail.com' });
+eq('อีเมลนอกบริษัทแต่ถูกแชร์ชีทให้ ใช้ได้', api15.createOrder(order()).ok, true);
+eq('ชื่อผู้บันทึกเป็นอีเมลจริง', fx15.sheets['ออเดอร์_หัวบิล'].cell(6, 19).v, 'freelance@gmail.com');
+
+var fx15b = FS.build();
+throws('เปิดชีทไม่ได้ และไม่ใช่โดเมนบริษัท → เข้าไม่ได้', function () {
+  FS.load(fx15b, { email: 'stranger@gmail.com', canOpen: false }).createOrder(order());
+}, 'ยังไม่มีสิทธิ์');
+eq('คนนอกยิงมาแล้วไม่มีอะไรลงชีท', rowsWith(fx15b.sheets['ออเดอร์_หัวบิล'], 1), []);
+
+// ข้อที่ทำให้เจ้าของร้านเข้าไม่ได้ทั้งที่แชร์ชีทแล้ว: เคยจำคำว่า "ไม่มีสิทธิ์" ไว้ 5 นาที
+var fx15c = FS.build();
+var denied = FS.load(fx15c, { email: 'newstaff@gmail.com', canOpen: false });
+throws('ครั้งแรกยังไม่ได้แชร์ → ปฏิเสธ', function () { denied.createOrder(order()); }, 'ยังไม่มีสิทธิ์');
+eq('พอแชร์ชีทให้แล้ว เข้าได้ทันที ไม่ต้องรอแคชหมดอายุ',
+  FS.load(fx15c, { email: 'newstaff@gmail.com' }).createOrder(order()).ok, true);
+
+throws('อ่านอีเมลไม่ออก → ปฏิเสธไว้ก่อน', function () {
+  FS.load(FS.build(), { email: '' }).createOrder(order());
+}, 'ไม่ทราบว่าคุณเป็นใคร');
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

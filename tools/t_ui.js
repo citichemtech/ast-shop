@@ -11,7 +11,7 @@
 var path = require('path');
 var { chromium } = require('/opt/node22/lib/node_modules/playwright');
 
-var FILE = 'file://' + path.join(__dirname, '..', 'out', 'preview.html');
+var FILE = 'file://' + path.join(__dirname, '..', 'out', process.env.PV || 'preview.html');
 var fails = 0;
 
 function eq(label, got, want) {

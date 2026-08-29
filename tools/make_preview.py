@@ -119,15 +119,17 @@ def main():
     out = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "out" / "preview.html"
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    index = (GS / "Index.html").read_text(encoding="utf-8")
+    # รับ Index.html ที่รวมไฟล์แล้วได้ด้วย เพื่อพิสูจน์ว่าตัวที่เอาไปวางจริงยังทำงานได้
+    src = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else GS / "Index.html"
+    index = src.read_text(encoding="utf-8")
 
     def sub_include(m):
         name = m.group(1)
         return (GS / (name + ".html")).read_text(encoding="utf-8")
 
     page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
-    if n != 4:
-        sys.exit("คาดว่าจะมี include 4 อัน แต่เจอ %d อัน — โครง Index.html เปลี่ยนไป" % n)
+    if n not in (0, 4):
+        sys.exit("คาดว่าจะมี include 4 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
 
     page = page.replace('"<?= staffEmail ?>"', json.dumps(BOOT["staff"]))
     if "<?" in page:
@@ -136,10 +138,23 @@ def main():
     mock = (MOCK.replace("__BOOT__", json.dumps(BOOT, ensure_ascii=False))
                 .replace("__ORDERS__", json.dumps(ORDERS, ensure_ascii=False)))
 
-    html = ('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width, initial-scale=1">'
-            '<title>ตัวอย่างหน้าคีย์ออเดอร์ (ข้อมูลสมมติ)</title></head><body>'
-            + mock + page + '</body></html>')
+    # ตัวจริงมีหัวเอกสารของตัวเองแล้ว (และ HtmlService เป็นคนเติม viewport ให้ตอนเสิร์ฟ)
+    # ที่นี่จึงเติม viewport กับ title ลงใน <head> เดิม แล้วแทรกของจำลองหลัง <body>
+    # ห้ามครอบ <html> ซ้อนอีกชั้น ไม่งั้นที่ทดสอบก็ไม่ใช่หน้าเดียวกับที่เอาไปวางจริง
+    if page.lstrip().startswith("<!DOCTYPE"):
+        extra = ('<meta name="viewport" content="width=device-width, initial-scale=1">'
+                 '<title>ตัวอย่างหน้าคีย์ออเดอร์ (ข้อมูลสมมติ)</title>')
+        html, n = re.subn(r"</head>", extra + "</head>", page, count=1)
+        if not n:
+            sys.exit("มี <!DOCTYPE> แต่ไม่เจอ </head> — โครงไฟล์เปลี่ยนไป")
+        html, n = re.subn(r"<body[^>]*>", lambda m: m.group(0) + mock, html, count=1)
+        if not n:
+            sys.exit("มี <!DOCTYPE> แต่ไม่เจอ <body> — โครงไฟล์เปลี่ยนไป")
+    else:
+        html = ('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                '<title>ตัวอย่างหน้าคีย์ออเดอร์ (ข้อมูลสมมติ)</title></head><body>'
+                + mock + page + '</body></html>')
     out.write_text(html, encoding="utf-8")
     print("เขียน %s (%.0f KB)" % (out, len(html.encode("utf-8")) / 1024))
 

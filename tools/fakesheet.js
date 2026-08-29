@@ -279,13 +279,23 @@ function build(opts) {
 function load(fixture, opts) {
   opts = opts || {};
   var props = {};
+  var cache = {};
   var lockHeld = { v: false };
+  function cacheStub_() {
+    return {
+      get: function (k) { return Object.prototype.hasOwnProperty.call(cache, k) ? cache[k] : null; },
+      put: function (k, v) { cache[k] = String(v); }
+    };
+  }
   var ctx = {
     console: console, Date: Date, Math: Math, JSON: JSON, String: String, Number: Number,
     Object: Object, Array: Array, isNaN: isNaN, parseInt: parseInt, parseFloat: parseFloat,
     SpreadsheetApp: {
       openById: function () {
+        // opts.canOpen === false = บัญชีนี้ไม่มีสิทธิ์เปิดชีท Google โยน error แบบนี้
+        if (opts.canOpen === false) throw new Error('You do not have permission to access the requested document.');
         return {
+          getName: function () { return 'AST_ระบบออเดอร์และสต๊อก3008'; },
           getSheetByName: function (n) { return fixture.sheets[n] || null; },
           insertSheet: function (n) { return (fixture.sheets[n] = new Sheet(n, 13, 1006)); }
         };
@@ -314,6 +324,10 @@ function load(fixture, opts) {
       }
     },
     Logger: { log: function () {} },
+    CacheService: {
+      getScriptCache: cacheStub_,
+      getUserCache: cacheStub_
+    },
     HtmlService: {
       createHtmlOutput: function (h) { return { setTitle: function () { return { html: h }; }, html: h }; },
       createTemplateFromFile: function () { return { evaluate: function () { return { setTitle: function () { return this; }, addMetaTag: function () { return this; } }; } }; },
