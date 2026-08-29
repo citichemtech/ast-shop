@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""สร้างไฟล์หน้าร้าน (index.html) จากไฟล์หลังร้าน (admin.html)
+"""เผยแพร่หน้าพนักงานขึ้น GitHub Pages (index.html) จากไฟล์ต้นฉบับ admin.html
 
-แยกเป็น 2 ไฟล์เพราะ repo นี้เปิดสาธารณะ ลูกค้าเปิดหน้าร้านได้ผ่าน GitHub Pages
-จึงต้องไม่มีข้อมูลลูกค้าและไม่มีทางเข้าหลังร้านอยู่ในไฟล์ที่ลูกค้าโหลดไป
+เจ้าของร้านสั่งให้เอาหน้าร้านลูกค้าออก เหลือแค่หน้าพนักงาน — ที่อยู่หลักของเว็บ
+จึงกลายเป็นหน้าพนักงาน เปิด https://citichemtech.github.io/ast-shop/ ได้เลย
+ไม่ต้องพิมพ์ /admin.html ต่อท้าย และติดตั้งเป็นแอปบนเครื่องได้เหมือนเดิม
 
-  admin.html  = แอปเต็ม (ตัวจริงที่ใช้แก้โค้ด) มีปุ่มเข้าหลังร้าน
-  index.html  = หน้าร้าน สร้างจาก admin.html โดยเอาปุ่มเข้าหลังร้านออก
+  admin.html  = ตัวจริงที่ใช้แก้โค้ด
+  index.html  = ตัวเดียวกันที่ถูกล้างข้อมูลแล้ว สำหรับวางบน Pages
 
-ทั้งสองไฟล์ไม่มีออเดอร์และไม่มีรหัสผ่านฝังอยู่ — ข้อมูลจริงอยู่ในเครื่อง
+ทั้งสองไฟล์ต้องไม่มีออเดอร์ ไม่มีล็อต ไม่มีรหัสผ่านฝังอยู่ — ข้อมูลจริงอยู่ในเครื่อง
 ของพนักงาน (localStorage) และในไฟล์สำรอง .json เท่านั้น
+สคริปต์นี้ล้างให้ทุกครั้ง และมีด่านตรวจเบอร์โทรกันข้อมูลลูกค้าหลุดขึ้น repo สาธารณะ
 
 วิธีใช้:  python3 tools/build.py
 """
@@ -103,14 +105,6 @@ def scrub(html, label):
     return out
 
 
-def strip_admin_entry(html):
-    """เอาปุ่มเฟืองที่เป็นทางเข้าหลังร้านออกจากหน้าร้าน"""
-    m = re.search(r'<button class="gear" id="gear">.*?</button>\n?', html, re.S)
-    if not m:
-        sys.exit("ไม่เจอปุ่ม #gear — โครงไฟล์เปลี่ยนไป ไม่เดา")
-    return html[:m.start()] + html[m.end():]
-
-
 def main():
     src = open(SRC, encoding="utf-8").read()
 
@@ -120,10 +114,9 @@ def main():
         open(SRC, "w", encoding="utf-8").write(cleaned)
     src = cleaned
 
-    # 2) ไฟล์หน้าร้าน: เอาทางเข้าหลังร้านออก
-    store = strip_admin_entry(src)
-    assert 'id="gear"' not in store, "ยังมีปุ่มเข้าหลังร้านหลงเหลือในหน้าร้าน"
-    open(OUT, "w", encoding="utf-8").write(store)
+    # 2) ไฟล์ที่วางบน Pages: หน้าพนักงานตัวเดียวกัน ไม่มีหน้าร้านลูกค้าแล้ว
+    open(OUT, "w", encoding="utf-8").write(src)
+    assert 'id="gear"' in src, "ไม่เจอปุ่มเข้าหลังร้าน — พนักงานจะเข้าไม่ได้"
 
     # 3) ตรวจซ้ำว่าไม่มีข้อมูลลับหลงอยู่ในไฟล์ไหน — ล้มทันทีถ้าเจอ ไม่ปล่อยผ่าน
     for path, label in ((SRC, "admin.html"), (OUT, "index.html")):
@@ -138,7 +131,7 @@ def main():
               % (label, len(cfg.get("products", [])), len(cfg.get("cats", [])),
                  len(cfg.get("orders", [])), cfg.get("pin")))
 
-    print("สร้างเสร็จ: index.html %d KB · admin.html %d KB"
+    print("เผยแพร่แล้ว: index.html %d KB · admin.html %d KB"
           % (os.path.getsize(OUT) // 1024, os.path.getsize(SRC) // 1024))
 
 

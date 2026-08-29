@@ -1,7 +1,7 @@
 {
-  "name": "AST Chem-Tooling",
-  "short_name": "AST Chem",
-  "description": "ดอกกัด CNC และเคมีภัณฑ์อุตสาหกรรม",
+  "name": "AST หลังร้าน",
+  "short_name": "AST หลังร้าน",
+  "description": "หน้าพนักงาน — คีย์ออเดอร์ ตัดสต๊อก พิมพ์ใบปะหน้า",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
