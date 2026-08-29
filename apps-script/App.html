@@ -38,6 +38,9 @@ function call(fn, args, done, fail){
 
 function boot(){
   $("#who").textContent = STAFF_EMAIL;
+  /* โลโก้ร้าน — รูปเดียวกับที่ใบปะหน้าใช้ ใส่ก่อนโหลดชีทเลย จะได้ไม่วูบตอนเปิด */
+  if (typeof SHOP_LOGO !== "undefined" && SHOP_LOGO)
+    $("#logo").innerHTML = '<img src="' + SHOP_LOGO + '" alt="">';
   call("getBootstrap", [], function(b){
     BOOT = b; APP = b.app || {};
     CFG.products = b.products.map(function(p){
@@ -49,6 +52,7 @@ function boot(){
     CFG.codFee = Number(APP.codFee||0);
     CFG.logo   = (typeof SHOP_LOGO!=="undefined") ? SHOP_LOGO : "";
     CFG.brand  = b.shop || "AST Chem-Tooling";
+    $("#brand").textContent = CFG.brand;      /* ชื่อร้านเอาจากชีท ตั้งค่าระบบ */
     CFG.carrierLinks = APP.track || {};
     CFG.line   = APP.line || "";
 

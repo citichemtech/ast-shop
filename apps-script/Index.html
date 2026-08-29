@@ -24,11 +24,17 @@ input,select,textarea{font:inherit;width:100%;padding:11px 12px;border:1px solid
 input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
 textarea{resize:vertical}
 
-.top{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);
-  padding:10px 14px;display:flex;align-items:center;gap:10px}
-.top b{font-size:16px}
-.top .who{margin-left:auto;font-size:12px;color:var(--gray);max-width:46%;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
+/* หัวเรื่อง — ทรงเดียวกับแอปเดิม: แถบน้ำเงินมุมล่างมน โลโก้กลมบนพื้นขาว */
+.top{background:var(--blue);color:#fff;padding:16px 18px 20px;border-radius:0 0 24px 24px;
+  display:flex;align-items:center;gap:12px}
+.top .logo{width:52px;height:52px;border-radius:50%;background:#fff;flex:none;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:700;color:var(--blue);font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.16)}
+.top .logo img{width:100%;height:100%;object-fit:cover}
+.top .ttl{min-width:0}
+.top b{display:block;font-size:20px;font-weight:700;line-height:1.2;letter-spacing:-.01em}
+.top .who{display:block;margin-top:3px;font-size:12px;opacity:.9;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .wrap{padding:14px;max-width:720px;margin:0 auto}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
@@ -113,8 +119,11 @@ textarea{resize:vertical}
 </style>
 
 <div class="top">
-  <b>AST — คีย์ออเดอร์</b>
-  <span class="who" id="who"></span>
+  <div class="logo" id="logo">AST</div>
+  <div class="ttl">
+    <b id="brand">AST Chem-Tooling</b>
+    <span class="who" id="who"></span>
+  </div>
 </div>
 
 <div class="wrap">
