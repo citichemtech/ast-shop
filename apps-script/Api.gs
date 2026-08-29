@@ -82,6 +82,7 @@ function getBootstrap() {
     shop: cfg.shop,
     vatRate: cfg.vatRate,
     lists: cfgLists_(),
+    app: appCfg_(),
     products: readProducts_(),
     lots: readLotSummary_(),
     nextNo: peekNextOrderNo_()
@@ -160,6 +161,127 @@ function readLotSummary_() {
     };
   }
   return out;
+}
+
+/* ------------------------------------------------------- อ่านออเดอร์ที่บันทึกไว้ */
+
+/**
+ * ออเดอร์ล่าสุด พร้อมรายการสินค้าของแต่ละใบ
+ * ใช้ทำใบปะหน้าพัสดุ · ข้อความแจ้งเลขพัสดุ · หน้ารายการออเดอร์
+ */
+function getOrders(limit) {
+  requireStaff_();
+  limit = Number(limit) || 40;
+
+  var hs = sheet_('head');
+  var hLast = formulaLimit_('head');
+  var heads = [];
+  if (hLast >= DATA_ROW) {
+    var hv = hs.getRange(DATA_ROW, 1, hLast - DATA_ROW + 1, 21).getValues();
+    for (var i = 0; i < hv.length; i++) {
+      var no = String(hv[i][SH.head.IN.no - 1] || '').trim();
+      if (!no) continue;
+      var d = hv[i][SH.head.IN.date - 1];
+      heads.push({
+        no: no,
+        date: d instanceof Date ? isoDate_(d) : String(d || ''),
+        channel: String(hv[i][SH.head.IN.channel - 1] || ''),
+        cust: String(hv[i][SH.head.IN.cust - 1] || ''),
+        tel: String(hv[i][SH.head.IN.tel - 1] || ''),
+        addr: String(hv[i][SH.head.IN.addr - 1] || ''),
+        carrier: String(hv[i][SH.head.IN.carrier - 1] || ''),
+        track: String(hv[i][SH.head.IN.track - 1] || ''),
+        vat: String(hv[i][SH.head.IN.vat - 1] || ''),
+        discount: Number(hv[i][SH.head.IN.discount - 1] || 0),
+        ship: Number(hv[i][SH.head.IN.ship - 1] || 0),
+        status: String(hv[i][SH.head.IN.status - 1] || ''),
+        staff: String(hv[i][SH.head.IN.staff - 1] || ''),
+        note: String(hv[i][SH.head.IN.note - 1] || ''),
+        subtotal: Number(hv[i][SH.head.subtotal - 1] || 0),
+        net: Number(hv[i][SH.head.net - 1] || 0),
+        check: String(hv[i][17] || ''),
+        items: []
+      });
+    }
+  }
+
+  heads.sort(function (a, b) {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    return a.no < b.no ? 1 : -1;
+  });
+  heads = heads.slice(0, limit);
+
+  var want = {};
+  for (var h = 0; h < heads.length; h++) want[heads[h].no] = heads[h];
+
+  var is = sheet_('item');
+  var iLast = formulaLimit_('item');
+  if (iLast >= DATA_ROW) {
+    var iv = is.getRange(DATA_ROW, 1, iLast - DATA_ROW + 1, SH.item.lot).getValues();
+    for (var j = 0; j < iv.length; j++) {
+      var ono = String(iv[j][SH.item.IN.no - 1] || '').trim();
+      var owner = want[ono];
+      if (!owner) continue;
+      owner.items.push({
+        sku: String(iv[j][SH.item.IN.sku - 1] || ''),
+        name: String(iv[j][4] || ''),
+        unit: String(iv[j][5] || ''),
+        qty: Number(iv[j][SH.item.IN.qty - 1] || 0),
+        price: Number(iv[j][SH.item.IN.price - 1] || iv[j][7] || 0),
+        total: Number(iv[j][9] || 0),
+        lot: String(iv[j][SH.item.lot - 1] || '')
+      });
+    }
+  }
+  return heads;
+}
+
+function isoDate_(d) {
+  function p(n) { return n < 10 ? '0' + n : '' + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+/**
+ * ใส่เลขพัสดุและสถานะย้อนหลัง — งานที่เกิดหลังบันทึกออเดอร์เสมอ
+ * แก้เฉพาะสองช่องนี้ ช่องอื่นของออเดอร์ไม่ถูกแตะ และลง Log ไว้ว่าใครแก้
+ */
+function setTracking(no, track, status) {
+  var email = requireStaff_();
+  no = String(no || '').trim();
+  if (!no) throw new Error('ไม่ได้บอกว่าจะแก้ออเดอร์ไหน');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var s = sheet_('head');
+    var last = formulaLimit_('head');
+    var v = s.getRange(DATA_ROW, SH.head.IN.no, last - DATA_ROW + 1, 1).getValues();
+    var row = 0;
+    for (var i = 0; i < v.length; i++) if (String(v[i][0]) === no) { row = DATA_ROW + i; break; }
+    if (!row) throw new Error('ไม่พบออเดอร์ ' + no + ' ในชีท');
+
+    var before = String(s.getRange(row, SH.head.IN.track).getValue() || '');
+    var beforeStatus = String(s.getRange(row, SH.head.IN.status).getValue() || '');
+    var patch = {};
+    if (track !== undefined && track !== null) patch.track = String(track).trim();
+    if (status) patch.status = pickFrom_(status, cfgLists_().status, 'สถานะออเดอร์');
+    if (!Object.keys(patch).length) return { ok: true, no: no, changed: false };
+
+    writeRow_('head', row, patch);
+    SpreadsheetApp.flush();
+
+    if (patch.track !== undefined && patch.track !== before) {
+      writeLog_(email, 'ใส่เลขพัสดุ', SH.head.name, no, 'เลขพัสดุ', before, patch.track,
+        'ใส่จากแอปโดย ' + email);
+    }
+    if (patch.status && patch.status !== beforeStatus) {
+      writeLog_(email, 'เปลี่ยนสถานะ', SH.head.name, no, 'สถานะ', beforeStatus, patch.status,
+        'เปลี่ยนจากแอปโดย ' + email);
+    }
+    return { ok: true, no: no, changed: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* -------------------------------------------------------------- เลขที่ออเดอร์ */

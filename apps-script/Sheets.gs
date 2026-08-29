@@ -86,7 +86,14 @@ var SH = {
     IN: { no: 2, lineNo: 3, sku: 4, lotNo: 5, qty: 6, date: 7 },
     CALC: [1, 8, 9],
     probe: 1
-  }
+  },
+
+  /**
+   * ค่าที่ใบปะหน้าพัสดุกับข้อความแจ้งลูกค้าต้องใช้ แต่ชีทเดิมไม่มี
+   * (ชื่อ-ที่อยู่ผู้ส่ง · ค่าส่ง · ลิงก์ติดตามของแต่ละขนส่ง)
+   * แยกเป็นชีทของเราเอง เจ้าของร้านแก้เองได้ ไม่ต้องแก้โค้ด
+   */
+  app: { name: 'ตั้งค่าแอป' }
 };
 
 function ss_() { return SpreadsheetApp.openById(SHEET_ID); }
@@ -207,6 +214,35 @@ function cfgGet_() {
     vatRate: Number(v[2][0] || 0),
     reorder: Number(v[3][0] || 0)
   };
+}
+
+/**
+ * ค่าจากชีท ตั้งค่าแอป — คู่ ชื่อ/ค่า ที่ B6 ลงไป และตารางลิงก์ติดตามที่ D6 ลงไป
+ * ชีทนี้เป็นของแอป ไม่ใช่ 1 ใน 9 ชีทเดิม แก้ได้อิสระ
+ */
+function appCfg_() {
+  var s = ss_().getSheetByName(SH.app.name);
+  var out = {
+    sender: { name: '', addr: '', tel: '' },
+    shipFee: 0, freeOver: 0, codFee: 0,
+    track: {}
+  };
+  if (!s) return out;
+  var v = s.getRange(DATA_ROW, 1, Math.max(1, s.getLastRow() - DATA_ROW + 1), 5).getValues();
+  for (var i = 0; i < v.length; i++) {
+    var k = String(v[i][0] || '').trim();
+    var val = v[i][1];
+    if (k === 'ชื่อผู้ส่ง') out.sender.name = String(val || '');
+    else if (k === 'ที่อยู่ผู้ส่ง') out.sender.addr = String(val || '');
+    else if (k === 'เบอร์โทรผู้ส่ง') out.sender.tel = String(val || '');
+    else if (k === 'ค่าจัดส่งเริ่มต้น') out.shipFee = Number(val || 0);
+    else if (k === 'ส่งฟรีเมื่อยอดถึง') out.freeOver = Number(val || 0);
+    else if (k === 'ค่าธรรมเนียมเก็บปลายทาง') out.codFee = Number(val || 0);
+
+    var car = String(v[i][3] || '').trim();
+    if (car) out.track[car] = String(v[i][4] || '').trim();
+  }
+  return out;
 }
 
 /** ตัวเลือก dropdown จากชีท ตั้งค่า (D7:D  ช่องทางขาย, E ขนส่ง, F VAT, G สถานะ) */

@@ -27,6 +27,7 @@ function setup() {
   var made = [];
   made.push(setupLotSheet_(ss));
   made.push(setupCutSheet_(ss));
+  made.push(setupAppSheet_(ss));
   made.push(setupItemLotColumn_(ss));
   SpreadsheetApp.flush();
   var msg = 'ติดตั้งเรียบร้อย\n\n' + made.join('\n');
@@ -146,6 +147,66 @@ function setupCutSheet_(ss) {
   s.hideColumns(8, 2);
 
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + (CUT_LAST - DATA_ROW + 1) + ' บรรทัด)';
+}
+
+/* -------------------------------------------------------------- ตั้งค่าแอป */
+
+/**
+ * ค่าที่ใบปะหน้าพัสดุต้องใช้ ชีทเดิมไม่มี — สร้างเป็นชีทของแอปเอง
+ * ค่าที่มีอยู่แล้วจะไม่ถูกเขียนทับ สั่ง setup ซ้ำได้
+ */
+function setupAppSheet_(ss) {
+  var name = SH.app.name;
+  var s = ss.getSheetByName(name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+  if (s.getMaxColumns() < 5) s.insertColumnsAfter(s.getMaxColumns(), 5 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('ตั้งค่าแอปคีย์ออเดอร์').setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'ค่าพวกนี้ใช้กับใบปะหน้าพัสดุและข้อความแจ้งลูกค้า  |  แก้ได้เลย ไม่ต้องแก้โค้ด'
+  ).setFontColor(C_SUB_FG);
+
+  s.getRange(HEAD_ROW, 1, 1, 5).setValues([['ค่า', 'ตั้งเป็น', '', 'ขนส่ง', 'ลิงก์ติดตามพัสดุ']])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold');
+
+  var rows = [
+    ['ชื่อผู้ส่ง', 'AST Chem-Tooling'],
+    ['ที่อยู่ผู้ส่ง', ''],
+    ['เบอร์โทรผู้ส่ง', ''],
+    ['ค่าจัดส่งเริ่มต้น', 50],
+    ['ส่งฟรีเมื่อยอดถึง', 0],
+    ['ค่าธรรมเนียมเก็บปลายทาง', 0]
+  ];
+  for (var i = 0; i < rows.length; i++) {
+    var r = DATA_ROW + i;
+    s.getRange(r, 1).setValue(rows[i][0]);
+    // ค่าที่เจ้าของร้านกรอกไว้แล้ว ห้ามทับ — เติมให้เฉพาะตอนที่ยังว่าง
+    if (s.getRange(r, 2).getValue() === '') s.getRange(r, 2).setValue(rows[i][1]);
+  }
+
+  var carriers = cfgLists_().carrier;
+  var known = {
+    'Flash Express': 'https://www.flashexpress.com/fle/tracking?se={track}',
+    'Kerry Express': 'https://th.kerryexpress.com/th/track/?track={track}',
+    'ไปรษณีย์ไทย': 'https://track.thailandpost.co.th/?trackNumber={track}'
+  };
+  for (var j = 0; j < carriers.length; j++) {
+    var rr = DATA_ROW + j;
+    s.getRange(rr, 4).setValue(carriers[j]);
+    if (s.getRange(rr, 5).getValue() === '') {
+      s.getRange(rr, 5).setValue(known[carriers[j]] || '');
+    }
+  }
+
+  s.getRange(DATA_ROW, 2, rows.length, 1).setFontColor(C_IN_FG);
+  s.getRange(DATA_ROW, 5, Math.max(carriers.length, 1), 1).setFontColor(C_IN_FG);
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(1, 200); s.setColumnWidth(2, 340);
+  s.setColumnWidth(4, 160); s.setColumnWidth(5, 380);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name +
+    (fresh ? ' — อย่าลืมกรอกที่อยู่และเบอร์โทรผู้ส่ง ใบปะหน้าพัสดุใช้ค่านี้' : '');
 }
 
 /* ------------------------------------ คอลัมน์ "ล็อตที่ตัด" ที่ ออเดอร์_รายการ */

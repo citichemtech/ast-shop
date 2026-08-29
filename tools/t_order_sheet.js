@@ -276,5 +276,44 @@ fx13b.sheets['ออเดอร์_รายการ'].cell(5, 17).v = 'คอ
 throws('หยุดพร้อมบอกว่าเจออะไร', function () { api13b.setup(); }, 'มีหัวข้อ');
 eq('ไม่เขียนทับหัวข้อเดิม', fx13b.sheets['ออเดอร์_รายการ'].cell(5, 17).v, 'คอลัมน์ที่เจ้าของร้านเพิ่มเอง');
 
+/* ============================================ 14. อ่านออเดอร์กลับมาใช้งาน */
+console.log('\n14. อ่านออเดอร์กลับมา (ใบปะหน้า / ข้อความแจ้งพัสดุ)');
+var fx14 = FS.build();
+var api14 = FS.load(fx14);
+api14.setup();
+api14.createOrder(order({ date: '2026-08-27', cust: 'ลูกค้าคนแรก' }));
+api14.createOrder(order({ date: '2026-08-29', cust: 'ลูกค้าคนที่สอง', items: [{ sku: 'SKU-143', qty: 2 }] }));
+var list = api14.getOrders(10);
+eq('ได้ออเดอร์ครบ', list.length, 2);
+eq('ใบล่าสุดอยู่บนสุด', list[0].cust, 'ลูกค้าคนที่สอง');
+eq('มีรายการสินค้าติดมาด้วย', list[0].items.length, 1);
+eq('รายการของแต่ละใบไม่ปนกัน', list[1].items.length, 2);
+eq('ยอดสุทธิมาจากสูตรในชีท', list[1].net, 20 * 110 + 5 * 149 + 50);
+eq('บรรทัดที่ไม่ตั้งราคาพิเศษ ใช้ราคามาตรฐาน', list[0].items[0].price, 149);
+eq('ที่อยู่ครบสำหรับพิมพ์ใบปะหน้า', list[0].addr.indexOf('เชียงใหม่') > -1, true);
+
+console.log('\n   ใส่เลขพัสดุย้อนหลัง');
+var t14 = api14.setTracking(list[0].no, 'TH0011223344', 'ส่งแล้ว');
+eq('บันทึกสำเร็จ', t14.changed, true);
+var list2 = api14.getOrders(10);
+eq('เลขพัสดุขึ้นแล้ว', list2[0].track, 'TH0011223344');
+eq('สถานะเปลี่ยนแล้ว', list2[0].status, 'ส่งแล้ว');
+eq('ยอดเงินของใบนั้นไม่ถูกแตะ', list2[0].net, list[0].net);
+eq('ลง Log ไว้สองบรรทัด (เลขพัสดุ + สถานะ)', rowsWith(fx14.sheets['Log'], 2).length >= 2, true);
+throws('ออเดอร์ที่ไม่มีจริง', function () { api14.setTracking('AST-26-9999', 'X'); }, 'ไม่พบออเดอร์');
+throws('สถานะที่ไม่มีในชีท ตั้งค่า', function () {
+  api14.setTracking(list[0].no, 'TH1', 'ส่งไปแล้วมั้ง');
+}, 'ไม่มีในตัวเลือก');
+
+var over14 = [];
+for (var n14 in fx14.sheets) over14 = over14.concat(fx14.sheets[n14].overwrittenFormulas);
+eq('ยังไม่มีสูตรถูกเขียนทับเลย', over14, []);
+
+console.log('\n   ค่าตั้งต้นสำหรับใบปะหน้า');
+var boot14 = api14.getBootstrap();
+eq('มีชื่อผู้ส่ง', boot14.app.sender.name, 'AST Chem-Tooling');
+eq('มีค่าจัดส่งเริ่มต้น', boot14.app.shipFee, 50);
+eq('มีลิงก์ติดตามของ Flash', /flashexpress/.test(boot14.app.track['Flash Express'] || ''), true);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
