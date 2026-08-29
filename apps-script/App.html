@@ -236,6 +236,7 @@ function thaiDate(iso){
 
 /* clientKey ต่อ 1 ใบ — กดซ้ำหรือยิงใหม่หลังเน็ตหลุด จะได้ออเดอร์ใบเดิม ไม่ใช่ใบใหม่
    ต้องคงตัวเดิมไว้จนกว่าจะบันทึกสำเร็จ ถึงค่อยเปลี่ยนเป็นใบถัดไป */
+var LAST_SAVED = null;   /* ใบที่เพิ่งบันทึก ไว้กดพิมพ์ใบปะหน้า/ส่งข้อความต่อทันที */
 var CLIENT_KEY = newKey();
 function newKey(){
   if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -278,8 +279,17 @@ function save(){
       return;
     }
     var lots = (r.lots&&r.lots.length) ? "<br>ตัดล็อต: "+esc(r.lots.join(" · ")) : "";
+    /* งานยังไม่จบตรงที่บันทึก — ต้องพิมพ์ใบปะหน้าและส่งข้อความให้ลูกค้าต่อ
+       ฟอร์มถูกล้างไปแล้ว ถ้าไม่เก็บใบที่เพิ่งบันทึกไว้ตรงนี้ ต้องไปตามหาในแท็บออเดอร์
+       จึงจับใบนี้ไว้แล้ววางปุ่มไว้ให้ทำต่อได้เลย */
+    LAST_SAVED = orderFromForm_(payload, r);
     showOk("บันทึกแล้ว เลขที่ <b>"+esc(r.no)+"</b> · ยอดสุทธิ "+baht(r.net)+lots
-      +"<br>สต๊อกและกำไรในชีทอัปเดตให้เองแล้ว");
+      +"<br>สต๊อกและกำไรในชีทอัปเดตให้เองแล้ว"
+      +'<div class="okact">'
+      +'<button id="ok-lb">🖨 พิมพ์ใบปะหน้า</button>'
+      +'<button id="ok-mg">💬 ข้อความส่งลูกค้า</button></div>');
+    $("#ok-lb").onclick = function(){ openLabel(LAST_SAVED) };
+    $("#ok-mg").onclick = function(){ openMsg(LAST_SAVED) };
     CLIENT_KEY = newKey();
     resetForm();
     ORDERS = [];
@@ -294,6 +304,30 @@ function save(){
     SAVING=false; btn.disabled=false; btn.textContent="บันทึกออเดอร์ลงชีท";
     showErr("บันทึกไม่สำเร็จ — ข้อมูลในฟอร์มยังอยู่ครบ กดบันทึกใหม่ได้เลย\n\n" + m);
   });
+}
+
+/**
+ * ประกอบใบที่เพิ่งบันทึกจากฟอร์ม ให้หน้าตาเหมือนใบที่อ่านมาจากชีท
+ * ใบปะหน้ากับข้อความส่งลูกค้าจะได้ใช้ตัวเดียวกันได้ ไม่ต้องเขียนสองทาง
+ * ยอดเงินใช้ตัวที่ชีทคำนวณกลับมา ไม่คิดเองซ้ำ จะได้ไม่มีทางเพี้ยนจากชีท
+ */
+function orderFromForm_(payload, r){
+  var by = {};
+  CFG.products.forEach(function(p){ by[p.sku] = p });
+  var items = payload.items.map(function(it){
+    var p = by[it.sku] || {};
+    var unit = (it.price===""||it.price==null) ? Number(p.price||0) : Number(it.price);
+    var qty  = Number(it.qty)||0;
+    return { sku:it.sku, name:p.name||it.sku, unit:p.unit||"ชิ้น", qty:qty,
+             price:unit, total:Math.round(qty*unit*100)/100, lot:"" };
+  });
+  return { no:r.no, date:payload.date, channel:payload.channel,
+           cust:payload.cust, tel:payload.tel, addr:payload.addr,
+           carrier:payload.carrier, track:payload.track,
+           vat: payload.vat ? "รับ VAT" : "ไม่รับ VAT",
+           discount:payload.discount, ship:payload.ship,
+           status:payload.status, note:payload.note,
+           subtotal:r.subtotal, net:r.net, items:items };
 }
 
 function resetForm(){
