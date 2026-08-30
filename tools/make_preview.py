@@ -53,6 +53,28 @@ BOOT = {
         "shipFee": 50, "freeOver": 1000, "codFee": 0,
         "line": "https://line.me/R/ti/p/@citiofficial",
         "track": {"Flash Express": "https://www.flashexpress.com/fle/tracking?se={track}"},
+        # ข้อมูลผู้ขายบนเอกสาร — ค่าเดียวกับที่ setup() ใส่ให้ในชีท ตั้งค่าแอป
+        # ตัวอย่างที่เรนเดอร์ออกมาจึงเป็นหน้าตาเดียวกับของจริง ไม่ใช่ใบที่หัวหาย
+        "co": {
+            "name": "บริษัท เคมีคอล อินโนเวชั่น เทคโนโลยี แอนด์ อินสตรูเมนท์ จำกัด",
+            "nameEn": "Chemical Innovation Technology & Instruments Co.,Ltd.",
+            "shortName": "บริษัท เคมีคอลอินโนเวชั่น",
+            "addr": "70/72 ซ.เคหะร่มเกล้า78 ถ.ราษฎร์พัฒนา แขวงสะพานสูง "
+                    "เขตสะพานสูง กทม. 10240.",
+            "taxId": "0105558055790", "branch": "สำนักงานใหญ่",
+            "tel": "094-827-9999 / 096-192-9993",
+            "email": "siripong@chem-inno-tech.com",
+        },
+        "website": "www.cheminnotech.com",
+        "docSeller": "Citisales01",
+        "docSellerEmail": "Citisales01@chem-inno-tech.com",
+        "bank": "เลขบัญชี 431-039-4355 ธนาคารไทยพาณิชย์ บริษัทเคมีคอลอินโนเวชั่น "
+                "เทคโนโลยี แอนด์อินสตรูเมนท์ จำกัด",
+        "thanks": "บริษัทขอขอบคุณทุกท่าน  ที่ให้ความไว้ใจในการเลือกใช้บริการ"
+                  "หรือผลิตภัณฑ์ของบริษัท",
+        "docTerms": "ได้รับสินค้าตามรายการข้างบนไว้ถูกต้องแล้วถ้าสินค้าไม่เรียบร้อย"
+                    "กรุณาแจ้งภายใน 5 วัน",
+        "quoteDays": 7,
     },
     "products": PRODUCTS,
     "lots": {
@@ -105,7 +127,9 @@ window.google = { script: { run: (function(){
             })();
         var d = DOC_SRV.buildDoc_(p.type, src,
           { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
-        return { ok:true, no:"ONIV26-00231", doc:d, row:7 };
+        var pre = { rec:"ONIV26-", inv:"IV26-", quote:"QO26-", dep:"DR26-" }[p.type] || "DOC-";
+        var seq = { rec:231, inv:1, quote:114, dep:1 }[p.type] || 1;
+        return { ok:true, no: pre + ("0000"+seq).slice(-5), doc:d, row:7 };
       });
     },
     createOrder: function(p){

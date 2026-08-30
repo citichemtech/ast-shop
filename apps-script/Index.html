@@ -236,6 +236,55 @@ textarea{resize:vertical}
     <div class="card" id="list"><div class="load">กำลังโหลด…</div></div>
   </section>
 
+  <!-- ------------------------------------------------------ ใบเสนอราคา
+       แยกจากคีย์ออเดอร์ เพราะออกตอนยังไม่รู้ว่าลูกค้าจะซื้อไหม
+       จึงต้องไม่ตัดสต๊อกและไม่กินเลขออเดอร์ -->
+  <section id="pg-quote" style="display:none">
+    <div class="card">
+      <div class="msg" style="display:block;background:#eef4fc;color:#1b3a5c">
+        ใบเสนอราคาไม่ตัดสต๊อกและไม่สร้างออเดอร์ — ลูกค้าตกลงแล้วค่อยไปคีย์ออเดอร์
+      </div>
+      <div class="two">
+        <div class="fld"><label>วันที่</label><input id="q-date" type="date"></div>
+        <div class="fld"><label>ยืนราคาถึง</label><input id="q-valid" type="date"></div>
+      </div>
+      <div class="fld"><label>ชื่อลูกค้า / ชื่อบริษัท</label><input id="q-name" placeholder="บริษัท ... จำกัด"></div>
+      <div class="two">
+        <div class="fld"><label>เลขประจำตัวผู้เสียภาษี</label>
+          <input id="q-tax" inputmode="numeric" maxlength="17"></div>
+        <div class="fld"><label>โทรศัพท์</label><input id="q-tel"></div>
+      </div>
+      <div class="fld"><label>ที่อยู่</label><textarea id="q-addr" rows="3"></textarea></div>
+      <div class="fld"><label>อีเมล</label><input id="q-email" type="email"></div>
+    </div>
+
+    <div class="card">
+      <div class="subhd">รายการที่เสนอราคา</div>
+      <div id="q-items"></div>
+      <button class="mini" id="q-add" type="button">+ เพิ่มรายการ</button>
+    </div>
+
+    <div class="card">
+      <div class="two">
+        <div class="fld"><label>ส่วนลด (บาท)</label>
+          <input id="q-disc" type="number" inputmode="decimal" min="0" step="0.01" value="0"></div>
+        <div class="fld"><label>ค่าจัดส่ง (บาท)</label>
+          <input id="q-ship" type="number" inputmode="decimal" min="0" step="0.01" value="0"></div>
+      </div>
+      <div class="fld"><label>ภาษีมูลค่าเพิ่ม</label>
+        <select id="q-vat">
+          <option value="excl">บวก VAT 7% จากราคา</option>
+          <option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>
+          <option value="none">ไม่คิด VAT</option>
+        </select></div>
+      <div class="fld"><label>หมายเหตุ (Remark)</label>
+        <textarea id="q-note" rows="2" placeholder="เช่น Delivery by Flash Express"></textarea></div>
+      <div id="q-sum"></div>
+      <button class="btn" id="q-make" style="margin-top:10px">ออกใบเสนอราคา</button>
+      <div id="q-out" style="margin-top:12px"></div>
+    </div>
+  </section>
+
   <!-- --------------------------------------------------------- สรุป -->
   <section id="pg-sum" style="display:none">
     <div class="chips" id="sum-range"></div>
@@ -246,6 +295,7 @@ textarea{resize:vertical}
 <div class="tabs">
   <button data-go="new" class="on"><em>＋</em>คีย์ออเดอร์</button>
   <button data-go="list"><em>▤</em>ออเดอร์</button>
+  <button data-go="quote"><em>◇</em>เสนอราคา</button>
   <button data-go="sum"><em>▦</em>สรุปยอด</button>
 </div>
 

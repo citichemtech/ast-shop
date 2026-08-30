@@ -508,6 +508,149 @@ function renderOrders(){
   }).join("");
 }
 
+/* ---------------------------------------------------------------- ใบเสนอราคา
+
+   ออกก่อนมีออเดอร์ จึงไม่แตะสต๊อกและไม่กินเลขออเดอร์เลย
+   รายการเลือกจากฐานสินค้าได้ และพิมพ์เองก็ได้ เพราะใบเสนอราคาบ่อยครั้ง
+   มีของที่ยังไม่มีในสต๊อก หรือบรรทัดอย่าง "ค่าส่ง" ที่ไม่ใช่สินค้า           */
+
+var Q_READY = false;
+
+function quoteInit(){
+  if(Q_READY) return;
+  Q_READY = true;
+  $("#q-date").value  = todayISO();
+  var days = Number((APP && APP.quoteDays) || 7) || 7;
+  var d = new Date(); d.setDate(d.getDate() + days);
+  var pz = function(n){ return n<10?"0"+n:""+n };
+  $("#q-valid").value = d.getFullYear()+"-"+pz(d.getMonth()+1)+"-"+pz(d.getDate());
+  qAdd();
+  $("#q-add").onclick  = function(){ qAdd(); qCalc() };
+  $("#q-make").onclick = qMake;
+  ["#q-disc","#q-ship","#q-vat"].forEach(function(sel){
+    $(sel).addEventListener("input", qCalc);
+    $(sel).addEventListener("change", qCalc);
+  });
+  qCalc();
+}
+
+function qRows(){ return $$("#q-items .it") }
+
+function qAdd(v){
+  v = v || {};
+  var d = document.createElement("div");
+  d.className = "it";
+  d.innerHTML =
+    '<div class="hd"><b>รายการที่ <span class="n"></span></b>'
+   +'<button class="mini red rm" type="button">ลบ</button></div>'
+   +'<div class="fld" style="margin-bottom:8px"><select class="q-sku">'+prodOptions(v.sku)+'</select></div>'
+   +'<div class="fld" style="margin-bottom:8px">'
+   +'<label style="font-size:13px;color:var(--gray)">ข้อความที่จะพิมพ์บนใบ</label>'
+   +'<input class="q-desc" value="'+esc(v.name||"")+'" placeholder="เลือกสินค้าข้างบน หรือพิมพ์เอง"></div>'
+   +'<div class="three">'
+   +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
+   +'<input class="q-qty" type="number" inputmode="decimal" min="0" step="any" value="'+(v.qty||"")+'"></div>'
+   +'<div><label style="font-size:13px;color:var(--gray)">หน่วย</label>'
+   +'<input class="q-unit" value="'+esc(v.unit||"")+'" placeholder="ชิ้น"></div>'
+   +'<div><label style="font-size:13px;color:var(--gray)">ราคา/หน่วย</label>'
+   +'<input class="q-price" type="number" inputmode="decimal" min="0" step="0.01" value="'+(v.price||"")+'"></div>'
+   +'</div>';
+  $("#q-items").appendChild(d);
+
+  d.querySelector(".rm").onclick = function(){
+    if(qRows().length<=1){ toast("ต้องมีอย่างน้อยหนึ่งรายการ"); return }
+    d.remove(); qCalc();
+  };
+  /* เลือกสินค้าแล้วเติมชื่อ หน่วย ราคาให้ แต่แก้ทับได้ทุกช่อง
+     เพราะราคาที่เสนอมักไม่เท่าราคาป้าย (ซื้อเยอะลดให้) */
+  d.querySelector(".q-sku").onchange = function(){
+    var sku = d.querySelector(".q-sku").value;
+    var p = CFG.products.filter(function(x){ return x.sku===sku })[0];
+    if(!p) return;
+    d.querySelector(".q-desc").value  = p.name;
+    if(!d.querySelector(".q-unit").value)  d.querySelector(".q-unit").value  = p.unit||"";
+    if(!d.querySelector(".q-price").value) d.querySelector(".q-price").value = p.price||"";
+    qCalc();
+  };
+  [".q-qty",".q-price",".q-desc"].forEach(function(c){
+    d.querySelector(c).addEventListener("input", qCalc);
+  });
+  qNumber();
+}
+
+function qNumber(){
+  qRows().forEach(function(r,i){ r.querySelector(".n").textContent = i+1 });
+}
+
+function qRead(){
+  return qRows().map(function(r){
+    return { name: r.querySelector(".q-desc").value.trim(),
+             qty:  Number(r.querySelector(".q-qty").value)||0,
+             unit: r.querySelector(".q-unit").value.trim(),
+             price:Number(r.querySelector(".q-price").value)||0 };
+  }).filter(function(it){ return it.name && it.qty>0 });
+}
+
+function qCalc(){
+  qNumber();
+  var items = qRead();
+  var sub = items.reduce(function(a,it){ return a + Math.round(it.qty*it.price*100)/100 }, 0);
+  var ship = Number($("#q-ship").value)||0, disc = Number($("#q-disc").value)||0;
+  var goods = Math.round((sub + ship - disc)*100)/100;
+  var mode = $("#q-vat").value;
+  var rate = (mode==="none") ? 0 : 0.07;
+  var base, vat, total;
+  if(!rate){ base=goods; vat=0; total=goods }
+  else if(mode==="incl"){ total=goods; base=Math.round(goods/1.07*100)/100; vat=Math.round((total-base)*100)/100 }
+  else { base=goods; vat=Math.round(goods*0.07*100)/100; total=Math.round((base+vat)*100)/100 }
+  $("#q-sum").innerHTML =
+     '<div class="sum"><span>มูลค่าสินค้า</span><b>'+baht(base)+'</b></div>'
+    +'<div class="sum"><span>ภาษีมูลค่าเพิ่ม '+(rate?"7%":"— ไม่คิด")+'</span><b>'+baht(vat)+'</b></div>'
+    +'<div class="sum big"><span>รวมทั้งสิ้น</span><b>'+baht(total)+'</b></div>';
+}
+
+function qMake(){
+  var items = qRead();
+  if(!items.length){ toast("ยังไม่มีรายการที่กรอกครบ"); return }
+  var name = $("#q-name").value.trim();
+  if(!name){ toast("ยังไม่ได้ใส่ชื่อลูกค้า"); $("#q-name").focus(); return }
+
+  var vatSel = $("#q-vat").value;
+  var cust = { name:name, taxId:$("#q-tax").value.replace(/[^\d]/g,""), branch:"",
+               addr:$("#q-addr").value.trim(), tel:$("#q-tel").value.trim(),
+               email:$("#q-email").value.trim() };
+  var btn = $("#q-make"); btn.disabled = true;
+  $("#q-out").innerHTML = '<div class="load">กำลังออกเลขเอกสารและลงชีท…</div>';
+
+  api("issueDoc", {
+    type:"quote", items:items,
+    ship:Number($("#q-ship").value)||0, discount:Number($("#q-disc").value)||0,
+    cust:cust, date:$("#q-date").value, terms:"", po:"",
+    note:$("#q-note").value.trim(), by:$("#f-by")?$("#f-by").value:"",
+    vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
+    clientKey: "qt-"+Date.now()+"-"+Math.random().toString(36).slice(2,8)
+  }).then(function(r){
+    var m = { no:r.no, date:$("#q-date").value, validTo:$("#q-valid").value, cust:cust,
+              po:"", terms:"", seller:CFG.docSeller||"", sellerEmail:CFG.docSellerEmail||"",
+              note:$("#q-note").value.trim() };
+    return buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+      $("#q-out").innerHTML =
+         '<div class="msg ok" style="display:block">ออกใบเสนอราคา <b>'+esc(r.no)+'</b> แล้ว '
+        +'ลงทะเบียนในชีท เอกสาร เรียบร้อย · <b>สต๊อกไม่ถูกตัด</b></div>'
+        +'<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+        +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
+        +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>';
+      bindLabelButtons(url, r.no+".png");
+      btn.disabled = false;
+    });
+  }).catch(function(e){
+    btn.disabled = false;
+    $("#q-out").innerHTML = '<div style="color:var(--red)">ออกใบไม่สำเร็จ: '
+      +esc(e&&e.message?e.message:e)+'</div>';
+  });
+}
+
 /* ------------------------------------------------------------------ เอกสารขาย */
 
 var DOC_BTN = [
@@ -1011,12 +1154,13 @@ document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModa
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
 
 function go(page){
-  ["new","list","sum"].forEach(function(p){
+  ["new","list","quote","sum"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===page) });
   if(page==="list") loadOrders();
   if(page==="sum")  loadSummary();
+  if(page==="quote") quoteInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){
