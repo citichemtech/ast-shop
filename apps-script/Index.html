@@ -118,6 +118,31 @@ textarea{resize:vertical}
 .empty{text-align:center;color:var(--gray);padding:34px 12px;font-size:14px}
 .empty b{display:block;color:var(--ink);margin-bottom:5px}
 .load{text-align:center;color:var(--gray);padding:40px 12px}
+/* ---------------- หน้าสรุปยอด ----------------
+   ตัวเลขหลักเป็น "ป้ายตัวเลข" ไม่ใช่กราฟ เพราะมันคือค่าเดียว ไม่ได้เปรียบเทียบอะไร
+   ส่วนที่เทียบกันจริง (ค่ายขนส่ง ช่องทาง สินค้า) เป็นแท่งนอน เพราะชื่อไทยยาว
+   แท่งใช้สีเดียวทั้งหมด — แต่ละกล่องมีชุดข้อมูลชุดเดียว ไม่ต้องใช้สีแยกตัวตน
+   ชื่อกับตัวเลขเป็นตัวหนังสือสีปกติ ไม่เอาสีของแท่งมาใส่ตัวหนังสือ */
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;margin-bottom:10px;-webkit-overflow-scrolling:touch}
+.chips button{flex:none;padding:8px 15px;border-radius:999px;border:1px solid var(--line);
+  background:var(--card);font-size:13.5px;color:var(--gray)}
+.chips button.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:700}
+
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px}
+.kpi span{display:block;font-size:12px;color:var(--gray)}
+.kpi b{display:block;font-size:21px;line-height:1.25;margin-top:3px;font-variant-numeric:tabular-nums}
+.kpi.wide{grid-column:1 / -1}
+.kpi.good b{color:var(--green)}
+
+.brow{margin:12px 0 0}
+.brow:first-of-type{margin-top:4px}
+.btop{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:14px}
+.bname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bval{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.btrack{height:8px;background:var(--bg);border-radius:4px;margin-top:6px;overflow:hidden}
+.btrack i{display:block;height:100%;background:var(--blue);border-radius:0 4px 4px 0;min-width:3px}
+.bsub{font-size:12px;color:var(--gray);margin-top:4px}
 .giftck{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--gray)}
 .giftck input{width:auto;transform:scale(1.15)}
 /* ปุ่มทำงานต่อหลังบันทึก — พิมพ์ใบปะหน้า / ส่งข้อความ อยู่ในกล่องเขียวเลย
@@ -213,7 +238,8 @@ textarea{resize:vertical}
 
   <!-- --------------------------------------------------------- สรุป -->
   <section id="pg-sum" style="display:none">
-    <div class="card" id="summary"><div class="load">กำลังโหลด…</div></div>
+    <div class="chips" id="sum-range"></div>
+    <div id="summary"><div class="load">กำลังโหลด…</div></div>
   </section>
 </div>
 

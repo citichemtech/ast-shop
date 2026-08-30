@@ -305,11 +305,31 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   console.log('\n13. แท็บสรุปยอด');
   await page.click('.tabs button[data-go="sum"]');
   await page.waitForTimeout(600);
+  eq('มีปุ่มเลือกช่วงเวลาครบ', await page.locator('#sum-range button').count(), 5);
+  eq('เปิดมาอยู่ที่ "วันนี้"', await page.textContent('#sum-range button.on'), 'วันนี้');
+
+  /* ออเดอร์ตัวอย่างเป็นของเมื่อวาน กด "ทั้งหมด" ให้เห็นแน่ ไม่ขึ้นกับวันที่รันทดสอบ */
+  await page.click('#sum-range button[data-r="all"]');
+  await page.waitForTimeout(300);
   var sum = await page.textContent('#summary');
-  truthy('มีภาพรวม', /ภาพรวม/.test(sum));
+  truthy('นับจำนวนออเดอร์', /1 ใบ/.test(sum));
   truthy('มียอดชำระสุทธิ', /฿800.00/.test(sum));
+  truthy('มีกำไรขั้นต้น', /กำไรขั้นต้น/.test(sum));
+  truthy('แยกตามค่ายขนส่ง', /Flash Express/.test(sum));
   truthy('แยกตามช่องทางขาย', /เพจ Facebook/.test(sum));
-  truthy('บอกว่าดูกำไรได้ที่ชีท', /สรุปยอดขาย/.test(sum));
+  truthy('มีสินค้าขายดี', /สินค้าขายดี/.test(sum));
+  eq('แท่งกราฟยาวสุดของแต่ละกล่องเต็ม 100%',
+    await page.evaluate(function () {
+      return document.querySelector('.btrack i').style.width;
+    }), '100%');
+
+  console.log('\n   สลับไป "เมื่อวาน" แล้วตัวเลขต้องเปลี่ยนตาม');
+  await page.click('#sum-range button[data-r="today"]');
+  await page.waitForTimeout(300);
+  truthy('วันนี้ยังไม่มีออเดอร์ ต้องบอกตรง ๆ ไม่ใช่โชว์ศูนย์',
+    /ยังไม่มีออเดอร์ในช่วงนี้/.test(await page.textContent('#summary')));
+  await page.click('#sum-range button[data-r="all"]');
+  await page.waitForTimeout(300);
   await page.screenshot({ path: 'out/ui-summary.png' });
 
   await page.click('.tabs button[data-go="new"]');
