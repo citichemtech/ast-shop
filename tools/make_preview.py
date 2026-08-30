@@ -92,6 +92,22 @@ window.google = { script: { run: (function(){
         return {ok:true,no:no,changed:true};
       });
     },
+    /* ออกเอกสารแบบจำลอง — คิดเงินด้วยตรรกะเดียวกับ Doc.gs ตัวจริง
+       (สคริปต์นี้แปะสำเนาของ buildDoc_ ไว้ให้หน้าเว็บใช้ ดูตัวแปร DOC_SRV ข้างล่าง) */
+    issueDoc: function(p){
+      reply(function(){
+        var src = (p.type === "quote")
+          ? { items: p.items || [], ship: p.ship, discount: p.discount }
+          : (function(){
+              var o = MOCK_ORDERS.filter(function(x){ return x.no === p.orderNo })[0];
+              if(!o) throw new Error("ไม่พบออเดอร์ " + p.orderNo);
+              return { items:o.items, ship:o.ship, discount:o.discount };
+            })();
+        var d = DOC_SRV.buildDoc_(p.type, src,
+          { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
+        return { ok:true, no:"ONIV26-00231", doc:d, row:7 };
+      });
+    },
     createOrder: function(p){
       window.SENT.push(p);
       reply(function(){
@@ -140,8 +156,19 @@ def main():
     if "<?" in page:
         sys.exit("ยังมี scriptlet ของ HtmlService เหลืออยู่ ประกอบไฟล์ไม่ครบ")
 
-    mock = (MOCK.replace("__BOOT__", json.dumps(BOOT, ensure_ascii=False))
-                .replace("__ORDERS__", json.dumps(ORDERS, ensure_ascii=False)))
+    # ตรรกะคิดเงินฝั่งเซิร์ฟเวอร์ตัวจริง ยัดเข้าหน้าเว็บจำลอง
+    # ทดสอบจึงเจอบั๊กของ buildDoc_ ตัวจริง ไม่ใช่ของที่เขียนขึ้นมาหลอกตัวเอง
+    api_src = (GS / "Api.gs").read_text(encoding="utf-8")
+    m_r2 = re.search(r"function round2_\(n\) \{[\s\S]*?\n\}", api_src)
+    if not m_r2:
+        sys.exit("หา round2_ ใน Api.gs ไม่เจอ")
+    doc_src = (GS / "Doc.gs").read_text(encoding="utf-8")
+    srv = ("<script>var DOC_SRV=(function(){" + m_r2.group(0) + "\n" + doc_src +
+           "\nreturn {buildDoc_:buildDoc_,bahtText_:bahtText_,vatSplit_:vatSplit_,"
+           "taxIdValid_:taxIdValid_,nextDocNo_:nextDocNo_};})();</script>")
+
+    mock = (srv + MOCK.replace("__BOOT__", json.dumps(BOOT, ensure_ascii=False))
+                      .replace("__ORDERS__", json.dumps(ORDERS, ensure_ascii=False)))
 
     # ตัวจริงมีหัวเอกสารของตัวเองแล้ว (และ HtmlService เป็นคนเติม viewport ให้ตอนเสิร์ฟ)
     # ที่นี่จึงเติม viewport กับ title ลงใน <head> เดิม แล้วแทรกของจำลองหลัง <body>

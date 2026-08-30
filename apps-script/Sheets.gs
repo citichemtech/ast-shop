@@ -270,7 +270,7 @@ function appCfg_() {
     /* ข้อมูลผู้ขายบนใบกำกับภาษี — กฎหมายบังคับว่าต้องมีชื่อ ที่อยู่ และเลขผู้เสียภาษี
        เก็บในชีทไม่ใช่ในโค้ด เจ้าของร้านจะได้แก้เองโดยไม่ต้องรอคนแก้โปรแกรม */
     co: { name: '', nameEn: '', shortName: '', addr: '', taxId: '', branch: '', tel: '', email: '' },
-    bank: '', thanks: '', docTerms: '', vatMode: 'incl',
+    bank: '', thanks: '', docTerms: '', website: '', docSeller: '', docSellerEmail: '', vatMode: 'excl',
     docPrefix: { rec: 'ONIV26-', inv: 'IV26-', quote: 'QO26-', dep: 'DR26-' },
     quoteDays: 7
   };
@@ -300,10 +300,13 @@ function appCfg_() {
     else if (k === 'สำนักงานใหญ่ / สาขา') out.co.branch = String(val || '');
     else if (k === 'เบอร์โทรบริษัท') out.co.tel = tel_(val);
     else if (k === 'อีเมลบริษัท') out.co.email = String(val || '');
+    else if (k === 'เว็บไซต์บริษัท') out.website = String(val || '');
+    else if (k === 'ชื่อผู้เสนอ/พนักงานขาย บนเอกสาร') out.docSeller = String(val || '');
+    else if (k === 'อีเมลผู้เสนอ บนเอกสาร') out.docSellerEmail = String(val || '');
     else if (k === 'เลขที่บัญชีธนาคาร') out.bank = String(val || '');
     else if (k === 'ข้อความขอบคุณท้ายหัวเอกสาร') out.thanks = String(val || '');
     else if (k === 'ข้อความในช่องหมายเหตุ') out.docTerms = String(val || '');
-    else if (k === 'ราคาสินค้ารวม VAT แล้ว') out.vatMode = /ไม่/.test(String(val || '')) ? 'excl' : 'incl';
+    else if (k === 'ราคาสินค้ารวม VAT แล้วหรือยัง') out.vatMode = /ไม่|ยัง/.test(String(val || '')) ? 'excl' : 'incl';
     else if (k === 'คำนำหน้าเลขใบเสร็จ/ใบกำกับภาษี') out.docPrefix.rec = String(val || out.docPrefix.rec);
     else if (k === 'คำนำหน้าเลขใบแจ้งหนี้') out.docPrefix.inv = String(val || out.docPrefix.inv);
     else if (k === 'คำนำหน้าเลขใบเสนอราคา') out.docPrefix.quote = String(val || out.docPrefix.quote);

@@ -321,6 +321,137 @@ function setTracking(no, track, status) {
   }
 }
 
+/* ------------------------------------------------------------ เอกสารขาย */
+
+/**
+ * ออกเอกสารขายหนึ่งใบ แล้วลงทะเบียนไว้ในชีท เอกสาร
+ *
+ * ใบเสนอราคาออกได้โดยไม่ต้องมีออเดอร์ (ยังไม่รู้ว่าลูกค้าจะซื้อไหม)
+ * อีกสามชนิดต้องอ้างออเดอร์ที่มีจริง เพราะเป็นเอกสารของการขายที่เกิดขึ้นแล้ว
+ *
+ * ออกใบกำกับภาษีซ้ำใบที่สองให้ออเดอร์เดียวกันไม่ได้ ถ้าไม่ยืนยันมาว่าตั้งใจ —
+ * ใบกำกับภาษีสองใบสำหรับการขายครั้งเดียวเป็นปัญหาทางบัญชีของทั้งร้านและลูกค้า
+ * ถ้าจะออกใหม่จริง ๆ ต้องยกเลิกใบเก่าก่อน (กรอกเหตุผลในชีท) แล้วส่ง allowDup มา
+ */
+function issueDoc(payload) {
+  var email = requireStaff_();
+  var p = payload || {};
+  var t = docType_(String(p.type || ''));
+  if (!t) throw new Error('ไม่รู้จักชนิดเอกสาร');
+
+  var clientKey = String(p.clientKey || '').trim();
+  if (!clientKey) throw new Error('คำขอไม่มี clientKey — ระบบกันออกใบซ้ำไม่ได้ ไม่ออกให้');
+  var props = PropertiesService.getScriptProperties();
+  var done = props.getProperty('dk_' + clientKey);
+  if (done) return { ok: true, no: done, repeat: true };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    done = props.getProperty('dk_' + clientKey);
+    if (done) return { ok: true, no: done, repeat: true };
+
+    var cfg = appCfg_();
+    var orderNo = String(p.orderNo || '').trim();
+    var src;
+    if (t.quote) {
+      src = { items: p.items || [], ship: p.ship, discount: p.discount };
+      orderNo = '';
+    } else {
+      if (!orderNo) throw new Error('เอกสารชนิดนี้ต้องอ้างออเดอร์ ยังไม่ได้บอกว่าออเดอร์ไหน');
+      var ord = findOrder_(orderNo);
+      if (!ord) throw new Error('ไม่พบออเดอร์ ' + orderNo + ' ในชีท');
+      src = { items: ord.items, ship: ord.ship, discount: ord.discount };
+    }
+
+    var used = readDocNos_();
+    if (orderNo && !p.allowDup) {
+      var dup = used.byOrder[orderNo + '|' + t.key];
+      if (dup) {
+        throw new Error('ออเดอร์ ' + orderNo + ' ออก' + t.th + 'ไปแล้วเป็นใบ ' + dup +
+          ' — ถ้าจะออกใหม่ ต้องยกเลิกใบเดิมในชีท เอกสาร ก่อน');
+      }
+    }
+
+    var prefix = cfg.docPrefix[t.key] || (t.code + '26-');
+    var no = nextDocNo_(prefix, used.nos);
+    var d = buildDoc_(t.key, src, {
+      vatRate: p.novat ? 0 : cfgGet_().vatRate,
+      vatMode: p.vatMode || cfg.vatMode
+    });
+
+    var row = nextRow_('doc', SH.doc.IN.no);
+    if (!row) throw new Error('ชีท เอกสาร เต็มแล้ว — สั่ง setup() อีกครั้งเพื่อขยายแถว');
+    var cu = p.cust || {};
+    writeRow_('doc', row, {
+      no: no, type: t.th, date: parseDate_(p.date) || new Date(), orderNo: orderNo,
+      custName: String(cu.name || ''), custTaxId: String(cu.taxId || ''),
+      custBranch: String(cu.branch || ''), custAddr: String(cu.addr || ''),
+      custTel: String(cu.tel || ''), custEmail: String(cu.email || ''),
+      custCode: String(cu.code || ''), po: String(p.po || ''), terms: String(p.terms || ''),
+      base: d.base, vat: d.vat, total: d.total,
+      staff: String(p.by || '').trim().slice(0, 40) || email,
+      note: String(p.note || '')
+    });
+    SpreadsheetApp.flush();
+    props.setProperty('dk_' + clientKey, no);
+    writeLog_(email, 'ออกเอกสาร', SH.doc.name, no, t.th, '', d.total,
+      orderNo ? 'จากออเดอร์ ' + orderNo : 'ออกเดี่ยว');
+
+    return { ok: true, no: no, doc: d, row: row };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** เลขเอกสารที่เคยออกไปแล้วทั้งหมด + ดัชนีว่าออเดอร์ไหนออกใบชนิดไหนไปแล้ว */
+function readDocNos_() {
+  var out = { nos: [], byOrder: {} };
+  var s = sheet_('doc');
+  var last = formulaLimit_('doc');
+  if (last < DATA_ROW) return out;
+  var n = last - DATA_ROW + 1;
+  var v = s.getRange(DATA_ROW, SH.doc.IN.no, n, SH.doc.IN.voidWhy - SH.doc.IN.no + 1).getValues();
+  var iType = SH.doc.IN.type - SH.doc.IN.no;
+  var iOrd = SH.doc.IN.orderNo - SH.doc.IN.no;
+  var iVoid = SH.doc.IN.voidWhy - SH.doc.IN.no;
+  for (var i = 0; i < v.length; i++) {
+    var no = String(v[i][0] || '').trim();
+    if (!no) continue;
+    out.nos.push(no);
+    /* ใบที่ยกเลิกไปแล้วไม่นับเป็นใบที่ยังใช้อยู่ จึงออกใบใหม่แทนได้
+       แต่เลขของมันยังอยู่ในชุด ไม่เอาเลขเดิมมาใช้ซ้ำ */
+    if (String(v[i][iVoid] || '').trim()) continue;
+    var ord = String(v[i][iOrd] || '').trim();
+    if (!ord) continue;
+    var th = String(v[i][iType] || '').trim();
+    for (var k = 0; k < DOC_TYPES.length; k++) {
+      if (DOC_TYPES[k].th === th) out.byOrder[ord + '|' + DOC_TYPES[k].key] = no;
+    }
+  }
+  return out;
+}
+
+/** เลขเอกสารถัดไปของแต่ละชนิด — ให้หน้าจอโชว์ก่อนกดออกจริง */
+function peekDocNos() {
+  requireStaff_();
+  var cfg = appCfg_();
+  var used = readDocNos_();
+  var out = {};
+  for (var i = 0; i < DOC_TYPES.length; i++) {
+    var t = DOC_TYPES[i];
+    out[t.key] = nextDocNo_(cfg.docPrefix[t.key] || (t.code + '26-'), used.nos);
+  }
+  return out;
+}
+
+/** หาออเดอร์หนึ่งใบพร้อมรายการ — ใช้ตัวอ่านเดียวกับหน้ารายการออเดอร์ */
+function findOrder_(no) {
+  var list = getOrders(0);
+  for (var i = 0; i < list.length; i++) if (String(list[i].no) === String(no)) return list[i];
+  return null;
+}
+
 /* -------------------------------------------------------------- เลขที่ออเดอร์ */
 
 /** เลขถัดไปแบบดูเฉย ๆ — ยังไม่จอง ต้องเรียกใต้ lock อีกทีตอนบันทึกจริง */

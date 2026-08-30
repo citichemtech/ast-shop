@@ -34,6 +34,13 @@ function call(fn, args, done, fail){
     })[fn].apply(null, args||[]);
 }
 
+/* แบบ promise สำหรับจุดที่ต้องต่อหลายขั้น (ออกเลขเอกสาร → วาดกระดาษ → แชร์) */
+function api(fn, args){
+  return new Promise(function(res, rej){
+    call(fn, [args], res, function(m){ rej(new Error(m)) });
+  });
+}
+
 /* ------------------------------------------------------------------ เริ่มระบบ */
 
 function boot(){
@@ -65,6 +72,14 @@ function boot(){
     $("#brand").textContent = CFG.brand;      /* ชื่อร้านเอาจากชีท ตั้งค่าระบบ */
     CFG.carrierLinks = APP.track || {};
     CFG.line   = APP.line || "";
+
+    /* ข้อมูลบนหัวเอกสารขาย — มาจากชีท ตั้งค่าแอป ทั้งหมด ไม่มีอะไรฝังในโค้ด
+       โลโก้บนเอกสารใช้ตัวความละเอียดสูงกว่าของใบปะหน้า เพราะพิมพ์ลง A4 */
+    CFG.doc = { co: APP.co || {}, bank: APP.bank || "", thanks: APP.thanks || "",
+                terms: APP.docTerms || "", website: APP.website || "",
+                logo: (typeof DOC_LOGO !== "undefined") ? DOC_LOGO : CFG.logo };
+    CFG.docSeller = APP.docSeller || "";
+    CFG.docSellerEmail = APP.docSellerEmail || "";
 
     /* ผู้คีย์ — ทั้งร้านใช้บัญชี Google เดียวกัน ชื่อคนคีย์จึงต้องเลือกเอง
        จำไว้ในเครื่องนี้ ครั้งหน้าเปิดมาก็เป็นชื่อเดิม ไม่ต้องเลือกซ้ำทุกใบ */
@@ -319,9 +334,11 @@ function save(){
       +"<br>สต๊อกและกำไรในชีทอัปเดตให้เองแล้ว"
       +'<div class="okact">'
       +'<button id="ok-lb">🖨 พิมพ์ใบปะหน้า</button>'
-      +'<button id="ok-mg">💬 ข้อความส่งลูกค้า</button></div>');
+      +'<button id="ok-mg">💬 ข้อความส่งลูกค้า</button>'
+      +'<button id="ok-dc">📄 ออกเอกสาร</button></div>');
     $("#ok-lb").onclick = function(){ openLabel(LAST_SAVED) };
     $("#ok-mg").onclick = function(){ openMsg(LAST_SAVED) };
+    $("#ok-dc").onclick = function(){ openDoc(LAST_SAVED) };
     CLIENT_KEY = newKey();
     resetForm();
     ORDERS = []; SUM_CACHE = null;
@@ -486,8 +503,127 @@ function renderOrders(){
       +'<button class="sq" data-lb="'+i+'" title="ใบปะหน้า">🖨</button>'
       +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
       +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
+      +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">📄</button>'
       +'</div></div>';
   }).join("");
+}
+
+/* ------------------------------------------------------------------ เอกสารขาย */
+
+var DOC_BTN = [
+  { key:"rec",   label:"ใบเสร็จรับเงิน / ใบกำกับภาษี", hint:"ลูกค้าจ่ายเงินแล้ว และขอใบกำกับภาษี" },
+  { key:"inv",   label:"ใบแจ้งหนี้ / บิลเงินสด",       hint:"วางบิล ยังไม่ได้รับเงิน" },
+  { key:"dep",   label:"ใบรับเงินมัดจำ",              hint:"รับมัดจำไว้ก่อน ยังไม่ส่งของครบ" },
+  { key:"quote", label:"ใบเสนอราคา",                 hint:"ยังไม่มีออเดอร์ ออกจากแท็บใบเสนอราคา" }
+];
+
+/* จำข้อมูลผู้เสียภาษีของลูกค้าไว้ในเครื่อง ลูกค้าประจำจะได้ไม่ต้องพิมพ์ใหม่ทุกครั้ง
+   เก็บในเครื่องเท่านั้น ไม่ขึ้นชีท จนกว่าจะกดออกใบจริง */
+function taxMemo(name){
+  try{ return JSON.parse(localStorage.getItem("ast-tax-"+name) || "null") }catch(e){ return null }
+}
+function taxMemoSave(name, o){
+  try{ localStorage.setItem("ast-tax-"+name, JSON.stringify(o)) }catch(e){}
+}
+
+function openDoc(o){
+  var memo = taxMemo(o.cust) || {};
+  openModal("ออกเอกสาร — "+o.no,
+     '<div class="subhd">เลือกชนิดเอกสาร</div><div id="dc-pick">'
+    + DOC_BTN.filter(function(t){return t.key!=="quote"}).map(function(t,i){
+        return '<label class="giftck" style="align-items:flex-start">'
+          +'<input type="radio" name="dctype" value="'+t.key+'"'+(i===0?" checked":"")+'>'
+          +'<span><b style="color:var(--ink)">'+esc(t.label)+'</b><br>'
+          +'<span style="font-size:12.5px">'+esc(t.hint)+'</span></span></label>';
+      }).join("")
+    +'</div>'
+    +'<div class="subhd">ข้อมูลผู้ซื้อบนเอกสาร</div>'
+    +'<div class="fld"><label>ชื่อผู้เสียภาษี / ชื่อบริษัท</label>'
+    +'<input id="dc-name" value="'+esc(memo.name||o.cust||"")+'"></div>'
+    +'<div class="fld"><label>เลขประจำตัวผู้เสียภาษี 13 หลัก</label>'
+    +'<input id="dc-tax" inputmode="numeric" maxlength="17" value="'+esc(memo.taxId||"")+'">'
+    +'<div class="hint" id="dc-taxmsg">เว้นว่างได้ถ้าลูกค้าเป็นบุคคลธรรมดาไม่ขอใบกำกับภาษี</div></div>'
+    +'<div class="two"><div class="fld"><label>สำนักงานใหญ่ / สาขา</label>'
+    +'<select id="dc-branch"><option>สำนักงานใหญ่</option><option>สาขา</option><option></option></select></div>'
+    +'<div class="fld"><label>เลขที่ใบสั่งซื้อ (PO)</label><input id="dc-po" value=""></div></div>'
+    +'<div class="fld"><label>ที่อยู่ตามใบกำกับภาษี</label>'
+    +'<textarea id="dc-addr" rows="3">'+esc(memo.addr||o.addr||"")+'</textarea>'
+    +'<div class="hint">ที่อยู่จดทะเบียนของลูกค้า อาจไม่ใช่ที่อยู่ที่ส่งของ</div></div>'
+    +'<div class="two"><div class="fld"><label>โทรศัพท์</label>'
+    +'<input id="dc-tel" value="'+esc(memo.tel||o.tel||"")+'"></div>'
+    +'<div class="fld"><label>อีเมล</label><input id="dc-email" value="'+esc(memo.email||"")+'"></div></div>'
+    +'<div class="two"><div class="fld"><label>เงื่อนไขการชำระเงิน</label>'
+    +'<select id="dc-terms"><option>เงินสด</option><option>โอนเงิน</option>'
+    +'<option>เก็บเงินปลายทาง</option><option>เครดิต 30 วัน</option></select></div>'
+    +'<div class="fld"><label>ภาษีมูลค่าเพิ่ม</label>'
+    +'<select id="dc-vat"><option value="excl">บวก VAT 7% จากราคา</option>'
+    +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
+    +'<option value="none">ไม่คิด VAT</option></select></div></div>'
+    +'<button class="btn" id="dc-make">ออกเอกสาร</button>'
+    +'<div id="dc-out" style="margin-top:12px"></div>');
+
+  /* เลขผู้เสียภาษีผิดหลักเดียว ลูกค้าเอาใบไปใช้เครดิตภาษีซื้อไม่ได้
+     เตือนทันทีตอนพิมพ์ แต่ไม่บล็อก เพราะลูกค้าบุคคลธรรมดาไม่มีเลขนี้ */
+  $("#dc-tax").addEventListener("input", function(){
+    var t=this.value.replace(/[^\d]/g,""), m=$("#dc-taxmsg");
+    if(!t){ m.textContent="เว้นว่างได้ถ้าลูกค้าเป็นบุคคลธรรมดาไม่ขอใบกำกับภาษี"; m.style.color=""; return }
+    if(t.length<13){ m.textContent="ยังไม่ครบ 13 หลัก (พิมพ์แล้ว "+t.length+")"; m.style.color="var(--amber)"; return }
+    if(taxIdOk(t)){ m.textContent="✓ เลขถูกต้อง"; m.style.color="var(--green)" }
+    else { m.textContent="⚠ เลขนี้ไม่ผ่านการตรวจ ลองทานอีกครั้ง ถ้าผิดลูกค้าใช้ใบไม่ได้"; m.style.color="var(--red)" }
+  });
+
+  $("#dc-make").onclick = function(){
+    var type = (document.querySelector('input[name=dctype]:checked')||{}).value || "rec";
+    var vatSel = $("#dc-vat").value;
+    var cust = { name:$("#dc-name").value.trim(), taxId:$("#dc-tax").value.replace(/[^\d]/g,""),
+                 branch:$("#dc-branch").value, addr:$("#dc-addr").value.trim(),
+                 tel:$("#dc-tel").value.trim(), email:$("#dc-email").value.trim() };
+    taxMemoSave(o.cust, cust);
+    var btn=this; btn.disabled=true;
+    $("#dc-out").innerHTML='<div class="load">กำลังออกเลขเอกสารและลงชีท…</div>';
+    api("issueDoc", {
+      type:type, orderNo:o.no, cust:cust, po:$("#dc-po").value.trim(),
+      terms:$("#dc-terms").value, date:o.date, by:$("#f-by") ? $("#f-by").value : "",
+      vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
+      clientKey: "dc-"+o.no+"-"+type+"-"+Date.now()
+    }).then(function(r){
+      drawDoc(r, o, cust, type);
+    }, function(e){
+      btn.disabled=false;
+      $("#dc-out").innerHTML='<div style="color:var(--red)">ออกเอกสารไม่สำเร็จ: '
+        +esc(e&&e.message?e.message:e)+'</div>';
+    });
+  };
+}
+
+function drawDoc(r, o, cust, type){
+  var m = { no:r.no, date:o.date, cust:cust, po:$("#dc-po")?$("#dc-po").value.trim():"",
+            terms:$("#dc-terms")?$("#dc-terms").value:"", seller:CFG.docSeller||"",
+            sellerEmail:CFG.docSellerEmail||"", note:"" };
+  $("#dc-out").innerHTML='<div class="load">กำลังวาดเอกสาร…</div>';
+  buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+    $("#dc-out").innerHTML =
+       '<div class="msg ok" style="display:block">ออกใบ <b>'+esc(r.no)+'</b> แล้ว '
+      +'ลงทะเบียนในชีท เอกสาร เรียบร้อย</div>'
+      +'<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+      +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
+      +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+      +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+      +'<div class="hint" style="text-align:center;margin-top:10px">A4 · พิมพ์ได้ · ส่งเป็นรูปในแชทได้</div>';
+    bindLabelButtons(url, r.no+".png");
+  }, function(e){
+    $("#dc-out").innerHTML='<div style="color:var(--red)">ใบลงชีทแล้ว (เลข '+esc(r.no)
+      +') แต่วาดรูปไม่สำเร็จ: '+esc(e&&e.message?e.message:e)+'</div>';
+  });
+}
+
+/* ตรวจเลขผู้เสียภาษี 13 หลักด้วยหลักตรวจสอบ mod 11 — ตรรกะเดียวกับ taxIdValid_ ฝั่งชีท */
+function taxIdOk(v){
+  var t=String(v||"").replace(/[^\d]/g,"");
+  if(t.length!==13) return false;
+  var sum=0;
+  for(var i=0;i<12;i++) sum += Number(t.charAt(i))*(13-i);
+  return (11-(sum%11))%10 === Number(t.charAt(12));
 }
 
 /* -------------------------------------------------------------- ใบปะหน้าพัสดุ */
@@ -897,11 +1033,12 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
 
   $("#list").addEventListener("click", function(e){
-    var b=e.target.closest("[data-lb],[data-tk],[data-sm]");
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc]");
     if(!b) return;
     if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
     else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
     else if(b.dataset.sm!==undefined) openMsg(ORDERS[+b.dataset.sm]);
+    else if(b.dataset.dc!==undefined) openDoc(ORDERS[+b.dataset.dc]);
   });
 
   boot();
