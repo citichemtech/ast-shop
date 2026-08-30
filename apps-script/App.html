@@ -124,11 +124,11 @@ function addItem(v){
    +'<button class="mini red rm" type="button">ลบ</button></div>'
    +'<div class="fld" style="margin-bottom:8px"><select class="i-sku">'+prodOptions(v.sku)+'</select></div>'
    +'<div class="three">'
-   +'<div><label style="font-size:11.5px;color:var(--gray)">จำนวน</label>'
+   +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
    +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||"")+'"></div>'
-   +'<div><label style="font-size:11.5px;color:var(--gray)">ราคามาตรฐาน</label>'
+   +'<div><label style="font-size:13px;color:var(--gray)">ราคามาตรฐาน</label>'
    +'<input class="i-std" readonly tabindex="-1" style="background:#f2f4f7;color:var(--gray)"></div>'
-   +'<div><label style="font-size:11.5px;color:var(--gray)">ราคาขายจริง</label>'
+   +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
    +'<input class="i-price" type="number" inputmode="decimal" min="0" placeholder="ปล่อยว่าง" value="'+(v.price||"")+'"></div>'
    +'</div>'
    /* ของแถมต้องเป็นรายการสินค้าจริง ไม่ใช่ข้อความลอย ๆ สต๊อกจะได้ถูกตัดตามไปด้วย
@@ -406,7 +406,7 @@ function showPreview(d){
         + row("ยอดสินค้า",d.amt===undefined?"":d.amt,true);
 
   var its=d.items||[];
-  h += '<div style="font-size:12.5px;color:var(--gray);margin:8px 0 4px;font-weight:600">รายการสินค้า '+its.length+' รายการ</div>';
+  h += '<div style="font-size:14px;color:var(--gray);margin:8px 0 4px;font-weight:600">รายการสินค้า '+its.length+' รายการ</div>';
   its.forEach(function(it,i){
     var p = it.sku ? prodBySku(it.sku) : null;
     n++; if(p) got++;

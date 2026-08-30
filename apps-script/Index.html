@@ -15,11 +15,11 @@
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:var(--ink);
-  font:15px/1.55 -apple-system,"Segoe UI",Roboto,"Noto Sans Thai","Prompt",sans-serif;
+  font:17px/1.55 -apple-system,"Segoe UI",Roboto,"Noto Sans Thai","Prompt",sans-serif;
   padding-bottom:76px}
 h1,h2,h3{margin:0}
 button{font:inherit;cursor:pointer}
-input,select,textarea{font:inherit;width:100%;padding:11px 12px;border:1px solid var(--line);
+input,select,textarea{font:inherit;width:100%;padding:13px 14px;border:1px solid var(--line);
   border-radius:10px;background:#fff;color:var(--ink)}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
 textarea{resize:vertical}
@@ -40,41 +40,41 @@ textarea{resize:vertical}
 /* จอกว้าง (จอพับ แท็บเล็ต คอมออฟฟิศ) ใช้พื้นที่เต็ม ไม่เหลือขอบว่างสองข้าง */
 @media (min-width:900px){ .wrap{max-width:1100px;padding:18px 24px} }
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
-.fld{margin-bottom:11px}
-.fld label{display:block;font-size:12.5px;color:var(--gray);margin-bottom:5px;font-weight:600}
+.fld{margin-bottom:13px}
+.fld label{display:block;font-size:14px;color:var(--gray);margin-bottom:5px;font-weight:600}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.hint{font-size:12px;color:var(--gray);margin-top:5px;line-height:1.5}
-.subhd{font-size:13px;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
+.hint{font-size:13.5px;color:var(--gray);margin-top:5px;line-height:1.5}
+.subhd{font-size:14.5px;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
 
 .btn{width:100%;padding:14px;border:0;border-radius:11px;background:var(--blue);color:#fff;
-  font-weight:700;font-size:16px}
+  font-weight:700;font-size:17.5px}
 .btn[disabled]{opacity:.55}
 .btn.dark{background:var(--ink)}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .btn.green{background:#00B900}
-.mini{padding:8px 12px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:13px}
+.mini{padding:9px 14px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:14.5px}
 .mini.red{color:var(--red);border-color:#f0c9c9}
 
-.it{border:1px solid var(--line);border-radius:11px;padding:11px;margin-bottom:9px;background:#fbfcfd}
+.it{border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:9px;background:#fbfcfd}
 .it .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.it .hd b{font-size:12.5px;color:var(--gray)}
+.it .hd b{font-size:14px;color:var(--gray)}
 .it .hd .rm{margin-left:auto}
 .it .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.lotline{font-size:12px;margin-top:6px;line-height:1.5}
+.lotline{font-size:13.5px;margin-top:6px;line-height:1.5}
 .lotline.warn{color:var(--amber)}
 .lotline.bad{color:var(--red);font-weight:600}
 .lotline.ok{color:var(--green)}
 
-.sum{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
-.sum.big{font-size:18px;font-weight:800;border-top:1px solid var(--line);margin-top:6px;padding-top:10px}
+.sum{display:flex;justify-content:space-between;padding:7px 0;font-size:15.5px}
+.sum.big{font-size:20px;font-weight:800;border-top:1px solid var(--line);margin-top:6px;padding-top:10px}
 
 .row{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
 .row .i{flex:1;min-width:0}
 .row .i b{display:block}
-.row .i span{font-size:12.5px;color:var(--gray)}
+.row .i span{font-size:14px;color:var(--gray)}
 .row .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.sq{width:38px;height:38px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:16px;padding:0}
+.sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:16px;padding:0}
 .tag{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
 .tag.ok{background:#e6f5ec;color:var(--green)}
 .tag.wait{background:#fdf1e0;color:var(--amber)}
@@ -95,7 +95,7 @@ textarea{resize:vertical}
 
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:var(--card);
   border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1;border:0;background:none;padding:11px 4px 13px;font-size:11.5px;color:var(--gray);
+.tabs button{flex:1;border:0;background:none;padding:11px 4px 13px;font-size:12.5px;color:var(--gray);
   display:flex;flex-direction:column;align-items:center;gap:3px}
 .tabs button.on{color:var(--blue);font-weight:700}
 .tabs button em{font-style:normal;font-size:19px;line-height:1}
@@ -143,8 +143,8 @@ textarea{resize:vertical}
 .btrack{height:8px;background:var(--bg);border-radius:4px;margin-top:6px;overflow:hidden}
 .btrack i{display:block;height:100%;background:var(--blue);border-radius:0 4px 4px 0;min-width:3px}
 .bsub{font-size:12px;color:var(--gray);margin-top:4px}
-.giftck{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--gray)}
-.giftck input{width:auto;transform:scale(1.15)}
+.giftck{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:14.5px;color:var(--gray)}
+.giftck input{width:auto;transform:scale(1.3)}
 /* ปุ่มทำงานต่อหลังบันทึก — พิมพ์ใบปะหน้า / ส่งข้อความ อยู่ในกล่องเขียวเลย
    ไม่ต้องไปตามหาใบที่เพิ่งคีย์ในแท็บออเดอร์อีกที */
 .okact{display:flex;gap:8px;margin-top:11px}
