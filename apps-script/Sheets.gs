@@ -235,7 +235,7 @@ function appCfg_() {
   var out = {
     sender: { name: '', addr: '', tel: '' },
     shipFee: 0, freeOver: 0, codFee: 0, line: '',
-    staffList: [], track: {}
+    staffList: [], head1: '', head2: '', track: {}
   };
   if (!s) return out;
   var v = s.getRange(DATA_ROW, 1, Math.max(1, s.getLastRow() - DATA_ROW + 1), 5).getValues();
@@ -243,6 +243,8 @@ function appCfg_() {
     var k = String(v[i][0] || '').trim();
     var val = v[i][1];
     if (k === 'ชื่อผู้ส่ง') out.sender.name = String(val || '');
+    else if (k === 'หัวใบปะหน้า บรรทัด 1') out.head1 = String(val || '');
+    else if (k === 'หัวใบปะหน้า บรรทัด 2') out.head2 = String(val || '');
     else if (k === 'ที่อยู่ผู้ส่ง') out.sender.addr = String(val || '');
     else if (k === 'เบอร์โทรผู้ส่ง') out.sender.tel = tel_(val);
     else if (k === 'ค่าจัดส่งเริ่มต้น') out.shipFee = Number(val || 0);

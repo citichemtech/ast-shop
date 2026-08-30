@@ -67,10 +67,21 @@ async function buildLabel(o){
   if(carLogo) drawImgFit(x,carLogo,pad+14,hy+14,260,hh-28);
   else { x.fillStyle="#000"; x.font=F(26,600); x.fillText(o.carrier||"",pad+20,hy+80); }
 
-  x.fillStyle="#000"; x.textAlign="center"; x.font=F(30,700);
-  var cx=pad+300+(IN-300-280)/2;
-  x.fillText("CHEMICAL INNOVATION TECHNOLOGY",cx,hy+60);
-  x.fillText("AST CHEM-TOOLING SHOP",cx,hy+110);
+  /* หัวใบปะหน้า — เดิมฝังชื่อบริษัทภาษาอังกฤษไว้ตายตัวในโค้ด
+     ย้ายมาอ่านจากชีท ตั้งค่าแอป เจ้าของร้านจะได้แก้เป็นภาษาไทยหรืออะไรก็ได้เอง
+     ชื่อยาวจะย่อขนาดตัวอักษรให้พอดีกรอบ ไม่ล้นออกไปทับช่องอื่น */
+  x.fillStyle="#000"; x.textAlign="center";
+  var cx=pad+300+(IN-300-280)/2, hw=IN-300-280-20;
+  var head=(CFG.head1||"CHEMICAL INNOVATION TECHNOLOGY").split("\n");
+  if(CFG.head2) head=head.concat(String(CFG.head2).split("\n"));
+  head=head.filter(function(t){ return t.trim() }).slice(0,2);
+  var hsize=head.length>1?30:34;
+  head.forEach(function(t,i){
+    var sz=hsize;
+    x.font=F(sz,700);
+    while(sz>16 && x.measureText(t).width>hw){ sz-=2; x.font=F(sz,700) }
+    x.fillText(t, cx, hy + (head.length>1 ? 60+i*50 : 88));
+  });
 
   x.textAlign="right"; x.font=F(22,400);
   x.fillText("เลขที่ใบสั่งซื้อ",W-pad-16,hy+52);
@@ -84,13 +95,21 @@ async function buildLabel(o){
   /* sender */
   if(astLogo) drawImgFit(x,astLogo,pad+4,y,120,120);
   var tx=pad+140, tw=IN-150;
-  x.fillStyle="#000"; x.font=F(30,700);
+  /* ชื่อบริษัทอยู่บนหัวใบปะหน้าแล้ว ถ้าเว้นช่อง "ชื่อผู้ส่ง" ในชีทไว้
+     ก็ไม่ต้องพิมพ์ซ้ำ เอาที่ว่างไปให้ที่อยู่ตัวใหญ่ขึ้นแทน */
   var ly=y;
-  wrapText(x,"ผู้ส่ง "+(s.name||CFG.brand||""),tw).forEach(function(l){ x.fillText(l,tx,ly); ly+=40; });
-  x.font=F(27,500);
-  ly+=4;
-  wrapText(x,s.addr,tw).forEach(function(l){ x.fillText(l,tx,ly); ly+=38; });
-  x.fillText("เบอร์โทร "+(s.tel||""),tx,ly); ly+=38;
+  if(s.name){
+    x.fillStyle="#000"; x.font=F(33,700);
+    wrapText(x,"ผู้ส่ง "+s.name,tw).forEach(function(l){ x.fillText(l,tx,ly); ly+=43; });
+    x.font=F(30,500); ly+=4;
+    wrapText(x,s.addr,tw).forEach(function(l){ x.fillText(l,tx,ly); ly+=41; });
+  } else {
+    x.fillStyle="#000"; x.font=F(33,700);
+    x.fillText("ผู้ส่ง",tx,ly); ly+=43;
+    x.font=F(32,500);
+    wrapText(x,s.addr,tw).forEach(function(l){ x.fillText(l,tx,ly); ly+=43; });
+  }
+  x.fillText("เบอร์โทร "+(s.tel||""),tx,ly); ly+=41;
   y=Math.max(ly+16,y+145);
   rule();
 
@@ -133,7 +152,7 @@ async function buildLabel(o){
   rule();
 
   /* items */
-  x.textAlign="center"; x.font=F(30,700); x.fillStyle="#000";
+  x.textAlign="center"; x.font=F(33,700); x.fillStyle="#000";
   x.fillText("รายการสินค้า",W/2,y); y+=52;
   x.textAlign="left";
   var c1=pad+4, c2=pad+90, c3=W-pad-170;
@@ -141,12 +160,12 @@ async function buildLabel(o){
     x.strokeStyle="#1449C4"; x.lineWidth=3;
     x.strokeRect(c1,y,IN-8,h);
     x.beginPath(); x.moveTo(c2,y); x.lineTo(c2,y+h); x.moveTo(c3,y); x.lineTo(c3,y+h); x.stroke();
-    x.fillStyle="#000"; x.font=F(25,bold?600:400);
+    x.fillStyle="#000"; x.font=F(28,bold?600:400);
     x.textAlign="center"; x.fillText(a,(c1+c2)/2,y+h/2+9);
     x.textAlign="left";
     var lines=wrapText(x,b,c3-c2-24);
     var sy=y+h/2+9-((lines.length-1)*17);
-    lines.forEach(function(l){ x.fillText(l,c2+12,sy); sy+=34; });
+    lines.forEach(function(l){ x.fillText(l,c2+12,sy); sy+=37; });
     x.textAlign="center"; x.fillText(cc,(c3+W-pad-4)/2,y+h/2+9);
     x.textAlign="left";
     y+=h;
@@ -166,9 +185,9 @@ async function buildLabel(o){
   if(Number(o.disc)>0) row("", "ส่วนลด", "-"+baht(o.disc), false, 56);
   x.strokeStyle="#1449C4"; x.lineWidth=3; x.strokeRect(c1,y,IN-8,56);
   x.beginPath(); x.moveTo(c3,y); x.lineTo(c3,y+56); x.stroke();
-  x.fillStyle="#000"; x.font=F(25,600); x.textAlign="right";
+  x.fillStyle="#000"; x.font=F(28,600); x.textAlign="right";
   x.fillText("จำนวนรวม",c3-16,y+37);
-  x.textAlign="center"; x.font=F(28,700);
+  x.textAlign="center"; x.font=F(31,700);
   x.fillText(String(tq||o.qty||0),(c3+W-pad-4)/2,y+38);
   x.textAlign="left";
 
