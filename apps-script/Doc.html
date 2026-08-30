@@ -175,9 +175,10 @@ async function buildDocPage(d, m, cfg) {
     { th: "ราคา/หน่วย", en: "(Unit price)", w: 135, al: "r" },
     { th: "จำนวนเงิน", en: "(Amount)", w: 135, al: "r" }
   ];
-  /* จำนวนบรรทัดกับความสูงตั้งให้ตารางกินพื้นที่จนเกือบสุดหน้า A4
-     ไม่งั้นเหลือขาวท้ายกระดาษเป็นฝ่ามือ ดูเหมือนพิมพ์ตกหล่น */
-  var hh = 54, rowH = 52, ROWS = 14;
+  /* สิบบรรทัดตามที่เจ้าของร้านสั่ง — ฟอร์มเดิมของร้านมีแปดบรรทัด
+     บีบความสูงลงด้วย ตารางจึงไม่กินหน้ากระดาษเกินจำเป็น
+     เกินสิบรายการจะขึ้นเตือนสีแดงใต้ตาราง ไม่ตัดทิ้งเงียบ ๆ */
+  var hh = 54, rowH = 42, ROWS = 10;
   var xs = [pad]; COLS.forEach(function (cc) { xs.push(xs[xs.length - 1] + cc.w); });
 
   x.fillStyle = "#1F4E79"; x.fillRect(pad, y, IN, hh);
@@ -203,15 +204,15 @@ async function buildDocPage(d, m, cfg) {
   var shown = d.lines.slice(0, ROWS);
   var over = d.lines.length - shown.length;
   shown.forEach(function (ln, i) {
-    var ry2 = ty + i * rowH + 12;
+    var ry2 = ty + i * rowH + 10;
     x.fillStyle = "#000";
-    fitCenter(x, String(i + 1), xs[0] + COLS[0].w / 2, ry2, COLS[0].w - 8, 15);
-    fitLeft(x, ln.name, xs[1] + 10, ry2, COLS[1].w - 18, 15);
+    fitCenter(x, String(i + 1), xs[0] + COLS[0].w / 2, ry2, COLS[0].w - 8, 14);
+    fitLeft(x, ln.name, xs[1] + 10, ry2, COLS[1].w - 18, 14);
     if (ln.po) fitLeft(x, ln.po, xs[2] + 8, ry2, COLS[2].w - 14, 14);
-    fitCenter(x, String(ln.qty), xs[3] + COLS[3].w / 2, ry2, COLS[3].w - 8, 15);
-    fitCenter(x, ln.unit, xs[4] + COLS[4].w / 2, ry2, COLS[4].w - 8, 14);
-    fitRight(x, money(ln.price), xs[5] + COLS[5].w - 10, ry2, COLS[5].w - 16, 15);
-    fitRight(x, money(ln.amount), xs[6] + COLS[6].w - 10, ry2, COLS[6].w - 16, 15);
+    fitCenter(x, String(ln.qty), xs[3] + COLS[3].w / 2, ry2, COLS[3].w - 8, 14);
+    fitCenter(x, ln.unit, xs[4] + COLS[4].w / 2, ry2, COLS[4].w - 8, 13);
+    fitRight(x, money(ln.price), xs[5] + COLS[5].w - 10, ry2, COLS[5].w - 16, 14);
+    fitRight(x, money(ln.amount), xs[6] + COLS[6].w - 10, ry2, COLS[6].w - 16, 14);
   });
   if (over > 0) {
     x.fillStyle = "#b3261e";
@@ -220,7 +221,7 @@ async function buildDocPage(d, m, cfg) {
 
   /* ---------------- หมายเหตุ + ยอดรวม ---------------- */
   y = ty + bodyH + (over > 0 ? 24 : 0);
-  var fh = 132, sumW = 460, noteW = IN - sumW;
+  var fh = 150, sumW = 460, noteW = IN - sumW;
   box(x, pad, y, noteW, fh);
   box(x, pad + noteW, y, sumW, fh);
 
@@ -254,9 +255,13 @@ async function buildDocPage(d, m, cfg) {
     sy += rh;
   });
 
-  /* ---------------- ช่องลงลายมือชื่อ ---------------- */
-  y += fh + 20;
-  var sgW = IN / 3, sgH = 128;
+  /* ---------------- ช่องลงลายมือชื่อ ----------------
+     ยึดไว้ที่ท้ายกระดาษเสมอ ไม่ใช่ต่อท้ายตาราง เพราะจำนวนรายการไม่เท่ากันทุกใบ
+     ถ้าปล่อยให้ลอยตามตาราง ใบสั้นจะเหลือขาวท้ายกระดาษเป็นฝ่ามือ และช่องเซ็นก็เล็ก
+     จนเซ็นจริงไม่ลง — ตอนนี้สูงเกือบ 5 ซม. เซ็นแล้วลงวันที่ได้สบาย */
+  var sgH = 296;
+  y = Math.max(y + fh + 24, H - pad - sgH);
+  var sgW = IN / 3;
   var SIGN = [
     ["ลายเซ็นผู้รับของ", "(Authorized Signature)"],
     ["ผู้รับเงิน / พนักงานขาย", "(Authorized Signature)"],
@@ -266,12 +271,13 @@ async function buildDocPage(d, m, cfg) {
     var X = pad + sgW * i;
     box(x, X, y, sgW, sgH);
     x.strokeStyle = "#999"; x.setLineDash([4, 4]);
-    x.beginPath(); x.moveTo(X + 24, y + 44); x.lineTo(X + sgW - 24, y + 44); x.stroke();
-    x.beginPath(); x.moveTo(X + 74, y + 104); x.lineTo(X + sgW - 24, y + 104); x.stroke();
+    /* เว้นที่ว่างเหนือเส้นไว้ราว 2.5 ซม. ให้ลายเซ็นจริงลงได้ ไม่ใช่เส้นชิดหัวกล่อง */
+    x.beginPath(); x.moveTo(X + 26, y + 168); x.lineTo(X + sgW - 26, y + 168); x.stroke();
+    x.beginPath(); x.moveTo(X + 84, y + 250); x.lineTo(X + sgW - 26, y + 250); x.stroke();
     x.setLineDash([]); x.strokeStyle = "#000";
-    x.fillStyle = "#000"; fitCenter(x, s3[0], X + sgW / 2, y + 54, sgW - 20, 14, 600);
-    x.fillStyle = "#555"; fitCenter(x, s3[1], X + sgW / 2, y + 74, sgW - 20, 12, 400);
-    fitLeft(x, "ลงวันที่", X + 20, y + 96, 60, 12);
+    x.fillStyle = "#000"; fitCenter(x, s3[0], X + sgW / 2, y + 180, sgW - 20, 15, 600);
+    x.fillStyle = "#555"; fitCenter(x, s3[1], X + sgW / 2, y + 203, sgW - 20, 12.5, 400);
+    x.fillStyle = "#000"; fitLeft(x, "ลงวันที่", X + 24, y + 240, 64, 13);
   });
 
   return c.toDataURL("image/png");

@@ -118,7 +118,21 @@ var threw = '';
 try { ctx.buildDoc_('มั่ว', { items: [] }, cfg); } catch (e) { threw = e.message; }
 eq('ชนิดมั่วต้องโยน error ไม่ใช่เงียบ', threw.indexOf('ไม่รู้จักชนิดเอกสาร') === 0, true);
 
-head('7. ชื่อชนิดเอกสารสองฝั่งต้องตรงกัน');
+head('7. เลขประจำตัวผู้เสียภาษี');
+// เลขจริงของบริษัท ที่เจ้าของร้านส่งมา
+eq('เลขบริษัทถูกต้อง', ctx.taxIdValid_('0105558055790'), true);
+eq('มีขีดคั่นก็อ่านออก', ctx.taxIdValid_('0-1055-58055-79-0'), true);
+// พิมพ์ผิดหลักเดียวต้องจับได้ ไม่ใช่ปล่อยผ่านไปพิมพ์ลงใบ
+eq('สลับสองหลักท้าย', ctx.taxIdValid_('0105558055709'), false);
+eq('หลักตรวจสอบผิด', ctx.taxIdValid_('0105558055791'), false);
+eq('พิมพ์เกินหนึ่งหลัก', ctx.taxIdValid_('01055580557900'), false);
+eq('พิมพ์ขาดหนึ่งหลัก', ctx.taxIdValid_('010555805579'), false);
+eq('ว่าง', ctx.taxIdValid_(''), false);
+eq('ไม่ใช่ตัวเลข', ctx.taxIdValid_('abcdefghijklm'), false);
+// ศูนย์ล้วนคือค่าที่คนใส่ไว้ชั่วคราวเวลายังไม่รู้เลขจริง หลักตรวจสอบต้องปัดตก
+eq('ศูนย์ล้วนต้องไม่ผ่าน', ctx.taxIdValid_('0000000000000'), false);
+
+head('8. ชื่อชนิดเอกสารสองฝั่งต้องตรงกัน');
 // Doc.html ต้องพิมพ์ชื่อชุดเดียวกับที่ Doc.gs ใช้ ถ้าแก้ที่เดียวใบจะพิมพ์ผิดชนิดโดยไม่มีใครรู้
 var docHtml = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Doc.html'), 'utf8');
 var mNames = /var DOC_TYPE_NAMES = (\[[\s\S]*?\]);/.exec(docHtml);
