@@ -309,6 +309,15 @@ var over14 = [];
 for (var n14 in fx14.sheets) over14 = over14.concat(fx14.sheets[n14].overwrittenFormulas);
 eq('ยังไม่มีสูตรถูกเขียนทับเลย', over14, []);
 
+console.log('\n   เบอร์ผู้ส่งที่ชีทเก็บเป็นตัวเลข ต้องได้ศูนย์นำหน้าคืน');
+var fx14b = FS.build();
+var api14b = FS.load(fx14b, {});
+api14b.setup();
+/* ชีทของจริงแปลง '0961929993' เป็นตัวเลข 961929993 — จำลองให้เหมือนกัน */
+fx14b.sheets['ตั้งค่าแอป'].cell(8, 2).v = 961929993;
+eq('ใบปะหน้าต้องได้ 0961929993 ไม่ใช่ 961929993',
+  api14b.getBootstrap().app.sender.tel, '0961929993');
+
 console.log('\n   ค่าตั้งต้นสำหรับใบปะหน้า');
 var boot14 = api14.getBootstrap();
 eq('มีชื่อผู้ส่ง', boot14.app.sender.name, 'AST Chem-Tooling');

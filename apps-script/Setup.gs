@@ -249,6 +249,8 @@ function setupAppSheet_(ss) {
   for (var i = 0; i < rows.length; i++) {
     var r = DATA_ROW + i;
     s.getRange(r, 1).setValue(rows[i][0]);
+    // เบอร์โทรต้องเป็นช่องข้อความ ไม่งั้นชีทแปลงเป็นตัวเลขแล้วศูนย์นำหน้าหาย
+    if (rows[i][0] === 'เบอร์โทรผู้ส่ง') s.getRange(r, 2).setNumberFormat('@');
     // ค่าที่เจ้าของร้านกรอกไว้แล้ว ห้ามทับ — เติมให้เฉพาะตอนที่ยังว่าง
     if (s.getRange(r, 2).getValue() === '') s.getRange(r, 2).setValue(rows[i][1]);
   }
