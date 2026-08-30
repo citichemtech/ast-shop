@@ -220,6 +220,16 @@ function cfgGet_() {
  * ค่าจากชีท ตั้งค่าแอป — คู่ ชื่อ/ค่า ที่ B6 ลงไป และตารางลิงก์ติดตามที่ D6 ลงไป
  * ชีทนี้เป็นของแอป ไม่ใช่ 1 ใน 9 ชีทเดิม แก้ได้อิสระ
  */
+/**
+ * เบอร์โทรที่ชีทเก็บเป็น "ตัวเลข" จะทำศูนย์นำหน้าหาย — 0961929993 กลายเป็น 961929993
+ * แล้วไปโผล่บนใบปะหน้าพัสดุแบบนั้น ลูกค้าโทรกลับไม่ได้
+ * เบอร์ไทยที่เหลือ 9 หลักคือกรณีนี้เสมอ เติมศูนย์คืนให้
+ */
+function tel_(v) {
+  var t = String(v == null ? '' : v).trim();
+  return /^\d{9}$/.test(t) ? '0' + t : t;
+}
+
 function appCfg_() {
   var s = ss_().getSheetByName(SH.app.name);
   var out = {
@@ -234,7 +244,7 @@ function appCfg_() {
     var val = v[i][1];
     if (k === 'ชื่อผู้ส่ง') out.sender.name = String(val || '');
     else if (k === 'ที่อยู่ผู้ส่ง') out.sender.addr = String(val || '');
-    else if (k === 'เบอร์โทรผู้ส่ง') out.sender.tel = String(val || '');
+    else if (k === 'เบอร์โทรผู้ส่ง') out.sender.tel = tel_(val);
     else if (k === 'ค่าจัดส่งเริ่มต้น') out.shipFee = Number(val || 0);
     else if (k === 'ส่งฟรีเมื่อยอดถึง') out.freeOver = Number(val || 0);
     else if (k === 'ค่าธรรมเนียมเก็บปลายทาง') out.codFee = Number(val || 0);
