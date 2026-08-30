@@ -118,5 +118,27 @@ var threw = '';
 try { ctx.buildDoc_('มั่ว', { items: [] }, cfg); } catch (e) { threw = e.message; }
 eq('ชนิดมั่วต้องโยน error ไม่ใช่เงียบ', threw.indexOf('ไม่รู้จักชนิดเอกสาร') === 0, true);
 
+head('7. ชื่อชนิดเอกสารสองฝั่งต้องตรงกัน');
+// Doc.html ต้องพิมพ์ชื่อชุดเดียวกับที่ Doc.gs ใช้ ถ้าแก้ที่เดียวใบจะพิมพ์ผิดชนิดโดยไม่มีใครรู้
+var docHtml = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Doc.html'), 'utf8');
+var mNames = /var DOC_TYPE_NAMES = (\[[\s\S]*?\]);/.exec(docHtml);
+eq('หา DOC_TYPE_NAMES ใน Doc.html เจอ', !!mNames, true);
+if (mNames) {
+  var names = vm.runInNewContext('(' + mNames[1] + ')');
+  eq('จำนวนชนิดเท่ากัน', names.length, ctx.DOC_TYPES.length);
+  names.forEach(function (t) {
+    var srv = ctx.docType_(t.key);
+    eq('ชนิด ' + t.key + ' มีอยู่ทั้งสองฝั่ง', !!srv, true);
+    if (srv) {
+      eq('ชนิด ' + t.key + ' ชื่อไทยตรงกัน', t.th, srv.th);
+      eq('ชนิด ' + t.key + ' ชื่ออังกฤษตรงกัน', t.en, srv.en);
+    }
+  });
+  ctx.DOC_TYPES.forEach(function (srv) {
+    eq('ชนิด ' + srv.key + ' ถูกพิมพ์บนกระดาษด้วย',
+       names.filter(function (t) { return t.key === srv.key; }).length, 1);
+  });
+}
+
 console.log('\n' + (fail ? 'ไม่ผ่าน ' + fail + ' จาก ' + n : 'ผ่านทั้งหมด ' + n + ' ข้อ'));
 process.exit(fail ? 1 : 0);

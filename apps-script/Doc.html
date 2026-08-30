@@ -1,0 +1,277 @@
+<script>
+/* ใบเสนอราคา / ใบแจ้งหนี้ / ใบเสร็จรับเงิน-ใบกำกับภาษี / ใบรับเงินมัดจำ
+
+   ลอกเลย์เอาต์จากใบจริงที่ร้านใช้อยู่ (ชุด ONIV26) ให้ตรงตำแหน่ง เพื่อให้ลูกค้าเก่า
+   และฝ่ายบัญชีเห็นแล้วเป็นใบเดิม ไม่ต้องเรียนรู้ใหม่
+
+   วาดบน canvas เหมือนใบปะหน้าพัสดุ เพราะได้ทั้งสามอย่างที่ต้องใช้ในทางเดียว
+   บันทึกเป็นรูปส่งในแชท · สั่งพิมพ์ใส่กระดาษ · เก็บไฟล์ให้บัญชี           */
+
+/* ชื่อสี่ชนิดสำหรับพิมพ์บนหัวกระดาษ — ต้องตรงกับ DOC_TYPES ใน Doc.gs
+   (tools/t_doc.js มีข้อสอบเทียบสองที่นี้ ถ้าแก้ที่เดียวจะฟ้องทันที) */
+var DOC_TYPE_NAMES = [
+  { key: "rec",   th: "ใบเสร็จรับเงิน / ใบกำกับภาษี", en: "RECEIPT / TAX INVOICE" },
+  { key: "inv",   th: "ใบแจ้งหนี้",                  en: "INVOICE" },
+  { key: "quote", th: "ใบเสนอราคา",                 en: "QUOTATION" },
+  { key: "dep",   th: "ใบรับเงินมัดจำ",              en: "DEPOSIT RECEIPT" }
+];
+
+var DOC_W = 1240, DOC_H = 1754;         /* A4 แนวตั้งที่ 150 dpi */
+
+function docFont(sz, w) { return (w || 400) + " " + sz + 'px Prompt,"Noto Sans Thai",sans-serif'; }
+
+function money(n) {
+  return (Math.round(Number(n || 0) * 100) / 100)
+    .toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/* กรอบสี่เหลี่ยม + เส้นแบ่งภายใน ใช้ซ้ำหลายที่ */
+function box(x, X, y, w, h) { x.strokeRect(X, y, w, h); }
+
+/* ข้อความจัดกลาง ย่อขนาดลงอัตโนมัติถ้ายาวเกินช่อง จะได้ไม่ทับเส้น */
+function fitCenter(x, text, cx, y, maxW, size, weight) {
+  var s = size;
+  x.font = docFont(s, weight);
+  while (s > 8 && x.measureText(text).width > maxW) { s -= 1; x.font = docFont(s, weight); }
+  x.textAlign = "center"; x.fillText(text, cx, y); x.textAlign = "left";
+  return s;
+}
+function fitLeft(x, text, X, y, maxW, size, weight) {
+  var s = size;
+  x.font = docFont(s, weight);
+  while (s > 8 && x.measureText(text).width > maxW) { s -= 1; x.font = docFont(s, weight); }
+  x.fillText(text, X, y);
+}
+function fitRight(x, text, X, y, maxW, size, weight) {
+  var s = size;
+  x.font = docFont(s, weight);
+  while (s > 8 && x.measureText(text).width > maxW) { s -= 1; x.font = docFont(s, weight); }
+  x.textAlign = "right"; x.fillText(text, X, y); x.textAlign = "left";
+}
+
+/**
+ * d   ผลจาก buildDoc_() ฝั่งเซิร์ฟเวอร์ — lines / base / vat / total / totalText
+ * m   ข้อมูลหัวเอกสาร — no, date, cust{}, po, terms, seller, validTo
+ * cfg ข้อมูลร้านจากชีท ตั้งค่าแอป — co{}, bank, thanks, note, logo
+ */
+async function buildDocPage(d, m, cfg) {
+  var W = DOC_W, H = DOC_H, pad = 40, IN = W - pad * 2;
+  var c = document.createElement("canvas"); c.width = W; c.height = H;
+  var x = c.getContext("2d");
+  x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
+  x.textBaseline = "top";
+  x.strokeStyle = "#000"; x.lineWidth = 1.4;
+
+  var co = (cfg && cfg.co) || {};
+  var cu = (m && m.cust) || {};
+  var y = pad;
+
+  /* ---------------- หัวกระดาษ — ชื่อและที่อยู่ผู้ขาย ---------------- */
+  var logo = await loadImg(cfg && cfg.logo);
+  if (logo) drawImgFit(x, logo, pad, y, 112, 112);
+  var tx = pad + (logo ? 128 : 0);
+  x.fillStyle = "#000";
+  fitLeft(x, co.name || "", tx, y + 2, IN - (tx - pad), 25, 700);
+  fitLeft(x, co.nameEn || "", tx, y + 34, IN - (tx - pad), 16, 600);
+  x.fillStyle = "#333";
+  var ay = y + 58;
+  wrapText(x, co.addr || "", IN - (tx - pad)).slice(0, 2).forEach(function (ln) {
+    fitLeft(x, ln, tx, ay, IN - (tx - pad), 15); ay += 21;
+  });
+  var idLine = [];
+  if (co.taxId) idLine.push("เลขประจำตัวผู้เสียภาษี " + co.taxId);
+  if (co.branch) idLine.push(co.branch);
+  if (idLine.length) { fitLeft(x, idLine.join("  ·  "), tx, ay, IN - (tx - pad), 15); ay += 21; }
+  var contact = [];
+  if (co.tel) contact.push("โทร " + co.tel);
+  if (co.email) contact.push(co.email);
+  if (contact.length) fitLeft(x, contact.join("  ·  "), tx, ay, IN - (tx - pad), 15);
+
+  /* ---------------- กล่องชื่อเอกสาร ----------------
+     ใบเดียวมีสี่ชื่อเหมือนของเดิม ชนิดที่กำลังออกพิมพ์ตัวหนาสีดำ ที่เหลือจาง
+     คนรับจึงอ่านออกทันทีว่าใบนี้คือใบอะไร โดยไม่ต้องทำสี่แบบ */
+  y = pad + 150;
+  var th = 74, bw = 720, bx = (W - bw) / 2;
+  x.lineWidth = 2; box(x, bx, y, bw, th); x.lineWidth = 1.4;
+  var names = DOC_TYPE_NAMES;
+  x.font = docFont(19, 700);
+  var gap = x.measureText(" / ").width;
+  var total = 0;
+  names.forEach(function (t) { total += x.measureText(t.th).width; });
+  total += gap * (names.length - 1);
+  var cx0 = W / 2 - total / 2;
+  names.forEach(function (t, i) {
+    var on = t.key === d.type;
+    x.font = docFont(19, on ? 700 : 400);
+    x.fillStyle = on ? "#000" : "#9aa3ae";
+    x.fillText(t.th, cx0, y + 14);
+    var w = x.measureText(t.th).width;
+    if (on) { x.fillRect(cx0, y + 38, w, 2); }
+    cx0 += w;
+    if (i < names.length - 1) {
+      x.font = docFont(19, 400); x.fillStyle = "#9aa3ae";
+      x.fillText(" / ", cx0, y + 14); cx0 += gap;
+    }
+  });
+  x.fillStyle = "#444";
+  fitCenter(x, names.map(function (t) { return t.en; }).join(" / "), W / 2, y + 46, bw - 24, 13, 400);
+
+  /* ---------------- กล่องข้อมูลลูกค้า / ข้อมูลเอกสาร ---------------- */
+  y += th + 14;
+  var ih = 196, mid = pad + 640;
+  box(x, pad, y, IN, ih);
+  x.beginPath(); x.moveTo(mid, y); x.lineTo(mid, y + ih); x.stroke();
+
+  var lx = pad + 12, lw = 150, ly = y + 12, lineH = 26;
+  function leftRow(label, val, bold) {
+    x.fillStyle = "#555"; fitLeft(x, label, lx, ly, lw - 6, 14, 600);
+    x.fillStyle = "#000"; fitLeft(x, val || "", lx + lw, ly, mid - lx - lw - 14, 15, bold ? 700 : 400);
+    ly += lineH;
+  }
+  leftRow("รหัสลูกค้า", cu.code);
+  leftRow("ชื่อลูกค้า", cu.name, true);
+  leftRow("เลขประจำตัวผู้เสียภาษี", cu.taxId ? cu.taxId + (cu.branch ? "   " + cu.branch : "") : "");
+  var aw = mid - lx - lw - 14;
+  x.fillStyle = "#555"; fitLeft(x, "ที่อยู่", lx, ly, lw - 6, 14, 600);
+  x.fillStyle = "#000"; x.font = docFont(14, 400);
+  wrapText(x, cu.addr || "", aw).slice(0, 2).forEach(function (ln, i) {
+    fitLeft(x, ln, lx + lw, ly + i * 20, aw, 14);
+  });
+  ly += 44;
+  leftRow("โทรศัพท์", cu.tel);
+  leftRow("E-mail", cu.email);
+
+  var rx = mid + 12, rw = 150, ry = y + 12;
+  function rightRow(label, val, bold, size) {
+    x.fillStyle = "#555"; fitLeft(x, label, rx, ry, rw - 6, 14, 600);
+    x.fillStyle = "#000";
+    fitLeft(x, val || "", rx + rw, ry - (bold ? 2 : 0), W - pad - rx - rw - 12, size || 15, bold ? 700 : 400);
+    ry += lineH;
+  }
+  rightRow("เลขที่เอกสาร", m.no, true, 19);
+  rightRow("วันที่ / DATE", m.date);
+  rightRow("ผู้เสนอ / พนักงานขาย", m.seller);
+  rightRow("E-mail", m.sellerEmail);
+  rightRow("เงื่อนไขชำระเงิน", m.terms);
+  rightRow(d.type === "quote" ? "ยืนราคาถึง" : "เลขที่ PO", d.type === "quote" ? m.validTo : m.po);
+
+  /* ---------------- เลขบัญชีธนาคาร + คำขอบคุณ ---------------- */
+  y += ih + 8;
+  x.fillStyle = "#000";
+  if (cfg.bank) { fitLeft(x, cfg.bank, pad, y, IN, 14, 600); y += 20; }
+  x.fillStyle = "#555";
+  if (cfg.thanks) { fitLeft(x, cfg.thanks, pad, y, IN, 13); y += 20; }
+
+  /* ---------------- ตารางรายการ ---------------- */
+  y += 6;
+  var COLS = [
+    { th: "ลำดับที่", en: "(ITEM)", w: 70, al: "c" },
+    { th: "รายการ", en: "(Description)", w: 430, al: "l" },
+    { th: "Customer/PO", en: "", w: 180, al: "l" },
+    { th: "จำนวน", en: "(Quantity)", w: 110, al: "c" },
+    { th: "หน่วย", en: "(Unit)", w: 100, al: "c" },
+    { th: "ราคา/หน่วย", en: "(Unit price)", w: 135, al: "r" },
+    { th: "จำนวนเงิน", en: "(Amount)", w: 135, al: "r" }
+  ];
+  /* จำนวนบรรทัดกับความสูงตั้งให้ตารางกินพื้นที่จนเกือบสุดหน้า A4
+     ไม่งั้นเหลือขาวท้ายกระดาษเป็นฝ่ามือ ดูเหมือนพิมพ์ตกหล่น */
+  var hh = 54, rowH = 52, ROWS = 14;
+  var xs = [pad]; COLS.forEach(function (cc) { xs.push(xs[xs.length - 1] + cc.w); });
+
+  x.fillStyle = "#1F4E79"; x.fillRect(pad, y, IN, hh);
+  x.fillStyle = "#fff";
+  COLS.forEach(function (cc, i) {
+    var cxm = xs[i] + cc.w / 2;
+    fitCenter(x, cc.th, cxm, y + (cc.en ? 8 : 18), cc.w - 8, 15, 700);
+    if (cc.en) { x.fillStyle = "#dbe7f3"; fitCenter(x, cc.en, cxm, y + 30, cc.w - 8, 12, 400); x.fillStyle = "#fff"; }
+  });
+  var ty = y + hh;
+  var bodyH = rowH * ROWS;
+  x.strokeStyle = "#7f9dbb";
+  for (var r = 0; r <= ROWS; r++) {
+    x.beginPath(); x.moveTo(pad, ty + r * rowH); x.lineTo(pad + IN, ty + r * rowH); x.stroke();
+  }
+  for (var i2 = 0; i2 < xs.length; i2++) {
+    x.beginPath(); x.moveTo(xs[i2], y); x.lineTo(xs[i2], ty + bodyH); x.stroke();
+  }
+  x.strokeStyle = "#000"; x.lineWidth = 1.6;
+  box(x, pad, y, IN, hh + bodyH); x.lineWidth = 1.4;
+
+  /* เกิน 10 บรรทัดพิมพ์ไม่พอ ต้องบอกให้เห็น ไม่ใช่ตัดทิ้งเงียบ ๆ */
+  var shown = d.lines.slice(0, ROWS);
+  var over = d.lines.length - shown.length;
+  shown.forEach(function (ln, i) {
+    var ry2 = ty + i * rowH + 12;
+    x.fillStyle = "#000";
+    fitCenter(x, String(i + 1), xs[0] + COLS[0].w / 2, ry2, COLS[0].w - 8, 15);
+    fitLeft(x, ln.name, xs[1] + 10, ry2, COLS[1].w - 18, 15);
+    if (ln.po) fitLeft(x, ln.po, xs[2] + 8, ry2, COLS[2].w - 14, 14);
+    fitCenter(x, String(ln.qty), xs[3] + COLS[3].w / 2, ry2, COLS[3].w - 8, 15);
+    fitCenter(x, ln.unit, xs[4] + COLS[4].w / 2, ry2, COLS[4].w - 8, 14);
+    fitRight(x, money(ln.price), xs[5] + COLS[5].w - 10, ry2, COLS[5].w - 16, 15);
+    fitRight(x, money(ln.amount), xs[6] + COLS[6].w - 10, ry2, COLS[6].w - 16, 15);
+  });
+  if (over > 0) {
+    x.fillStyle = "#b3261e";
+    fitLeft(x, "* ยังมีอีก " + over + " รายการที่พิมพ์ไม่พอในใบนี้", pad + 6, ty + bodyH + 6, IN, 13, 600);
+  }
+
+  /* ---------------- หมายเหตุ + ยอดรวม ---------------- */
+  y = ty + bodyH + (over > 0 ? 24 : 0);
+  var fh = 132, sumW = 460, noteW = IN - sumW;
+  box(x, pad, y, noteW, fh);
+  box(x, pad + noteW, y, sumW, fh);
+
+  x.fillStyle = "#555"; fitLeft(x, "หมายเหตุ :", pad + 10, y + 8, noteW - 20, 14, 600);
+  x.fillStyle = "#000"; x.font = docFont(13, 400);
+  var ny = y + 30;
+  wrapText(x, m.note || "", noteW - 24).slice(0, 2).forEach(function (ln) {
+    fitLeft(x, ln, pad + 10, ny, noteW - 24, 13); ny += 19;
+  });
+  x.fillStyle = "#555";
+  wrapText(x, cfg.terms || "", noteW - 24).slice(0, 2).forEach(function (ln) {
+    fitLeft(x, ln, pad + 10, ny, noteW - 24, 12); ny += 17;
+  });
+  x.fillStyle = "#000";
+  fitCenter(x, "( " + d.totalText + " )", pad + noteW / 2, y + fh - 26, noteW - 20, 16, 700);
+
+  var sx = pad + noteW, sLab = 300, sy = y;
+  var sums = [
+    ["มูลค่าสินค้า  Total", money(d.base), false],
+    ["ภาษีมูลค่าเพิ่ม  Vat " + Math.round(d.vatRate * 100) + "%", money(d.vat), false],
+    ["รวมจำนวนเงินทั้งสิ้น  (Grand Total)", money(d.total), true]
+  ];
+  sums.forEach(function (s2, i) {
+    var rh = fh / 3;
+    if (s2[2]) { x.fillStyle = "#dbe7f3"; x.fillRect(sx + 1, sy + 1, sumW - 2, rh - 2); }
+    x.beginPath(); x.moveTo(sx, sy); x.lineTo(sx + sumW, sy); x.stroke();
+    x.beginPath(); x.moveTo(sx + sLab, sy); x.lineTo(sx + sLab, sy + rh); x.stroke();
+    x.fillStyle = "#000";
+    fitRight(x, s2[0], sx + sLab - 10, sy + rh / 2 - 10, sLab - 16, s2[2] ? 15 : 14, s2[2] ? 700 : 600);
+    fitRight(x, s2[1], sx + sumW - 12, sy + rh / 2 - 11, sumW - sLab - 20, s2[2] ? 19 : 16, s2[2] ? 700 : 400);
+    sy += rh;
+  });
+
+  /* ---------------- ช่องลงลายมือชื่อ ---------------- */
+  y += fh + 20;
+  var sgW = IN / 3, sgH = 128;
+  var SIGN = [
+    ["ลายเซ็นผู้รับของ", "(Authorized Signature)"],
+    ["ผู้รับเงิน / พนักงานขาย", "(Authorized Signature)"],
+    ["ลายเซ็นผู้มีอำนาจลงนาม", co.shortName || co.name || ""]
+  ];
+  SIGN.forEach(function (s3, i) {
+    var X = pad + sgW * i;
+    box(x, X, y, sgW, sgH);
+    x.strokeStyle = "#999"; x.setLineDash([4, 4]);
+    x.beginPath(); x.moveTo(X + 24, y + 44); x.lineTo(X + sgW - 24, y + 44); x.stroke();
+    x.beginPath(); x.moveTo(X + 74, y + 104); x.lineTo(X + sgW - 24, y + 104); x.stroke();
+    x.setLineDash([]); x.strokeStyle = "#000";
+    x.fillStyle = "#000"; fitCenter(x, s3[0], X + sgW / 2, y + 54, sgW - 20, 14, 600);
+    x.fillStyle = "#555"; fitCenter(x, s3[1], X + sgW / 2, y + 74, sgW - 20, 12, 400);
+    fitLeft(x, "ลงวันที่", X + 20, y + 96, 60, 12);
+  });
+
+  return c.toDataURL("image/png");
+}
+</script>
