@@ -590,7 +590,23 @@ function writeLog_(staff, type, sheetName, ref, field, before, after, why) {
 
 /* ------------------------------------------------------------------- helpers */
 
-function round2_(n) { return Math.round(Number(n) * 100) / 100; }
+/**
+ * ปัดเป็นทศนิยมสองตำแหน่งแบบเงิน
+ *
+ * Math.round(n * 100) / 100 ตรง ๆ ใช้กับเงินไม่ได้ เพราะเลขทศนิยมฐานสองเก็บ 9.995
+ * ไว้ต่ำกว่าความจริงนิดหนึ่ง 9.995 * 100 จึงได้ 999.4999... แล้วปัดลงเป็น 9.99
+ * บนใบกำกับภาษีคือสตางค์หายไปหนึ่งสตางค์ และทำให้ ฐานภาษี + ภาษี ไม่เท่ายอดรวม
+ * แปลงผ่านสัญกรณ์ยกกำลังก่อน 9.995 จึงกลายเป็น 999.5 เป๊ะ แล้วค่อยปัด
+ */
+function round2_(n) {
+  var v = Number(n);
+  if (!isFinite(v)) return 0;
+  var sign = v < 0 ? -1 : 1, a = Math.abs(v), s = String(a);
+  if (s.indexOf('e') >= 0 || s.indexOf('E') >= 0) return sign * (Math.round(a * 100) / 100);
+  var r = String(Math.round(Number(s + 'e2')));
+  if (r.indexOf('e') >= 0 || r.indexOf('E') >= 0) return sign * a;
+  return sign * Number(r + 'e-2');
+}
 
 function numOr0_(v) {
   var n = Number(v);

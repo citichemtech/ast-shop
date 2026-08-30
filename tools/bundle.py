@@ -20,7 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 GS = ROOT / "apps-script"
 
 # เรียงตามลำดับที่อ่านแล้วเข้าใจง่าย — Apps Script ไม่สนลำดับ ฟังก์ชันถูก hoist หมด
-SERVER = ["Sheets.gs", "Fefo.gs", "Setup.gs", "Api.gs", "Import.gs"]
+SERVER = ["Sheets.gs", "Fefo.gs", "Doc.gs", "Setup.gs", "Api.gs", "Import.gs"]
 
 
 def main():
