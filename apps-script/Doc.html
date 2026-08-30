@@ -67,9 +67,11 @@ async function buildDocPage(d, m, cfg) {
   var y = pad;
 
   /* ---------------- หัวกระดาษ — ชื่อและที่อยู่ผู้ขาย ---------------- */
-  var logo = await loadImg(cfg && cfg.logo);
-  if (logo) drawImgFit(x, logo, pad, y, 112, 112);
-  var tx = pad + (logo ? 128 : 0);
+  /* โลโก้ทรงรี กว้างราวสองเท่าของสูง จองช่องเป็นสี่เหลี่ยมผืนผ้าไม่ใช่จัตุรัส
+     ไม่งั้น drawImgFit ย่อตามด้านสูงแล้วโลโก้เล็กจนอ่านไม่ออก */
+  var logo = await loadImg((cfg && cfg.logo) || (typeof DOC_LOGO !== "undefined" ? DOC_LOGO : ""));
+  if (logo) drawImgFit(x, logo, pad, y + 6, 196, 100);
+  var tx = pad + (logo ? 214 : 0);
   x.fillStyle = "#000";
   fitLeft(x, co.name || "", tx, y + 2, IN - (tx - pad), 25, 700);
   fitLeft(x, co.nameEn || "", tx, y + 34, IN - (tx - pad), 16, 600);
