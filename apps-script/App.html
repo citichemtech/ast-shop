@@ -60,6 +60,8 @@ function boot(){
     CFG.codFee = Number(APP.codFee||0);
     CFG.logo   = (typeof SHOP_LOGO!=="undefined") ? SHOP_LOGO : "";
     CFG.brand  = b.shop || "AST Chem-Tooling";
+    CFG.head1  = APP.head1 || "";
+    CFG.head2  = APP.head2 || "";
     $("#brand").textContent = CFG.brand;      /* ชื่อร้านเอาจากชีท ตั้งค่าระบบ */
     CFG.carrierLinks = APP.track || {};
     CFG.line   = APP.line || "";
