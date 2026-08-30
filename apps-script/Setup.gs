@@ -243,7 +243,8 @@ function setupAppSheet_(ss) {
     ['ค่าจัดส่งเริ่มต้น', 50],
     ['ส่งฟรีเมื่อยอดถึง', 1000],
     ['ค่าธรรมเนียมเก็บปลายทาง', 0],
-    ['ลิงก์ LINE ของร้าน', 'https://line.me/R/ti/p/@citiofficial']
+    ['ลิงก์ LINE ของร้าน', 'https://line.me/R/ti/p/@citiofficial'],
+    ['รายชื่อพนักงาน', 'แอดมิน']
   ];
   for (var i = 0; i < rows.length; i++) {
     var r = DATA_ROW + i;

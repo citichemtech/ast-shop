@@ -225,7 +225,7 @@ function appCfg_() {
   var out = {
     sender: { name: '', addr: '', tel: '' },
     shipFee: 0, freeOver: 0, codFee: 0, line: '',
-    track: {}
+    staffList: [], track: {}
   };
   if (!s) return out;
   var v = s.getRange(DATA_ROW, 1, Math.max(1, s.getLastRow() - DATA_ROW + 1), 5).getValues();
@@ -239,6 +239,10 @@ function appCfg_() {
     else if (k === 'ส่งฟรีเมื่อยอดถึง') out.freeOver = Number(val || 0);
     else if (k === 'ค่าธรรมเนียมเก็บปลายทาง') out.codFee = Number(val || 0);
     else if (k === 'ลิงก์ LINE ของร้าน') out.line = String(val || '');
+    /* ใช้บัญชี Google เดียวกันทุกเครื่อง จึงแยกไม่ออกว่าใครเป็นคนคีย์
+       รายชื่อนี้ทำให้เลือกชื่อตัวเองได้ตอนคีย์ แล้วชื่อจะไปอยู่ในช่องพนักงานของออเดอร์ */
+    else if (k === 'รายชื่อพนักงาน') out.staffList = String(val || '')
+      .split(/[,\n]+/).map(function (x) { return x.trim() }).filter(function (x) { return x });
 
     var car = String(v[i][3] || '').trim();
     if (car) out.track[car] = String(v[i][4] || '').trim();
