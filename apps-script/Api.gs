@@ -231,6 +231,10 @@ function getOrders(limit) {
         note: String(hv[i][SH.head.IN.note - 1] || ''),
         subtotal: Number(hv[i][SH.head.subtotal - 1] || 0),
         net: Number(hv[i][SH.head.net - 1] || 0),
+        /* ต้นทุนกับกำไรเอาที่ชีทคำนวณมาเลย (O, P) ไม่คิดเองซ้ำในแอป
+           ตัวเลขบนหน้าสรุปจะได้ตรงกับชีทเสมอ ไม่มีทางเถียงกันเอง */
+        cost: Number(hv[i][14] || 0),
+        profit: Number(hv[i][15] || 0),
         check: String(hv[i][17] || ''),
         items: []
       });
@@ -261,6 +265,7 @@ function getOrders(limit) {
         qty: Number(iv[j][SH.item.IN.qty - 1] || 0),
         price: Number(iv[j][SH.item.IN.price - 1] || iv[j][7] || 0),
         total: Number(iv[j][9] || 0),
+        profit: Number(iv[j][11] || 0),
         lot: String(iv[j][SH.item.lot - 1] || '')
       });
     }

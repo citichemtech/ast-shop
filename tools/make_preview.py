@@ -64,7 +64,7 @@ ORDERS = [{
     "addr": "1/2 ถ.ตัวอย่าง\nต.ในเมือง อ.เมือง\nเชียงใหม่ 50000",
     "carrier": "Flash Express", "track": "TH0000000001", "vat": "ไม่รับ VAT",
     "discount": 0, "ship": 50, "status": "ส่งแล้ว", "staff": "somchai@chem-inno-tech.com",
-    "note": "", "subtotal": 750, "net": 800, "check": "OK",
+    "note": "", "subtotal": 750, "net": 800, "cost": 400, "profit": 350, "check": "OK",
     "items": [{"sku": "SKU-160", "name": PRODUCTS[2]["name"], "unit": "ชุด",
                "qty": 1, "price": 750, "total": 750, "lot": ""}],
 }]
