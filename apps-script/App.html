@@ -64,6 +64,17 @@ function boot(){
     CFG.carrierLinks = APP.track || {};
     CFG.line   = APP.line || "";
 
+    /* ผู้คีย์ — ทั้งร้านใช้บัญชี Google เดียวกัน ชื่อคนคีย์จึงต้องเลือกเอง
+       จำไว้ในเครื่องนี้ ครั้งหน้าเปิดมาก็เป็นชื่อเดิม ไม่ต้องเลือกซ้ำทุกใบ */
+    var staffList = (APP.staffList && APP.staffList.length) ? APP.staffList : ["แอดมิน"];
+    fillSelect("#f-by", staffList);
+    var remembered = "";
+    try { remembered = localStorage.getItem("ast-by") || "" } catch(e){}
+    if (remembered && staffList.indexOf(remembered) > -1) $("#f-by").value = remembered;
+    $("#f-by").onchange = function(){
+      try { localStorage.setItem("ast-by", this.value) } catch(e){}
+    };
+
     fillSelect("#f-channel", b.lists.channel);
     fillSelect("#f-carrier", b.lists.carrier);
     fillSelect("#f-vat",     b.lists.vat);
@@ -282,7 +293,8 @@ function save(){
     vat: /^รับ/.test($("#f-vat").value||""),
     discount: Number($("#f-disc").value)||0,
     ship: Number($("#f-ship").value)||0,
-    status: $("#f-status").value, note: $("#f-note").value.trim(),
+    status: $("#f-status").value, by: $("#f-by").value,
+    note: $("#f-note").value.trim(),
     items: items
   };
 
@@ -344,7 +356,7 @@ function orderFromForm_(payload, r){
            carrier:payload.carrier, track:payload.track,
            vat: payload.vat ? "รับ VAT" : "ไม่รับ VAT",
            discount:payload.discount, ship:payload.ship,
-           status:payload.status, note:payload.note,
+           status:payload.status, note:payload.note, staff:payload.by,
            subtotal:r.subtotal, net:r.net, items:items };
 }
 

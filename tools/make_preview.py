@@ -45,6 +45,7 @@ BOOT = {
     "app": {
         "sender": {"name": "AST Chem-Tooling", "addr": "99/9 ถ.ทดสอบ ต.สันทราย อ.เมือง เชียงใหม่ 50000",
                    "tel": "0961929993"},
+        "staffList": ["น้องเอ", "น้องบี", "พี่หนึ่ง"],
         "shipFee": 50, "freeOver": 1000, "codFee": 0,
         "line": "https://line.me/R/ti/p/@citiofficial",
         "track": {"Flash Express": "https://www.flashexpress.com/fle/tracking?se={track}"},

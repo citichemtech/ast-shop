@@ -105,6 +105,12 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ยอดสุทธิ', await page.textContent('#s-net'), '฿800.00');
   eq('หน้าตรวจปิดไปแล้ว', await page.locator('.pv').count(), 0);
 
+  console.log('\n   ผู้คีย์ออเดอร์ — ทั้งร้านใช้บัญชีเดียว ต้องเลือกชื่อเองว่าใครคีย์');
+  eq('มีรายชื่อพนักงานให้เลือกครบ', await page.locator('#f-by option').count(), 3);
+  await page.selectOption('#f-by', 'น้องบี');
+  eq('เครื่องนี้จำชื่อที่เลือกไว้',
+    await page.evaluate(function () { return localStorage.getItem('ast-by'); }), 'น้องบี');
+
   /* ---------- 4. แก้ของในฟอร์ม ---------- */
   console.log('\n4. เพิ่มสินค้าอีกรายการและตั้งราคาพิเศษ');
   await page.click('#btn-add');
@@ -197,6 +203,7 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ค่าจัดส่ง', sent.ship, 50);
   eq('ไม่รับ VAT', sent.vat, false);
   truthy('มี clientKey กันบันทึกซ้ำ', sent.clientKey && sent.clientKey.length > 8);
+  eq('ส่งชื่อคนคีย์ไปด้วย', sent.by, 'น้องบี');
   truthy('ขึ้นข้อความว่าบันทึกแล้ว', /บันทึกแล้ว/.test(await page.textContent('#ok')));
   eq('ล้างฟอร์มให้คีย์ใบต่อไป', await page.inputValue('#f-cust'), '');
   eq('เหลือแถวสินค้าว่าง 1 แถว', await page.locator('#items .it').count(), 1);

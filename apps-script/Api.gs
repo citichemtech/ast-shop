@@ -384,7 +384,7 @@ function createOrder(payload) {
     props.setProperty('ck_' + clientKey, no);
     writeLog_(email, 'บันทึกออเดอร์', SH.head.name, no,
       'สร้างออเดอร์ใหม่', '', String(plan.items.length) + ' รายการ',
-      'คีย์ออเดอร์จากแอป โดย ' + email);
+      'คีย์ออเดอร์จากแอป โดย ' + plan.staff + ' (บัญชี ' + email + ')');
 
     return { ok: true, no: no, subtotal: plan.subtotal, net: plan.net, lots: plan.lotNote };
   } catch (err) {
@@ -481,7 +481,10 @@ function planOrder_(p, email) {
     carrier: carrier, track: String(p.track || '').trim(),
     vat: vat,
     discount: numOr0_(p.discount), ship: numOr0_(p.ship),
-    status: status, staff: email, note: String(p.note || '').trim(),
+    /* ช่องพนักงานเก็บ "ชื่อคนคีย์" ที่เลือกจากหน้าจอ เพราะทั้งร้านใช้บัญชี Google เดียวกัน
+       ถ้าไม่ได้เลือกก็ใช้อีเมลไปก่อน และไม่ว่าทางไหน Log ยังบันทึกอีเมลจริงไว้เสมอ */
+    status: status, staff: String(p.by || '').trim().slice(0, 40) || email,
+    note: String(p.note || '').trim(),
     items: items, cuts: cuts,
     subtotal: round2_(subtotal),
     lotNote: lotNote

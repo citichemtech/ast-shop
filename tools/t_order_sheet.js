@@ -315,6 +315,29 @@ eq('มีชื่อผู้ส่ง', boot14.app.sender.name, 'AST Chem-Too
 eq('มีค่าจัดส่งเริ่มต้น', boot14.app.shipFee, 50);
 eq('มีลิงก์ติดตามของ Flash', /flashexpress/.test(boot14.app.track['Flash Express'] || ''), true);
 
+/* ====================== 14.5 ใครเป็นคนคีย์ (ใช้บัญชี Google เดียวทั้งร้าน) */
+console.log('\n14.5 ชื่อคนคีย์ออเดอร์');
+var fx145 = FS.build();
+var api145 = FS.load(fx145, { email: 'citisales01@chem-inno-tech.com' });
+api145.setup();
+var o145 = order(); o145.by = 'น้องบี';
+api145.createOrder(o145);
+eq('ช่องพนักงานเก็บชื่อคนคีย์ ไม่ใช่อีเมล',
+  fx145.sheets['ออเดอร์_หัวบิล'].cell(6, 19).v, 'น้องบี');
+eq('Log ยังเก็บอีเมลจริงไว้เป็นหลักฐาน',
+  /citisales01@chem-inno-tech\.com/.test(
+    rowsWith(fx145.sheets['Log'], 2).map(function (r) {
+      return String(fx145.sheets['Log'].cell(r, 3).v) + ' ' +
+             String(fx145.sheets['Log'].cell(r, 10).v);
+    }).join(' ')), true);
+
+var fx146 = FS.build();
+var api146 = FS.load(fx146, { email: 'citisales01@chem-inno-tech.com' });
+api146.setup();
+api146.createOrder(order());
+eq('ไม่ได้เลือกชื่อ ก็ใช้อีเมลไปก่อน ไม่ปล่อยว่าง',
+  fx146.sheets['ออเดอร์_หัวบิล'].cell(6, 19).v, 'citisales01@chem-inno-tech.com');
+
 /* ============================== 15. เปิดชีทได้ = ใช้แอปได้ */
 console.log('\n15. สิทธิ์เดินตามการแชร์ชีท');
 var fx15 = FS.build();

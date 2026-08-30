@@ -213,7 +213,9 @@ input,select,textarea{font-family:inherit;font-size:16px}
 @media (min-width:600px){
   :root{--appw:100%}
   .pgrid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
-  .banner{max-height:320px}
+  /* อย่าใช้ max-height กับกล่องที่มี aspect-ratio — มันย่อ "ความกว้าง" ตามไปด้วย
+     แบนเนอร์เลยหดเหลือครึ่งจอ เหลือขาวโล่งข้าง ๆ ต้องปลดสัดส่วนแล้วกำหนดสูงตรง ๆ */
+  .banner{aspect-ratio:auto;height:320px}
 }
 .pin-card{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff;display:flex;flex-direction:column;box-shadow:0 1px 3px rgba(20,24,33,.05)}
 .pin-img{position:relative;aspect-ratio:1/1;background:var(--soft);display:flex;align-items:center;justify-content:center}
