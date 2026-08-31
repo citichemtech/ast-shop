@@ -461,7 +461,10 @@ function docSnap_(d, p, no, t) {
         tel: String(cu.tel || ''), email: String(cu.email || '')
       },
       po: String(p.po || ''), terms: String(p.terms || ''),
-      note: String(p.note || ''), validTo: String(p.validTo || '')
+      note: String(p.note || ''), validTo: String(p.validTo || ''),
+      /* ชื่อที่คนออกใบเลือกให้ขึ้นเข้มบนหัวใบ ต้องเก็บไว้ด้วย
+         ไม่งั้นพิมพ์ซ้ำแล้วได้หัวใบคนละแบบกับใบที่ลูกค้าถืออยู่ */
+      form: (p.form || []).map(Number).filter(function (n) { return n >= 0 && n <= 3; })
     });
   } catch (e) {
     /* เก็บภาพถ่ายไม่ได้ ไม่ใช่เหตุให้ออกใบไม่สำเร็จ — ใบยังถูกต้องทุกอย่าง
@@ -551,6 +554,7 @@ function getDoc(no) {
       try { snap = JSON.parse(raw) } catch (e) { snap = null }
       if (snap && snap.lines) {
         if (snap.validTo) m.validTo = snap.validTo;
+        if (snap.form) m.form = snap.form;
         return { ok: true, exact: true, meta: m, saved: saved, doc: {
           type: key || snap.type, lines: snap.lines, base: snap.base, vat: snap.vat,
           vatRate: snap.vatRate, total: snap.total, totalText: snap.totalText

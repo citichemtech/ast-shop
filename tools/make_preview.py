@@ -135,6 +135,7 @@ window.google = { script: { run: (function(){
         /* เก็บใบที่ออกไว้ในทะเบียน เพื่อให้กดพิมพ์ซ้ำได้เหมือนของจริง */
         MOCK_DOCS.push({ no:no, type:th, date:p.date||"", orderNo:p.orderNo||"",
                          cust:p.cust||{}, po:p.po||"", terms:p.terms||"", note:p.note||"",
+                         form:p.form||[],
                          doc:JSON.parse(JSON.stringify(d)) });
         return { ok:true, no: no, doc:d, row:7 };
       });
@@ -158,7 +159,7 @@ window.google = { script: { run: (function(){
         if(!f) throw new Error("ไม่พบใบ " + no + " ในชีท เอกสาร");
         return { ok:true, exact:true,
                  meta:{ no:f.no, date:f.date, orderNo:f.orderNo, po:f.po||"", terms:f.terms||"",
-                        note:f.note||"", voidWhy:f.voidWhy||"", cust:f.cust },
+                        note:f.note||"", voidWhy:f.voidWhy||"", cust:f.cust, form:f.form||[] },
                  saved:{ base:f.doc.base, vat:f.doc.vat, total:f.doc.total },
                  doc: JSON.parse(JSON.stringify(f.doc)) };
       });

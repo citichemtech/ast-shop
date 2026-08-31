@@ -868,6 +868,14 @@ function openDoc(o, preType){
           +'<span style="font-size:12.5px">'+esc(t.hint)+'</span></span></label>';
       }).join("")
     +'</div>'
+    +'<div class="subhd">ชื่อที่จะให้ขึ้นเข้มบนหัวใบ</div>'
+    +'<div class="hint" style="margin:-4px 0 8px">ติ๊กได้หลายอัน · ที่ติ๊กจะเป็นตัวหนาดำขีดเส้นใต้ '
+    +'ที่ไม่ติ๊กเป็นสีเทาจาง ๆ</div>'
+    +'<div id="dc-form" class="fchk">'
+    + DOC_FORM_TH.map(function(n, i){
+        return '<label><input type="checkbox" class="fchk-i" value="'+i+'"><span>'+esc(n)+'</span></label>';
+      }).join("")
+    +'</div>'
     +'<div class="subhd">ข้อมูลผู้ซื้อบนเอกสาร</div>'
     +'<div class="fld"><label>ชื่อผู้เสียภาษี / ชื่อบริษัท</label>'
     +'<input id="dc-name" value="'+esc(memo.name||o.cust||"")+'"></div>'
@@ -892,6 +900,24 @@ function openDoc(o, preType){
     +'<option value="none">ไม่คิด VAT</option></select></div></div>'
     +'<button class="btn" id="dc-make">ออกเอกสาร</button>'
     +'<div id="dc-out" style="margin-top:12px"></div>');
+
+  /* ติ๊กชื่อบนหัวใบให้ตามชนิดที่เลือกไว้ก่อน แล้วคนออกใบแก้เองได้
+     สลับชนิดเอกสารเมื่อไหร่ ติ๊กตั้งต้นเปลี่ยนตาม แต่ถ้าแก้เองแล้วไม่ไปยุ่งอีก */
+  function formTick(){
+    var type = (document.querySelector('input[name=dctype]:checked')||{}).value || "rec";
+    var def = (DOC_TYPE_NAMES.filter(function(t){ return t.key===type })[0]||{}).form || [];
+    $$("#dc-form .fchk-i").forEach(function(c){
+      c.checked = def.indexOf(Number(c.value)) > -1;
+    });
+  }
+  formTick();
+  $$("#dc-pick input[name=dctype]").forEach(function(r){
+    r.addEventListener("change", function(){ if(!DC_FORM_TOUCHED) formTick() });
+  });
+  var DC_FORM_TOUCHED = false;
+  $$("#dc-form .fchk-i").forEach(function(c){
+    c.addEventListener("change", function(){ DC_FORM_TOUCHED = true });
+  });
 
   /* ใบที่เคยออกให้ออเดอร์นี้ — ขึ้นไว้บนสุดพร้อมปุ่มพิมพ์ซ้ำ
      ก่อนหน้านี้ใบที่ออกไปแล้วเปิดกลับมาดูไม่ได้เลย กดออกใหม่ก็โดนกันใบซ้ำ
@@ -921,9 +947,10 @@ function openDoc(o, preType){
       type:type, orderNo:o.no, cust:cust, po:$("#dc-po").value.trim(),
       terms:$("#dc-terms").value, date:o.date, by:byName(),
       vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
+      form: readFormTicks(),
       clientKey: "dc-"+o.no+"-"+type+"-"+Date.now()
     }).then(function(r){
-      drawDoc(r, o, cust, type);
+      drawDoc(r, o, cust, type, readFormTicks());
     }, function(e){
       btn.disabled=false;
       $("#dc-out").innerHTML='<div style="color:var(--red)">ออกเอกสารไม่สำเร็จ: '
@@ -932,10 +959,17 @@ function openDoc(o, preType){
   };
 }
 
-function drawDoc(r, o, cust, type){
+/* ชื่อที่ติ๊กไว้ว่าจะให้ขึ้นเข้มบนหัวใบ */
+function readFormTicks(){
+  var out = [];
+  $$("#dc-form .fchk-i").forEach(function(c){ if(c.checked) out.push(Number(c.value)) });
+  return out;
+}
+
+function drawDoc(r, o, cust, type, form){
   var m = { no:r.no, date:o.date, cust:cust, po:$("#dc-po")?$("#dc-po").value.trim():"",
             terms:$("#dc-terms")?$("#dc-terms").value:"", seller:CFG.docSeller||"",
-            sellerEmail:CFG.docSellerEmail||"", note:"" };
+            sellerEmail:CFG.docSellerEmail||"", note:"", form:form||[] };
   $("#dc-out").innerHTML='<div class="load">กำลังวาดเอกสาร…</div>';
   buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
     $("#dc-out").innerHTML =

@@ -371,6 +371,14 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(600);
   await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec'); });
   await page.waitForTimeout(400);
+  /* ชื่อบนหัวใบ — ติ๊กตั้งต้นตามชนิดเอกสาร แล้วคนออกใบเลือกเพิ่มเองได้
+     ใบใบเดียวบางทีใช้เป็นทั้งใบส่งของและใบกำกับภาษี ระบบเดาแทนไม่ได้ */
+  eq('ใบเสร็จ/ใบกำกับภาษี ติ๊กมาให้สองชื่อ',
+    await page.locator('#dc-form .fchk-i:checked').count(), 2);
+  await page.check('#dc-form .fchk-i[value="2"]');
+  eq('ติ๊กใบส่งของเพิ่มได้เป็นสามชื่อ',
+    await page.locator('#dc-form .fchk-i:checked').count(), 3);
+
   await page.click('#dc-make');
   await page.waitForSelector('#dc-copy', { timeout: 20000 });
   var docOrig = await page.getAttribute('img.docimg', 'src');
@@ -404,6 +412,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     (await page.getAttribute('#rp-out-dcold img.docimg', 'src')) === docOrig, true);
   truthy('บอกชัดว่าเป็นใบเดิม ไม่ได้ออกใบใหม่',
     /ไม่ได้ออกใบใหม่/.test(await page.textContent('#rp-out-dcold')));
+  /* รูปที่พิมพ์ซ้ำเท่ากับตอนออกใบเป๊ะ (ตรวจไปแล้วข้างบน) แปลว่าชื่อสามชื่อที่ติ๊กไว้
+     ถูกเก็บและดึงกลับมาครบ ไม่ได้กลับไปใช้ค่าตั้งต้นของชนิดเอกสาร */
   await page.evaluate(function () { closeModal(); });
   await page.waitForTimeout(200);
 
