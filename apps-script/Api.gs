@@ -90,9 +90,14 @@ function doGet() {
   }
   var t = HtmlService.createTemplateFromFile('Index');
   t.staffEmail = email;
-  return t.evaluate()
+  var out = t.evaluate()
     .setTitle('AST — คีย์ออเดอร์')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+  /* ไอคอนตอนกด "เพิ่มไปยังหน้าจอหลัก" — ถ้าไม่ใส่ Chrome จะขึ้นตัว G สีเทาของ Google
+     ใช้ตรา STOCK LIST ไม่ใช่โลโก้ AST เพื่อให้แยกออกจากไอคอนแอปหน้าร้านบนจอเดียวกัน
+     ครอบ try ไว้เพราะถ้าลิงก์รูปมีปัญหา ห้ามพาให้ทั้งหน้าเปิดไม่ขึ้น */
+  try { out.setFaviconUrl(APP_ICON_URL); } catch (e) { Logger.log('ตั้งไอคอนไม่ได้: ' + e.message); }
+  return out;
 }
 
 function include_(name) {

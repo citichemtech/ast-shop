@@ -13,6 +13,10 @@
 
 var SHEET_ID = '1s8tS_Fv7YSYPyjzH-rXQdl-5VKBTaV717YYyWUv5k_8';
 
+/* ไอคอนของเว็บแอป เสิร์ฟจาก GitHub Pages ของร้านเอง
+   Apps Script รับเฉพาะ URL จริง ใส่รูปฝังตรง ๆ ไม่ได้ */
+var APP_ICON_URL = 'https://citichemtech.github.io/ast-shop/icon-stock.png';
+
 /** แถวหัวตารางของทุกชีทคือแถว 5 ข้อมูลเริ่มแถว 6 */
 var HEAD_ROW = 5;
 var DATA_ROW = 6;
