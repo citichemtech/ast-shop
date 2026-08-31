@@ -90,9 +90,14 @@ function doGet() {
   }
   var t = HtmlService.createTemplateFromFile('Index');
   t.staffEmail = email;
-  return t.evaluate()
+  var out = t.evaluate()
     .setTitle('AST — คีย์ออเดอร์')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+  /* ไอคอนตอนกด "เพิ่มไปยังหน้าจอหลัก" — ถ้าไม่ใส่ Chrome จะขึ้นตัว G สีเทาของ Google
+     ใช้ตรา STOCK LIST ไม่ใช่โลโก้ AST เพื่อให้แยกออกจากไอคอนแอปหน้าร้านบนจอเดียวกัน
+     ครอบ try ไว้เพราะถ้าลิงก์รูปมีปัญหา ห้ามพาให้ทั้งหน้าเปิดไม่ขึ้น */
+  try { out.setFaviconUrl(APP_ICON_URL); } catch (e) { Logger.log('ตั้งไอคอนไม่ได้: ' + e.message); }
+  return out;
 }
 
 function include_(name) {
@@ -319,6 +324,278 @@ function setTracking(no, track, status) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ------------------------------------------------------------ เอกสารขาย */
+
+/**
+ * ออกเอกสารขายหนึ่งใบ แล้วลงทะเบียนไว้ในชีท เอกสาร
+ *
+ * ใบเสนอราคาออกได้โดยไม่ต้องมีออเดอร์ (ยังไม่รู้ว่าลูกค้าจะซื้อไหม)
+ * อีกสามชนิดต้องอ้างออเดอร์ที่มีจริง เพราะเป็นเอกสารของการขายที่เกิดขึ้นแล้ว
+ *
+ * ออกใบกำกับภาษีซ้ำใบที่สองให้ออเดอร์เดียวกันไม่ได้ ถ้าไม่ยืนยันมาว่าตั้งใจ —
+ * ใบกำกับภาษีสองใบสำหรับการขายครั้งเดียวเป็นปัญหาทางบัญชีของทั้งร้านและลูกค้า
+ * ถ้าจะออกใหม่จริง ๆ ต้องยกเลิกใบเก่าก่อน (กรอกเหตุผลในชีท) แล้วส่ง allowDup มา
+ */
+function issueDoc(payload) {
+  var email = requireStaff_();
+  var p = payload || {};
+  var t = docType_(String(p.type || ''));
+  if (!t) throw new Error('ไม่รู้จักชนิดเอกสาร');
+
+  var clientKey = String(p.clientKey || '').trim();
+  if (!clientKey) throw new Error('คำขอไม่มี clientKey — ระบบกันออกใบซ้ำไม่ได้ ไม่ออกให้');
+  var props = PropertiesService.getScriptProperties();
+  var done = props.getProperty('dk_' + clientKey);
+  if (done) return { ok: true, no: done, repeat: true };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    done = props.getProperty('dk_' + clientKey);
+    if (done) return { ok: true, no: done, repeat: true };
+
+    var cfg = appCfg_();
+    var orderNo = String(p.orderNo || '').trim();
+    var src;
+    if (t.quote) {
+      src = { items: p.items || [], ship: p.ship, discount: p.discount };
+      orderNo = '';
+    } else {
+      if (!orderNo) throw new Error('เอกสารชนิดนี้ต้องอ้างออเดอร์ ยังไม่ได้บอกว่าออเดอร์ไหน');
+      var ord = findOrder_(orderNo);
+      if (!ord) throw new Error('ไม่พบออเดอร์ ' + orderNo + ' ในชีท');
+      src = { items: ord.items, ship: ord.ship, discount: ord.discount };
+    }
+
+    var used = readDocNos_();
+    if (orderNo && !p.allowDup) {
+      var dup = used.byOrder[orderNo + '|' + t.key];
+      if (dup) {
+        throw new Error('ออเดอร์ ' + orderNo + ' ออก' + t.th + 'ไปแล้วเป็นใบ ' + dup +
+          ' — ถ้าจะออกใหม่ ต้องยกเลิกใบเดิมในชีท เอกสาร ก่อน');
+      }
+    }
+
+    var prefix = cfg.docPrefix[t.key] || (t.code + '26-');
+    var no = nextDocNo_(prefix, used.nos, 5, cfg.docStart[t.key]);
+    var d = buildDoc_(t.key, src, {
+      vatRate: p.novat ? 0 : cfgGet_().vatRate,
+      vatMode: p.vatMode || cfg.vatMode
+    });
+
+    var row = nextRow_('doc', SH.doc.IN.no);
+    if (!row) throw new Error('ชีท เอกสาร เต็มแล้ว — สั่ง setup() อีกครั้งเพื่อขยายแถว');
+    var cu = p.cust || {};
+    writeRow_('doc', row, {
+      no: no, type: t.th, date: parseDate_(p.date) || new Date(), orderNo: orderNo,
+      custName: String(cu.name || ''), custTaxId: String(cu.taxId || ''),
+      custBranch: String(cu.branch || ''), custAddr: String(cu.addr || ''),
+      custTel: String(cu.tel || ''), custEmail: String(cu.email || ''),
+      custCode: String(cu.code || ''), po: String(p.po || ''), terms: String(p.terms || ''),
+      base: d.base, vat: d.vat, total: d.total,
+      staff: String(p.by || '').trim().slice(0, 40) || email,
+      note: String(p.note || ''),
+      snap: docSnap_(d, p, no, t)
+    });
+    SpreadsheetApp.flush();
+    props.setProperty('dk_' + clientKey, no);
+    writeLog_(email, 'ออกเอกสาร', SH.doc.name, no, t.th, '', d.total,
+      orderNo ? 'จากออเดอร์ ' + orderNo : 'ออกเดี่ยว');
+
+    return { ok: true, no: no, doc: d, row: row };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** เลขเอกสารที่เคยออกไปแล้วทั้งหมด + ดัชนีว่าออเดอร์ไหนออกใบชนิดไหนไปแล้ว */
+function readDocNos_() {
+  var out = { nos: [], byOrder: {} };
+  var s = sheet_('doc');
+  var last = formulaLimit_('doc');
+  if (last < DATA_ROW) return out;
+  var n = last - DATA_ROW + 1;
+  var v = s.getRange(DATA_ROW, SH.doc.IN.no, n, SH.doc.IN.voidWhy - SH.doc.IN.no + 1).getValues();
+  var iType = SH.doc.IN.type - SH.doc.IN.no;
+  var iOrd = SH.doc.IN.orderNo - SH.doc.IN.no;
+  var iVoid = SH.doc.IN.voidWhy - SH.doc.IN.no;
+  for (var i = 0; i < v.length; i++) {
+    var no = String(v[i][0] || '').trim();
+    if (!no) continue;
+    out.nos.push(no);
+    /* ใบที่ยกเลิกไปแล้วไม่นับเป็นใบที่ยังใช้อยู่ จึงออกใบใหม่แทนได้
+       แต่เลขของมันยังอยู่ในชุด ไม่เอาเลขเดิมมาใช้ซ้ำ */
+    if (String(v[i][iVoid] || '').trim()) continue;
+    var ord = String(v[i][iOrd] || '').trim();
+    if (!ord) continue;
+    var th = String(v[i][iType] || '').trim();
+    for (var k = 0; k < DOC_TYPES.length; k++) {
+      if (DOC_TYPES[k].th === th) out.byOrder[ord + '|' + DOC_TYPES[k].key] = no;
+    }
+  }
+  return out;
+}
+
+/**
+ * ภาพถ่ายของใบตอนที่ออก — เก็บลงชีทช่องเดียวเป็น JSON
+ *
+ * มีไว้เพื่อ "พิมพ์ซ้ำ" ให้ได้ใบเดิมทุกตัวอักษร ถ้าไปประกอบใหม่จากออเดอร์
+ * ตอนกดพิมพ์ซ้ำ แล้วออเดอร์ถูกแก้ทีหลัง (แก้ราคา เพิ่มของ ลดของ)
+ * ใบที่พิมพ์ออกมาจะไม่ตรงกับใบที่ลูกค้าถืออยู่และที่ส่งบัญชีไปแล้ว
+ * ใบกำกับภาษีสองใบเลขเดียวกันแต่ยอดคนละอย่าง เป็นปัญหาภาษีของทั้งสองฝ่าย
+ *
+ * ใบเสนอราคาไม่ได้ผูกกับออเดอร์เลย ถ้าไม่เก็บตรงนี้ก็ประกอบกลับไม่ได้เลยด้วยซ้ำ
+ */
+function docSnap_(d, p, no, t) {
+  var cu = p.cust || {};
+  try {
+    return JSON.stringify({
+      v: 1, no: no, type: t.key, date: String(p.date || ''),
+      lines: d.lines, base: d.base, vat: d.vat, vatRate: d.vatRate,
+      total: d.total, totalText: d.totalText,
+      cust: {
+        name: String(cu.name || ''), taxId: String(cu.taxId || ''),
+        branch: String(cu.branch || ''), addr: String(cu.addr || ''),
+        tel: String(cu.tel || ''), email: String(cu.email || '')
+      },
+      po: String(p.po || ''), terms: String(p.terms || ''),
+      note: String(p.note || ''), validTo: String(p.validTo || ''),
+      /* ชื่อที่คนออกใบเลือกให้ขึ้นเข้มบนหัวใบ ต้องเก็บไว้ด้วย
+         ไม่งั้นพิมพ์ซ้ำแล้วได้หัวใบคนละแบบกับใบที่ลูกค้าถืออยู่ */
+      form: (p.form || []).map(Number).filter(function (n) { return n >= 0 && n <= 3; })
+    });
+  } catch (e) {
+    /* เก็บภาพถ่ายไม่ได้ ไม่ใช่เหตุให้ออกใบไม่สำเร็จ — ใบยังถูกต้องทุกอย่าง
+       แค่พิมพ์ซ้ำทีหลังต้องประกอบจากออเดอร์แทน ซึ่งแอปจะเตือนให้เอง */
+    Logger.log('เก็บภาพถ่ายใบ ' + no + ' ไม่ได้: ' + e.message);
+    return '';
+  }
+}
+
+/**
+ * ใบที่เคยออกให้ออเดอร์นี้ — ไว้ให้หน้าจอโชว์ปุ่มพิมพ์ซ้ำ
+ * orderNo ว่าง = เอาใบเสนอราคาล่าสุดมาให้ (ใบเสนอราคาไม่ผูกกับออเดอร์)
+ */
+function listDocs(orderNo) {
+  requireStaff_();
+  var want = String(orderNo || '').trim();
+  var s = sheet_('doc');
+  var last = formulaLimit_('doc');
+  if (last < DATA_ROW) return [];
+  var n = last - DATA_ROW + 1;
+  var C = SH.doc.IN;
+  var v = s.getRange(DATA_ROW, C.no, n, C.snap - C.no + 1).getValues();
+  var at = function (col) { return col - C.no; };
+  var out = [];
+  for (var i = 0; i < v.length; i++) {
+    var no = String(v[i][0] || '').trim();
+    if (!no) continue;
+    var ord = String(v[i][at(C.orderNo)] || '').trim();
+    if (want) { if (ord !== want) continue; }
+    else if (ord) continue;
+    out.push({
+      no: no, type: String(v[i][at(C.type)] || ''),
+      date: isoDate_(v[i][at(C.date)]), orderNo: ord,
+      custName: String(v[i][at(C.custName)] || ''),
+      total: Number(v[i][at(C.total)] || 0),
+      voidWhy: String(v[i][at(C.voidWhy)] || '').trim(),
+      hasSnap: !!String(v[i][at(C.snap)] || '').trim()
+    });
+  }
+  /* ใบล่าสุดอยู่บนสุด คนมักพิมพ์ซ้ำใบที่เพิ่งออก */
+  out.reverse();
+  return want ? out : out.slice(0, 20);
+}
+
+/**
+ * ดึงใบเดิมมาพิมพ์ซ้ำ — ไม่ออกเลขใหม่ ไม่แตะสต๊อก ไม่เขียนอะไรลงชีท
+ *
+ * คืน exact:true เมื่อใช้ภาพถ่ายที่เก็บไว้ตอนออกใบ ซึ่งได้ใบเดิมเป๊ะ
+ * คืน exact:false เมื่อใบนั้นออกก่อนที่ระบบจะเก็บภาพถ่าย ต้องประกอบจากออเดอร์ให้
+ * ตอนนั้นถ้ายอดที่ประกอบได้ไม่ตรงกับยอดที่บันทึกไว้ จะบอกมาด้วยว่าต่างกันตรงไหน
+ * ห้ามเงียบ เพราะใบที่ยอดไม่ตรงกับที่ส่งลูกค้าไปแล้วคือใบที่ใช้ไม่ได้
+ */
+function getDoc(no) {
+  requireStaff_();
+  var want = String(no || '').trim();
+  if (!want) throw new Error('ไม่ได้บอกว่าจะพิมพ์ซ้ำใบไหน');
+  var s = sheet_('doc');
+  var last = formulaLimit_('doc');
+  var C = SH.doc.IN;
+  var n = Math.max(0, last - DATA_ROW + 1);
+  var v = n ? s.getRange(DATA_ROW, C.no, n, C.snap - C.no + 1).getValues() : [];
+  var at = function (col) { return col - C.no; };
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][0] || '').trim() !== want) continue;
+
+    var th = String(v[i][at(C.type)] || '').trim();
+    var key = '';
+    for (var k = 0; k < DOC_TYPES.length; k++) if (DOC_TYPES[k].th === th) key = DOC_TYPES[k].key;
+
+    var m = {
+      no: want, date: isoDate_(v[i][at(C.date)]), orderNo: String(v[i][at(C.orderNo)] || '').trim(),
+      po: String(v[i][at(C.po)] || ''), terms: String(v[i][at(C.terms)] || ''),
+      note: String(v[i][at(C.note)] || ''),
+      voidWhy: String(v[i][at(C.voidWhy)] || '').trim(),
+      cust: {
+        name: String(v[i][at(C.custName)] || ''), taxId: String(v[i][at(C.custTaxId)] || ''),
+        branch: String(v[i][at(C.custBranch)] || ''), addr: String(v[i][at(C.custAddr)] || ''),
+        tel: String(v[i][at(C.custTel)] || ''), email: String(v[i][at(C.custEmail)] || '')
+      }
+    };
+    var saved = { base: Number(v[i][at(C.base)] || 0), vat: Number(v[i][at(C.vat)] || 0),
+                  total: Number(v[i][at(C.total)] || 0) };
+
+    var raw = String(v[i][at(C.snap)] || '').trim();
+    if (raw) {
+      var snap = null;
+      try { snap = JSON.parse(raw) } catch (e) { snap = null }
+      if (snap && snap.lines) {
+        if (snap.validTo) m.validTo = snap.validTo;
+        if (snap.form) m.form = snap.form;
+        return { ok: true, exact: true, meta: m, saved: saved, doc: {
+          type: key || snap.type, lines: snap.lines, base: snap.base, vat: snap.vat,
+          vatRate: snap.vatRate, total: snap.total, totalText: snap.totalText
+        } };
+      }
+    }
+
+    /* ใบเก่าที่ยังไม่มีภาพถ่าย — ประกอบจากออเดอร์ให้ แล้วเทียบยอดกับที่บันทึกไว้ */
+    if (!m.orderNo) {
+      throw new Error('ใบ ' + want + ' ออกก่อนที่ระบบจะเก็บรายการในใบ และไม่ได้ผูกกับออเดอร์ ' +
+        'จึงพิมพ์ซ้ำให้ไม่ได้ — ต้องออกใบใหม่');
+    }
+    var ord = findOrder_(m.orderNo);
+    if (!ord) throw new Error('ใบ ' + want + ' อ้างออเดอร์ ' + m.orderNo + ' ซึ่งหาไม่เจอในชีทแล้ว');
+    var cfg = appCfg_();
+    var d = buildDoc_(key || 'rec', { items: ord.items, ship: ord.ship, discount: ord.discount },
+      { vatRate: saved.vat > 0 ? cfgGet_().vatRate : 0, vatMode: cfg.vatMode });
+    var same = round2_(d.total) === round2_(saved.total);
+    return { ok: true, exact: false, same: same, meta: m, saved: saved, doc: d };
+  }
+  throw new Error('ไม่พบใบ ' + want + ' ในชีท เอกสาร');
+}
+
+/** เลขเอกสารถัดไปของแต่ละชนิด — ให้หน้าจอโชว์ก่อนกดออกจริง */
+function peekDocNos() {
+  requireStaff_();
+  var cfg = appCfg_();
+  var used = readDocNos_();
+  var out = {};
+  for (var i = 0; i < DOC_TYPES.length; i++) {
+    var t = DOC_TYPES[i];
+    out[t.key] = nextDocNo_(cfg.docPrefix[t.key] || (t.code + '26-'), used.nos, 5, cfg.docStart[t.key]);
+  }
+  return out;
+}
+
+/** หาออเดอร์หนึ่งใบพร้อมรายการ — ใช้ตัวอ่านเดียวกับหน้ารายการออเดอร์ */
+function findOrder_(no) {
+  var list = getOrders(0);
+  for (var i = 0; i < list.length; i++) if (String(list[i].no) === String(no)) return list[i];
+  return null;
 }
 
 /* -------------------------------------------------------------- เลขที่ออเดอร์ */
@@ -590,7 +867,23 @@ function writeLog_(staff, type, sheetName, ref, field, before, after, why) {
 
 /* ------------------------------------------------------------------- helpers */
 
-function round2_(n) { return Math.round(Number(n) * 100) / 100; }
+/**
+ * ปัดเป็นทศนิยมสองตำแหน่งแบบเงิน
+ *
+ * Math.round(n * 100) / 100 ตรง ๆ ใช้กับเงินไม่ได้ เพราะเลขทศนิยมฐานสองเก็บ 9.995
+ * ไว้ต่ำกว่าความจริงนิดหนึ่ง 9.995 * 100 จึงได้ 999.4999... แล้วปัดลงเป็น 9.99
+ * บนใบกำกับภาษีคือสตางค์หายไปหนึ่งสตางค์ และทำให้ ฐานภาษี + ภาษี ไม่เท่ายอดรวม
+ * แปลงผ่านสัญกรณ์ยกกำลังก่อน 9.995 จึงกลายเป็น 999.5 เป๊ะ แล้วค่อยปัด
+ */
+function round2_(n) {
+  var v = Number(n);
+  if (!isFinite(v)) return 0;
+  var sign = v < 0 ? -1 : 1, a = Math.abs(v), s = String(a);
+  if (s.indexOf('e') >= 0 || s.indexOf('E') >= 0) return sign * (Math.round(a * 100) / 100);
+  var r = String(Math.round(Number(s + 'e2')));
+  if (r.indexOf('e') >= 0 || r.indexOf('E') >= 0) return sign * a;
+  return sign * Number(r + 'e-2');
+}
 
 function numOr0_(v) {
   var n = Number(v);

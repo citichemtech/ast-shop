@@ -9,6 +9,7 @@ var BOOT = null;          /* ข้อมูลจากชีท */
 var APP = {};             /* ตั้งค่าแอป (ผู้ส่ง ค่าส่ง ลิงก์ติดตาม) */
 var ORDERS = [];          /* ออเดอร์ที่โหลดมาล่าสุด */
 var SAVING = false;
+var BY_NEW = "✎ พิมพ์ชื่อเอง…";   /* ตัวเลือกสุดท้ายของเมนูผู้คีย์ออเดอร์ */
 
 /* -------------------------------------------------------------- ข้อความแจ้ง */
 
@@ -32,6 +33,13 @@ function call(fn, args, done, fail){
       var m=(e&&e.message)?e.message:String(e);
       if(fail) fail(m); else showErr(m);
     })[fn].apply(null, args||[]);
+}
+
+/* แบบ promise สำหรับจุดที่ต้องต่อหลายขั้น (ออกเลขเอกสาร → วาดกระดาษ → แชร์) */
+function api(fn, args){
+  return new Promise(function(res, rej){
+    call(fn, [args], res, function(m){ rej(new Error(m)) });
+  });
 }
 
 /* ------------------------------------------------------------------ เริ่มระบบ */
@@ -66,15 +74,53 @@ function boot(){
     CFG.carrierLinks = APP.track || {};
     CFG.line   = APP.line || "";
 
+    /* ข้อมูลบนหัวเอกสารขาย — มาจากชีท ตั้งค่าแอป ทั้งหมด ไม่มีอะไรฝังในโค้ด
+       โลโก้บนเอกสารใช้ตัวความละเอียดสูงกว่าของใบปะหน้า เพราะพิมพ์ลง A4 */
+    CFG.doc = { co: APP.co || {}, bank: APP.bank || "", thanks: APP.thanks || "",
+                terms: APP.docTerms || "", website: APP.website || "",
+                logo: (typeof DOC_LOGO !== "undefined") ? DOC_LOGO : CFG.logo };
+    CFG.docSeller = APP.docSeller || "";
+    CFG.docSellerEmail = APP.docSellerEmail || "";
+
     /* ผู้คีย์ — ทั้งร้านใช้บัญชี Google เดียวกัน ชื่อคนคีย์จึงต้องเลือกเอง
        จำไว้ในเครื่องนี้ ครั้งหน้าเปิดมาก็เป็นชื่อเดิม ไม่ต้องเลือกซ้ำทุกใบ */
     var staffList = (APP.staffList && APP.staffList.length) ? APP.staffList : ["แอดมิน"];
-    fillSelect("#f-by", staffList);
+    /* ชื่อที่เคยพิมพ์เองในเครื่องนี้ ขึ้นมาในรายการด้วย จะได้พิมพ์ครั้งเดียวพอ
+       (คนคีย์คนใหม่มาช่วยวันเดียว ไม่ต้องรอแก้ชีทก่อนถึงจะคีย์ได้) */
+    staffList = staffList.concat(myStaff().filter(function(n){
+      return staffList.indexOf(n) < 0;
+    }));
+    fillSelect("#f-by", staffList.concat([BY_NEW]));
     var remembered = "";
     try { remembered = localStorage.getItem("ast-by") || "" } catch(e){}
     if (remembered && staffList.indexOf(remembered) > -1) $("#f-by").value = remembered;
     $("#f-by").onchange = function(){
+      var typing = this.value === BY_NEW;
+      $("#f-by-new").style.display = typing ? "" : "none";
+      if (typing) { $("#f-by-new").value = ""; $("#f-by-new").focus(); return }
       try { localStorage.setItem("ast-by", this.value) } catch(e){}
+    };
+    /* พอพิมพ์ชื่อเสร็จแล้วละมือ เก็บชื่อลงเครื่องและใส่กลับเข้ารายการทันที
+       ไม่ต้องกดปุ่มเพิ่ม ไม่ต้องรีเฟรช */
+    $("#f-by-new").onblur = function(){
+      var v = this.value.trim();
+      if (!v) return;
+      var mine = myStaff();
+      if (mine.indexOf(v) < 0) {
+        mine.push(v);
+        try { localStorage.setItem("ast-by-list", JSON.stringify(mine)) } catch(e){}
+      }
+      var sel = $("#f-by");
+      var has = false;
+      for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === v) has = true;
+      if (!has) {
+        var op = document.createElement("option");
+        op.value = v; op.textContent = v;
+        sel.insertBefore(op, sel.options[sel.options.length - 1]);
+      }
+      sel.value = v;
+      this.style.display = "none";
+      try { localStorage.setItem("ast-by", v) } catch(e){}
     };
 
     fillSelect("#f-channel", b.lists.channel);
@@ -124,11 +170,11 @@ function addItem(v){
    +'<button class="mini red rm" type="button">ลบ</button></div>'
    +'<div class="fld" style="margin-bottom:8px"><select class="i-sku">'+prodOptions(v.sku)+'</select></div>'
    +'<div class="three">'
-   +'<div><label style="font-size:11.5px;color:var(--gray)">จำนวน</label>'
+   +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
    +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||"")+'"></div>'
-   +'<div><label style="font-size:11.5px;color:var(--gray)">ราคามาตรฐาน</label>'
+   +'<div><label style="font-size:13px;color:var(--gray)">ราคามาตรฐาน</label>'
    +'<input class="i-std" readonly tabindex="-1" style="background:#f2f4f7;color:var(--gray)"></div>'
-   +'<div><label style="font-size:11.5px;color:var(--gray)">ราคาขายจริง</label>'
+   +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
    +'<input class="i-price" type="number" inputmode="decimal" min="0" placeholder="ปล่อยว่าง" value="'+(v.price||"")+'"></div>'
    +'</div>'
    /* ของแถมต้องเป็นรายการสินค้าจริง ไม่ใช่ข้อความลอย ๆ สต๊อกจะได้ถูกตัดตามไปด้วย
@@ -295,7 +341,7 @@ function save(){
     vat: /^รับ/.test($("#f-vat").value||""),
     discount: Number($("#f-disc").value)||0,
     ship: Number($("#f-ship").value)||0,
-    status: $("#f-status").value, by: $("#f-by").value,
+    status: $("#f-status").value, by: byName(),
     note: $("#f-note").value.trim(),
     items: items
   };
@@ -319,9 +365,13 @@ function save(){
       +"<br>สต๊อกและกำไรในชีทอัปเดตให้เองแล้ว"
       +'<div class="okact">'
       +'<button id="ok-lb">🖨 พิมพ์ใบปะหน้า</button>'
-      +'<button id="ok-mg">💬 ข้อความส่งลูกค้า</button></div>');
+      +'<button id="ok-mg">💬 ข้อความส่งลูกค้า</button>'
+      +'<button id="ok-dc">📄 ออกเอกสาร</button></div>');
     $("#ok-lb").onclick = function(){ openLabel(LAST_SAVED) };
     $("#ok-mg").onclick = function(){ openMsg(LAST_SAVED) };
+    $("#ok-dc").onclick = function(){ openDoc(LAST_SAVED) };
+    /* กดปุ่มขอเอกสารไว้ตั้งแต่ยังไม่บันทึก — บันทึกเสร็จแล้วต่อให้เลย ไม่ต้องกดซ้ำ */
+    if(PENDING_DOC){ var ty=PENDING_DOC; PENDING_DOC=null; openDoc(LAST_SAVED, ty); }
     CLIENT_KEY = newKey();
     resetForm();
     ORDERS = []; SUM_CACHE = null;
@@ -406,7 +456,7 @@ function showPreview(d){
         + row("ยอดสินค้า",d.amt===undefined?"":d.amt,true);
 
   var its=d.items||[];
-  h += '<div style="font-size:12.5px;color:var(--gray);margin:8px 0 4px;font-weight:600">รายการสินค้า '+its.length+' รายการ</div>';
+  h += '<div style="font-size:14px;color:var(--gray);margin:8px 0 4px;font-weight:600">รายการสินค้า '+its.length+' รายการ</div>';
   its.forEach(function(it,i){
     var p = it.sku ? prodBySku(it.sku) : null;
     n++; if(p) got++;
@@ -486,8 +536,467 @@ function renderOrders(){
       +'<button class="sq" data-lb="'+i+'" title="ใบปะหน้า">🖨</button>'
       +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
       +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
+      +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">📄</button>'
       +'</div></div>';
   }).join("");
+}
+
+/* ------------------------------------------------- ปุ่มขอเอกสารบนหัวฟอร์ม
+
+   เจ้าของร้านอยากได้ กรอก → ส่ง → ปริ้น จบในหน้าเดียว จึงวางปุ่มไว้บนหัวฟอร์ม
+   แต่ใบกำกับภาษีอ้างเลขออเดอร์และยอดที่ชีทคำนวณจริง จะออกก่อนบันทึกไม่ได้
+   ปุ่มจึงบันทึกออเดอร์ให้ก่อน แล้วเปิดหน้าออกเอกสารต่อทันที โดยถามก่อนหนึ่งครั้ง
+   ไม่บันทึกเงียบ ๆ เพราะบันทึกแล้วสต๊อกถูกตัดจริง ถอยกลับไม่ได้ง่าย ๆ            */
+
+function docBarInit(){
+  $("#docbar").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-doc]");
+    if(!b) return;
+    var type = b.dataset.doc;
+
+    /* ใบเสนอราคาไม่ผูกออเดอร์เลย ข้ามไปหน้าของมันได้ทันที ไม่ต้องบันทึกอะไร */
+    if(type === "quote"){ go("quote"); return; }
+
+    if(LAST_SAVED){ openDoc(LAST_SAVED, type); return; }
+    if(SAVING){ toast("กำลังบันทึกอยู่ รอสักครู่"); return; }
+
+    if(!confirm("ต้องบันทึกออเดอร์ลงชีทก่อนจึงออกเอกสารได้\n"
+              + "(บันทึกแล้วสต๊อกจะถูกตัดตามจริง)\n\nบันทึกแล้วออกเอกสารเลยไหม")) return;
+    PENDING_DOC = type;
+    save();
+  });
+}
+
+/* ชนิดเอกสารที่กดค้างไว้ก่อนบันทึก — พอบันทึกเสร็จให้เปิดหน้าออกเอกสารต่อเอง */
+var PENDING_DOC = null;
+
+/* ---------------------------------------------------------------- ใบเสนอราคา
+
+   ออกก่อนมีออเดอร์ จึงไม่แตะสต๊อกและไม่กินเลขออเดอร์เลย
+   รายการเลือกจากฐานสินค้าได้ และพิมพ์เองก็ได้ เพราะใบเสนอราคาบ่อยครั้ง
+   มีของที่ยังไม่มีในสต๊อก หรือบรรทัดอย่าง "ค่าส่ง" ที่ไม่ใช่สินค้า           */
+
+var Q_READY = false;
+
+function quoteInit(){
+  if(Q_READY) return;
+  Q_READY = true;
+  $("#q-date").value  = todayISO();
+  var days = Number((APP && APP.quoteDays) || 7) || 7;
+  var d = new Date(); d.setDate(d.getDate() + days);
+  var pz = function(n){ return n<10?"0"+n:""+n };
+  $("#q-valid").value = d.getFullYear()+"-"+pz(d.getMonth()+1)+"-"+pz(d.getDate());
+  qAdd();
+  /* ใบเสนอราคาที่เคยออก — พิมพ์ซ้ำหรือส่งซ้ำให้ลูกค้าได้ ไม่ต้องคีย์ใหม่
+     ใบพวกนี้ไม่ผูกกับออเดอร์ ถ้าไม่มีรายการนี้ก็ตามหากลับไม่ได้เลย */
+  drawOldDocs("", "#q-old");
+  $("#q-add").onclick  = function(){ qAdd(); qCalc() };
+  $("#q-make").onclick = qMake;
+  ["#q-disc","#q-ship","#q-vat"].forEach(function(sel){
+    $(sel).addEventListener("input", qCalc);
+    $(sel).addEventListener("change", qCalc);
+  });
+  qCalc();
+}
+
+function qRows(){ return $$("#q-items .it") }
+
+function qAdd(v){
+  v = v || {};
+  var d = document.createElement("div");
+  d.className = "it";
+  d.innerHTML =
+    '<div class="hd"><b>รายการที่ <span class="n"></span></b>'
+   +'<button class="mini red rm" type="button">ลบ</button></div>'
+   +'<div class="fld" style="margin-bottom:8px"><select class="q-sku">'+prodOptions(v.sku)+'</select></div>'
+   +'<div class="fld" style="margin-bottom:8px">'
+   +'<label style="font-size:13px;color:var(--gray)">ข้อความที่จะพิมพ์บนใบ</label>'
+   +'<input class="q-desc" value="'+esc(v.name||"")+'" placeholder="เลือกสินค้าข้างบน หรือพิมพ์เอง"></div>'
+   +'<div class="three">'
+   +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
+   +'<input class="q-qty" type="number" inputmode="decimal" min="0" step="any" value="'+(v.qty||"")+'"></div>'
+   +'<div><label style="font-size:13px;color:var(--gray)">หน่วย</label>'
+   +'<input class="q-unit" value="'+esc(v.unit||"")+'" placeholder="ชิ้น"></div>'
+   +'<div><label style="font-size:13px;color:var(--gray)">ราคา/หน่วย</label>'
+   +'<input class="q-price" type="number" inputmode="decimal" min="0" step="0.01" value="'+(v.price||"")+'"></div>'
+   +'</div>';
+  $("#q-items").appendChild(d);
+
+  d.querySelector(".rm").onclick = function(){
+    if(qRows().length<=1){ toast("ต้องมีอย่างน้อยหนึ่งรายการ"); return }
+    d.remove(); qCalc();
+  };
+  /* เลือกสินค้าแล้วเติมชื่อ หน่วย ราคาให้ แต่แก้ทับได้ทุกช่อง
+     เพราะราคาที่เสนอมักไม่เท่าราคาป้าย (ซื้อเยอะลดให้) */
+  d.querySelector(".q-sku").onchange = function(){
+    var sku = d.querySelector(".q-sku").value;
+    var p = CFG.products.filter(function(x){ return x.sku===sku })[0];
+    if(!p) return;
+    d.querySelector(".q-desc").value  = p.name;
+    if(!d.querySelector(".q-unit").value)  d.querySelector(".q-unit").value  = p.unit||"";
+    if(!d.querySelector(".q-price").value) d.querySelector(".q-price").value = p.price||"";
+    qCalc();
+  };
+  [".q-qty",".q-price",".q-desc"].forEach(function(c){
+    d.querySelector(c).addEventListener("input", qCalc);
+  });
+  qNumber();
+}
+
+function qNumber(){
+  qRows().forEach(function(r,i){ r.querySelector(".n").textContent = i+1 });
+}
+
+function qRead(){
+  return qRows().map(function(r){
+    return { name: r.querySelector(".q-desc").value.trim(),
+             qty:  Number(r.querySelector(".q-qty").value)||0,
+             unit: r.querySelector(".q-unit").value.trim(),
+             price:Number(r.querySelector(".q-price").value)||0 };
+  }).filter(function(it){ return it.name && it.qty>0 });
+}
+
+function qCalc(){
+  qNumber();
+  var items = qRead();
+  var sub = items.reduce(function(a,it){ return a + Math.round(it.qty*it.price*100)/100 }, 0);
+  var ship = Number($("#q-ship").value)||0, disc = Number($("#q-disc").value)||0;
+  var goods = Math.round((sub + ship - disc)*100)/100;
+  var mode = $("#q-vat").value;
+  var rate = (mode==="none") ? 0 : 0.07;
+  var base, vat, total;
+  if(!rate){ base=goods; vat=0; total=goods }
+  else if(mode==="incl"){ total=goods; base=Math.round(goods/1.07*100)/100; vat=Math.round((total-base)*100)/100 }
+  else { base=goods; vat=Math.round(goods*0.07*100)/100; total=Math.round((base+vat)*100)/100 }
+  $("#q-sum").innerHTML =
+     '<div class="sum"><span>มูลค่าสินค้า</span><b>'+baht(base)+'</b></div>'
+    +'<div class="sum"><span>ภาษีมูลค่าเพิ่ม '+(rate?"7%":"— ไม่คิด")+'</span><b>'+baht(vat)+'</b></div>'
+    +'<div class="sum big"><span>รวมทั้งสิ้น</span><b>'+baht(total)+'</b></div>';
+}
+
+function qMake(){
+  var items = qRead();
+  if(!items.length){ toast("ยังไม่มีรายการที่กรอกครบ"); return }
+  var name = $("#q-name").value.trim();
+  if(!name){ toast("ยังไม่ได้ใส่ชื่อลูกค้า"); $("#q-name").focus(); return }
+
+  var vatSel = $("#q-vat").value;
+  var cust = { name:name, taxId:$("#q-tax").value.replace(/[^\d]/g,""), branch:"",
+               addr:$("#q-addr").value.trim(), tel:$("#q-tel").value.trim(),
+               email:$("#q-email").value.trim() };
+  var btn = $("#q-make"); btn.disabled = true;
+  $("#q-out").innerHTML = '<div class="load">กำลังออกเลขเอกสารและลงชีท…</div>';
+
+  api("issueDoc", {
+    type:"quote", items:items,
+    ship:Number($("#q-ship").value)||0, discount:Number($("#q-disc").value)||0,
+    cust:cust, date:$("#q-date").value, terms:"", po:"",
+    note:$("#q-note").value.trim(), by:byName(),
+    vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
+    clientKey: "qt-"+Date.now()+"-"+Math.random().toString(36).slice(2,8)
+  }).then(function(r){
+    var m = { no:r.no, date:$("#q-date").value, validTo:$("#q-valid").value, cust:cust,
+              po:"", terms:"", seller:CFG.docSeller||"", sellerEmail:CFG.docSellerEmail||"",
+              note:$("#q-note").value.trim() };
+    return buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+      $("#q-out").innerHTML =
+         '<div class="msg ok" style="display:block">ออกใบเสนอราคา <b>'+esc(r.no)+'</b> แล้ว '
+        +'ลงทะเบียนในชีท เอกสาร เรียบร้อย · <b>สต๊อกไม่ถูกตัด</b></div>'
+        +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+        +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
+        +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+        +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
+        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>';
+      bindLabelButtons(url, r.no+".png", "a4");
+      bindDocCopy("#q-out", r, m, r.no);
+      drawOldDocs("", "#q-old");
+      btn.disabled = false;
+    });
+  }).catch(function(e){
+    btn.disabled = false;
+    $("#q-out").innerHTML = '<div style="color:var(--red)">ออกใบไม่สำเร็จ: '
+      +esc(e&&e.message?e.message:e)+'</div>';
+  });
+}
+
+/* ------------------------------------------------------- พิมพ์เอกสารซ้ำ */
+
+/* พิมพ์ซ้ำไม่ออกเลขใหม่ ไม่แตะสต๊อก ไม่เขียนอะไรลงชีท — แค่วาดใบเดิมออกมาอีกครั้ง */
+function drawOldDocs(orderNo, boxSel){
+  var sel = boxSel || "#dc-old", box = $(sel);
+  if (!box) return;
+  /* ที่วางผลพิมพ์ซ้ำต้องเป็นคนละ id กันในแต่ละที่ ไม่งั้นตอนเปิดหน้าใบเสนอราคา
+     ค้างไว้แล้วไปกดพิมพ์ซ้ำในหน้าออเดอร์ รูปจะไปโผล่ผิดที่ */
+  var outId = "rp-out-" + sel.replace(/[^a-zA-Z0-9]/g, "");
+  box.innerHTML = '<div class="hint">กำลังดูว่าเคยออกใบให้ออเดอร์นี้ไว้หรือยัง…</div>';
+  api("listDocs", orderNo || "").then(function(list){
+    if (!list || !list.length) { box.innerHTML = ""; return }
+    box.innerHTML = '<div class="subhd">ใบที่ออกไปแล้ว — กดพิมพ์ซ้ำได้เลย</div>'
+      + list.map(function(d){
+          var dead = !!d.voidWhy;
+          return '<div class="row"><div class="i">'
+            +'<b>'+esc(d.no)+'</b>'
+            +'<span>'+esc(d.type)+' · '+esc(d.date||"")+' · '+baht(d.total)
+            + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
+            +'</span></div><div class="acts">'
+            +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
+            +'</div></div>';
+        }).join("")
+      + '<div id="'+outId+'" style="margin-top:10px"></div>';
+    box.querySelectorAll("[data-rp]").forEach(function(b){
+      b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
+    });
+  }, function(e){
+    box.innerHTML = '<div class="hint" style="color:var(--red)">ดูใบเก่าไม่ได้: '
+      + esc(e && e.message ? e.message : e) + '</div>';
+  });
+}
+
+function reprint(no, btn, outSel){
+  var out = $(outSel || "#rp-out");
+  if (btn) { btn.disabled = true; btn.textContent = "กำลังดึง…" }
+  out.innerHTML = '<div class="load">กำลังดึงใบ '+esc(no)+' มาวาดใหม่…</div>';
+  api("getDoc", no).then(function(r){
+    var m = r.meta;
+    m.seller = CFG.docSeller||""; m.sellerEmail = CFG.docSellerEmail||"";
+    return buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+      var warn = "";
+      /* ใบเก่าที่ยังไม่มีภาพถ่าย ต้องประกอบจากออเดอร์ ถ้ายอดไม่ตรงกับที่บันทึกไว้
+         ต้องบอกให้เห็น ห้ามพิมพ์ใบที่ยอดต่างจากใบที่ลูกค้าถืออยู่เงียบ ๆ */
+      if (!r.exact) {
+        warn = r.same
+          ? '<div class="msg ok" style="display:block">ใบนี้ออกก่อนระบบเก็บรายการในใบ '
+            +'จึงประกอบใหม่จากออเดอร์ให้ · <b>ยอดตรงกับที่บันทึกไว้</b> ('+baht(r.saved.total)+')</div>'
+          : '<div class="msg err" style="display:block">⚠ ใบนี้ออกก่อนระบบเก็บรายการในใบ '
+            +'และยอดที่ประกอบใหม่ได้ '+baht(r.doc.total)+' <b>ไม่ตรง</b>กับยอดที่บันทึกไว้ '
+            +baht(r.saved.total)+' — แปลว่าออเดอร์ถูกแก้หลังออกใบ '
+            +'<b>อย่าพิมพ์ใบนี้ส่งลูกค้า</b> ให้ยึดใบที่พิมพ์ไปแล้วเป็นหลัก</div>';
+      }
+      if (m.voidWhy) {
+        warn += '<div class="msg err" style="display:block">ใบนี้ถูกยกเลิกไปแล้ว ('
+          + esc(m.voidWhy) + ') พิมพ์ดูได้ แต่ใช้อ้างอิงทางบัญชีไม่ได้</div>';
+      }
+      out.innerHTML = warn
+        +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+        +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
+        +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+        +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
+        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+        +'<div class="hint" style="text-align:center;margin-top:10px">'
+        +'พิมพ์ซ้ำใบเดิม เลขที่เอกสารยังเป็น '+esc(no)+' · ไม่ได้ออกใบใหม่ ไม่ตัดสต๊อกซ้ำ</div>';
+      bindLabelButtons(url, no+".png", "a4");
+      bindDocCopy(outSel || "#rp-out", r, m, no);
+      if (btn) { btn.disabled = false; btn.textContent = "พิมพ์ซ้ำ" }
+    });
+  }).catch(function(e){
+    if (btn) { btn.disabled = false; btn.textContent = "พิมพ์ซ้ำ" }
+    out.innerHTML = '<div class="msg err" style="display:block">พิมพ์ซ้ำไม่สำเร็จ: '
+      + esc(e && e.message ? e.message : e) + '</div>';
+  });
+}
+
+/* ------------------------------------------- ขนาดตัวอักษรของทั้งแอป */
+
+/* เจ้าของร้านอ่านตัวอักษรขนาดเดิมไม่ถนัด และคนคีย์แต่ละคนสายตาไม่เท่ากัน
+   จึงให้ปรับเองได้ เก็บไว้ในเครื่องใครเครื่องมัน ไม่ต้องแก้โค้ดใหม่ทุกครั้ง
+   ปรับที่ราก (html) ทีเดียว ทุกขนาดในหน้าเป็น rem จึงขยับตามพร้อมกันทั้งหน้า */
+var FS_MIN = 17, FS_MAX = 30, FS_DEF = 20;
+
+function fsGet(){
+  var n = 0;
+  try { n = Number(localStorage.getItem("ast-fs") || 0) } catch(e){}
+  if (!n || isNaN(n)) n = FS_DEF;
+  return Math.min(FS_MAX, Math.max(FS_MIN, n));
+}
+function fsApply(n){
+  document.documentElement.style.fontSize = n + "px";
+  try { localStorage.setItem("ast-fs", String(n)) } catch(e){}
+  var dn = $("#fs-dn"), up = $("#fs-up");
+  if (dn) dn.disabled = n <= FS_MIN;
+  if (up) up.disabled = n >= FS_MAX;
+}
+function fsInit(){
+  fsApply(fsGet());
+  $("#fs-dn").onclick = function(){ fsApply(Math.max(FS_MIN, fsGet() - 1)) };
+  $("#fs-up").onclick = function(){ fsApply(Math.min(FS_MAX, fsGet() + 1)) };
+}
+
+/* ------------------------------------------------- ชื่อคนคีย์ออเดอร์ */
+
+/* ชื่อที่คนใช้เครื่องนี้เคยพิมพ์เองไว้ เก็บในเครื่องเท่านั้น ไม่ขึ้นชีท */
+function myStaff(){
+  try { var a = JSON.parse(localStorage.getItem("ast-by-list") || "[]");
+        return Array.isArray(a) ? a : [] } catch(e){ return [] }
+}
+
+/* ชื่อที่จะบันทึกลงชีทจริง — ถ้ากำลังพิมพ์ชื่อใหม่อยู่ ให้ใช้ชื่อที่พิมพ์
+   ไม่ใช่คำว่า "พิมพ์ชื่อเอง" ที่เป็นแค่ตัวเลือกในเมนู */
+function byName(){
+  var sel = $("#f-by");
+  if (!sel) return "";
+  if (sel.value === BY_NEW) return ($("#f-by-new").value || "").trim();
+  return sel.value;
+}
+
+/* ------------------------------------------------------------------ เอกสารขาย */
+
+var DOC_BTN = [
+  { key:"rec",   label:"ใบเสร็จรับเงิน / ใบกำกับภาษี", hint:"ลูกค้าจ่ายเงินแล้ว และขอใบกำกับภาษี" },
+  { key:"inv",   label:"ใบแจ้งหนี้ / บิลเงินสด",       hint:"วางบิล ยังไม่ได้รับเงิน" },
+  { key:"dep",   label:"ใบรับเงินมัดจำ",              hint:"รับมัดจำไว้ก่อน ยังไม่ส่งของครบ" },
+  { key:"quote", label:"ใบเสนอราคา",                 hint:"ยังไม่มีออเดอร์ ออกจากแท็บใบเสนอราคา" }
+];
+
+/* จำข้อมูลผู้เสียภาษีของลูกค้าไว้ในเครื่อง ลูกค้าประจำจะได้ไม่ต้องพิมพ์ใหม่ทุกครั้ง
+   เก็บในเครื่องเท่านั้น ไม่ขึ้นชีท จนกว่าจะกดออกใบจริง */
+function taxMemo(name){
+  try{ return JSON.parse(localStorage.getItem("ast-tax-"+name) || "null") }catch(e){ return null }
+}
+function taxMemoSave(name, o){
+  try{ localStorage.setItem("ast-tax-"+name, JSON.stringify(o)) }catch(e){}
+}
+
+function openDoc(o, preType){
+  var memo = taxMemo(o.cust) || {};
+  openModal("ออกเอกสาร — "+o.no,
+     '<div id="dc-old"></div>'
+    +'<div class="subhd">เลือกชนิดเอกสาร</div><div id="dc-pick">'
+    + DOC_BTN.filter(function(t){return t.key!=="quote"}).map(function(t,i){
+        return '<label class="giftck" style="align-items:flex-start">'
+          +'<input type="radio" name="dctype" value="'+t.key+'"'+(i===0?" checked":"")+'>'
+          +'<span><b style="color:var(--ink)">'+esc(t.label)+'</b><br>'
+          +'<span style="font-size:12.5px">'+esc(t.hint)+'</span></span></label>';
+      }).join("")
+    +'</div>'
+    +'<div class="subhd">ชื่อที่จะให้ขึ้นเข้มบนหัวใบ</div>'
+    +'<div class="hint" style="margin:-4px 0 8px">ติ๊กได้หลายอัน · ที่ติ๊กจะเป็นตัวหนาดำขีดเส้นใต้ '
+    +'ที่ไม่ติ๊กเป็นสีเทาจาง ๆ</div>'
+    +'<div id="dc-form" class="fchk">'
+    + DOC_FORM_TH.map(function(n, i){
+        return '<label><input type="checkbox" class="fchk-i" value="'+i+'"><span>'+esc(n)+'</span></label>';
+      }).join("")
+    +'</div>'
+    +'<div class="subhd">ข้อมูลผู้ซื้อบนเอกสาร</div>'
+    +'<div class="fld"><label>ชื่อผู้เสียภาษี / ชื่อบริษัท</label>'
+    +'<input id="dc-name" value="'+esc(memo.name||o.cust||"")+'"></div>'
+    +'<div class="fld"><label>เลขประจำตัวผู้เสียภาษี 13 หลัก</label>'
+    +'<input id="dc-tax" inputmode="numeric" maxlength="17" value="'+esc(memo.taxId||"")+'">'
+    +'<div class="hint" id="dc-taxmsg">เว้นว่างได้ถ้าลูกค้าเป็นบุคคลธรรมดาไม่ขอใบกำกับภาษี</div></div>'
+    +'<div class="two"><div class="fld"><label>สำนักงานใหญ่ / สาขา</label>'
+    +'<select id="dc-branch"><option>สำนักงานใหญ่</option><option>สาขา</option><option></option></select></div>'
+    +'<div class="fld"><label>เลขที่ใบสั่งซื้อ (PO)</label><input id="dc-po" value=""></div></div>'
+    +'<div class="fld"><label>ที่อยู่ตามใบกำกับภาษี</label>'
+    +'<textarea id="dc-addr" rows="3">'+esc(memo.addr||o.addr||"")+'</textarea>'
+    +'<div class="hint">ที่อยู่จดทะเบียนของลูกค้า อาจไม่ใช่ที่อยู่ที่ส่งของ</div></div>'
+    +'<div class="two"><div class="fld"><label>โทรศัพท์</label>'
+    +'<input id="dc-tel" value="'+esc(memo.tel||o.tel||"")+'"></div>'
+    +'<div class="fld"><label>อีเมล</label><input id="dc-email" value="'+esc(memo.email||"")+'"></div></div>'
+    +'<div class="two"><div class="fld"><label>เงื่อนไขการชำระเงิน</label>'
+    +'<select id="dc-terms"><option>เงินสด</option><option>โอนเงิน</option>'
+    +'<option>เก็บเงินปลายทาง</option><option>เครดิต 30 วัน</option></select></div>'
+    +'<div class="fld"><label>ภาษีมูลค่าเพิ่ม</label>'
+    +'<select id="dc-vat"><option value="excl">บวก VAT 7% จากราคา</option>'
+    +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
+    +'<option value="none">ไม่คิด VAT</option></select></div></div>'
+    +'<button class="btn" id="dc-make">ออกเอกสาร</button>'
+    +'<div id="dc-out" style="margin-top:12px"></div>');
+
+  /* ติ๊กชื่อบนหัวใบให้ตามชนิดที่เลือกไว้ก่อน แล้วคนออกใบแก้เองได้
+     สลับชนิดเอกสารเมื่อไหร่ ติ๊กตั้งต้นเปลี่ยนตาม แต่ถ้าแก้เองแล้วไม่ไปยุ่งอีก */
+  function formTick(){
+    var type = (document.querySelector('input[name=dctype]:checked')||{}).value || "rec";
+    var def = (DOC_TYPE_NAMES.filter(function(t){ return t.key===type })[0]||{}).form || [];
+    $$("#dc-form .fchk-i").forEach(function(c){
+      c.checked = def.indexOf(Number(c.value)) > -1;
+    });
+  }
+  formTick();
+  $$("#dc-pick input[name=dctype]").forEach(function(r){
+    r.addEventListener("change", function(){ if(!DC_FORM_TOUCHED) formTick() });
+  });
+  var DC_FORM_TOUCHED = false;
+  $$("#dc-form .fchk-i").forEach(function(c){
+    c.addEventListener("change", function(){ DC_FORM_TOUCHED = true });
+  });
+
+  /* ใบที่เคยออกให้ออเดอร์นี้ — ขึ้นไว้บนสุดพร้อมปุ่มพิมพ์ซ้ำ
+     ก่อนหน้านี้ใบที่ออกไปแล้วเปิดกลับมาดูไม่ได้เลย กดออกใหม่ก็โดนกันใบซ้ำ
+     คนเลยตันอยู่ตรงนั้น ทั้งที่แค่อยากได้กระดาษอีกแผ่น */
+  drawOldDocs(o.no);
+
+  /* เลขผู้เสียภาษีผิดหลักเดียว ลูกค้าเอาใบไปใช้เครดิตภาษีซื้อไม่ได้
+     เตือนทันทีตอนพิมพ์ แต่ไม่บล็อก เพราะลูกค้าบุคคลธรรมดาไม่มีเลขนี้ */
+  $("#dc-tax").addEventListener("input", function(){
+    var t=this.value.replace(/[^\d]/g,""), m=$("#dc-taxmsg");
+    if(!t){ m.textContent="เว้นว่างได้ถ้าลูกค้าเป็นบุคคลธรรมดาไม่ขอใบกำกับภาษี"; m.style.color=""; return }
+    if(t.length<13){ m.textContent="ยังไม่ครบ 13 หลัก (พิมพ์แล้ว "+t.length+")"; m.style.color="var(--amber)"; return }
+    if(taxIdOk(t)){ m.textContent="✓ เลขถูกต้อง"; m.style.color="var(--green)" }
+    else { m.textContent="⚠ เลขนี้ไม่ผ่านการตรวจ ลองทานอีกครั้ง ถ้าผิดลูกค้าใช้ใบไม่ได้"; m.style.color="var(--red)" }
+  });
+
+  $("#dc-make").onclick = function(){
+    var type = (document.querySelector('input[name=dctype]:checked')||{}).value || "rec";
+    var vatSel = $("#dc-vat").value;
+    var cust = { name:$("#dc-name").value.trim(), taxId:$("#dc-tax").value.replace(/[^\d]/g,""),
+                 branch:$("#dc-branch").value, addr:$("#dc-addr").value.trim(),
+                 tel:$("#dc-tel").value.trim(), email:$("#dc-email").value.trim() };
+    taxMemoSave(o.cust, cust);
+    var btn=this; btn.disabled=true;
+    $("#dc-out").innerHTML='<div class="load">กำลังออกเลขเอกสารและลงชีท…</div>';
+    api("issueDoc", {
+      type:type, orderNo:o.no, cust:cust, po:$("#dc-po").value.trim(),
+      terms:$("#dc-terms").value, date:o.date, by:byName(),
+      vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
+      form: readFormTicks(),
+      clientKey: "dc-"+o.no+"-"+type+"-"+Date.now()
+    }).then(function(r){
+      drawDoc(r, o, cust, type, readFormTicks());
+    }, function(e){
+      btn.disabled=false;
+      $("#dc-out").innerHTML='<div style="color:var(--red)">ออกเอกสารไม่สำเร็จ: '
+        +esc(e&&e.message?e.message:e)+'</div>';
+    });
+  };
+}
+
+/* ชื่อที่ติ๊กไว้ว่าจะให้ขึ้นเข้มบนหัวใบ */
+function readFormTicks(){
+  var out = [];
+  $$("#dc-form .fchk-i").forEach(function(c){ if(c.checked) out.push(Number(c.value)) });
+  return out;
+}
+
+function drawDoc(r, o, cust, type, form){
+  var m = { no:r.no, date:o.date, cust:cust, po:$("#dc-po")?$("#dc-po").value.trim():"",
+            terms:$("#dc-terms")?$("#dc-terms").value:"", seller:CFG.docSeller||"",
+            sellerEmail:CFG.docSellerEmail||"", note:"", form:form||[] };
+  $("#dc-out").innerHTML='<div class="load">กำลังวาดเอกสาร…</div>';
+  buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+    $("#dc-out").innerHTML =
+       '<div class="msg ok" style="display:block">ออกใบ <b>'+esc(r.no)+'</b> แล้ว '
+      +'ลงทะเบียนในชีท เอกสาร เรียบร้อย</div>'
+      +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+      +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
+      +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+      +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
+      +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+      +'<div class="hint" style="text-align:center;margin-top:10px">A4 · พิมพ์ได้ · ส่งเป็นรูปในแชทได้<br>'
+      +'พิมพ์ต้นฉบับให้ลูกค้า แล้วกด “ดูสำเนา” พิมพ์อีกใบเก็บส่งบัญชี</div>';
+    bindLabelButtons(url, r.no+".png", "a4");
+    bindDocCopy("#dc-out", r, m, r.no);
+  }, function(e){
+    $("#dc-out").innerHTML='<div style="color:var(--red)">ใบลงชีทแล้ว (เลข '+esc(r.no)
+      +') แต่วาดรูปไม่สำเร็จ: '+esc(e&&e.message?e.message:e)+'</div>';
+  });
+}
+
+/* ตรวจเลขผู้เสียภาษี 13 หลักด้วยหลักตรวจสอบ mod 11 — ตรรกะเดียวกับ taxIdValid_ ฝั่งชีท */
+function taxIdOk(v){
+  var t=String(v||"").replace(/[^\d]/g,"");
+  if(t.length!==13) return false;
+  var sum=0;
+  for(var i=0;i<12;i++) sum += Number(t.charAt(i))*(13-i);
+  return (11-(sum%11))%10 === Number(t.charAt(12));
 }
 
 /* -------------------------------------------------------------- ใบปะหน้าพัสดุ */
@@ -530,7 +1039,10 @@ function labelData(o, cod){
   };
 }
 
-function bindLabelButtons(url, name){
+function bindLabelButtons(url, name, paper){
+  /* paper "a4" สำหรับเอกสารขาย · ไม่ใส่ = ใบปะหน้าพัสดุ 100x150 มม. เหมือนเดิม
+     ถ้าส่ง A4 ไปพิมพ์ด้วยขนาดซอง เครื่องพิมพ์จะย่อหน้าลง ตัวหนังสือที่เพิ่งขยายจะเล็กกลับไปอีก */
+  var pg = paper === "a4" ? "@page{size:A4;margin:6mm}" : "@page{size:100mm 150mm;margin:0}";
   var toFile=function(){
     var b=atob(url.split(",")[1]), n=b.length, u8=new Uint8Array(n);
     while(n--) u8[n]=b.charCodeAt(n);
@@ -555,13 +1067,59 @@ function bindLabelButtons(url, name){
       toast("บันทึกแล้ว ดูในโฟลเดอร์ดาวน์โหลด");
     }catch(e){ toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่") }
   };
+  /* แตะที่ตัวรูปได้เลย เท่ากับกดปุ่มเปิดในแท็บใหม่ — บนมือถือคนหาปุ่มไม่เจอ
+     แล้วไปถ่างนิ้วบนรูปเล็กในแอปแทน ซึ่งซูมไม่ขึ้นเพราะติดกรอบ iframe ของ Apps Script */
+  var thumb = document.querySelector("img.docimg");
+  if (thumb) {
+    thumb.style.cursor = "zoom-in";
+    thumb.title = "แตะเพื่อดูเต็มจอ / ซูม";
+    thumb.onclick = function(){ $("#lb-open").click() };
+  }
   $("#lb-open").onclick=function(){
     var w=window.open();
     if(!w){ toast("เบราว์เซอร์บล็อกแท็บใหม่"); return }
-    w.document.write('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1">'
-      +'<style>@page{size:100mm 150mm;margin:0}body{margin:0}img{width:100%;display:block}</style>'
-      +'<img src="'+url+'">');
+    if (paper === "a4") {
+      /* กว้างคงที่ 1240 (ไม่ใช่ 100%) หน้าเว็บจึงกว้างกว่าจอมือถือ
+         เบราว์เซอร์เลยยอมให้เลื่อนและถ่างนิ้วซูมได้จริง · initial-scale ปล่อยให้
+         เบราว์เซอร์ย่อลงมาพอดีจอเองตอนเปิด แล้วค่อยถ่างนิ้วขยายดูทีละส่วน
+         ตอนสั่งพิมพ์ @page A4 บังคับให้กลับไปเต็มหน้ากระดาษเหมือนเดิม */
+      w.document.write('<!DOCTYPE html><meta name="viewport" content="width=1240">'
+        +'<title>'+esc(name.replace(/\.png$/, ""))+'</title>'
+        +'<style>'+pg+'body{margin:0;background:#555}'
+        +'img{width:1240px;max-width:none;display:block}'
+        +'@media print{body{background:#fff}img{width:100%}}</style>'
+        +'<img src="'+url+'">');
+    } else {
+      w.document.write('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1">'
+        +'<style>'+pg+'body{margin:0}img{width:100%;display:block}</style>'
+        +'<img src="'+url+'">');
+    }
     w.document.close();
+  };
+}
+
+/* ใบชุดหนึ่งพิมพ์สองใบ — ต้นฉบับให้ลูกค้า สำเนาเก็บไว้ส่งฝ่ายบัญชี
+   สองใบเนื้อความเหมือนกันทุกตัวอักษร ต่างกันแค่ตราชุดมุมขวาบน
+   ปุ่มนี้จึงวาดใบเดิมซ้ำในโหมดสำเนา ไม่ได้ออกเลขใหม่ เลขที่เอกสารยังเป็นใบเดียวกัน
+   (ออกเลขใหม่ให้สำเนา = เอกสารภาษีซ้ำซ้อน บัญชีจะตีกลับ) */
+function bindDocCopy(boxSel, r, m, no){
+  var box = $(boxSel), b = box.querySelector("#dc-copy");
+  if(!b) return;
+  b.onclick = function(){
+    var next = b.getAttribute("data-set") === "สำเนา" ? "ต้นฉบับ" : "สำเนา";
+    b.disabled = true; b.textContent = "กำลังวาด" + next + "…";
+    buildDocPage(r.doc, m, CFG.doc||{}, next).then(function(url){
+      box.querySelector("img.docimg").src = url;
+      bindLabelButtons(url, no + (next === "สำเนา" ? "-สำเนา" : "") + ".png", "a4");
+      bindDocCopy(boxSel, r, m, no);
+      b.setAttribute("data-set", next);
+      b.textContent = next === "สำเนา"
+        ? "← กลับไปดูต้นฉบับ (ให้ลูกค้า)" : "ดูสำเนา (เก็บส่งบัญชี)";
+      b.disabled = false;
+    }, function(e){
+      b.disabled = false; b.textContent = "ดูสำเนา (เก็บส่งบัญชี)";
+      toast("วาดสำเนาไม่สำเร็จ: " + (e && e.message ? e.message : e));
+    });
   };
 }
 
@@ -875,19 +1433,23 @@ document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModa
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
 
 function go(page){
-  ["new","list","sum"].forEach(function(p){
+  ["new","list","quote","sum"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===page) });
   if(page==="list") loadOrders();
   if(page==="sum")  loadSummary();
+  if(page==="quote") quoteInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){
+  /* ตั้งขนาดตัวอักษรก่อนอย่างอื่น จะได้ไม่เห็นหน้าจอกระตุกตอนเปลี่ยนขนาด */
+  fsInit();
   $$(".tabs button").forEach(function(b){ b.onclick=function(){ go(b.dataset.go) } });
   $("#btn-add").onclick   = function(){ addItem(); recalc() };
   $("#btn-parse").onclick = doParse;
   $("#btn-save").onclick  = save;
+  docBarInit();
   ["f-disc","f-ship"].forEach(function(id){ $("#"+id).oninput = recalc });
   ["f-vat","f-status"].forEach(function(id){ $("#"+id).onchange = recalc });
   $("#f-disc").addEventListener("change", recalc);
@@ -897,11 +1459,12 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
 
   $("#list").addEventListener("click", function(e){
-    var b=e.target.closest("[data-lb],[data-tk],[data-sm]");
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc]");
     if(!b) return;
     if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
     else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
     else if(b.dataset.sm!==undefined) openMsg(ORDERS[+b.dataset.sm]);
+    else if(b.dataset.dc!==undefined) openDoc(ORDERS[+b.dataset.dc]);
   });
 
   boot();

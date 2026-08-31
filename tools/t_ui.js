@@ -52,7 +52,16 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   var page = await browser.newPage({ viewport: { width: 390, height: 820 } });
   var errors = [];
   page.on('pageerror', function (e) { errors.push(e.message); });
-  page.on('console', function (m) { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  /* ฟอนต์ Sarabun โหลดจากอินเทอร์เน็ต เครื่องที่รันข้อสอบต่อเน็ตออกไม่ได้
+     โหลดไม่ติดจึงไม่ใช่ความผิดของโค้ด และหน้าเว็บก็ถอยไปใช้ฟอนต์ในเครื่องเองอยู่แล้ว
+     นับเฉพาะ error ที่เกิดจากโค้ดเราจริง ๆ */
+  var EXT_FONT = /fonts\.(googleapis|gstatic)\.com/;
+  page.on('console', function (m) {
+    var where = (m.location() && m.location().url) || '';
+    if (m.type() === 'error' && !EXT_FONT.test(where) && !EXT_FONT.test(m.text())) {
+      errors.push('console: ' + m.text() + (where ? '  @' + where : ''));
+    }
+  });
 
   await page.goto(FILE);
   await page.waitForSelector('#form', { state: 'visible', timeout: 8000 });
@@ -106,10 +115,28 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('หน้าตรวจปิดไปแล้ว', await page.locator('.pv').count(), 0);
 
   console.log('\n   ผู้คีย์ออเดอร์ — ทั้งร้านใช้บัญชีเดียว ต้องเลือกชื่อเองว่าใครคีย์');
-  eq('มีรายชื่อพนักงานให้เลือกครบ', await page.locator('#f-by option').count(), 3);
+  eq('มีรายชื่อพนักงานให้เลือกครบ + ตัวเลือกพิมพ์ชื่อเอง',
+    await page.locator('#f-by option').count(), 4);
   await page.selectOption('#f-by', 'น้องบี');
   eq('เครื่องนี้จำชื่อที่เลือกไว้',
     await page.evaluate(function () { return localStorage.getItem('ast-by'); }), 'น้องบี');
+
+  /* คนคีย์คนใหม่ที่ยังไม่มีในชีท ต้องพิมพ์ชื่อลงไปเองได้เลย ไม่ต้องรอแก้ชีทก่อน */
+  console.log('\n   พิมพ์ชื่อคนคีย์ที่ยังไม่มีในรายการ');
+  await page.selectOption('#f-by', '✎ พิมพ์ชื่อเอง…');
+  truthy('ช่องพิมพ์ชื่อโผล่ขึ้นมา', await page.isVisible('#f-by-new'));
+  await page.fill('#f-by-new', 'น้องใหม่');
+  await page.evaluate(function () { document.querySelector('#f-by-new').blur(); });
+  await page.waitForTimeout(150);
+  eq('ชื่อที่พิมพ์เข้าไปอยู่ในรายการแล้ว',
+    await page.locator('#f-by option').count(), 5);
+  eq('และถูกเลือกไว้ให้เลย', await page.inputValue('#f-by'), 'น้องใหม่');
+  eq('เครื่องนี้จำชื่อที่พิมพ์เองไว้ด้วย',
+    await page.evaluate(function () { return localStorage.getItem('ast-by'); }), 'น้องใหม่');
+  eq('ชื่อที่พิมพ์เองถูกเก็บไว้ใช้ครั้งหน้า',
+    await page.evaluate(function () { return localStorage.getItem('ast-by-list'); }),
+    '["น้องใหม่"]');
+  await page.selectOption('#f-by', 'น้องบี');
 
   /* ---------- 4. แก้ของในฟอร์ม ---------- */
   console.log('\n4. เพิ่มสินค้าอีกรายการและตั้งราคาพิเศษ');
@@ -336,8 +363,62 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'out/ui-form.png' });
 
-  /* ---------- 14. ไม่มี error หลุดใน console ---------- */
-  console.log('\n14. ความสะอาดของหน้าเว็บ');
+  /* ---------- 14. เอกสารขาย: ต้นฉบับให้ลูกค้า / สำเนาส่งบัญชี ----------
+     ฝ่ายบัญชีต้องได้ใบสำเนาของเอกสารใบเดิม ไม่ใช่ใบใหม่ที่ออกเลขใหม่
+     ข้อสอบนี้จึงตรวจว่ากดแล้วรูปเปลี่ยนจริง และกดกลับได้ต้นฉบับเดิมเป๊ะ */
+  console.log('\n14. ต้นฉบับ / สำเนา ของเอกสารขาย');
+  await page.evaluate(function () { go('list'); });
+  await page.waitForTimeout(600);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec'); });
+  await page.waitForTimeout(400);
+  /* ชื่อบนหัวใบ — ติ๊กตั้งต้นตามชนิดเอกสาร แล้วคนออกใบเลือกเพิ่มเองได้
+     ใบใบเดียวบางทีใช้เป็นทั้งใบส่งของและใบกำกับภาษี ระบบเดาแทนไม่ได้ */
+  eq('ใบเสร็จ/ใบกำกับภาษี ติ๊กมาให้สองชื่อ',
+    await page.locator('#dc-form .fchk-i:checked').count(), 2);
+  await page.check('#dc-form .fchk-i[value="2"]');
+  eq('ติ๊กใบส่งของเพิ่มได้เป็นสามชื่อ',
+    await page.locator('#dc-form .fchk-i:checked').count(), 3);
+
+  await page.click('#dc-make');
+  await page.waitForSelector('#dc-copy', { timeout: 20000 });
+  var docOrig = await page.getAttribute('img.docimg', 'src');
+  await page.click('#dc-copy');
+  await page.waitForFunction(function () {
+    return document.querySelector('#dc-copy').disabled === false;
+  }, null, { timeout: 20000 });
+  var docCopy = await page.getAttribute('img.docimg', 'src');
+  truthy('กดสำเนาแล้วได้รูปคนละใบกับต้นฉบับ', docOrig !== docCopy);
+  truthy('ปุ่มเปลี่ยนเป็นทางกลับให้เห็นว่ากำลังดูสำเนาอยู่',
+    /ต้นฉบับ/.test(await page.textContent('#dc-copy')));
+  await page.click('#dc-copy');
+  await page.waitForFunction(function () {
+    return document.querySelector('#dc-copy').disabled === false;
+  }, null, { timeout: 20000 });
+  eq('กดกลับแล้วได้ต้นฉบับใบเดิม ไม่ได้ออกเลขใหม่',
+    (await page.getAttribute('img.docimg', 'src')) === docOrig, true);
+
+  /* พิมพ์ซ้ำ — ใบที่ออกไปแล้วต้องเปิดกลับมาพิมพ์ใหม่ได้ โดยไม่ออกเลขใหม่
+     ก่อนหน้านี้ทำไม่ได้เลย กดออกใหม่ก็โดนด่านกันใบซ้ำ คนเลยตัน */
+  console.log('\n   พิมพ์ซ้ำใบที่ออกไปแล้ว');
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec'); });
+  await page.waitForSelector('#dc-old [data-rp]', { timeout: 20000 });
+  var oldNo = await page.textContent('#dc-old .row .i b');
+  truthy('ใบที่เพิ่งออกโผล่ในรายการใบเก่า', /ONIV26-/.test(oldNo));
+  await page.click('#dc-old [data-rp]');
+  await page.waitForSelector('#rp-out-dcold img.docimg', { timeout: 20000 });
+  eq('พิมพ์ซ้ำแล้วได้รูปหน้าตาเดียวกับตอนออกใบ',
+    (await page.getAttribute('#rp-out-dcold img.docimg', 'src')) === docOrig, true);
+  truthy('บอกชัดว่าเป็นใบเดิม ไม่ได้ออกใบใหม่',
+    /ไม่ได้ออกใบใหม่/.test(await page.textContent('#rp-out-dcold')));
+  /* รูปที่พิมพ์ซ้ำเท่ากับตอนออกใบเป๊ะ (ตรวจไปแล้วข้างบน) แปลว่าชื่อสามชื่อที่ติ๊กไว้
+     ถูกเก็บและดึงกลับมาครบ ไม่ได้กลับไปใช้ค่าตั้งต้นของชนิดเอกสาร */
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+
+  /* ---------- 15. ไม่มี error หลุดใน console ---------- */
+  console.log('\n15. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
   await browser.close();

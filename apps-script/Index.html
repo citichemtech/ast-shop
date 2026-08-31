@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <!-- ลิงก์และการพิมพ์ต้องหลุดออกจาก iframe ของ Apps Script ไม่งั้นเปิดไม่ขึ้น -->
 <base target="_top">
+<!-- Sarabun = ฟอนต์มาตรฐานเอกสารราชการไทย เส้นหนากว่า Prompt พิมพ์ลงกระดาษแล้วชัดกว่า
+     ใบเสร็จ/ใบกำกับภาษีวาดด้วยฟอนต์นี้ ถ้าโหลดไม่ได้จะถอยไปใช้ฟอนต์ในเครื่องเอง -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,500;0,700;1,700&display=swap">
 </head>
 <body>
 
@@ -14,12 +19,22 @@
   --r:12px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* ขนาดตัวอักษรทั้งแอปคิดจากขนาดรากตัวเดียว (rem) ปุ่ม ก- / ก+ บนหัวจอ
+   จึงย่อขยายได้ทั้งหน้าพร้อมกัน โดยสัดส่วนทุกอย่างยังเท่าเดิม
+   ค่าเริ่มต้น 20px ขึ้นจากเดิม 17px เพราะเจ้าของร้านอ่านของเดิมไม่ถนัด */
+html{font-size:20px;-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);
-  font:15px/1.55 -apple-system,"Segoe UI",Roboto,"Noto Sans Thai","Prompt",sans-serif;
+  font:1rem/1.55 -apple-system,"Segoe UI",Roboto,"Noto Sans Thai","Prompt",sans-serif;
   padding-bottom:76px}
+
+/* ปุ่มปรับขนาดตัวอักษรบนแถบหัว */
+.fsz{margin-left:auto;display:flex;gap:6px;flex:none}
+.fsz button{width:38px;height:38px;border:1px solid rgba(255,255,255,.55);border-radius:9px;
+  background:rgba(255,255,255,.14);color:#fff;font-weight:700;font-size:0.85rem;padding:0;line-height:1}
+.fsz button:active{background:rgba(255,255,255,.3)}
 h1,h2,h3{margin:0}
 button{font:inherit;cursor:pointer}
-input,select,textarea{font:inherit;width:100%;padding:11px 12px;border:1px solid var(--line);
+input,select,textarea{font:inherit;width:100%;padding:13px 14px;border:1px solid var(--line);
   border-radius:10px;background:#fff;color:var(--ink)}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
 textarea{resize:vertical}
@@ -29,76 +44,91 @@ textarea{resize:vertical}
   display:flex;align-items:center;gap:12px}
 .top .logo{width:52px;height:52px;border-radius:50%;background:#fff;flex:none;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
-  font-weight:700;color:var(--blue);font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.16)}
+  font-weight:700;color:var(--blue);font-size:0.82rem;box-shadow:0 2px 8px rgba(0,0,0,.16)}
 .top .logo img{width:100%;height:100%;object-fit:cover}
 .top .ttl{min-width:0}
-.top b{display:block;font-size:20px;font-weight:700;line-height:1.2;letter-spacing:-.01em}
-.top .who{display:block;margin-top:3px;font-size:12px;opacity:.9;
+.top b{display:block;font-size:1.18rem;font-weight:700;line-height:1.2;letter-spacing:-.01em}
+.top .who{display:block;margin-top:3px;font-size:0.8rem;opacity:.9;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .wrap{padding:14px;max-width:720px;margin:0 auto}
 /* จอกว้าง (จอพับ แท็บเล็ต คอมออฟฟิศ) ใช้พื้นที่เต็ม ไม่เหลือขอบว่างสองข้าง */
 @media (min-width:900px){ .wrap{max-width:1100px;padding:18px 24px} }
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
-.fld{margin-bottom:11px}
-.fld label{display:block;font-size:12.5px;color:var(--gray);margin-bottom:5px;font-weight:600}
+.fld{margin-bottom:13px}
+.fld label{display:block;font-size:0.82rem;color:var(--gray);margin-bottom:5px;font-weight:600}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.hint{font-size:12px;color:var(--gray);margin-top:5px;line-height:1.5}
-.subhd{font-size:13px;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
+.hint{font-size:0.8rem;color:var(--gray);margin-top:5px;line-height:1.5}
+.subhd{font-size:0.85rem;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
 
 .btn{width:100%;padding:14px;border:0;border-radius:11px;background:var(--blue);color:#fff;
-  font-weight:700;font-size:16px}
+  font-weight:700;font-size:1.03rem}
 .btn[disabled]{opacity:.55}
 .btn.dark{background:var(--ink)}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .btn.green{background:#00B900}
-.mini{padding:8px 12px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:13px}
+/* แถวปุ่มขอเอกสารบนหัวฟอร์ม — เรียงสามปุ่มเท่ากัน กดง่ายด้วยนิ้วหัวแม่มือ */
+.docbar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
+.docbar button{padding:11px 6px;border:1px solid var(--line);background:#fff;border-radius:10px;
+  font-size:0.8rem;font-weight:600;color:var(--ink);line-height:1.35}
+.docbar button:active{background:#eef3fa}
+@media (max-width:430px){ .docbar button{font-size:0.8rem;padding:10px 3px;letter-spacing:-.01em} }
+
+/* ติ๊กชื่อเอกสารที่จะให้ขึ้นเข้มบนหัวใบ — สองคอลัมน์ กดด้วยนิ้วหัวแม่มือได้ */
+.fchk{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+.fchk label{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;
+  padding:11px 12px;background:#fff;cursor:pointer;line-height:1.3}
+.fchk label:has(input:checked){border-color:var(--blue);background:#eef3fc;font-weight:700}
+.fchk input{width:auto;flex:none;padding:0;transform:scale(1.3)}
+@media (max-width:400px){ .fchk{grid-template-columns:1fr} }
+
+.mini{padding:9px 14px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.85rem}
 .mini.red{color:var(--red);border-color:#f0c9c9}
 
-.it{border:1px solid var(--line);border-radius:11px;padding:11px;margin-bottom:9px;background:#fbfcfd}
+.it{border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:9px;background:#fbfcfd}
 .it .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.it .hd b{font-size:12.5px;color:var(--gray)}
+.it .hd b{font-size:0.82rem;color:var(--gray)}
 .it .hd .rm{margin-left:auto}
 .it .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.lotline{font-size:12px;margin-top:6px;line-height:1.5}
+.lotline{font-size:0.8rem;margin-top:6px;line-height:1.5}
 .lotline.warn{color:var(--amber)}
 .lotline.bad{color:var(--red);font-weight:600}
 .lotline.ok{color:var(--green)}
 
-.sum{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
-.sum.big{font-size:18px;font-weight:800;border-top:1px solid var(--line);margin-top:6px;padding-top:10px}
+.sum{display:flex;justify-content:space-between;padding:7px 0;font-size:0.91rem}
+.sum.big{font-size:1.18rem;font-weight:800;border-top:1px solid var(--line);margin-top:6px;padding-top:10px}
 
 .row{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
 .row .i{flex:1;min-width:0}
 .row .i b{display:block}
-.row .i span{font-size:12.5px;color:var(--gray)}
+.row .i span{font-size:0.82rem;color:var(--gray)}
 .row .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.sq{width:38px;height:38px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:16px;padding:0}
-.tag{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
+.sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
+.tag{display:inline-block;font-size:0.8rem;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
 .tag.ok{background:#e6f5ec;color:var(--green)}
 .tag.wait{background:#fdf1e0;color:var(--amber)}
 .tag.bad{background:#fbe9e9;color:var(--red)}
 
 .pv{border:1px solid var(--blue);border-radius:11px;padding:12px;margin:10px 0;background:#f7f9ff}
-.pv .r{display:flex;gap:8px;padding:5px 0;font-size:13.5px;border-bottom:1px dashed #dfe4ee}
+.pv .r{display:flex;gap:8px;padding:5px 0;font-size:0.8rem;border-bottom:1px dashed #dfe4ee}
 .pv .r:last-of-type{border-bottom:0}
-.pv .r i{width:104px;flex:none;color:var(--gray);font-style:normal;font-size:12.5px}
+.pv .r i{width:104px;flex:none;color:var(--gray);font-style:normal;font-size:0.8rem}
 .pv .r b{flex:1;font-weight:600;word-break:break-word}
 .pv .r.miss b{color:var(--red);font-weight:500}
 .pv .r.opt i{opacity:.65}
 
-.msg{padding:11px 12px;border-radius:10px;font-size:13.5px;line-height:1.6;margin-bottom:11px;display:none}
+.msg{padding:11px 12px;border-radius:10px;font-size:0.8rem;line-height:1.6;margin-bottom:11px;display:none}
 .msg.on{display:block}
 .msg.err{background:#fbe9e9;color:#8f1d1d;border:1px solid #f0c9c9}
 .msg.ok{background:#e6f5ec;color:#0a6b3c;border:1px solid #bfe4cf}
 
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:var(--card);
   border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1;border:0;background:none;padding:11px 4px 13px;font-size:11.5px;color:var(--gray);
+.tabs button{flex:1;border:0;background:none;padding:11px 4px 13px;font-size:0.8rem;color:var(--gray);
   display:flex;flex-direction:column;align-items:center;gap:3px}
 .tabs button.on{color:var(--blue);font-weight:700}
-.tabs button em{font-style:normal;font-size:19px;line-height:1}
+.tabs button em{font-style:normal;font-size:1.12rem;line-height:1}
 
 .modal{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.42);display:none;align-items:flex-end}
 .modal.on{display:flex}
@@ -107,15 +137,15 @@ textarea{resize:vertical}
   .modal .sheet{max-width:600px;border-radius:16px}}
 /* ปุ่มปิดต้องมีจริง ๆ — บนมือถือพื้นที่นอกกล่องแทบไม่เหลือให้กด */
 .m-hd{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.m-hd h3{flex:1;font-size:17px;min-width:0}
+.m-hd h3{flex:1;font-size:1rem;min-width:0}
 .m-x{width:36px;height:36px;flex:none;border:1px solid var(--line);background:#fff;
-  border-radius:9px;font-size:15px;color:var(--gray);padding:0}
+  border-radius:9px;font-size:0.88rem;color:var(--gray);padding:0}
 
 #toast{position:fixed;left:50%;bottom:88px;transform:translate(-50%,14px);z-index:90;
-  background:#15181d;color:#fff;padding:11px 18px;border-radius:99px;font-size:13.5px;
+  background:#15181d;color:#fff;padding:11px 18px;border-radius:99px;font-size:0.8rem;
   opacity:0;pointer-events:none;transition:.22s;max-width:88vw;text-align:center}
 #toast.on{opacity:1;transform:translate(-50%,0)}
-.empty{text-align:center;color:var(--gray);padding:34px 12px;font-size:14px}
+.empty{text-align:center;color:var(--gray);padding:34px 12px;font-size:0.82rem}
 .empty b{display:block;color:var(--ink);margin-bottom:5px}
 .load{text-align:center;color:var(--gray);padding:40px 12px}
 /* ---------------- หน้าสรุปยอด ----------------
@@ -125,31 +155,31 @@ textarea{resize:vertical}
    ชื่อกับตัวเลขเป็นตัวหนังสือสีปกติ ไม่เอาสีของแท่งมาใส่ตัวหนังสือ */
 .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;margin-bottom:10px;-webkit-overflow-scrolling:touch}
 .chips button{flex:none;padding:8px 15px;border-radius:999px;border:1px solid var(--line);
-  background:var(--card);font-size:13.5px;color:var(--gray)}
+  background:var(--card);font-size:0.8rem;color:var(--gray)}
 .chips button.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:700}
 
 .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px}
-.kpi span{display:block;font-size:12px;color:var(--gray)}
-.kpi b{display:block;font-size:21px;line-height:1.25;margin-top:3px;font-variant-numeric:tabular-nums}
+.kpi span{display:block;font-size:0.8rem;color:var(--gray)}
+.kpi b{display:block;font-size:1.24rem;line-height:1.25;margin-top:3px;font-variant-numeric:tabular-nums}
 .kpi.wide{grid-column:1 / -1}
 .kpi.good b{color:var(--green)}
 
 .brow{margin:12px 0 0}
 .brow:first-of-type{margin-top:4px}
-.btop{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:14px}
+.btop{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:0.82rem}
 .bname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bval{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
 .btrack{height:8px;background:var(--bg);border-radius:4px;margin-top:6px;overflow:hidden}
 .btrack i{display:block;height:100%;background:var(--blue);border-radius:0 4px 4px 0;min-width:3px}
-.bsub{font-size:12px;color:var(--gray);margin-top:4px}
-.giftck{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;color:var(--gray)}
-.giftck input{width:auto;transform:scale(1.15)}
+.bsub{font-size:0.8rem;color:var(--gray);margin-top:4px}
+.giftck{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:0.85rem;color:var(--gray)}
+.giftck input{width:auto;transform:scale(1.3)}
 /* ปุ่มทำงานต่อหลังบันทึก — พิมพ์ใบปะหน้า / ส่งข้อความ อยู่ในกล่องเขียวเลย
    ไม่ต้องไปตามหาใบที่เพิ่งคีย์ในแท็บออเดอร์อีกที */
 .okact{display:flex;gap:8px;margin-top:11px}
 .okact button{flex:1;padding:12px 8px;border-radius:10px;border:1px solid var(--green);
-  background:#fff;color:var(--green);font-weight:700;font-size:14.5px}
+  background:#fff;color:var(--green);font-weight:700;font-size:0.85rem}
 </style>
 
 <div class="top">
@@ -157,6 +187,10 @@ textarea{resize:vertical}
   <div class="ttl">
     <b id="brand">AST Chem-Tooling</b>
     <span class="who" id="who"></span>
+  </div>
+  <div class="fsz">
+    <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง">ก−</button>
+    <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น">ก+</button>
   </div>
 </div>
 
@@ -173,6 +207,15 @@ textarea{resize:vertical}
            กล่องนี้จึงย่อเก็บไว้ เปิดใช้เฉพาะตอนลูกค้าวางที่อยู่มาเป็นก้อน -->
       <div class="card" id="paste-card">
         <button class="mini" id="btn-paste-open" style="width:100%">วางที่อยู่จากแชท</button>
+
+        <!-- ปุ่มขอเอกสาร วางไว้บนหัวฟอร์มตามที่เจ้าของร้านขอ — กรอก · ส่ง · ปริ้น จบในหน้าเดียว
+             กดก่อนบันทึกได้ ระบบจะถามแล้วบันทึกออเดอร์ให้ก่อนค่อยออกใบ
+             เพราะใบกำกับภาษีต้องมีเลขออเดอร์และยอดที่ชีทคำนวณแล้วจริง ๆ -->
+        <div class="docbar" id="docbar">
+          <button type="button" data-doc="rec">🧾 ใบกำกับภาษี</button>
+          <button type="button" data-doc="inv">📄 บิลเงินสด</button>
+          <button type="button" data-doc="quote">◇ ใบเสนอราคา</button>
+        </div>
         <div id="paste-box" style="display:none;margin-top:10px">
           <div class="fld">
             <textarea id="paste" rows="4" placeholder="วางข้อความที่ลูกค้าส่งมา เช่น ชื่อ เบอร์ ที่อยู่"></textarea>
@@ -187,7 +230,8 @@ textarea{resize:vertical}
         <div class="fld">
           <label>ผู้คีย์ออเดอร์</label>
           <select id="f-by"></select>
-          <div class="hint">เครื่องนี้จะจำชื่อที่เลือกไว้ · แก้รายชื่อได้ที่ชีท ตั้งค่าแอป แถว “รายชื่อพนักงาน”</div>
+          <input id="f-by-new" placeholder="พิมพ์ชื่อคนคีย์" style="margin-top:8px;display:none">
+          <div class="hint">ไม่มีชื่อในรายการ เลือก “✎ พิมพ์ชื่อเอง” แล้วพิมพ์ได้เลย · เครื่องนี้จะจำไว้ให้</div>
         </div>
         <div class="two">
           <div class="fld"><label>วันที่</label><input id="f-date" type="date"></div>
@@ -236,6 +280,61 @@ textarea{resize:vertical}
     <div class="card" id="list"><div class="load">กำลังโหลด…</div></div>
   </section>
 
+  <!-- ------------------------------------------------------ ใบเสนอราคา
+       แยกจากคีย์ออเดอร์ เพราะออกตอนยังไม่รู้ว่าลูกค้าจะซื้อไหม
+       จึงต้องไม่ตัดสต๊อกและไม่กินเลขออเดอร์ -->
+  <section id="pg-quote" style="display:none">
+    <div class="card">
+      <div class="msg" style="display:block;background:#eef4fc;color:#1b3a5c">
+        ใบเสนอราคาไม่ตัดสต๊อกและไม่สร้างออเดอร์ — ลูกค้าตกลงแล้วค่อยไปคีย์ออเดอร์
+      </div>
+      <div class="two">
+        <div class="fld"><label>วันที่</label><input id="q-date" type="date"></div>
+        <div class="fld"><label>ยืนราคาถึง</label><input id="q-valid" type="date"></div>
+      </div>
+      <div class="fld"><label>ชื่อลูกค้า / ชื่อบริษัท</label><input id="q-name" placeholder="บริษัท ... จำกัด"></div>
+      <div class="two">
+        <div class="fld"><label>เลขประจำตัวผู้เสียภาษี</label>
+          <input id="q-tax" inputmode="numeric" maxlength="17"></div>
+        <div class="fld"><label>โทรศัพท์</label><input id="q-tel"></div>
+      </div>
+      <div class="fld"><label>ที่อยู่</label><textarea id="q-addr" rows="3"></textarea></div>
+      <div class="fld"><label>อีเมล</label><input id="q-email" type="email"></div>
+    </div>
+
+    <div class="card">
+      <div class="subhd">รายการที่เสนอราคา</div>
+      <div id="q-items"></div>
+      <button class="mini" id="q-add" type="button">+ เพิ่มรายการ</button>
+    </div>
+
+    <div class="card">
+      <div class="two">
+        <div class="fld"><label>ส่วนลด (บาท)</label>
+          <input id="q-disc" type="number" inputmode="decimal" min="0" step="0.01" value="0"></div>
+        <div class="fld"><label>ค่าจัดส่ง (บาท)</label>
+          <input id="q-ship" type="number" inputmode="decimal" min="0" step="0.01" value="0"></div>
+      </div>
+      <div class="fld"><label>ภาษีมูลค่าเพิ่ม</label>
+        <select id="q-vat">
+          <option value="excl">บวก VAT 7% จากราคา</option>
+          <option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>
+          <option value="none">ไม่คิด VAT</option>
+        </select></div>
+      <div class="fld"><label>หมายเหตุ (Remark)</label>
+        <textarea id="q-note" rows="2" placeholder="เช่น Delivery by Flash Express"></textarea></div>
+      <div id="q-sum"></div>
+      <button class="btn" id="q-make" style="margin-top:10px">ออกใบเสนอราคา</button>
+      <div id="q-out" style="margin-top:12px"></div>
+    </div>
+
+    <!-- ใบเสนอราคาไม่ผูกกับออเดอร์ ถ้าไม่มีรายการนี้ใบที่ออกไปแล้วจะหาย
+         ตามหาไม่เจอ ต้องเปิดชีทดูเอง แล้วก็พิมพ์ซ้ำไม่ได้อยู่ดี -->
+    <div class="card">
+      <div id="q-old"></div>
+    </div>
+  </section>
+
   <!-- --------------------------------------------------------- สรุป -->
   <section id="pg-sum" style="display:none">
     <div class="chips" id="sum-range"></div>
@@ -246,6 +345,7 @@ textarea{resize:vertical}
 <div class="tabs">
   <button data-go="new" class="on"><em>＋</em>คีย์ออเดอร์</button>
   <button data-go="list"><em>▤</em>ออเดอร์</button>
+  <button data-go="quote"><em>◇</em>เสนอราคา</button>
   <button data-go="sum"><em>▦</em>สรุปยอด</button>
 </div>
 
@@ -273,6 +373,7 @@ var STAFF_EMAIL = "<?= staffEmail ?>";
 <?!= include_('Assets'); ?>
 <?!= include_('Parse'); ?>
 <?!= include_('Label'); ?>
+<?!= include_('Doc'); ?>
 <?!= include_('App'); ?>
 
 </body>

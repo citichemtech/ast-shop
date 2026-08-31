@@ -13,6 +13,10 @@
 
 var SHEET_ID = '1s8tS_Fv7YSYPyjzH-rXQdl-5VKBTaV717YYyWUv5k_8';
 
+/* ไอคอนของเว็บแอป เสิร์ฟจาก GitHub Pages ของร้านเอง
+   Apps Script รับเฉพาะ URL จริง ใส่รูปฝังตรง ๆ ไม่ได้ */
+var APP_ICON_URL = 'https://citichemtech.github.io/ast-shop/icon-stock.png';
+
 /** แถวหัวตารางของทุกชีทคือแถว 5 ข้อมูลเริ่มแถว 6 */
 var HEAD_ROW = 5;
 var DATA_ROW = 6;
@@ -85,6 +89,31 @@ var SH = {
     name: 'ตัดล็อต',
     IN: { no: 2, lineNo: 3, sku: 4, lotNo: 5, qty: 6, date: 7 },
     CALC: [1, 8, 9],
+    probe: 1
+  },
+
+  /**
+   * ทะเบียนเอกสารขายที่ออกไปแล้ว 1 ใบ = 1 แถว
+   *
+   * ของเดิมเจ้าของร้านทำใบละ 1 แท็บในไฟล์ Excel (00227 · 00228 · 00230 ...)
+   * ที่ 20 ออเดอร์ต่อวันวิธีนั้นไปต่อไม่ไหว และหาใบเก่าไม่เจอ
+   * ชีทนี้ทำให้ค้นได้ ออกซ้ำได้ และบัญชีดึงยอดรวมทั้งเดือนได้ในทีเดียว
+   *
+   * เก็บยอดไว้เป็นเลขนิ่ง ไม่ใช่สูตรที่ดึงจากออเดอร์ เพราะใบที่ออกไปแล้ว
+   * ต้องไม่เปลี่ยนตามการแก้ออเดอร์ทีหลัง ไม่งั้นใบที่ลูกค้าถืออยู่กับในระบบไม่ตรงกัน
+   */
+  doc: {
+    name: 'เอกสาร',
+    IN: {
+      no: 2, type: 3, date: 4, orderNo: 5, custName: 6, custTaxId: 7, custBranch: 8,
+      custAddr: 9, custTel: 10, custEmail: 11, custCode: 12, po: 13, terms: 14,
+      base: 15, vat: 16, total: 17, staff: 18, note: 19, voidWhy: 20,
+      /* ภาพถ่ายของใบตอนที่ออก เก็บเป็น JSON เพื่อ "พิมพ์ซ้ำ" ให้ได้ใบเดิมเป๊ะ
+         ถ้าไปประกอบใหม่จากออเดอร์ตอนพิมพ์ซ้ำ แล้วออเดอร์ถูกแก้ทีหลัง
+         ใบที่พิมพ์ซ้ำจะไม่ตรงกับใบที่ลูกค้าถืออยู่ ซึ่งเป็นปัญหาทางภาษี */
+      snap: 21
+    },
+    CALC: [1],
     probe: 1
   },
 
@@ -230,12 +259,30 @@ function tel_(v) {
   return /^\d{9}$/.test(t) ? '0' + t : t;
 }
 
+/**
+ * เลขประจำตัวผู้เสียภาษี 13 หลักที่ขึ้นต้นด้วยศูนย์ — ชีทที่เก็บเป็นตัวเลขจะกินศูนย์หน้าไป
+ * 0575500000000 กลายเป็น 575500000000 แล้วไปพิมพ์บนใบกำกับภาษีแบบนั้น ใบใช้ไม่ได้
+ */
+function taxId_(v) {
+  var t = String(v == null ? '' : v).trim().replace(/[^\d]/g, '');
+  while (t && t.length < 13) t = '0' + t;
+  return t;
+}
+
 function appCfg_() {
   var s = ss_().getSheetByName(SH.app.name);
   var out = {
     sender: { name: '', addr: '', tel: '' },
     shipFee: 0, freeOver: 0, codFee: 0, line: '',
-    staffList: [], head1: '', head2: '', track: {}
+    staffList: [], head1: '', head2: '', track: {},
+    /* ข้อมูลผู้ขายบนใบกำกับภาษี — กฎหมายบังคับว่าต้องมีชื่อ ที่อยู่ และเลขผู้เสียภาษี
+       เก็บในชีทไม่ใช่ในโค้ด เจ้าของร้านจะได้แก้เองโดยไม่ต้องรอคนแก้โปรแกรม */
+    co: { name: '', nameEn: '', shortName: '', addr: '', taxId: '', branch: '', tel: '', email: '' },
+    bank: '', thanks: '', docTerms: '', website: '', docSeller: '', docSellerEmail: '', vatMode: 'excl',
+    docPrefix: { rec: 'ONIV26-', inv: 'IV26-', quote: 'QO26-', dep: 'DR26-' },
+    /* เลขที่ยกยอดมาจากระบบเดิม ระบบจะออกเลขถัดจากตัวนี้เสมอ แม้ชีทยังว่าง */
+    docStart: { rec: 0, inv: 0, quote: 0, dep: 0 },
+    quoteDays: 7
   };
   if (!s) return out;
   var v = s.getRange(DATA_ROW, 1, Math.max(1, s.getLastRow() - DATA_ROW + 1), 5).getValues();
@@ -253,6 +300,32 @@ function appCfg_() {
     else if (k === 'ลิงก์ LINE ของร้าน') out.line = String(val || '');
     /* ใช้บัญชี Google เดียวกันทุกเครื่อง จึงแยกไม่ออกว่าใครเป็นคนคีย์
        รายชื่อนี้ทำให้เลือกชื่อตัวเองได้ตอนคีย์ แล้วชื่อจะไปอยู่ในช่องพนักงานของออเดอร์ */
+    else if (k === 'ชื่อบริษัท (ใบกำกับภาษี)') out.co.name = String(val || '');
+    else if (k === 'ชื่อบริษัท ภาษาอังกฤษ') out.co.nameEn = String(val || '');
+    else if (k === 'ชื่อบริษัท แบบสั้น (ช่องเซ็น)') out.co.shortName = String(val || '');
+    else if (k === 'ที่อยู่บริษัท (ใบกำกับภาษี)') out.co.addr = String(val || '');
+    /* เลขผู้เสียภาษีขึ้นต้นด้วยศูนย์ ถ้าชีทเก็บเป็นตัวเลขศูนย์หน้าจะหาย
+       เหมือนที่เคยเกิดกับเบอร์โทรบนใบปะหน้า จึงเติมคืนให้ */
+    else if (k === 'เลขประจำตัวผู้เสียภาษีบริษัท') out.co.taxId = taxId_(val);
+    else if (k === 'สำนักงานใหญ่ / สาขา') out.co.branch = String(val || '');
+    else if (k === 'เบอร์โทรบริษัท') out.co.tel = tel_(val);
+    else if (k === 'อีเมลบริษัท') out.co.email = String(val || '');
+    else if (k === 'เว็บไซต์บริษัท') out.website = String(val || '');
+    else if (k === 'ชื่อผู้เสนอ/พนักงานขาย บนเอกสาร') out.docSeller = String(val || '');
+    else if (k === 'อีเมลผู้เสนอ บนเอกสาร') out.docSellerEmail = String(val || '');
+    else if (k === 'เลขที่บัญชีธนาคาร') out.bank = String(val || '');
+    else if (k === 'ข้อความขอบคุณท้ายหัวเอกสาร') out.thanks = String(val || '');
+    else if (k === 'ข้อความในช่องหมายเหตุ') out.docTerms = String(val || '');
+    else if (k === 'ราคาสินค้ารวม VAT แล้วหรือยัง') out.vatMode = /ไม่|ยัง/.test(String(val || '')) ? 'excl' : 'incl';
+    else if (k === 'คำนำหน้าเลขใบเสร็จ/ใบกำกับภาษี') out.docPrefix.rec = String(val || out.docPrefix.rec);
+    else if (k === 'คำนำหน้าเลขใบแจ้งหนี้') out.docPrefix.inv = String(val || out.docPrefix.inv);
+    else if (k === 'คำนำหน้าเลขใบเสนอราคา') out.docPrefix.quote = String(val || out.docPrefix.quote);
+    else if (k === 'คำนำหน้าเลขใบรับเงินมัดจำ') out.docPrefix.dep = String(val || out.docPrefix.dep);
+    else if (k === 'ยกยอดเลขใบเสร็จ/ใบกำกับภาษีมาจาก') out.docStart.rec = Number(val || 0) || 0;
+    else if (k === 'ยกยอดเลขใบแจ้งหนี้มาจาก') out.docStart.inv = Number(val || 0) || 0;
+    else if (k === 'ยกยอดเลขใบเสนอราคามาจาก') out.docStart.quote = Number(val || 0) || 0;
+    else if (k === 'ยกยอดเลขใบรับเงินมัดจำมาจาก') out.docStart.dep = Number(val || 0) || 0;
+    else if (k === 'ใบเสนอราคายืนราคากี่วัน') out.quoteDays = Number(val || 7) || 7;
     else if (k === 'รายชื่อพนักงาน') out.staffList = String(val || '')
       .split(/[,\n]+/).map(function (x) { return x.trim() }).filter(function (x) { return x });
 

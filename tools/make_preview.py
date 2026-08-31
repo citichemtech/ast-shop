@@ -53,6 +53,28 @@ BOOT = {
         "shipFee": 50, "freeOver": 1000, "codFee": 0,
         "line": "https://line.me/R/ti/p/@citiofficial",
         "track": {"Flash Express": "https://www.flashexpress.com/fle/tracking?se={track}"},
+        # ข้อมูลผู้ขายบนเอกสาร — ค่าเดียวกับที่ setup() ใส่ให้ในชีท ตั้งค่าแอป
+        # ตัวอย่างที่เรนเดอร์ออกมาจึงเป็นหน้าตาเดียวกับของจริง ไม่ใช่ใบที่หัวหาย
+        "co": {
+            "name": "บริษัท เคมีคอล อินโนเวชั่น เทคโนโลยี แอนด์ อินสตรูเมนท์ จำกัด",
+            "nameEn": "Chemical Innovation Technology & Instruments Co.,Ltd.",
+            "shortName": "บริษัท เคมีคอลอินโนเวชั่น",
+            "addr": "70/72 ซ.เคหะร่มเกล้า78 ถ.ราษฎร์พัฒนา แขวงสะพานสูง "
+                    "เขตสะพานสูง กทม. 10240.",
+            "taxId": "0105558055790", "branch": "สำนักงานใหญ่",
+            "tel": "094-827-9999 / 096-192-9993",
+            "email": "siripong@chem-inno-tech.com",
+        },
+        "website": "www.cheminnotech.com",
+        "docSeller": "Citisales01",
+        "docSellerEmail": "Citisales01@chem-inno-tech.com",
+        "bank": "เลขบัญชี 431-039-4355 ธนาคารไทยพาณิชย์ บริษัทเคมีคอลอินโนเวชั่น "
+                "เทคโนโลยี แอนด์อินสตรูเมนท์ จำกัด",
+        "thanks": "บริษัทขอขอบคุณทุกท่าน  ที่ให้ความไว้ใจในการเลือกใช้บริการ"
+                  "หรือผลิตภัณฑ์ของบริษัท",
+        "docTerms": "ได้รับสินค้าตามรายการข้างบนไว้ถูกต้องแล้วถ้าสินค้าไม่เรียบร้อย"
+                    "กรุณาแจ้งภายใน 5 วัน",
+        "quoteDays": 7,
     },
     "products": PRODUCTS,
     "lots": {
@@ -78,6 +100,7 @@ MOCK = """
 /* google.script.run จำลอง — ใช้เฉพาะตอนดูหน้าจอในเครื่อง ไม่ได้ขึ้นไปอยู่บน Google */
 var MOCK_BOOT = __BOOT__;
 var MOCK_ORDERS = __ORDERS__;
+var MOCK_DOCS = [];       /* ทะเบียนเอกสารที่ออกไปแล้วในรอบนี้ */
 window.SENT = [];
 window.google = { script: { run: (function(){
   var ok=null, bad=null;
@@ -90,6 +113,55 @@ window.google = { script: { run: (function(){
       reply(function(){
         MOCK_ORDERS.forEach(function(o){ if(o.no===no){ o.track=track; o.status=status } });
         return {ok:true,no:no,changed:true};
+      });
+    },
+    /* ออกเอกสารแบบจำลอง — คิดเงินด้วยตรรกะเดียวกับ Doc.gs ตัวจริง
+       (สคริปต์นี้แปะสำเนาของ buildDoc_ ไว้ให้หน้าเว็บใช้ ดูตัวแปร DOC_SRV ข้างล่าง) */
+    issueDoc: function(p){
+      reply(function(){
+        var src = (p.type === "quote")
+          ? { items: p.items || [], ship: p.ship, discount: p.discount }
+          : (function(){
+              var o = MOCK_ORDERS.filter(function(x){ return x.no === p.orderNo })[0];
+              if(!o) throw new Error("ไม่พบออเดอร์ " + p.orderNo);
+              return { items:o.items, ship:o.ship, discount:o.discount };
+            })();
+        var d = DOC_SRV.buildDoc_(p.type, src,
+          { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
+        var pre = { rec:"ONIV26-", inv:"IV26-", quote:"QO26-", dep:"DR26-" }[p.type] || "DOC-";
+        var seq = { rec:231, inv:1, quote:114, dep:1 }[p.type] || 1;
+        var no = pre + ("0000"+seq).slice(-5);
+        var th = { rec:"ใบเสร็จรับเงิน", inv:"ใบแจ้งหนี้", quote:"ใบเสนอราคา", dep:"ใบรับเงินมัดจำ" }[p.type];
+        /* เก็บใบที่ออกไว้ในทะเบียน เพื่อให้กดพิมพ์ซ้ำได้เหมือนของจริง */
+        MOCK_DOCS.push({ no:no, type:th, date:p.date||"", orderNo:p.orderNo||"",
+                         cust:p.cust||{}, po:p.po||"", terms:p.terms||"", note:p.note||"",
+                         form:p.form||[],
+                         doc:JSON.parse(JSON.stringify(d)) });
+        return { ok:true, no: no, doc:d, row:7 };
+      });
+    },
+    /* ทะเบียนเอกสารจำลอง — เก็บภาพถ่ายของใบเหมือนชีทจริง เพื่อทดสอบการพิมพ์ซ้ำ */
+    listDocs: function(orderNo){
+      reply(function(){
+        var want = String(orderNo || "");
+        return MOCK_DOCS.filter(function(d){
+          return want ? d.orderNo === want : !d.orderNo;
+        }).map(function(d){
+          return { no:d.no, type:d.type, date:d.date, orderNo:d.orderNo,
+                   custName:d.cust.name, total:d.doc.total, voidWhy:d.voidWhy||"",
+                   hasSnap:true };
+        }).reverse();
+      });
+    },
+    getDoc: function(no){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+        if(!f) throw new Error("ไม่พบใบ " + no + " ในชีท เอกสาร");
+        return { ok:true, exact:true,
+                 meta:{ no:f.no, date:f.date, orderNo:f.orderNo, po:f.po||"", terms:f.terms||"",
+                        note:f.note||"", voidWhy:f.voidWhy||"", cust:f.cust, form:f.form||[] },
+                 saved:{ base:f.doc.base, vat:f.doc.vat, total:f.doc.total },
+                 doc: JSON.parse(JSON.stringify(f.doc)) };
       });
     },
     createOrder: function(p){
@@ -133,15 +205,26 @@ def main():
         return (GS / (name + ".html")).read_text(encoding="utf-8")
 
     page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
-    if n not in (0, 4):
-        sys.exit("คาดว่าจะมี include 4 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
+    if n not in (0, 5):
+        sys.exit("คาดว่าจะมี include 5 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
 
     page = page.replace('"<?= staffEmail ?>"', json.dumps(BOOT["staff"]))
     if "<?" in page:
         sys.exit("ยังมี scriptlet ของ HtmlService เหลืออยู่ ประกอบไฟล์ไม่ครบ")
 
-    mock = (MOCK.replace("__BOOT__", json.dumps(BOOT, ensure_ascii=False))
-                .replace("__ORDERS__", json.dumps(ORDERS, ensure_ascii=False)))
+    # ตรรกะคิดเงินฝั่งเซิร์ฟเวอร์ตัวจริง ยัดเข้าหน้าเว็บจำลอง
+    # ทดสอบจึงเจอบั๊กของ buildDoc_ ตัวจริง ไม่ใช่ของที่เขียนขึ้นมาหลอกตัวเอง
+    api_src = (GS / "Api.gs").read_text(encoding="utf-8")
+    m_r2 = re.search(r"function round2_\(n\) \{[\s\S]*?\n\}", api_src)
+    if not m_r2:
+        sys.exit("หา round2_ ใน Api.gs ไม่เจอ")
+    doc_src = (GS / "Doc.gs").read_text(encoding="utf-8")
+    srv = ("<script>var DOC_SRV=(function(){" + m_r2.group(0) + "\n" + doc_src +
+           "\nreturn {buildDoc_:buildDoc_,bahtText_:bahtText_,vatSplit_:vatSplit_,"
+           "taxIdValid_:taxIdValid_,nextDocNo_:nextDocNo_};})();</script>")
+
+    mock = (srv + MOCK.replace("__BOOT__", json.dumps(BOOT, ensure_ascii=False))
+                      .replace("__ORDERS__", json.dumps(ORDERS, ensure_ascii=False)))
 
     # ตัวจริงมีหัวเอกสารของตัวเองแล้ว (และ HtmlService เป็นคนเติม viewport ให้ตอนเสิร์ฟ)
     # ที่นี่จึงเติม viewport กับ title ลงใน <head> เดิม แล้วแทรกของจำลองหลัง <body>
