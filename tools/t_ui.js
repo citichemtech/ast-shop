@@ -115,10 +115,28 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('หน้าตรวจปิดไปแล้ว', await page.locator('.pv').count(), 0);
 
   console.log('\n   ผู้คีย์ออเดอร์ — ทั้งร้านใช้บัญชีเดียว ต้องเลือกชื่อเองว่าใครคีย์');
-  eq('มีรายชื่อพนักงานให้เลือกครบ', await page.locator('#f-by option').count(), 3);
+  eq('มีรายชื่อพนักงานให้เลือกครบ + ตัวเลือกพิมพ์ชื่อเอง',
+    await page.locator('#f-by option').count(), 4);
   await page.selectOption('#f-by', 'น้องบี');
   eq('เครื่องนี้จำชื่อที่เลือกไว้',
     await page.evaluate(function () { return localStorage.getItem('ast-by'); }), 'น้องบี');
+
+  /* คนคีย์คนใหม่ที่ยังไม่มีในชีท ต้องพิมพ์ชื่อลงไปเองได้เลย ไม่ต้องรอแก้ชีทก่อน */
+  console.log('\n   พิมพ์ชื่อคนคีย์ที่ยังไม่มีในรายการ');
+  await page.selectOption('#f-by', '✎ พิมพ์ชื่อเอง…');
+  truthy('ช่องพิมพ์ชื่อโผล่ขึ้นมา', await page.isVisible('#f-by-new'));
+  await page.fill('#f-by-new', 'น้องใหม่');
+  await page.evaluate(function () { document.querySelector('#f-by-new').blur(); });
+  await page.waitForTimeout(150);
+  eq('ชื่อที่พิมพ์เข้าไปอยู่ในรายการแล้ว',
+    await page.locator('#f-by option').count(), 5);
+  eq('และถูกเลือกไว้ให้เลย', await page.inputValue('#f-by'), 'น้องใหม่');
+  eq('เครื่องนี้จำชื่อที่พิมพ์เองไว้ด้วย',
+    await page.evaluate(function () { return localStorage.getItem('ast-by'); }), 'น้องใหม่');
+  eq('ชื่อที่พิมพ์เองถูกเก็บไว้ใช้ครั้งหน้า',
+    await page.evaluate(function () { return localStorage.getItem('ast-by-list'); }),
+    '["น้องใหม่"]');
+  await page.selectOption('#f-by', 'น้องบี');
 
   /* ---------- 4. แก้ของในฟอร์ม ---------- */
   console.log('\n4. เพิ่มสินค้าอีกรายการและตั้งราคาพิเศษ');

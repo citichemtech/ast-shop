@@ -26,11 +26,17 @@ var DOC_TYPE_NAMES = [
 
 var DOC_W = 1240, DOC_H = 1754;         /* A4 แนวตั้งที่ 150 dpi */
 
+/* วาดจริงที่ 300 dpi (คูณสอง) แต่พิกัดทุกจุดในไฟล์นี้ยังคิดที่ 150 dpi เหมือนเดิม
+   เพราะสั่ง ctx.scale ไว้ให้แล้ว ตำแหน่งทุกอย่างจึงไม่ต้องแก้ตาม
+   ที่ต้องทำเพราะเจ้าของร้านซูมดูในมือถือแล้วตัวหนังสือแตก และเครื่องพิมพ์เลเซอร์
+   ก็พิมพ์ได้ละเอียดกว่า 150 dpi อยู่แล้ว ของเดิมจึงเสียความคมไปเปล่า ๆ */
+var DOC_SCALE = 2;
+
 /* ที่ 150 dpi ตัวอักษร 1 pt = 150/72 = 2.083 px
    เจ้าของร้านขอเนื้อความ 10 pt และหัวเอกสาร 14 pt หลังเห็นใบที่พิมพ์จริงแล้วเล็กเกินไป
    ตัวเลขข้างล่างจึงคิดจากหน่วย pt ไม่ใช่เดา px เอาเอง */
 function pt(n) { return Math.round(n * 150 / 72 * 10) / 10; }
-var F_BODY = pt(10), F_TITLE = pt(14), F_SMALL = pt(8.5), F_HEAD = pt(12);
+var F_BODY = pt(11), F_TITLE = pt(14), F_SMALL = pt(8.5), F_HEAD = pt(12);
 var C_TBL_HEAD = "#c9dbf0";             /* ฟ้าอ่อนแบบหัวตารางในใบจริง */
 var C_BAND = "#dce8f6";
 
@@ -108,8 +114,10 @@ function fitRight(x, text, X, y, maxW, size, weight) {
  */
 async function buildDocPage(d, m, cfg, copy) {
   var W = DOC_W, H = DOC_H, pad = 46, IN = W - pad * 2;
-  var c = document.createElement("canvas"); c.width = W; c.height = H;
+  var c = document.createElement("canvas");
+  c.width = W * DOC_SCALE; c.height = H * DOC_SCALE;
   var x = c.getContext("2d");
+  x.scale(DOC_SCALE, DOC_SCALE);
   await docFontsReady();
   x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
   x.textBaseline = "top";
@@ -194,7 +202,7 @@ async function buildDocPage(d, m, cfg, copy) {
   }
 
   /* ================= กล่องข้อมูลลูกค้า / ข้อมูลเอกสาร ================= */
-  var iy = ty0 + thh + 14, ih = 250, mid = pad + 660;
+  var iy = ty0 + thh + 14, ih = 264, mid = pad + 660;
   x.lineWidth = 1.6; x.strokeRect(pad, iy, IN, ih); x.lineWidth = 1.3;
   x.beginPath(); x.moveTo(mid, iy); x.lineTo(mid, iy + ih); x.stroke();
 
@@ -204,26 +212,28 @@ async function buildDocPage(d, m, cfg, copy) {
     fitLeft(x, val || "", vx, yy, vw, F_BODY, bold ? 700 : 500);
   }
   var lx = pad + 14, lvx = pad + 250, lvw = mid - lvx - 14, ly = iy + 16;
-  pair("Name:", cu.name, lx, lvx, ly, lvw, true); ly += 38;
+  pair("Name:", cu.name, lx, lvx, ly, lvw, true); ly += 40;
   pair("หมายเลขประจำตัวผู้เสียภาษี:", cu.taxId ? cu.taxId + (cu.branch ? "   " + cu.branch : "") : "",
-       lx, lvx, ly, lvw); ly += 36;
+       lx, lvx, ly, lvw); ly += 38;
   x.fillStyle = "#000"; fitLeft(x, "Address:", lx, ly, lvx - lx - 8, F_BODY, 400);
   x.font = docFont(F_BODY, 500);
-  wrapText(x, cu.addr || "", lvw).slice(0, 2).forEach(function (ln, i) {
-    fitLeft(x, ln, lvx, ly + i * 26, lvw, F_BODY);
+  /* ที่อยู่ลูกค้าบนใบกำกับภาษีต้องครบตามที่จดทะเบียน กฎหมายบังคับ
+     ตัวหนังสือใหญ่ขึ้นแล้วสองบรรทัดไม่พอ ตัดรหัสไปรษณีย์กับจังหวัดหาย จึงให้สามบรรทัด */
+  wrapText(x, cu.addr || "", lvw).slice(0, 3).forEach(function (ln, i) {
+    fitLeft(x, ln, lvx, ly + i * 28, lvw, F_BODY);
   });
-  ly += 56;
-  pair("Tel:", cu.tel, lx, lvx, ly, lvw); ly += 32;
+  ly += 86;
+  pair("Tel:", cu.tel, lx, lvx, ly, lvw); ly += 34;
   pair("Email :", cu.email, lx, lvx, ly, lvw);
 
   var rx = mid + 12, rvx = mid + 214, rvw = W - pad - rvx - 12, ry = iy + 16;
-  pair("เลขที่เอกสาร:", m.no, rx, rvx, ry, rvw, true); ry += 36;
-  pair("DATE:", docDate(m.date), rx, rvx, ry, rvw); ry += 36;
+  pair("เลขที่เอกสาร:", m.no, rx, rvx, ry, rvw, true); ry += 38;
+  pair("DATE:", docDate(m.date), rx, rvx, ry, rvw); ry += 38;
   if (d.type === "quote") pair("ยืนราคาถึง:", docDate(m.validTo), rx, rvx, ry, rvw);
   else pair("หมายเลขคำสั่งซื้อ:", m.po, rx, rvx, ry, rvw);
-  ry += 36;
-  pair("ผู้เสนอ/ พนักงานขาย :", m.seller, rx, rvx, ry, rvw); ry += 36;
-  pair("E-mail :", m.sellerEmail, rx, rvx, ry, rvw); ry += 36;
+  ry += 38;
+  pair("ผู้เสนอ/ พนักงานขาย :", m.seller, rx, rvx, ry, rvw); ry += 38;
+  pair("E-mail :", m.sellerEmail, rx, rvx, ry, rvw); ry += 38;
   pair("เงื่อนไขในการชำระเงิน:", m.terms, rx, rvx, ry, rvw);
 
   /* ================= เลขบัญชี + คำขอบคุณ ================= */
@@ -243,7 +253,7 @@ async function buildDocPage(d, m, cfg, copy) {
     { th: "ราคา/หน่วย", en: "(Unit price)", w: 150, al: "r" },
     { th: "จำนวนเงิน", en: "(Amount)", w: 152, al: "r" }
   ];
-  var ty = by + 6, hh = 70, rowH = 60, ROWS = 10, bodyH = rowH * ROWS;
+  var ty = by + 6, hh = 72, rowH = 62, ROWS = 10, bodyH = rowH * ROWS;
   var xs = [pad]; COLS.forEach(function (cc) { xs.push(xs[xs.length - 1] + cc.w); });
 
   x.fillStyle = C_TBL_HEAD; x.fillRect(pad, ty, IN, hh);
@@ -251,7 +261,7 @@ async function buildDocPage(d, m, cfg, copy) {
   COLS.forEach(function (cc, i) {
     var cxm = xs[i] + cc.w / 2;
     fitCenter(x, cc.th, cxm, ty + (cc.en ? 8 : 22), cc.w - 10, F_BODY, 700);
-    if (cc.en) fitCenter(x, cc.en, cxm, ty + 38, cc.w - 10, pt(9), 700);
+    if (cc.en) fitCenter(x, cc.en, cxm, ty + 40, cc.w - 10, pt(9), 700);
   });
   x.strokeStyle = "#000"; x.lineWidth = 1.6;
   x.strokeRect(pad, ty, IN, hh + bodyH);
@@ -264,7 +274,7 @@ async function buildDocPage(d, m, cfg, copy) {
 
   var shown = d.lines.slice(0, ROWS), over = d.lines.length - shown.length;
   shown.forEach(function (ln, i) {
-    var ry2 = ty + hh + i * rowH + 14;
+    var ry2 = ty + hh + i * rowH + 12;
     x.fillStyle = "#000";
     fitCenter(x, String(i + 1) + ".", xs[0] + COLS[0].w / 2, ry2, COLS[0].w - 10, F_BODY);
     /* ชื่อสินค้ายาวตัดสองบรรทัดได้ ใบจริงก็ทำแบบนั้น (Single Flute Endmill 1F …) */
@@ -309,7 +319,7 @@ async function buildDocPage(d, m, cfg, copy) {
   /* ป้ายจบที่ labEnd ตัวเลขจบที่ขอบขวา สองเขตไม่ทับกันแน่นอน
      ของเดิมให้ทั้งคู่จบที่จุดใกล้กัน ตัวเลขเลยพิมพ์ทับป้าย อ่านไม่ออกทั้งคู่ */
   var labEnd = W - pad - 206, numEnd = W - pad - 16;
-  var sy = fy + 4, srh = 54;
+  var sy = fy + 4, srh = 50;
   SUMS.forEach(function (s2, i) {
     if (i === 2) { x.fillStyle = C_BAND; x.fillRect(pad, sy - 4, IN, srh); }
     x.fillStyle = "#000";
@@ -335,7 +345,7 @@ async function buildDocPage(d, m, cfg, copy) {
   /* ================= ช่องลงลายมือชื่อ =================
      ยึดไว้ท้ายกระดาษเสมอ ไม่ลอยตามตาราง เพราะจำนวนรายการไม่เท่ากันทุกใบ
      กรอบมุมมนแบบใบจริง และเว้นที่เหนือเส้นไว้ให้เซ็นจริงได้ */
-  var sgH = 232, sgGap = 22;
+  var sgH = 210, sgGap = 22;
   var gy = Math.max(sy + 20, H - pad - sgH);
   var sgW = (IN - sgGap * 2) / 3;
   var SIGN = [
@@ -348,13 +358,13 @@ async function buildDocPage(d, m, cfg, copy) {
     x.strokeStyle = "#000"; x.lineWidth = 1.4;
     roundRect(x, X, gy, sgW, sgH, 10); x.stroke(); x.lineWidth = 1.3;
     x.strokeStyle = "#000"; x.setLineDash([3, 4]);
-    x.beginPath(); x.moveTo(X + 26, gy + 120); x.lineTo(X + sgW - 26, gy + 120); x.stroke();
-    x.beginPath(); x.moveTo(X + 98, gy + 196); x.lineTo(X + sgW - 26, gy + 196); x.stroke();
+    x.beginPath(); x.moveTo(X + 26, gy + 106); x.lineTo(X + sgW - 26, gy + 106); x.stroke();
+    x.beginPath(); x.moveTo(X + 98, gy + 182); x.lineTo(X + sgW - 26, gy + 182); x.stroke();
     x.setLineDash([]); x.strokeStyle = "#000";
     x.fillStyle = "#000";
-    fitCenter(x, s3[0], X + sgW / 2, gy + 130, sgW - 18, F_BODY, 400);
-    fitCenter(x, s3[1], X + sgW / 2, gy + 158, sgW - 18, pt(9), 400);
-    fitLeft(x, "ลงวันที่", X + 24, gy + 184, 74, pt(9), 400);
+    fitCenter(x, s3[0], X + sgW / 2, gy + 116, sgW - 18, F_BODY, 400);
+    fitCenter(x, s3[1], X + sgW / 2, gy + 146, sgW - 18, pt(9), 400);
+    fitLeft(x, "ลงวันที่", X + 24, gy + 168, 74, pt(9), 400);
   });
 
   return c.toDataURL("image/png");

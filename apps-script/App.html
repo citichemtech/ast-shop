@@ -9,6 +9,7 @@ var BOOT = null;          /* ข้อมูลจากชีท */
 var APP = {};             /* ตั้งค่าแอป (ผู้ส่ง ค่าส่ง ลิงก์ติดตาม) */
 var ORDERS = [];          /* ออเดอร์ที่โหลดมาล่าสุด */
 var SAVING = false;
+var BY_NEW = "✎ พิมพ์ชื่อเอง…";   /* ตัวเลือกสุดท้ายของเมนูผู้คีย์ออเดอร์ */
 
 /* -------------------------------------------------------------- ข้อความแจ้ง */
 
@@ -84,12 +85,42 @@ function boot(){
     /* ผู้คีย์ — ทั้งร้านใช้บัญชี Google เดียวกัน ชื่อคนคีย์จึงต้องเลือกเอง
        จำไว้ในเครื่องนี้ ครั้งหน้าเปิดมาก็เป็นชื่อเดิม ไม่ต้องเลือกซ้ำทุกใบ */
     var staffList = (APP.staffList && APP.staffList.length) ? APP.staffList : ["แอดมิน"];
-    fillSelect("#f-by", staffList);
+    /* ชื่อที่เคยพิมพ์เองในเครื่องนี้ ขึ้นมาในรายการด้วย จะได้พิมพ์ครั้งเดียวพอ
+       (คนคีย์คนใหม่มาช่วยวันเดียว ไม่ต้องรอแก้ชีทก่อนถึงจะคีย์ได้) */
+    staffList = staffList.concat(myStaff().filter(function(n){
+      return staffList.indexOf(n) < 0;
+    }));
+    fillSelect("#f-by", staffList.concat([BY_NEW]));
     var remembered = "";
     try { remembered = localStorage.getItem("ast-by") || "" } catch(e){}
     if (remembered && staffList.indexOf(remembered) > -1) $("#f-by").value = remembered;
     $("#f-by").onchange = function(){
+      var typing = this.value === BY_NEW;
+      $("#f-by-new").style.display = typing ? "" : "none";
+      if (typing) { $("#f-by-new").value = ""; $("#f-by-new").focus(); return }
       try { localStorage.setItem("ast-by", this.value) } catch(e){}
+    };
+    /* พอพิมพ์ชื่อเสร็จแล้วละมือ เก็บชื่อลงเครื่องและใส่กลับเข้ารายการทันที
+       ไม่ต้องกดปุ่มเพิ่ม ไม่ต้องรีเฟรช */
+    $("#f-by-new").onblur = function(){
+      var v = this.value.trim();
+      if (!v) return;
+      var mine = myStaff();
+      if (mine.indexOf(v) < 0) {
+        mine.push(v);
+        try { localStorage.setItem("ast-by-list", JSON.stringify(mine)) } catch(e){}
+      }
+      var sel = $("#f-by");
+      var has = false;
+      for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === v) has = true;
+      if (!has) {
+        var op = document.createElement("option");
+        op.value = v; op.textContent = v;
+        sel.insertBefore(op, sel.options[sel.options.length - 1]);
+      }
+      sel.value = v;
+      this.style.display = "none";
+      try { localStorage.setItem("ast-by", v) } catch(e){}
     };
 
     fillSelect("#f-channel", b.lists.channel);
@@ -310,7 +341,7 @@ function save(){
     vat: /^รับ/.test($("#f-vat").value||""),
     discount: Number($("#f-disc").value)||0,
     ship: Number($("#f-ship").value)||0,
-    status: $("#f-status").value, by: $("#f-by").value,
+    status: $("#f-status").value, by: byName(),
     note: $("#f-note").value.trim(),
     items: items
   };
@@ -657,7 +688,7 @@ function qMake(){
     type:"quote", items:items,
     ship:Number($("#q-ship").value)||0, discount:Number($("#q-disc").value)||0,
     cust:cust, date:$("#q-date").value, terms:"", po:"",
-    note:$("#q-note").value.trim(), by:$("#f-by")?$("#f-by").value:"",
+    note:$("#q-note").value.trim(), by:byName(),
     vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
     clientKey: "qt-"+Date.now()+"-"+Math.random().toString(36).slice(2,8)
   }).then(function(r){
@@ -682,6 +713,23 @@ function qMake(){
     $("#q-out").innerHTML = '<div style="color:var(--red)">ออกใบไม่สำเร็จ: '
       +esc(e&&e.message?e.message:e)+'</div>';
   });
+}
+
+/* ------------------------------------------------- ชื่อคนคีย์ออเดอร์ */
+
+/* ชื่อที่คนใช้เครื่องนี้เคยพิมพ์เองไว้ เก็บในเครื่องเท่านั้น ไม่ขึ้นชีท */
+function myStaff(){
+  try { var a = JSON.parse(localStorage.getItem("ast-by-list") || "[]");
+        return Array.isArray(a) ? a : [] } catch(e){ return [] }
+}
+
+/* ชื่อที่จะบันทึกลงชีทจริง — ถ้ากำลังพิมพ์ชื่อใหม่อยู่ ให้ใช้ชื่อที่พิมพ์
+   ไม่ใช่คำว่า "พิมพ์ชื่อเอง" ที่เป็นแค่ตัวเลือกในเมนู */
+function byName(){
+  var sel = $("#f-by");
+  if (!sel) return "";
+  if (sel.value === BY_NEW) return ($("#f-by-new").value || "").trim();
+  return sel.value;
 }
 
 /* ------------------------------------------------------------------ เอกสารขาย */
@@ -759,7 +807,7 @@ function openDoc(o, preType){
     $("#dc-out").innerHTML='<div class="load">กำลังออกเลขเอกสารและลงชีท…</div>';
     api("issueDoc", {
       type:type, orderNo:o.no, cust:cust, po:$("#dc-po").value.trim(),
-      terms:$("#dc-terms").value, date:o.date, by:$("#f-by") ? $("#f-by").value : "",
+      terms:$("#dc-terms").value, date:o.date, by:byName(),
       vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
       clientKey: "dc-"+o.no+"-"+type+"-"+Date.now()
     }).then(function(r){
@@ -873,12 +921,33 @@ function bindLabelButtons(url, name, paper){
       toast("บันทึกแล้ว ดูในโฟลเดอร์ดาวน์โหลด");
     }catch(e){ toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่") }
   };
+  /* แตะที่ตัวรูปได้เลย เท่ากับกดปุ่มเปิดในแท็บใหม่ — บนมือถือคนหาปุ่มไม่เจอ
+     แล้วไปถ่างนิ้วบนรูปเล็กในแอปแทน ซึ่งซูมไม่ขึ้นเพราะติดกรอบ iframe ของ Apps Script */
+  var thumb = document.querySelector("img.docimg");
+  if (thumb) {
+    thumb.style.cursor = "zoom-in";
+    thumb.title = "แตะเพื่อดูเต็มจอ / ซูม";
+    thumb.onclick = function(){ $("#lb-open").click() };
+  }
   $("#lb-open").onclick=function(){
     var w=window.open();
     if(!w){ toast("เบราว์เซอร์บล็อกแท็บใหม่"); return }
-    w.document.write('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1">'
-      +'<style>'+pg+'body{margin:0}img{width:100%;display:block}</style>'
-      +'<img src="'+url+'">');
+    if (paper === "a4") {
+      /* กว้างคงที่ 1240 (ไม่ใช่ 100%) หน้าเว็บจึงกว้างกว่าจอมือถือ
+         เบราว์เซอร์เลยยอมให้เลื่อนและถ่างนิ้วซูมได้จริง · initial-scale ปล่อยให้
+         เบราว์เซอร์ย่อลงมาพอดีจอเองตอนเปิด แล้วค่อยถ่างนิ้วขยายดูทีละส่วน
+         ตอนสั่งพิมพ์ @page A4 บังคับให้กลับไปเต็มหน้ากระดาษเหมือนเดิม */
+      w.document.write('<!DOCTYPE html><meta name="viewport" content="width=1240">'
+        +'<title>'+esc(name.replace(/\.png$/, ""))+'</title>'
+        +'<style>'+pg+'body{margin:0;background:#555}'
+        +'img{width:1240px;max-width:none;display:block}'
+        +'@media print{body{background:#fff}img{width:100%}}</style>'
+        +'<img src="'+url+'">');
+    } else {
+      w.document.write('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1">'
+        +'<style>'+pg+'body{margin:0}img{width:100%;display:block}</style>'
+        +'<img src="'+url+'">');
+    }
     w.document.close();
   };
 }
