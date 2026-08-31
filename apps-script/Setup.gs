@@ -173,7 +173,7 @@ function setupDocSheet_(ss) {
   if (fresh) s = ss.insertSheet(name);
 
   if (s.getMaxRows() < DOC_LAST) s.insertRowsAfter(s.getMaxRows(), DOC_LAST - s.getMaxRows());
-  if (s.getMaxColumns() < 20) s.insertColumnsAfter(s.getMaxColumns(), 20 - s.getMaxColumns());
+  if (s.getMaxColumns() < 21) s.insertColumnsAfter(s.getMaxColumns(), 21 - s.getMaxColumns());
 
   s.getRange('A2').setValue('ทะเบียนเอกสารขาย — ระบบเขียนให้เอง')
     .setFontWeight('bold').setFontSize(12);
@@ -186,7 +186,7 @@ function setupDocSheet_(ss) {
     'ชื่อลูกค้า', 'เลขประจำตัว\nผู้เสียภาษี', 'สำนักงานใหญ่\n/ สาขา', 'ที่อยู่ตามใบกำกับภาษี',
     'โทรศัพท์', 'อีเมล', 'รหัสลูกค้า', 'เลขที่ PO', 'เงื่อนไขชำระเงิน',
     'มูลค่าสินค้า\n(ก่อน VAT)', 'ภาษีมูลค่าเพิ่ม', 'รวมทั้งสิ้น', 'ผู้ออกเอกสาร',
-    'หมายเหตุ', 'เหตุผลที่ยกเลิก'];
+    'หมายเหตุ', 'เหตุผลที่ยกเลิก', 'รายการในใบ\n(ระบบใช้พิมพ์ซ้ำ ห้ามแก้)'];
   s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
     .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
     .setVerticalAlignment('middle').setWrap(true);
@@ -195,7 +195,7 @@ function setupDocSheet_(ss) {
   fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
 
   var inCols = [];
-  for (var c = 2; c <= 20; c++) inCols.push(c);
+  for (var c = 2; c <= 21; c++) inCols.push(c);
   paintCols_(s, n, inCols, [1]);
 
   s.getRange(DATA_ROW, SH.doc.IN.date, n, 1).setNumberFormat('dd/mm/yyyy');
@@ -211,6 +211,10 @@ function setupDocSheet_(ss) {
   s.setColumnWidth(SH.doc.IN.custName, 220);
   s.setColumnWidth(SH.doc.IN.custTaxId, 130);
   s.setColumnWidth(SH.doc.IN.custAddr, 300);
+  /* ช่องภาพถ่ายของใบเป็น JSON ยาว บีบให้แคบไว้ คนจะได้ไม่เผลอไปแก้
+     (ข้อมูลยังอยู่ครบ แค่ไม่เกะกะสายตาตอนเปิดชีทดู) */
+  s.setColumnWidth(SH.doc.IN.snap, 60);
+  s.getRange(DATA_ROW, SH.doc.IN.snap, n, 1).setFontColor('#9aa0a6').setNumberFormat('@');
 
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' ใบ ราวปีครึ่งที่ 20 ใบ/วัน)';
 }

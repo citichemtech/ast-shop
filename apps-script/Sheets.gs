@@ -107,7 +107,11 @@ var SH = {
     IN: {
       no: 2, type: 3, date: 4, orderNo: 5, custName: 6, custTaxId: 7, custBranch: 8,
       custAddr: 9, custTel: 10, custEmail: 11, custCode: 12, po: 13, terms: 14,
-      base: 15, vat: 16, total: 17, staff: 18, note: 19, voidWhy: 20
+      base: 15, vat: 16, total: 17, staff: 18, note: 19, voidWhy: 20,
+      /* ภาพถ่ายของใบตอนที่ออก เก็บเป็น JSON เพื่อ "พิมพ์ซ้ำ" ให้ได้ใบเดิมเป๊ะ
+         ถ้าไปประกอบใหม่จากออเดอร์ตอนพิมพ์ซ้ำ แล้วออเดอร์ถูกแก้ทีหลัง
+         ใบที่พิมพ์ซ้ำจะไม่ตรงกับใบที่ลูกค้าถืออยู่ ซึ่งเป็นปัญหาทางภาษี */
+      snap: 21
     },
     CALC: [1],
     probe: 1

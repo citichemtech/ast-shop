@@ -100,6 +100,7 @@ MOCK = """
 /* google.script.run จำลอง — ใช้เฉพาะตอนดูหน้าจอในเครื่อง ไม่ได้ขึ้นไปอยู่บน Google */
 var MOCK_BOOT = __BOOT__;
 var MOCK_ORDERS = __ORDERS__;
+var MOCK_DOCS = [];       /* ทะเบียนเอกสารที่ออกไปแล้วในรอบนี้ */
 window.SENT = [];
 window.google = { script: { run: (function(){
   var ok=null, bad=null;
@@ -129,7 +130,37 @@ window.google = { script: { run: (function(){
           { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
         var pre = { rec:"ONIV26-", inv:"IV26-", quote:"QO26-", dep:"DR26-" }[p.type] || "DOC-";
         var seq = { rec:231, inv:1, quote:114, dep:1 }[p.type] || 1;
-        return { ok:true, no: pre + ("0000"+seq).slice(-5), doc:d, row:7 };
+        var no = pre + ("0000"+seq).slice(-5);
+        var th = { rec:"ใบเสร็จรับเงิน", inv:"ใบแจ้งหนี้", quote:"ใบเสนอราคา", dep:"ใบรับเงินมัดจำ" }[p.type];
+        /* เก็บใบที่ออกไว้ในทะเบียน เพื่อให้กดพิมพ์ซ้ำได้เหมือนของจริง */
+        MOCK_DOCS.push({ no:no, type:th, date:p.date||"", orderNo:p.orderNo||"",
+                         cust:p.cust||{}, po:p.po||"", terms:p.terms||"", note:p.note||"",
+                         doc:JSON.parse(JSON.stringify(d)) });
+        return { ok:true, no: no, doc:d, row:7 };
+      });
+    },
+    /* ทะเบียนเอกสารจำลอง — เก็บภาพถ่ายของใบเหมือนชีทจริง เพื่อทดสอบการพิมพ์ซ้ำ */
+    listDocs: function(orderNo){
+      reply(function(){
+        var want = String(orderNo || "");
+        return MOCK_DOCS.filter(function(d){
+          return want ? d.orderNo === want : !d.orderNo;
+        }).map(function(d){
+          return { no:d.no, type:d.type, date:d.date, orderNo:d.orderNo,
+                   custName:d.cust.name, total:d.doc.total, voidWhy:d.voidWhy||"",
+                   hasSnap:true };
+        }).reverse();
+      });
+    },
+    getDoc: function(no){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+        if(!f) throw new Error("ไม่พบใบ " + no + " ในชีท เอกสาร");
+        return { ok:true, exact:true,
+                 meta:{ no:f.no, date:f.date, orderNo:f.orderNo, po:f.po||"", terms:f.terms||"",
+                        note:f.note||"", voidWhy:f.voidWhy||"", cust:f.cust },
+                 saved:{ base:f.doc.base, vat:f.doc.vat, total:f.doc.total },
+                 doc: JSON.parse(JSON.stringify(f.doc)) };
       });
     },
     createOrder: function(p){

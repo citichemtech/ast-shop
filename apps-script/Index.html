@@ -19,9 +19,19 @@
   --r:12px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* ขนาดตัวอักษรทั้งแอปคิดจากขนาดรากตัวเดียว (rem) ปุ่ม ก- / ก+ บนหัวจอ
+   จึงย่อขยายได้ทั้งหน้าพร้อมกัน โดยสัดส่วนทุกอย่างยังเท่าเดิม
+   ค่าเริ่มต้น 20px ขึ้นจากเดิม 17px เพราะเจ้าของร้านอ่านของเดิมไม่ถนัด */
+html{font-size:20px;-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);
-  font:17px/1.55 -apple-system,"Segoe UI",Roboto,"Noto Sans Thai","Prompt",sans-serif;
+  font:1rem/1.55 -apple-system,"Segoe UI",Roboto,"Noto Sans Thai","Prompt",sans-serif;
   padding-bottom:76px}
+
+/* ปุ่มปรับขนาดตัวอักษรบนแถบหัว */
+.fsz{margin-left:auto;display:flex;gap:6px;flex:none}
+.fsz button{width:38px;height:38px;border:1px solid rgba(255,255,255,.55);border-radius:9px;
+  background:rgba(255,255,255,.14);color:#fff;font-weight:700;font-size:0.85rem;padding:0;line-height:1}
+.fsz button:active{background:rgba(255,255,255,.3)}
 h1,h2,h3{margin:0}
 button{font:inherit;cursor:pointer}
 input,select,textarea{font:inherit;width:100%;padding:13px 14px;border:1px solid var(--line);
@@ -34,11 +44,11 @@ textarea{resize:vertical}
   display:flex;align-items:center;gap:12px}
 .top .logo{width:52px;height:52px;border-radius:50%;background:#fff;flex:none;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
-  font-weight:700;color:var(--blue);font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.16)}
+  font-weight:700;color:var(--blue);font-size:0.82rem;box-shadow:0 2px 8px rgba(0,0,0,.16)}
 .top .logo img{width:100%;height:100%;object-fit:cover}
 .top .ttl{min-width:0}
-.top b{display:block;font-size:20px;font-weight:700;line-height:1.2;letter-spacing:-.01em}
-.top .who{display:block;margin-top:3px;font-size:12px;opacity:.9;
+.top b{display:block;font-size:1.18rem;font-weight:700;line-height:1.2;letter-spacing:-.01em}
+.top .who{display:block;margin-top:3px;font-size:0.8rem;opacity:.9;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .wrap{padding:14px;max-width:720px;margin:0 auto}
@@ -46,13 +56,13 @@ textarea{resize:vertical}
 @media (min-width:900px){ .wrap{max-width:1100px;padding:18px 24px} }
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
 .fld{margin-bottom:13px}
-.fld label{display:block;font-size:14px;color:var(--gray);margin-bottom:5px;font-weight:600}
+.fld label{display:block;font-size:0.82rem;color:var(--gray);margin-bottom:5px;font-weight:600}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.hint{font-size:13.5px;color:var(--gray);margin-top:5px;line-height:1.5}
-.subhd{font-size:14.5px;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
+.hint{font-size:0.8rem;color:var(--gray);margin-top:5px;line-height:1.5}
+.subhd{font-size:0.85rem;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
 
 .btn{width:100%;padding:14px;border:0;border-radius:11px;background:var(--blue);color:#fff;
-  font-weight:700;font-size:17.5px}
+  font-weight:700;font-size:1.03rem}
 .btn[disabled]{opacity:.55}
 .btn.dark{background:var(--ink)}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
@@ -60,57 +70,57 @@ textarea{resize:vertical}
 /* แถวปุ่มขอเอกสารบนหัวฟอร์ม — เรียงสามปุ่มเท่ากัน กดง่ายด้วยนิ้วหัวแม่มือ */
 .docbar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
 .docbar button{padding:11px 6px;border:1px solid var(--line);background:#fff;border-radius:10px;
-  font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.35}
+  font-size:0.8rem;font-weight:600;color:var(--ink);line-height:1.35}
 .docbar button:active{background:#eef3fa}
-@media (max-width:430px){ .docbar button{font-size:12px;padding:10px 3px;letter-spacing:-.01em} }
+@media (max-width:430px){ .docbar button{font-size:0.8rem;padding:10px 3px;letter-spacing:-.01em} }
 
-.mini{padding:9px 14px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:14.5px}
+.mini{padding:9px 14px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.85rem}
 .mini.red{color:var(--red);border-color:#f0c9c9}
 
 .it{border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:9px;background:#fbfcfd}
 .it .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.it .hd b{font-size:14px;color:var(--gray)}
+.it .hd b{font-size:0.82rem;color:var(--gray)}
 .it .hd .rm{margin-left:auto}
 .it .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.lotline{font-size:13.5px;margin-top:6px;line-height:1.5}
+.lotline{font-size:0.8rem;margin-top:6px;line-height:1.5}
 .lotline.warn{color:var(--amber)}
 .lotline.bad{color:var(--red);font-weight:600}
 .lotline.ok{color:var(--green)}
 
-.sum{display:flex;justify-content:space-between;padding:7px 0;font-size:15.5px}
-.sum.big{font-size:20px;font-weight:800;border-top:1px solid var(--line);margin-top:6px;padding-top:10px}
+.sum{display:flex;justify-content:space-between;padding:7px 0;font-size:0.91rem}
+.sum.big{font-size:1.18rem;font-weight:800;border-top:1px solid var(--line);margin-top:6px;padding-top:10px}
 
 .row{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
 .row .i{flex:1;min-width:0}
 .row .i b{display:block}
-.row .i span{font-size:14px;color:var(--gray)}
+.row .i span{font-size:0.82rem;color:var(--gray)}
 .row .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:16px;padding:0}
-.tag{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
+.sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
+.tag{display:inline-block;font-size:0.8rem;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
 .tag.ok{background:#e6f5ec;color:var(--green)}
 .tag.wait{background:#fdf1e0;color:var(--amber)}
 .tag.bad{background:#fbe9e9;color:var(--red)}
 
 .pv{border:1px solid var(--blue);border-radius:11px;padding:12px;margin:10px 0;background:#f7f9ff}
-.pv .r{display:flex;gap:8px;padding:5px 0;font-size:13.5px;border-bottom:1px dashed #dfe4ee}
+.pv .r{display:flex;gap:8px;padding:5px 0;font-size:0.8rem;border-bottom:1px dashed #dfe4ee}
 .pv .r:last-of-type{border-bottom:0}
-.pv .r i{width:104px;flex:none;color:var(--gray);font-style:normal;font-size:12.5px}
+.pv .r i{width:104px;flex:none;color:var(--gray);font-style:normal;font-size:0.8rem}
 .pv .r b{flex:1;font-weight:600;word-break:break-word}
 .pv .r.miss b{color:var(--red);font-weight:500}
 .pv .r.opt i{opacity:.65}
 
-.msg{padding:11px 12px;border-radius:10px;font-size:13.5px;line-height:1.6;margin-bottom:11px;display:none}
+.msg{padding:11px 12px;border-radius:10px;font-size:0.8rem;line-height:1.6;margin-bottom:11px;display:none}
 .msg.on{display:block}
 .msg.err{background:#fbe9e9;color:#8f1d1d;border:1px solid #f0c9c9}
 .msg.ok{background:#e6f5ec;color:#0a6b3c;border:1px solid #bfe4cf}
 
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:var(--card);
   border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1;border:0;background:none;padding:11px 4px 13px;font-size:12.5px;color:var(--gray);
+.tabs button{flex:1;border:0;background:none;padding:11px 4px 13px;font-size:0.8rem;color:var(--gray);
   display:flex;flex-direction:column;align-items:center;gap:3px}
 .tabs button.on{color:var(--blue);font-weight:700}
-.tabs button em{font-style:normal;font-size:19px;line-height:1}
+.tabs button em{font-style:normal;font-size:1.12rem;line-height:1}
 
 .modal{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.42);display:none;align-items:flex-end}
 .modal.on{display:flex}
@@ -119,15 +129,15 @@ textarea{resize:vertical}
   .modal .sheet{max-width:600px;border-radius:16px}}
 /* ปุ่มปิดต้องมีจริง ๆ — บนมือถือพื้นที่นอกกล่องแทบไม่เหลือให้กด */
 .m-hd{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.m-hd h3{flex:1;font-size:17px;min-width:0}
+.m-hd h3{flex:1;font-size:1rem;min-width:0}
 .m-x{width:36px;height:36px;flex:none;border:1px solid var(--line);background:#fff;
-  border-radius:9px;font-size:15px;color:var(--gray);padding:0}
+  border-radius:9px;font-size:0.88rem;color:var(--gray);padding:0}
 
 #toast{position:fixed;left:50%;bottom:88px;transform:translate(-50%,14px);z-index:90;
-  background:#15181d;color:#fff;padding:11px 18px;border-radius:99px;font-size:13.5px;
+  background:#15181d;color:#fff;padding:11px 18px;border-radius:99px;font-size:0.8rem;
   opacity:0;pointer-events:none;transition:.22s;max-width:88vw;text-align:center}
 #toast.on{opacity:1;transform:translate(-50%,0)}
-.empty{text-align:center;color:var(--gray);padding:34px 12px;font-size:14px}
+.empty{text-align:center;color:var(--gray);padding:34px 12px;font-size:0.82rem}
 .empty b{display:block;color:var(--ink);margin-bottom:5px}
 .load{text-align:center;color:var(--gray);padding:40px 12px}
 /* ---------------- หน้าสรุปยอด ----------------
@@ -137,31 +147,31 @@ textarea{resize:vertical}
    ชื่อกับตัวเลขเป็นตัวหนังสือสีปกติ ไม่เอาสีของแท่งมาใส่ตัวหนังสือ */
 .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;margin-bottom:10px;-webkit-overflow-scrolling:touch}
 .chips button{flex:none;padding:8px 15px;border-radius:999px;border:1px solid var(--line);
-  background:var(--card);font-size:13.5px;color:var(--gray)}
+  background:var(--card);font-size:0.8rem;color:var(--gray)}
 .chips button.on{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:700}
 
 .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px}
-.kpi span{display:block;font-size:12px;color:var(--gray)}
-.kpi b{display:block;font-size:21px;line-height:1.25;margin-top:3px;font-variant-numeric:tabular-nums}
+.kpi span{display:block;font-size:0.8rem;color:var(--gray)}
+.kpi b{display:block;font-size:1.24rem;line-height:1.25;margin-top:3px;font-variant-numeric:tabular-nums}
 .kpi.wide{grid-column:1 / -1}
 .kpi.good b{color:var(--green)}
 
 .brow{margin:12px 0 0}
 .brow:first-of-type{margin-top:4px}
-.btop{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:14px}
+.btop{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:0.82rem}
 .bname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bval{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
 .btrack{height:8px;background:var(--bg);border-radius:4px;margin-top:6px;overflow:hidden}
 .btrack i{display:block;height:100%;background:var(--blue);border-radius:0 4px 4px 0;min-width:3px}
-.bsub{font-size:12px;color:var(--gray);margin-top:4px}
-.giftck{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:14.5px;color:var(--gray)}
+.bsub{font-size:0.8rem;color:var(--gray);margin-top:4px}
+.giftck{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:0.85rem;color:var(--gray)}
 .giftck input{width:auto;transform:scale(1.3)}
 /* ปุ่มทำงานต่อหลังบันทึก — พิมพ์ใบปะหน้า / ส่งข้อความ อยู่ในกล่องเขียวเลย
    ไม่ต้องไปตามหาใบที่เพิ่งคีย์ในแท็บออเดอร์อีกที */
 .okact{display:flex;gap:8px;margin-top:11px}
 .okact button{flex:1;padding:12px 8px;border-radius:10px;border:1px solid var(--green);
-  background:#fff;color:var(--green);font-weight:700;font-size:14.5px}
+  background:#fff;color:var(--green);font-weight:700;font-size:0.85rem}
 </style>
 
 <div class="top">
@@ -169,6 +179,10 @@ textarea{resize:vertical}
   <div class="ttl">
     <b id="brand">AST Chem-Tooling</b>
     <span class="who" id="who"></span>
+  </div>
+  <div class="fsz">
+    <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง">ก−</button>
+    <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น">ก+</button>
   </div>
 </div>
 
@@ -209,8 +223,7 @@ textarea{resize:vertical}
           <label>ผู้คีย์ออเดอร์</label>
           <select id="f-by"></select>
           <input id="f-by-new" placeholder="พิมพ์ชื่อคนคีย์" style="margin-top:8px;display:none">
-          <div class="hint">เครื่องนี้จะจำชื่อที่เลือกไว้ · เลือก “✎ พิมพ์ชื่อเอง” เพื่อใส่ชื่อที่ยังไม่มีในรายการ
-            เครื่องนี้จะจำชื่อที่พิมพ์ไว้ให้ด้วย · ถ้าอยากให้ทุกเครื่องเห็น ใส่ที่ชีท ตั้งค่าแอป แถว “รายชื่อพนักงาน”</div>
+          <div class="hint">ไม่มีชื่อในรายการ เลือก “✎ พิมพ์ชื่อเอง” แล้วพิมพ์ได้เลย · เครื่องนี้จะจำไว้ให้</div>
         </div>
         <div class="two">
           <div class="fld"><label>วันที่</label><input id="f-date" type="date"></div>
@@ -305,6 +318,12 @@ textarea{resize:vertical}
       <div id="q-sum"></div>
       <button class="btn" id="q-make" style="margin-top:10px">ออกใบเสนอราคา</button>
       <div id="q-out" style="margin-top:12px"></div>
+    </div>
+
+    <!-- ใบเสนอราคาไม่ผูกกับออเดอร์ ถ้าไม่มีรายการนี้ใบที่ออกไปแล้วจะหาย
+         ตามหาไม่เจอ ต้องเปิดชีทดูเอง แล้วก็พิมพ์ซ้ำไม่ได้อยู่ดี -->
+    <div class="card">
+      <div id="q-old"></div>
     </div>
   </section>
 

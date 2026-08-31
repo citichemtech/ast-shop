@@ -587,6 +587,9 @@ function quoteInit(){
   var pz = function(n){ return n<10?"0"+n:""+n };
   $("#q-valid").value = d.getFullYear()+"-"+pz(d.getMonth()+1)+"-"+pz(d.getDate());
   qAdd();
+  /* ใบเสนอราคาที่เคยออก — พิมพ์ซ้ำหรือส่งซ้ำให้ลูกค้าได้ ไม่ต้องคีย์ใหม่
+     ใบพวกนี้ไม่ผูกกับออเดอร์ ถ้าไม่มีรายการนี้ก็ตามหากลับไม่ได้เลย */
+  drawOldDocs("", "#q-old");
   $("#q-add").onclick  = function(){ qAdd(); qCalc() };
   $("#q-make").onclick = qMake;
   ["#q-disc","#q-ship","#q-vat"].forEach(function(sel){
@@ -706,6 +709,7 @@ function qMake(){
         +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>';
       bindLabelButtons(url, r.no+".png", "a4");
       bindDocCopy("#q-out", r, m, r.no);
+      drawOldDocs("", "#q-old");
       btn.disabled = false;
     });
   }).catch(function(e){
@@ -713,6 +717,108 @@ function qMake(){
     $("#q-out").innerHTML = '<div style="color:var(--red)">ออกใบไม่สำเร็จ: '
       +esc(e&&e.message?e.message:e)+'</div>';
   });
+}
+
+/* ------------------------------------------------------- พิมพ์เอกสารซ้ำ */
+
+/* พิมพ์ซ้ำไม่ออกเลขใหม่ ไม่แตะสต๊อก ไม่เขียนอะไรลงชีท — แค่วาดใบเดิมออกมาอีกครั้ง */
+function drawOldDocs(orderNo, boxSel){
+  var sel = boxSel || "#dc-old", box = $(sel);
+  if (!box) return;
+  /* ที่วางผลพิมพ์ซ้ำต้องเป็นคนละ id กันในแต่ละที่ ไม่งั้นตอนเปิดหน้าใบเสนอราคา
+     ค้างไว้แล้วไปกดพิมพ์ซ้ำในหน้าออเดอร์ รูปจะไปโผล่ผิดที่ */
+  var outId = "rp-out-" + sel.replace(/[^a-zA-Z0-9]/g, "");
+  box.innerHTML = '<div class="hint">กำลังดูว่าเคยออกใบให้ออเดอร์นี้ไว้หรือยัง…</div>';
+  api("listDocs", orderNo || "").then(function(list){
+    if (!list || !list.length) { box.innerHTML = ""; return }
+    box.innerHTML = '<div class="subhd">ใบที่ออกไปแล้ว — กดพิมพ์ซ้ำได้เลย</div>'
+      + list.map(function(d){
+          var dead = !!d.voidWhy;
+          return '<div class="row"><div class="i">'
+            +'<b>'+esc(d.no)+'</b>'
+            +'<span>'+esc(d.type)+' · '+esc(d.date||"")+' · '+baht(d.total)
+            + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
+            +'</span></div><div class="acts">'
+            +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
+            +'</div></div>';
+        }).join("")
+      + '<div id="'+outId+'" style="margin-top:10px"></div>';
+    box.querySelectorAll("[data-rp]").forEach(function(b){
+      b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
+    });
+  }, function(e){
+    box.innerHTML = '<div class="hint" style="color:var(--red)">ดูใบเก่าไม่ได้: '
+      + esc(e && e.message ? e.message : e) + '</div>';
+  });
+}
+
+function reprint(no, btn, outSel){
+  var out = $(outSel || "#rp-out");
+  if (btn) { btn.disabled = true; btn.textContent = "กำลังดึง…" }
+  out.innerHTML = '<div class="load">กำลังดึงใบ '+esc(no)+' มาวาดใหม่…</div>';
+  api("getDoc", no).then(function(r){
+    var m = r.meta;
+    m.seller = CFG.docSeller||""; m.sellerEmail = CFG.docSellerEmail||"";
+    return buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+      var warn = "";
+      /* ใบเก่าที่ยังไม่มีภาพถ่าย ต้องประกอบจากออเดอร์ ถ้ายอดไม่ตรงกับที่บันทึกไว้
+         ต้องบอกให้เห็น ห้ามพิมพ์ใบที่ยอดต่างจากใบที่ลูกค้าถืออยู่เงียบ ๆ */
+      if (!r.exact) {
+        warn = r.same
+          ? '<div class="msg ok" style="display:block">ใบนี้ออกก่อนระบบเก็บรายการในใบ '
+            +'จึงประกอบใหม่จากออเดอร์ให้ · <b>ยอดตรงกับที่บันทึกไว้</b> ('+baht(r.saved.total)+')</div>'
+          : '<div class="msg err" style="display:block">⚠ ใบนี้ออกก่อนระบบเก็บรายการในใบ '
+            +'และยอดที่ประกอบใหม่ได้ '+baht(r.doc.total)+' <b>ไม่ตรง</b>กับยอดที่บันทึกไว้ '
+            +baht(r.saved.total)+' — แปลว่าออเดอร์ถูกแก้หลังออกใบ '
+            +'<b>อย่าพิมพ์ใบนี้ส่งลูกค้า</b> ให้ยึดใบที่พิมพ์ไปแล้วเป็นหลัก</div>';
+      }
+      if (m.voidWhy) {
+        warn += '<div class="msg err" style="display:block">ใบนี้ถูกยกเลิกไปแล้ว ('
+          + esc(m.voidWhy) + ') พิมพ์ดูได้ แต่ใช้อ้างอิงทางบัญชีไม่ได้</div>';
+      }
+      out.innerHTML = warn
+        +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+        +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
+        +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+        +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
+        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+        +'<div class="hint" style="text-align:center;margin-top:10px">'
+        +'พิมพ์ซ้ำใบเดิม เลขที่เอกสารยังเป็น '+esc(no)+' · ไม่ได้ออกใบใหม่ ไม่ตัดสต๊อกซ้ำ</div>';
+      bindLabelButtons(url, no+".png", "a4");
+      bindDocCopy(outSel || "#rp-out", r, m, no);
+      if (btn) { btn.disabled = false; btn.textContent = "พิมพ์ซ้ำ" }
+    });
+  }).catch(function(e){
+    if (btn) { btn.disabled = false; btn.textContent = "พิมพ์ซ้ำ" }
+    out.innerHTML = '<div class="msg err" style="display:block">พิมพ์ซ้ำไม่สำเร็จ: '
+      + esc(e && e.message ? e.message : e) + '</div>';
+  });
+}
+
+/* ------------------------------------------- ขนาดตัวอักษรของทั้งแอป */
+
+/* เจ้าของร้านอ่านตัวอักษรขนาดเดิมไม่ถนัด และคนคีย์แต่ละคนสายตาไม่เท่ากัน
+   จึงให้ปรับเองได้ เก็บไว้ในเครื่องใครเครื่องมัน ไม่ต้องแก้โค้ดใหม่ทุกครั้ง
+   ปรับที่ราก (html) ทีเดียว ทุกขนาดในหน้าเป็น rem จึงขยับตามพร้อมกันทั้งหน้า */
+var FS_MIN = 17, FS_MAX = 30, FS_DEF = 20;
+
+function fsGet(){
+  var n = 0;
+  try { n = Number(localStorage.getItem("ast-fs") || 0) } catch(e){}
+  if (!n || isNaN(n)) n = FS_DEF;
+  return Math.min(FS_MAX, Math.max(FS_MIN, n));
+}
+function fsApply(n){
+  document.documentElement.style.fontSize = n + "px";
+  try { localStorage.setItem("ast-fs", String(n)) } catch(e){}
+  var dn = $("#fs-dn"), up = $("#fs-up");
+  if (dn) dn.disabled = n <= FS_MIN;
+  if (up) up.disabled = n >= FS_MAX;
+}
+function fsInit(){
+  fsApply(fsGet());
+  $("#fs-dn").onclick = function(){ fsApply(Math.max(FS_MIN, fsGet() - 1)) };
+  $("#fs-up").onclick = function(){ fsApply(Math.min(FS_MAX, fsGet() + 1)) };
 }
 
 /* ------------------------------------------------- ชื่อคนคีย์ออเดอร์ */
@@ -753,7 +859,8 @@ function taxMemoSave(name, o){
 function openDoc(o, preType){
   var memo = taxMemo(o.cust) || {};
   openModal("ออกเอกสาร — "+o.no,
-     '<div class="subhd">เลือกชนิดเอกสาร</div><div id="dc-pick">'
+     '<div id="dc-old"></div>'
+    +'<div class="subhd">เลือกชนิดเอกสาร</div><div id="dc-pick">'
     + DOC_BTN.filter(function(t){return t.key!=="quote"}).map(function(t,i){
         return '<label class="giftck" style="align-items:flex-start">'
           +'<input type="radio" name="dctype" value="'+t.key+'"'+(i===0?" checked":"")+'>'
@@ -785,6 +892,11 @@ function openDoc(o, preType){
     +'<option value="none">ไม่คิด VAT</option></select></div></div>'
     +'<button class="btn" id="dc-make">ออกเอกสาร</button>'
     +'<div id="dc-out" style="margin-top:12px"></div>');
+
+  /* ใบที่เคยออกให้ออเดอร์นี้ — ขึ้นไว้บนสุดพร้อมปุ่มพิมพ์ซ้ำ
+     ก่อนหน้านี้ใบที่ออกไปแล้วเปิดกลับมาดูไม่ได้เลย กดออกใหม่ก็โดนกันใบซ้ำ
+     คนเลยตันอยู่ตรงนั้น ทั้งที่แค่อยากได้กระดาษอีกแผ่น */
+  drawOldDocs(o.no);
 
   /* เลขผู้เสียภาษีผิดหลักเดียว ลูกค้าเอาใบไปใช้เครดิตภาษีซื้อไม่ได้
      เตือนทันทีตอนพิมพ์ แต่ไม่บล็อก เพราะลูกค้าบุคคลธรรมดาไม่มีเลขนี้ */
@@ -1297,6 +1409,8 @@ function go(page){
 }
 
 document.addEventListener("DOMContentLoaded", function(){
+  /* ตั้งขนาดตัวอักษรก่อนอย่างอื่น จะได้ไม่เห็นหน้าจอกระตุกตอนเปลี่ยนขนาด */
+  fsInit();
   $$(".tabs button").forEach(function(b){ b.onclick=function(){ go(b.dataset.go) } });
   $("#btn-add").onclick   = function(){ addItem(); recalc() };
   $("#btn-parse").onclick = doParse;

@@ -388,6 +388,22 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   }, null, { timeout: 20000 });
   eq('กดกลับแล้วได้ต้นฉบับใบเดิม ไม่ได้ออกเลขใหม่',
     (await page.getAttribute('img.docimg', 'src')) === docOrig, true);
+
+  /* พิมพ์ซ้ำ — ใบที่ออกไปแล้วต้องเปิดกลับมาพิมพ์ใหม่ได้ โดยไม่ออกเลขใหม่
+     ก่อนหน้านี้ทำไม่ได้เลย กดออกใหม่ก็โดนด่านกันใบซ้ำ คนเลยตัน */
+  console.log('\n   พิมพ์ซ้ำใบที่ออกไปแล้ว');
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec'); });
+  await page.waitForSelector('#dc-old [data-rp]', { timeout: 20000 });
+  var oldNo = await page.textContent('#dc-old .row .i b');
+  truthy('ใบที่เพิ่งออกโผล่ในรายการใบเก่า', /ONIV26-/.test(oldNo));
+  await page.click('#dc-old [data-rp]');
+  await page.waitForSelector('#rp-out-dcold img.docimg', { timeout: 20000 });
+  eq('พิมพ์ซ้ำแล้วได้รูปหน้าตาเดียวกับตอนออกใบ',
+    (await page.getAttribute('#rp-out-dcold img.docimg', 'src')) === docOrig, true);
+  truthy('บอกชัดว่าเป็นใบเดิม ไม่ได้ออกใบใหม่',
+    /ไม่ได้ออกใบใหม่/.test(await page.textContent('#rp-out-dcold')));
   await page.evaluate(function () { closeModal(); });
   await page.waitForTimeout(200);
 
