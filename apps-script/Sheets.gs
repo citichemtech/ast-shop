@@ -272,6 +272,8 @@ function appCfg_() {
     co: { name: '', nameEn: '', shortName: '', addr: '', taxId: '', branch: '', tel: '', email: '' },
     bank: '', thanks: '', docTerms: '', website: '', docSeller: '', docSellerEmail: '', vatMode: 'excl',
     docPrefix: { rec: 'ONIV26-', inv: 'IV26-', quote: 'QO26-', dep: 'DR26-' },
+    /* เลขที่ยกยอดมาจากระบบเดิม ระบบจะออกเลขถัดจากตัวนี้เสมอ แม้ชีทยังว่าง */
+    docStart: { rec: 0, inv: 0, quote: 0, dep: 0 },
     quoteDays: 7
   };
   if (!s) return out;
@@ -311,6 +313,10 @@ function appCfg_() {
     else if (k === 'คำนำหน้าเลขใบแจ้งหนี้') out.docPrefix.inv = String(val || out.docPrefix.inv);
     else if (k === 'คำนำหน้าเลขใบเสนอราคา') out.docPrefix.quote = String(val || out.docPrefix.quote);
     else if (k === 'คำนำหน้าเลขใบรับเงินมัดจำ') out.docPrefix.dep = String(val || out.docPrefix.dep);
+    else if (k === 'ยกยอดเลขใบเสร็จ/ใบกำกับภาษีมาจาก') out.docStart.rec = Number(val || 0) || 0;
+    else if (k === 'ยกยอดเลขใบแจ้งหนี้มาจาก') out.docStart.inv = Number(val || 0) || 0;
+    else if (k === 'ยกยอดเลขใบเสนอราคามาจาก') out.docStart.quote = Number(val || 0) || 0;
+    else if (k === 'ยกยอดเลขใบรับเงินมัดจำมาจาก') out.docStart.dep = Number(val || 0) || 0;
     else if (k === 'ใบเสนอราคายืนราคากี่วัน') out.quoteDays = Number(val || 7) || 7;
     else if (k === 'รายชื่อพนักงาน') out.staffList = String(val || '')
       .split(/[,\n]+/).map(function (x) { return x.trim() }).filter(function (x) { return x });

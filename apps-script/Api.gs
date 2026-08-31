@@ -374,7 +374,7 @@ function issueDoc(payload) {
     }
 
     var prefix = cfg.docPrefix[t.key] || (t.code + '26-');
-    var no = nextDocNo_(prefix, used.nos);
+    var no = nextDocNo_(prefix, used.nos, 5, cfg.docStart[t.key]);
     var d = buildDoc_(t.key, src, {
       vatRate: p.novat ? 0 : cfgGet_().vatRate,
       vatMode: p.vatMode || cfg.vatMode
@@ -440,7 +440,7 @@ function peekDocNos() {
   var out = {};
   for (var i = 0; i < DOC_TYPES.length; i++) {
     var t = DOC_TYPES[i];
-    out[t.key] = nextDocNo_(cfg.docPrefix[t.key] || (t.code + '26-'), used.nos);
+    out[t.key] = nextDocNo_(cfg.docPrefix[t.key] || (t.code + '26-'), used.nos, 5, cfg.docStart[t.key]);
   }
   return out;
 }
