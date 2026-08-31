@@ -309,14 +309,36 @@ function repairStockSheet() {
   }
 
   var before = countRef_(s, cols);
-  if (!before) return 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
+  var skew = countSkew_(s);
+  if (!before && !skew) return 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
 
   tmpl.copyTo(s.getRange(DATA_ROW + 1, 1, STOCK_LAST - DATA_ROW, cols));
   SpreadsheetApp.flush();
-  var after = countRef_(s, cols);
+  var after = countRef_(s, cols), skewAfter = countSkew_(s);
 
   var extra = repairSummaryRange_();
-  return 'ชีท ' + SH.stock.name + ': ซ่อมสูตร #REF! ' + before + ' ช่อง เหลือ ' + after + extra;
+  return 'ชีท ' + SH.stock.name + ': ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')' +
+    ' · ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')' + extra;
+}
+
+/**
+ * นับแถวที่ชี้ไปผิดตัวสินค้า
+ *
+ * ชีทนี้ผูกกับ ฐานสินค้า แบบแถวต่อแถว — แถว 20 ต้องชี้ไป ฐานสินค้า แถว 20
+ * พอมีคน "แทรกแถว" หรือ "ลบทั้งแถว" ในฐานสินค้า Google จะขยับเลขแถวในสูตรตาม
+ * ทั้งชีทจึงเลื่อนไม่ตรงกัน แถว 47 ไปชี้แถว 50 เป็นต้น
+ *
+ * อันตรายกว่า #REF! เพราะ #REF! เห็นชัดว่าพัง แต่แบบนี้ยังโชว์ตัวเลขสวย ๆ
+ * เพียงแต่เป็นยอดสต๊อกของสินค้าคนละตัว ไม่มีอะไรฟ้องเลยสักอย่าง
+ */
+function countSkew_(s) {
+  var f = s.getRange(DATA_ROW, 2, STOCK_LAST - DATA_ROW + 1, 1).getFormulas();
+  var n = 0;
+  for (var i = 0; i < f.length; i++) {
+    var m = /ฐานสินค้า'!\$B(\d+)/.exec(f[i][0] || '');
+    if (m && Number(m[1]) !== DATA_ROW + i) n++;
+  }
+  return n;
 }
 
 function countRef_(s, cols) {
