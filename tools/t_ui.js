@@ -52,7 +52,16 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   var page = await browser.newPage({ viewport: { width: 390, height: 820 } });
   var errors = [];
   page.on('pageerror', function (e) { errors.push(e.message); });
-  page.on('console', function (m) { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  /* ฟอนต์ Sarabun โหลดจากอินเทอร์เน็ต เครื่องที่รันข้อสอบต่อเน็ตออกไม่ได้
+     โหลดไม่ติดจึงไม่ใช่ความผิดของโค้ด และหน้าเว็บก็ถอยไปใช้ฟอนต์ในเครื่องเองอยู่แล้ว
+     นับเฉพาะ error ที่เกิดจากโค้ดเราจริง ๆ */
+  var EXT_FONT = /fonts\.(googleapis|gstatic)\.com/;
+  page.on('console', function (m) {
+    var where = (m.location() && m.location().url) || '';
+    if (m.type() === 'error' && !EXT_FONT.test(where) && !EXT_FONT.test(m.text())) {
+      errors.push('console: ' + m.text() + (where ? '  @' + where : ''));
+    }
+  });
 
   await page.goto(FILE);
   await page.waitForSelector('#form', { state: 'visible', timeout: 8000 });
@@ -336,8 +345,36 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'out/ui-form.png' });
 
-  /* ---------- 14. ไม่มี error หลุดใน console ---------- */
-  console.log('\n14. ความสะอาดของหน้าเว็บ');
+  /* ---------- 14. เอกสารขาย: ต้นฉบับให้ลูกค้า / สำเนาส่งบัญชี ----------
+     ฝ่ายบัญชีต้องได้ใบสำเนาของเอกสารใบเดิม ไม่ใช่ใบใหม่ที่ออกเลขใหม่
+     ข้อสอบนี้จึงตรวจว่ากดแล้วรูปเปลี่ยนจริง และกดกลับได้ต้นฉบับเดิมเป๊ะ */
+  console.log('\n14. ต้นฉบับ / สำเนา ของเอกสารขาย');
+  await page.evaluate(function () { go('list'); });
+  await page.waitForTimeout(600);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec'); });
+  await page.waitForTimeout(400);
+  await page.click('#dc-make');
+  await page.waitForSelector('#dc-copy', { timeout: 20000 });
+  var docOrig = await page.getAttribute('img.docimg', 'src');
+  await page.click('#dc-copy');
+  await page.waitForFunction(function () {
+    return document.querySelector('#dc-copy').disabled === false;
+  }, null, { timeout: 20000 });
+  var docCopy = await page.getAttribute('img.docimg', 'src');
+  truthy('กดสำเนาแล้วได้รูปคนละใบกับต้นฉบับ', docOrig !== docCopy);
+  truthy('ปุ่มเปลี่ยนเป็นทางกลับให้เห็นว่ากำลังดูสำเนาอยู่',
+    /ต้นฉบับ/.test(await page.textContent('#dc-copy')));
+  await page.click('#dc-copy');
+  await page.waitForFunction(function () {
+    return document.querySelector('#dc-copy').disabled === false;
+  }, null, { timeout: 20000 });
+  eq('กดกลับแล้วได้ต้นฉบับใบเดิม ไม่ได้ออกเลขใหม่',
+    (await page.getAttribute('img.docimg', 'src')) === docOrig, true);
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+
+  /* ---------- 15. ไม่มี error หลุดใน console ---------- */
+  console.log('\n15. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
   await browser.close();

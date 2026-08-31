@@ -668,11 +668,13 @@ function qMake(){
       $("#q-out").innerHTML =
          '<div class="msg ok" style="display:block">ออกใบเสนอราคา <b>'+esc(r.no)+'</b> แล้ว '
         +'ลงทะเบียนในชีท เอกสาร เรียบร้อย · <b>สต๊อกไม่ถูกตัด</b></div>'
-        +'<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+        +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
         +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
         +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+        +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
         +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>';
-      bindLabelButtons(url, r.no+".png");
+      bindLabelButtons(url, r.no+".png", "a4");
+      bindDocCopy("#q-out", r, m, r.no);
       btn.disabled = false;
     });
   }).catch(function(e){
@@ -779,12 +781,15 @@ function drawDoc(r, o, cust, type){
     $("#dc-out").innerHTML =
        '<div class="msg ok" style="display:block">ออกใบ <b>'+esc(r.no)+'</b> แล้ว '
       +'ลงทะเบียนในชีท เอกสาร เรียบร้อย</div>'
-      +'<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+      +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
       +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
       +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+      +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
       +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
-      +'<div class="hint" style="text-align:center;margin-top:10px">A4 · พิมพ์ได้ · ส่งเป็นรูปในแชทได้</div>';
-    bindLabelButtons(url, r.no+".png");
+      +'<div class="hint" style="text-align:center;margin-top:10px">A4 · พิมพ์ได้ · ส่งเป็นรูปในแชทได้<br>'
+      +'พิมพ์ต้นฉบับให้ลูกค้า แล้วกด “ดูสำเนา” พิมพ์อีกใบเก็บส่งบัญชี</div>';
+    bindLabelButtons(url, r.no+".png", "a4");
+    bindDocCopy("#dc-out", r, m, r.no);
   }, function(e){
     $("#dc-out").innerHTML='<div style="color:var(--red)">ใบลงชีทแล้ว (เลข '+esc(r.no)
       +') แต่วาดรูปไม่สำเร็จ: '+esc(e&&e.message?e.message:e)+'</div>';
@@ -840,7 +845,10 @@ function labelData(o, cod){
   };
 }
 
-function bindLabelButtons(url, name){
+function bindLabelButtons(url, name, paper){
+  /* paper "a4" สำหรับเอกสารขาย · ไม่ใส่ = ใบปะหน้าพัสดุ 100x150 มม. เหมือนเดิม
+     ถ้าส่ง A4 ไปพิมพ์ด้วยขนาดซอง เครื่องพิมพ์จะย่อหน้าลง ตัวหนังสือที่เพิ่งขยายจะเล็กกลับไปอีก */
+  var pg = paper === "a4" ? "@page{size:A4;margin:6mm}" : "@page{size:100mm 150mm;margin:0}";
   var toFile=function(){
     var b=atob(url.split(",")[1]), n=b.length, u8=new Uint8Array(n);
     while(n--) u8[n]=b.charCodeAt(n);
@@ -869,9 +877,34 @@ function bindLabelButtons(url, name){
     var w=window.open();
     if(!w){ toast("เบราว์เซอร์บล็อกแท็บใหม่"); return }
     w.document.write('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1">'
-      +'<style>@page{size:100mm 150mm;margin:0}body{margin:0}img{width:100%;display:block}</style>'
+      +'<style>'+pg+'body{margin:0}img{width:100%;display:block}</style>'
       +'<img src="'+url+'">');
     w.document.close();
+  };
+}
+
+/* ใบชุดหนึ่งพิมพ์สองใบ — ต้นฉบับให้ลูกค้า สำเนาเก็บไว้ส่งฝ่ายบัญชี
+   สองใบเนื้อความเหมือนกันทุกตัวอักษร ต่างกันแค่ตราชุดมุมขวาบน
+   ปุ่มนี้จึงวาดใบเดิมซ้ำในโหมดสำเนา ไม่ได้ออกเลขใหม่ เลขที่เอกสารยังเป็นใบเดียวกัน
+   (ออกเลขใหม่ให้สำเนา = เอกสารภาษีซ้ำซ้อน บัญชีจะตีกลับ) */
+function bindDocCopy(boxSel, r, m, no){
+  var box = $(boxSel), b = box.querySelector("#dc-copy");
+  if(!b) return;
+  b.onclick = function(){
+    var next = b.getAttribute("data-set") === "สำเนา" ? "ต้นฉบับ" : "สำเนา";
+    b.disabled = true; b.textContent = "กำลังวาด" + next + "…";
+    buildDocPage(r.doc, m, CFG.doc||{}, next).then(function(url){
+      box.querySelector("img.docimg").src = url;
+      bindLabelButtons(url, no + (next === "สำเนา" ? "-สำเนา" : "") + ".png", "a4");
+      bindDocCopy(boxSel, r, m, no);
+      b.setAttribute("data-set", next);
+      b.textContent = next === "สำเนา"
+        ? "← กลับไปดูต้นฉบับ (ให้ลูกค้า)" : "ดูสำเนา (เก็บส่งบัญชี)";
+      b.disabled = false;
+    }, function(e){
+      b.disabled = false; b.textContent = "ดูสำเนา (เก็บส่งบัญชี)";
+      toast("วาดสำเนาไม่สำเร็จ: " + (e && e.message ? e.message : e));
+    });
   };
 }
 

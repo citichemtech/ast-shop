@@ -25,11 +25,37 @@ var DOC_TYPE_NAMES = [
 ];
 
 var DOC_W = 1240, DOC_H = 1754;         /* A4 แนวตั้งที่ 150 dpi */
+
+/* ที่ 150 dpi ตัวอักษร 1 pt = 150/72 = 2.083 px
+   เจ้าของร้านขอเนื้อความ 10 pt และหัวเอกสาร 14 pt หลังเห็นใบที่พิมพ์จริงแล้วเล็กเกินไป
+   ตัวเลขข้างล่างจึงคิดจากหน่วย pt ไม่ใช่เดา px เอาเอง */
+function pt(n) { return Math.round(n * 150 / 72 * 10) / 10; }
+var F_BODY = pt(10), F_TITLE = pt(14), F_SMALL = pt(8.5), F_HEAD = pt(12);
 var C_TBL_HEAD = "#c9dbf0";             /* ฟ้าอ่อนแบบหัวตารางในใบจริง */
 var C_BAND = "#dce8f6";
 
-function docFont(sz, w) { return (w || 400) + " " + sz + 'px Prompt,"Noto Sans Thai",sans-serif'; }
-function docSerif(sz, w) { return (w || 400) + " " + sz + 'px Georgia,"Times New Roman",serif'; }
+/* เจ้าของร้านบอกว่าตัวหนังสือในใบที่พิมพ์ออกมาบางและเบลอ อ่านยาก
+   Prompt เป็นฟอนต์เส้นบางแบบเรขาคณิต พอย่อลงกระดาษแล้วหมึกลงไม่เต็มเส้น
+   จึงเปลี่ยนเป็น Sarabun ซึ่งเป็นฟอนต์มาตรฐานเอกสารราชการไทย เส้นหนากว่าและมีหัว
+   พร้อมยกน้ำหนักปกติจาก 400 เป็น 500 ทั้งใบ ให้ตัวอักษรเข้มขึ้นอีกชั้นหนึ่ง */
+var DOC_FF = 'Sarabun,"Noto Sans Thai",Prompt,sans-serif';
+function docWeight(w) { var n = Number(w || 400); return n < 500 ? 500 : n; }
+function docFont(sz, w) { return docWeight(w) + " " + sz + "px " + DOC_FF; }
+function docSerif(sz, w) { return docWeight(w) + " " + sz + 'px Georgia,"Times New Roman",serif'; }
+
+/* รอให้ Sarabun โหลดเสร็จก่อนวาด ไม่งั้นเบราว์เซอร์วาดด้วยฟอนต์สำรองไปแล้ว
+   ได้รูปที่ตัวอักษรคนละแบบกับที่ตั้งใจ · หมดเวลา 2.5 วิ ก็วาดต่อด้วยฟอนต์ที่มี
+   จะได้ไม่ค้างตอนเน็ตช้าหรือเปิดจากมือถือที่ต่อเน็ตไม่ได้ */
+var DOC_FONTS_DONE = false;
+function docFontsReady() {
+  if (DOC_FONTS_DONE || !document.fonts || !document.fonts.load) return Promise.resolve();
+  var want = ["500 21px Sarabun", "700 21px Sarabun", "italic 700 23px Sarabun"];
+  var load = Promise.all(want.map(function (f) {
+    return document.fonts.load(f, "กขคง0123").catch(function () {});
+  }));
+  var wait = new Promise(function (r) { setTimeout(r, 2500); });
+  return Promise.race([load, wait]).then(function () { DOC_FONTS_DONE = true; });
+}
 
 function money(n) {
   return (Math.round(Number(n || 0) * 100) / 100)
@@ -58,19 +84,19 @@ function roundRect(x, X, y, w, h, r) {
 function fitCenter(x, text, cx, y, maxW, size, weight, serif) {
   var s = size, f = serif ? docSerif : docFont;
   x.font = f(s, weight);
-  while (s > 7 && x.measureText(text).width > maxW) { s -= 0.5; x.font = f(s, weight); }
+  while (s > 12 && x.measureText(text).width > maxW) { s -= 0.5; x.font = f(s, weight); }
   x.textAlign = "center"; x.fillText(text, cx, y); x.textAlign = "left";
 }
 function fitLeft(x, text, X, y, maxW, size, weight, serif) {
   var s = size, f = serif ? docSerif : docFont;
   x.font = f(s, weight);
-  while (s > 7 && x.measureText(text).width > maxW) { s -= 0.5; x.font = f(s, weight); }
+  while (s > 12 && x.measureText(text).width > maxW) { s -= 0.5; x.font = f(s, weight); }
   x.fillText(text, X, y);
 }
 function fitRight(x, text, X, y, maxW, size, weight) {
   var s = size;
   x.font = docFont(s, weight);
-  while (s > 7 && x.measureText(text).width > maxW) { s -= 0.5; x.font = docFont(s, weight); }
+  while (s > 12 && x.measureText(text).width > maxW) { s -= 0.5; x.font = docFont(s, weight); }
   x.textAlign = "right"; x.fillText(text, X, y); x.textAlign = "left";
 }
 
@@ -84,6 +110,7 @@ async function buildDocPage(d, m, cfg, copy) {
   var W = DOC_W, H = DOC_H, pad = 46, IN = W - pad * 2;
   var c = document.createElement("canvas"); c.width = W; c.height = H;
   var x = c.getContext("2d");
+  await docFontsReady();
   x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
   x.textBaseline = "top";
   x.strokeStyle = "#000"; x.lineWidth = 1.3;
@@ -94,10 +121,10 @@ async function buildDocPage(d, m, cfg, copy) {
 
   /* ================= หัวกระดาษ ================= */
   var logo = await loadImg((cfg && cfg.logo) || (typeof DOC_LOGO !== "undefined" ? DOC_LOGO : ""));
-  if (logo) drawImgFit(x, logo, pad, 52, 218, 104);
+  if (logo) drawImgFit(x, logo, pad, 46, 218, 104);
   if (logo && co.nameEn) {
-    x.fillStyle = "#666";
-    fitCenter(x, co.nameEn, pad + 109, 160, 226, 8.5, 400);
+    x.fillStyle = "#000";
+    fitCenter(x, co.nameEn, pad + 109, 156, 226, 9, 400);
   }
 
   /* ตราชุดเอกสารมุมขวาบน — ใบชุดหนึ่งพิมพ์สองใบ ต้นฉบับให้ลูกค้า สำเนาเก็บบัญชี
@@ -106,29 +133,29 @@ async function buildDocPage(d, m, cfg, copy) {
   x.fillStyle = C_BAND; roundRect(x, bx, 44, bw, 54, 26); x.fill();
   x.strokeStyle = "#7f9dbb"; roundRect(x, bx, 44, bw, 54, 26); x.stroke();
   x.fillStyle = "#0b2545";
-  fitCenter(x, isCopy ? "สำเนา" : "ต้นฉบับ", bx + bw / 2, 52, bw - 20, 19, 700);
-  fitCenter(x, isCopy ? "(Copy)" : "(Original)", bx + bw / 2, 77, bw - 20, 11.5, 400);
+  fitCenter(x, isCopy ? "สำเนา" : "ต้นฉบับ", bx + bw / 2, 50, bw - 20, pt(11), 700);
+  fitCenter(x, isCopy ? "(Copy)" : "(Original)", bx + bw / 2, 76, bw - 20, F_SMALL, 400);
   x.strokeStyle = "#000"; x.lineWidth = 1.1;
   x.strokeRect(bx, 106, bw, 46);
   x.fillStyle = "#000";
-  fitCenter(x, isCopy ? "สำหรับบริษัท" : "สำหรับลูกค้า", bx + bw / 2, 112, bw - 12, 13, 400);
-  fitCenter(x, "เอกสารออกเป็นชุด", bx + bw / 2, 131, bw - 12, 10.5, 400);
+  fitCenter(x, isCopy ? "สำหรับบริษัท" : "สำหรับลูกค้า", bx + bw / 2, 111, bw - 12, pt(9), 400);
+  fitCenter(x, "เอกสารออกเป็นชุด", bx + bw / 2, 132, bw - 12, F_SMALL, 400);
   x.lineWidth = 1.3;
 
   /* ชื่อและที่อยู่ผู้ขาย จัดกึ่งกลางระหว่างโลโก้กับตราชุด */
   var hx = pad + 236, hw = bx - 12 - hx, hc = hx + hw / 2;
   x.fillStyle = "#000";
-  fitCenter(x, co.nameEn || "", hc, 56, hw, 24, 700, true);
-  fitCenter(x, (co.name || "") + (co.branch ? " (" + co.branch + ")" : ""), hc, 92, hw, 16, 400);
-  fitCenter(x, co.addr || "", hc, 116, hw, 14.5, 400);
+  fitCenter(x, co.nameEn || "", hc, 50, hw, pt(13), 700, true);
+  fitCenter(x, (co.name || "") + (co.branch ? " (" + co.branch + ")" : ""), hc, 84, hw, pt(10.5), 400);
+  fitCenter(x, co.addr || "", hc, 112, hw, F_BODY, 400);
   var l3 = [];
   if (cfg.website) l3.push("Website: " + cfg.website);
   if (co.taxId) l3.push("เลขประจำตัวผู้เสียภาษี: " + co.taxId);
-  fitCenter(x, l3.join("   "), hc, 139, hw, 14.5, 400);
+  fitCenter(x, l3.join("   "), hc, 140, hw, F_BODY, 400);
   var l4 = [];
   if (co.email) l4.push("E-mail: " + co.email);
   if (co.tel) l4.push("โทร: " + co.tel);
-  fitCenter(x, l4.join("   "), hc, 162, hw, 14.5, 400);
+  fitCenter(x, l4.join("   "), hc, 168, hw, F_BODY, 400);
 
   /* ================= กล่องชื่อเอกสาร (มุมมนแบบใบจริง) ================= */
   var t = null;
@@ -136,74 +163,74 @@ async function buildDocPage(d, m, cfg, copy) {
     if (DOC_TYPE_NAMES[ti].key === d.type) t = DOC_TYPE_NAMES[ti];
   }
   if (!t) t = DOC_TYPE_NAMES[2];
-  var ty0 = 196, tw = 700, tx0 = (W - tw) / 2, thh = 68;
+  var ty0 = 204, tw = 860, tx0 = (W - tw) / 2, thh = 84;
   x.lineWidth = 2; roundRect(x, tx0, ty0, tw, thh, 30); x.stroke(); x.lineWidth = 1.3;
 
   if (t.form.length) {
     /* ฟอร์มพิมพ์สี่ชื่อไว้ในใบเดียว ขีดเส้นใต้เฉพาะชื่อที่ใบนี้ใช้จริง
        ลูกค้าจึงอ่านออกว่าถือใบอะไรอยู่ โดยร้านใช้กระดาษแบบเดียว */
     var on = {}; t.form.forEach(function (i) { on[i] = 1; });
-    x.font = docFont(19, 700);
+    x.font = docFont(F_TITLE, 700);
     var sep = x.measureText("/").width, tot = 0;
     DOC_FORM_TH.forEach(function (n) { tot += x.measureText(n).width; });
     tot += sep * 3;
     var cx = W / 2 - tot / 2;
     DOC_FORM_TH.forEach(function (n, i) {
-      x.font = docFont(19, on[i] ? 700 : 400);
-      x.fillStyle = on[i] ? "#000" : "#9aa3ae";
-      x.fillText(n, cx, ty0 + 10);
+      x.font = docFont(F_TITLE, on[i] ? 700 : 400);
+      x.fillStyle = "#000";
+      x.fillText(n, cx, ty0 + 12);
       var w = x.measureText(n).width;
-      if (on[i]) { x.fillRect(cx, ty0 + 36, w, 2); }
+      if (on[i]) { x.fillRect(cx, ty0 + 46, w, 3); }
       cx += w;
-      if (i < 3) { x.font = docFont(19, 400); x.fillStyle = "#9aa3ae"; x.fillText("/", cx, ty0 + 10); cx += sep; }
+      if (i < 3) { x.font = docFont(F_TITLE, 400); x.fillText("/", cx, ty0 + 12); cx += sep; }
     });
-    x.fillStyle = "#333";
-    fitCenter(x, DOC_FORM_EN.join("/"), W / 2, ty0 + 44, tw - 30, 12.5, 400, true);
+    x.fillStyle = "#000";
+    fitCenter(x, DOC_FORM_EN.join("/"), W / 2, ty0 + 54, tw - 30, pt(8.5), 400, true);
   } else {
     x.fillStyle = "#000";
-    fitCenter(x, t.th, W / 2, ty0 + 9, tw - 30, 22, 700);
-    x.fillStyle = "#333";
-    fitCenter(x, t.en, W / 2, ty0 + 44, tw - 30, 13, 400, true);
+    fitCenter(x, t.th, W / 2, ty0 + 12, tw - 30, F_TITLE + 3, 700);
+    x.fillStyle = "#000";
+    fitCenter(x, t.en, W / 2, ty0 + 54, tw - 30, pt(9), 400, true);
   }
 
   /* ================= กล่องข้อมูลลูกค้า / ข้อมูลเอกสาร ================= */
-  var iy = ty0 + thh + 14, ih = 210, mid = pad + 690;
+  var iy = ty0 + thh + 14, ih = 250, mid = pad + 660;
   x.lineWidth = 1.6; x.strokeRect(pad, iy, IN, ih); x.lineWidth = 1.3;
   x.beginPath(); x.moveTo(mid, iy); x.lineTo(mid, iy + ih); x.stroke();
 
   function pair(label, val, lx, vx, yy, vw, bold) {
     x.fillStyle = "#000";
-    fitLeft(x, label, lx, yy, vx - lx - 8, 14.5, 400);
-    fitLeft(x, val || "", vx, yy, vw, 14.5, bold ? 700 : 400);
+    fitLeft(x, label, lx, yy, vx - lx - 8, F_BODY, 400);
+    fitLeft(x, val || "", vx, yy, vw, F_BODY, bold ? 700 : 500);
   }
-  var lx = pad + 16, lvx = pad + 210, lvw = mid - lvx - 16, ly = iy + 16;
-  pair("Name:", cu.name, lx, lvx, ly, lvw, true); ly += 40;
+  var lx = pad + 14, lvx = pad + 250, lvw = mid - lvx - 14, ly = iy + 16;
+  pair("Name:", cu.name, lx, lvx, ly, lvw, true); ly += 38;
   pair("หมายเลขประจำตัวผู้เสียภาษี:", cu.taxId ? cu.taxId + (cu.branch ? "   " + cu.branch : "") : "",
        lx, lvx, ly, lvw); ly += 36;
-  x.fillStyle = "#000"; fitLeft(x, "Address:", lx, ly, lvx - lx - 8, 14.5, 400);
-  x.font = docFont(14, 400);
+  x.fillStyle = "#000"; fitLeft(x, "Address:", lx, ly, lvx - lx - 8, F_BODY, 400);
+  x.font = docFont(F_BODY, 500);
   wrapText(x, cu.addr || "", lvw).slice(0, 2).forEach(function (ln, i) {
-    fitLeft(x, ln, lvx, ly + i * 21, lvw, 14);
+    fitLeft(x, ln, lvx, ly + i * 26, lvw, F_BODY);
   });
-  ly += 46;
-  pair("Tel:", cu.tel, lx, lvx, ly, lvw); ly += 30;
+  ly += 56;
+  pair("Tel:", cu.tel, lx, lvx, ly, lvw); ly += 32;
   pair("Email :", cu.email, lx, lvx, ly, lvw);
 
-  var rx = mid + 16, rvx = mid + 226, rvw = W - pad - rvx - 14, ry = iy + 16;
-  pair("เลขที่เอกสาร:", m.no, rx, rvx, ry, rvw, true); ry += 34;
-  pair("DATE:", docDate(m.date), rx, rvx, ry, rvw); ry += 34;
+  var rx = mid + 12, rvx = mid + 214, rvw = W - pad - rvx - 12, ry = iy + 16;
+  pair("เลขที่เอกสาร:", m.no, rx, rvx, ry, rvw, true); ry += 36;
+  pair("DATE:", docDate(m.date), rx, rvx, ry, rvw); ry += 36;
   if (d.type === "quote") pair("ยืนราคาถึง:", docDate(m.validTo), rx, rvx, ry, rvw);
   else pair("หมายเลขคำสั่งซื้อ:", m.po, rx, rvx, ry, rvw);
-  ry += 34;
-  pair("ผู้เสนอ/ พนักงานขาย :", m.seller, rx, rvx, ry, rvw); ry += 34;
-  pair("E-mail :", m.sellerEmail, rx, rvx, ry, rvw); ry += 34;
+  ry += 36;
+  pair("ผู้เสนอ/ พนักงานขาย :", m.seller, rx, rvx, ry, rvw); ry += 36;
+  pair("E-mail :", m.sellerEmail, rx, rvx, ry, rvw); ry += 36;
   pair("เงื่อนไขในการชำระเงิน:", m.terms, rx, rvx, ry, rvw);
 
   /* ================= เลขบัญชี + คำขอบคุณ ================= */
   var by = iy + ih + 14;
   x.fillStyle = "#000";
-  if (cfg.bank) { fitLeft(x, cfg.bank, pad + 12, by, IN - 24, 14, 400); by += 24; }
-  if (cfg.thanks) { fitLeft(x, cfg.thanks, pad + 12, by, IN - 24, 14, 400); by += 24; }
+  if (cfg.bank) { fitLeft(x, cfg.bank, pad + 12, by, IN - 24, pt(9.5), 400); by += 26; }
+  if (cfg.thanks) { fitLeft(x, cfg.thanks, pad + 12, by, IN - 24, pt(9.5), 400); by += 26; }
 
   /* ================= ตารางรายการ =================
      ใบจริงไม่มีเส้นคั่นระหว่างรายการ มีแต่กรอบนอกกับเส้นแบ่งคอลัมน์
@@ -216,15 +243,15 @@ async function buildDocPage(d, m, cfg, copy) {
     { th: "ราคา/หน่วย", en: "(Unit price)", w: 150, al: "r" },
     { th: "จำนวนเงิน", en: "(Amount)", w: 152, al: "r" }
   ];
-  var ty = by + 6, hh = 64, rowH = 58, ROWS = 10, bodyH = rowH * ROWS;
+  var ty = by + 6, hh = 70, rowH = 60, ROWS = 10, bodyH = rowH * ROWS;
   var xs = [pad]; COLS.forEach(function (cc) { xs.push(xs[xs.length - 1] + cc.w); });
 
   x.fillStyle = C_TBL_HEAD; x.fillRect(pad, ty, IN, hh);
   x.fillStyle = "#000";
   COLS.forEach(function (cc, i) {
     var cxm = xs[i] + cc.w / 2;
-    fitCenter(x, cc.th, cxm, ty + (cc.en ? 14 : 24), cc.w - 10, 15.5, 700);
-    if (cc.en) fitCenter(x, cc.en, cxm, ty + 38, cc.w - 10, 14, 700);
+    fitCenter(x, cc.th, cxm, ty + (cc.en ? 8 : 22), cc.w - 10, F_BODY, 700);
+    if (cc.en) fitCenter(x, cc.en, cxm, ty + 38, cc.w - 10, pt(9), 700);
   });
   x.strokeStyle = "#000"; x.lineWidth = 1.6;
   x.strokeRect(pad, ty, IN, hh + bodyH);
@@ -237,23 +264,23 @@ async function buildDocPage(d, m, cfg, copy) {
 
   var shown = d.lines.slice(0, ROWS), over = d.lines.length - shown.length;
   shown.forEach(function (ln, i) {
-    var ry2 = ty + hh + i * rowH + 13;
+    var ry2 = ty + hh + i * rowH + 14;
     x.fillStyle = "#000";
-    fitCenter(x, String(i + 1) + ".", xs[0] + COLS[0].w / 2, ry2, COLS[0].w - 10, 15);
+    fitCenter(x, String(i + 1) + ".", xs[0] + COLS[0].w / 2, ry2, COLS[0].w - 10, F_BODY);
     /* ชื่อสินค้ายาวตัดสองบรรทัดได้ ใบจริงก็ทำแบบนั้น (Single Flute Endmill 1F …) */
-    x.font = docFont(15, 400);
+    x.font = docFont(F_BODY, 500);
     var nm = wrapText(x, ln.name, COLS[1].w - 30).slice(0, 2);
-    nm.forEach(function (t2, k) { fitLeft(x, t2, xs[1] + 16, ry2 + k * 22, COLS[1].w - 30, 15); });
-    if (ln.po) fitLeft(x, ln.po, xs[2] + 10, ry2, COLS[2].w - 16, 14);
+    nm.forEach(function (t2, k) { fitLeft(x, t2, xs[1] + 16, ry2 + k * 26, COLS[1].w - 30, F_BODY); });
+    if (ln.po) fitLeft(x, ln.po, xs[2] + 10, ry2, COLS[2].w - 16, pt(9.5));
     /* หน่วยเขียนติดกับจำนวนในช่องเดียว ใบจริงไม่มีคอลัมน์หน่วยแยก */
     fitCenter(x, String(ln.qty) + (ln.unit ? " " + ln.unit : ""),
-              xs[3] + COLS[3].w / 2, ry2, COLS[3].w - 10, 15);
-    fitRight(x, money(ln.price), xs[4] + COLS[4].w - 16, ry2, COLS[4].w - 24, 15);
-    fitRight(x, money(ln.amount), xs[5] + COLS[5].w - 16, ry2, COLS[5].w - 24, 15);
+              xs[3] + COLS[3].w / 2, ry2, COLS[3].w - 10, F_BODY);
+    fitRight(x, money(ln.price), xs[4] + COLS[4].w - 16, ry2, COLS[4].w - 24, F_BODY);
+    fitRight(x, money(ln.amount), xs[5] + COLS[5].w - 16, ry2, COLS[5].w - 24, F_BODY);
   });
   if (over > 0) {
     x.fillStyle = "#b3261e";
-    fitLeft(x, "* ยังมีอีก " + over + " รายการที่พิมพ์ไม่พอในใบนี้", pad + 8, ty + hh + bodyH + 6, IN, 13, 700);
+    fitLeft(x, "* ยังมีอีก " + over + " รายการที่พิมพ์ไม่พอในใบนี้", pad + 8, ty + hh + bodyH + 6, IN, pt(9), 700);
   }
 
   /* ================= หมายเหตุ + ยอดรวม =================
@@ -261,16 +288,16 @@ async function buildDocPage(d, m, cfg, copy) {
   var fy = ty + hh + bodyH + (over > 0 ? 26 : 14);
   var sumX = pad + 700;
   x.fillStyle = "#000";
-  fitLeft(x, "หมายเหตุ:", pad + 8, fy, 300, 14.5, 400);
-  x.font = docFont(13.5, 400);
-  var ny = fy + 26, noteNo = 0;
+  fitLeft(x, "หมายเหตุ:", pad + 8, fy, 300, F_BODY, 400);
+  x.font = docFont(pt(9.5), 400);
+  var ny = fy + 30, noteNo = 0;
   /* ใส่เลขข้อเฉพาะบรรทัดที่มีข้อความจริง ไม่งั้นได้เลข 1 ลอยอยู่บรรทัดเปล่า */
   [m.note, cfg.terms].forEach(function (txt) {
     if (!String(txt || "").trim()) return;
     noteNo++;
     wrapText(x, txt, sumX - pad - 40).slice(0, 2).forEach(function (ln, k) {
-      fitLeft(x, (k ? "    " : noteNo + "  ") + ln, pad + 8, ny, sumX - pad - 30, 13.5);
-      ny += 21;
+      fitLeft(x, (k ? "    " : noteNo + "  ") + ln, pad + 8, ny, sumX - pad - 30, pt(9.5));
+      ny += 26;
     });
   });
 
@@ -286,9 +313,9 @@ async function buildDocPage(d, m, cfg, copy) {
   SUMS.forEach(function (s2, i) {
     if (i === 2) { x.fillStyle = C_BAND; x.fillRect(pad, sy - 4, IN, srh); }
     x.fillStyle = "#000";
-    fitRight(x, s2[0], labEnd, sy + (s2[2] ? 2 : 8), 330, 15, i === 2 ? 700 : 400);
-    if (s2[2]) fitRight(x, s2[2], labEnd, sy + 24, 330, 13, 700);
-    fitRight(x, s2[1], numEnd, sy + (i === 2 ? 10 : 8), 180, i === 2 ? 18 : 16, i === 2 ? 700 : 400);
+    fitRight(x, s2[0], labEnd, sy + (s2[2] ? 1 : 8), 330, F_BODY, i === 2 ? 700 : 500);
+    if (s2[2]) fitRight(x, s2[2], labEnd, sy + 27, 330, pt(9), 700);
+    fitRight(x, s2[1], numEnd, sy + (i === 2 ? 9 : 8), 180, i === 2 ? pt(12) : pt(11), i === 2 ? 700 : 500);
     x.strokeStyle = "#000"; x.lineWidth = 1.1;
     x.beginPath(); x.moveTo(i === 2 ? pad : sumX, sy + srh - 4); x.lineTo(W - pad, sy + srh - 4); x.stroke();
     x.lineWidth = 1.3;
@@ -296,19 +323,19 @@ async function buildDocPage(d, m, cfg, copy) {
   });
   /* จำนวนเงินเป็นตัวหนังสือ อยู่ในแถบเดียวกับยอดรวมทั้งสิ้น ตัวเอียงหนาแบบใบจริง */
   x.fillStyle = "#000";
-  x.font = "italic 700 19px Prompt,\"Noto Sans Thai\",sans-serif";
-  var bt = "(" + d.totalText + ")", bts = 19;
+  x.font = "italic 700 " + pt(11) + "px " + DOC_FF;
+  var bt = "(" + d.totalText + ")", bts = pt(11);
   while (bts > 10 && x.measureText(bt).width > sumX - pad - 40) {
-    bts -= 0.5; x.font = 'italic 700 ' + bts + 'px Prompt,"Noto Sans Thai",sans-serif';
+    bts -= 0.5; x.font = "italic 700 " + bts + "px " + DOC_FF;
   }
   x.textAlign = "center";
-  x.fillText(bt, pad + (sumX - pad) / 2, fy + 54 * 2 + 14);
+  x.fillText(bt, pad + (sumX - pad) / 2, fy + srh * 2 + 12);
   x.textAlign = "left";
 
   /* ================= ช่องลงลายมือชื่อ =================
      ยึดไว้ท้ายกระดาษเสมอ ไม่ลอยตามตาราง เพราะจำนวนรายการไม่เท่ากันทุกใบ
      กรอบมุมมนแบบใบจริง และเว้นที่เหนือเส้นไว้ให้เซ็นจริงได้ */
-  var sgH = 214, sgGap = 22;
+  var sgH = 232, sgGap = 22;
   var gy = Math.max(sy + 20, H - pad - sgH);
   var sgW = (IN - sgGap * 2) / 3;
   var SIGN = [
@@ -320,14 +347,14 @@ async function buildDocPage(d, m, cfg, copy) {
     var X = pad + (sgW + sgGap) * i;
     x.strokeStyle = "#000"; x.lineWidth = 1.4;
     roundRect(x, X, gy, sgW, sgH, 10); x.stroke(); x.lineWidth = 1.3;
-    x.strokeStyle = "#666"; x.setLineDash([3, 4]);
-    x.beginPath(); x.moveTo(X + 26, gy + 118); x.lineTo(X + sgW - 26, gy + 118); x.stroke();
-    x.beginPath(); x.moveTo(X + 88, gy + 186); x.lineTo(X + sgW - 26, gy + 186); x.stroke();
+    x.strokeStyle = "#000"; x.setLineDash([3, 4]);
+    x.beginPath(); x.moveTo(X + 26, gy + 120); x.lineTo(X + sgW - 26, gy + 120); x.stroke();
+    x.beginPath(); x.moveTo(X + 98, gy + 196); x.lineTo(X + sgW - 26, gy + 196); x.stroke();
     x.setLineDash([]); x.strokeStyle = "#000";
     x.fillStyle = "#000";
-    fitCenter(x, s3[0], X + sgW / 2, gy + 128, sgW - 18, 14.5, 400);
-    fitCenter(x, s3[1], X + sgW / 2, gy + 152, sgW - 18, 13, 400);
-    fitLeft(x, "ลงวันที่", X + 24, gy + 176, 62, 13.5, 400);
+    fitCenter(x, s3[0], X + sgW / 2, gy + 130, sgW - 18, F_BODY, 400);
+    fitCenter(x, s3[1], X + sgW / 2, gy + 158, sgW - 18, pt(9), 400);
+    fitLeft(x, "ลงวันที่", X + 24, gy + 184, 74, pt(9), 400);
   });
 
   return c.toDataURL("image/png");
