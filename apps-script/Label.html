@@ -72,16 +72,26 @@ async function buildLabel(o){
      ชื่อยาวจะย่อขนาดตัวอักษรให้พอดีกรอบ ไม่ล้นออกไปทับช่องอื่น */
   x.fillStyle="#000"; x.textAlign="center";
   var cx=pad+300+(IN-300-280)/2, hw=IN-300-280-20;
-  var head=(CFG.head1||"CHEMICAL INNOVATION TECHNOLOGY").split("\n");
-  if(CFG.head2) head=head.concat(String(CFG.head2).split("\n"));
-  head=head.filter(function(t){ return t.trim() }).slice(0,2);
-  var hsize=head.length>1?30:34;
-  head.forEach(function(t,i){
-    var sz=hsize;
-    x.font=F(sz,700);
-    while(sz>16 && x.measureText(t).width>hw){ sz-=2; x.font=F(sz,700) }
-    x.fillText(t, cx, hy + (head.length>1 ? 60+i*50 : 88));
-  });
+  var raw=(CFG.head1||"CHEMICAL INNOVATION TECHNOLOGY").split("\n");
+  if(CFG.head2) raw=raw.concat(String(CFG.head2).split("\n"));
+  raw=raw.filter(function(t){ return t.trim() });
+
+  /* ชื่อบริษัทภาษาไทยยาวกว่ากรอบที่มีให้ (541 px)
+     ของเดิมย่อขนาดตัวอักษรลงจนเหลือราว 19 px เพื่อบีบให้อยู่บรรทัดเดียว
+     พิมพ์ออกมาแล้วอ่านแทบไม่ออก และเล็กกว่าชื่อร้านที่อยู่ใต้มันเสียอีก
+     เปลี่ยนเป็นตัดขึ้นบรรทัดใหม่แทน แล้วค่อยลดขนาดถ้าเกินสามบรรทัดจริง ๆ
+     พื้นต่ำสุดคือ 24 px ไม่ยอมเล็กกว่านี้อีก */
+  var hsize=34, head=[];
+  for(; hsize>=24; hsize-=2){
+    x.font=F(hsize,700);
+    head=[];
+    raw.forEach(function(t){ head=head.concat(wrapText(x,t,hw)) });
+    if(head.length<=3) break;
+  }
+  head=head.slice(0,3);
+  x.font=F(hsize,700);
+  var lh=hsize+10, top=hy+(hh-head.length*lh)/2+6;
+  head.forEach(function(t,i){ x.fillText(t, cx, top+i*lh) });
 
   x.textAlign="right"; x.font=F(22,400);
   x.fillText("เลขที่ใบสั่งซื้อ",W-pad-16,hy+52);

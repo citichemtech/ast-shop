@@ -219,6 +219,68 @@ function setupDocSheet_(ss) {
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' ใบ ราวปีครึ่งที่ 20 ใบ/วัน)';
 }
 
+/* --------------------------------------------- ล้างออเดอร์ทดลองก่อนใช้งานจริง */
+
+/**
+ * ล้างออเดอร์ทั้งหมดออกให้เหลือศูนย์ — สำหรับตอนเลิกทดลองแล้วจะเริ่มคีย์ของจริง
+ *
+ * ล้างสามชีทที่ผูกกันเป็นชุดเดียว ต้องล้างพร้อมกัน ไม่งั้นข้อมูลค้างครึ่ง ๆ กลาง ๆ:
+ *   ออเดอร์_หัวบิล · ออเดอร์_รายการ · ตัดล็อต
+ * สต๊อกคงเหลือกับสรุปยอดขายเป็นสูตร จะกลับไปเป็นยอดยกมาเองเมื่อออเดอร์หายไป
+ * และล็อตที่เคยถูกตัดจะคืนจำนวนกลับให้เอง เพราะยอดตัดมาจากชีท ตัดล็อต
+ *
+ * ไม่แตะ: ฐานสินค้า · ล็อตสินค้า · รับเข้า · ตั้งค่า · ตั้งค่าแอป
+ * และ **ไม่แตะชีท เอกสาร** เพราะใบกำกับภาษีที่ออกไปแล้วเป็นเอกสารทางภาษีจริง
+ * ลบทิ้งไม่ได้แม้ออเดอร์ต้นทางจะถูกล้าง (ใบพิมพ์ซ้ำได้อยู่ เพราะเก็บรายการไว้ในใบ)
+ *
+ * ล้างแล้วเลขออเดอร์ใบต่อไปกลับไปเริ่มที่ AST-26-0001 ใหม่
+ * ส่วนเลขเอกสาร ONIV26 เดินต่อจากเดิม ไม่ถอยกลับ
+ *
+ * ต้องพิมพ์คำยืนยันมาด้วย กันกดพลาดจากเมนู เพราะกู้คืนไม่ได้
+ *   clearAllOrders('ล้างออเดอร์ทั้งหมด')
+ */
+function clearAllOrders(confirm) {
+  var WORD = 'ล้างออเดอร์ทั้งหมด';
+  if (String(confirm || '').trim() !== WORD) {
+    throw new Error('เพื่อกันกดพลาด ต้องสั่งแบบนี้:  clearAllOrders(\'' + WORD + '\')' +
+      '  — ล้างแล้วกู้คืนไม่ได้ ถ้ายังไม่แน่ใจให้สำรองชีทไว้ก่อน (ไฟล์ > สร้างสำเนา)');
+  }
+  var email = requireStaff_();
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var out = [], total = 0;
+    /* ล้างเฉพาะช่องกรอก ช่องสูตรไม่ถูกแตะเลย (clearRow_ เดินตาม IN เท่านั้น) */
+    [['head', SH.head.IN.no], ['item', SH.item.IN.no], ['cut', SH.cut.IN.no]]
+      .forEach(function (pair) {
+        var key = pair[0], col = pair[1];
+        var sh = sheet_(key);
+        var last = formulaLimit_(key);
+        var n = 0;
+        if (last >= DATA_ROW) {
+          var v = sh.getRange(DATA_ROW, col, last - DATA_ROW + 1, 1).getValues();
+          for (var i = 0; i < v.length; i++) {
+            if (v[i][0] !== '' && v[i][0] !== null) { clearRow_(key, DATA_ROW + i); n++; }
+          }
+        }
+        total += n;
+        out.push('  ' + SH[key].name + ': ล้าง ' + n + ' แถว');
+      });
+
+    SpreadsheetApp.flush();
+    writeLog_(email, 'ล้างออเดอร์', SH.head.name, '', 'ทั้งหมด', total, 0,
+      'เลิกทดลอง เริ่มคีย์ของจริง');
+
+    var msg = 'ล้างออเดอร์เรียบร้อย รวม ' + total + ' แถว\n' + out.join('\n') +
+      '\n\nใบต่อไปจะเป็น ' + peekNextOrderNo_() +
+      '\nชีท เอกสาร ไม่ถูกแตะ — ใบกำกับภาษีที่ออกไปแล้วยังอยู่ครบ';
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /* ------------------------------------------------- ซ่อมชีทสต๊อกที่ขึ้น #REF! */
 
 /**
@@ -247,14 +309,36 @@ function repairStockSheet() {
   }
 
   var before = countRef_(s, cols);
-  if (!before) return 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
+  var skew = countSkew_(s);
+  if (!before && !skew) return 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
 
   tmpl.copyTo(s.getRange(DATA_ROW + 1, 1, STOCK_LAST - DATA_ROW, cols));
   SpreadsheetApp.flush();
-  var after = countRef_(s, cols);
+  var after = countRef_(s, cols), skewAfter = countSkew_(s);
 
   var extra = repairSummaryRange_();
-  return 'ชีท ' + SH.stock.name + ': ซ่อมสูตร #REF! ' + before + ' ช่อง เหลือ ' + after + extra;
+  return 'ชีท ' + SH.stock.name + ': ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')' +
+    ' · ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')' + extra;
+}
+
+/**
+ * นับแถวที่ชี้ไปผิดตัวสินค้า
+ *
+ * ชีทนี้ผูกกับ ฐานสินค้า แบบแถวต่อแถว — แถว 20 ต้องชี้ไป ฐานสินค้า แถว 20
+ * พอมีคน "แทรกแถว" หรือ "ลบทั้งแถว" ในฐานสินค้า Google จะขยับเลขแถวในสูตรตาม
+ * ทั้งชีทจึงเลื่อนไม่ตรงกัน แถว 47 ไปชี้แถว 50 เป็นต้น
+ *
+ * อันตรายกว่า #REF! เพราะ #REF! เห็นชัดว่าพัง แต่แบบนี้ยังโชว์ตัวเลขสวย ๆ
+ * เพียงแต่เป็นยอดสต๊อกของสินค้าคนละตัว ไม่มีอะไรฟ้องเลยสักอย่าง
+ */
+function countSkew_(s) {
+  var f = s.getRange(DATA_ROW, 2, STOCK_LAST - DATA_ROW + 1, 1).getFormulas();
+  var n = 0;
+  for (var i = 0; i < f.length; i++) {
+    var m = /ฐานสินค้า'!\$B(\d+)/.exec(f[i][0] || '');
+    if (m && Number(m[1]) !== DATA_ROW + i) n++;
+  }
+  return n;
 }
 
 function countRef_(s, cols) {
