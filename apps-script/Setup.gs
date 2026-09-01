@@ -352,7 +352,9 @@ function repairStockSheet() {
   var skew = countSkew_(s);
   var flat = countFlat_(s, cols);
   if (!before && !skew && !flat && !fixed.length) {
-    return 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
+    var okMsg = 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
+    Logger.log(okMsg);
+    return okMsg;
   }
 
   tmpl.copyTo(s.getRange(DATA_ROW + 1, 1, STOCK_LAST - DATA_ROW, cols));
@@ -361,12 +363,14 @@ function repairStockSheet() {
 
   var flatAfter = countFlat_(s, cols);
   var extra = repairSummaryRange_();
-  return 'ชีท ' + SH.stock.name + ':\n' +
+  var msg = 'ชีท ' + SH.stock.name + ':\n' +
     (fixed.length ? '  ประกอบสูตรแถว 6 ที่ถูกพิมพ์ทับคืน ' + fixed.length + ' ช่อง (' +
       fixed.join(', ') + ')\n' : '') +
     '  ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')\n' +
     '  ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')\n' +
     '  ซ่อมช่องที่กลายเป็นเลขนิ่ง ' + flat + ' ช่อง (เหลือ ' + flatAfter + ')' + extra;
+  Logger.log(msg);
+  return msg;
 }
 
 /**
