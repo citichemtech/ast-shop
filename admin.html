@@ -1596,7 +1596,10 @@ input,select,textarea{font-family:inherit;font-size:16px}
       </span>
       <span class="gw-go">›</span>
     </button>
-    <p class="gw-note">ออเดอร์ทุกใบต้องคีย์ในระบบนั้นเท่านั้น ข้อมูลถึงจะเข้าชีทและตัดสต๊อกให้ · <a href="#" id="gw-edit">แก้ลิงก์</a></p>
+    <!-- คำอธิบายใต้ปุ่มถูกเอาออกตามที่เจ้าของร้านขอ ปุ่มบอกตัวเองได้อยู่แล้ว
+         สองอย่างที่เคยอยู่ตรงนี้ยังใช้ได้เหมือนเดิม เพียงแต่ไม่เกะกะหน้าจอ
+           แก้ลิงก์ปุ่ม  = กดค้างที่ปุ่มสองวินาที
+           ปักไอคอนโฮม = เปิด /key/ ของเว็บร้านโดยตรง -->
   </section>
   <div class="sec">
     <div class="sec-hd"><h2>Special Offers</h2><button class="seeall" data-go="shop">See all ›</button></div>
@@ -3985,8 +3988,23 @@ if($("#go-stock")) $("#go-stock").onclick=function(){
   if(!u) return;
   window.open(u, "_blank");
 };
-/* ปุ่มแก้ลิงก์ — เล็กแต่ต้องมี เวลาลิงก์เสียจะได้แก้เองที่หน้างาน
-   ไม่ต้องรอปล่อยไฟล์ใหม่ ซึ่งกว่าจะถึงมือทุกเครื่องใช้เวลาเป็นวัน */
+/* แก้ลิงก์ได้ด้วยการกดค้างที่ปุ่มสองวินาที
+   ยังต้องมีอยู่ เวลาลิงก์เสียจะได้แก้เองที่หน้างาน ไม่ต้องรอปล่อยไฟล์ใหม่
+   ซึ่งกว่าจะถึงมือทุกเครื่องใช้เวลาเป็นวัน
+   แต่ไม่ต้องมีตัวหนังสือใต้ปุ่มให้เกะกะ เพราะนาน ๆ ใช้ที */
+if($("#go-stock")){
+  var gwHold = null;
+  var gwStart = function(){
+    clearTimeout(gwHold);
+    gwHold = setTimeout(function(){ gwHold = null; askStockUrl(); }, 2000);
+  };
+  var gwStop = function(){ clearTimeout(gwHold); };
+  $("#go-stock").addEventListener("touchstart", gwStart, {passive:true});
+  $("#go-stock").addEventListener("mousedown", gwStart);
+  ["touchend","touchmove","touchcancel","mouseup","mouseleave"].forEach(function(ev){
+    $("#go-stock").addEventListener(ev, gwStop);
+  });
+}
 if($("#gw-edit")) $("#gw-edit").onclick=function(e){
   e.preventDefault(); askStockUrl();
 };
