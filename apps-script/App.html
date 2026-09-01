@@ -36,9 +36,12 @@ function call(fn, args, done, fail){
 }
 
 /* แบบ promise สำหรับจุดที่ต้องต่อหลายขั้น (ออกเลขเอกสาร → วาดกระดาษ → แชร์) */
-function api(fn, args){
+/* ส่งค่าได้หลายตัว ไม่ใช่ตัวเดียว — voidDoc ต้องส่งทั้งเลขใบ เหตุผล และชื่อคนกด
+   ที่เรียกด้วยค่าเดียวอยู่เดิมยังทำงานเหมือนเดิมทุกที่ */
+function api(fn){
+  var args = Array.prototype.slice.call(arguments, 1);
   return new Promise(function(res, rej){
-    call(fn, [args], res, function(m){ rej(new Error(m)) });
+    call(fn, args, res, function(m){ rej(new Error(m)) });
   });
 }
 
@@ -799,18 +802,74 @@ function drawOldDocs(orderNo, boxSel){
             +'<b>'+esc(d.no)+'</b>'
             +'<span>'+esc(d.type)+' · '+esc(d.date||"")+' · '+baht(d.total)
             + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
-            +'</span></div><div class="acts">'
+            +'</span>'
+            + (dead ? '<span style="color:var(--red)">'+esc(d.voidWhy)+'</span>' : '')
+            +'</div><div class="acts">'
             +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
+            /* ใบที่ยกเลิกไปแล้วไม่มีปุ่มให้กดซ้ำ เหตุผลครั้งแรกจะได้ไม่ถูกทับหาย */
+            + (dead ? '' : '<button class="mini red" data-vd="'+esc(d.no)+'">ยกเลิก</button>')
             +'</div></div>';
         }).join("")
       + '<div id="'+outId+'" style="margin-top:10px"></div>';
     box.querySelectorAll("[data-rp]").forEach(function(b){
       b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
     });
+    box.querySelectorAll("[data-vd]").forEach(function(b){
+      b.onclick = function(){ askVoid(b.getAttribute("data-vd"), b, orderNo, sel) };
+    });
   }, function(e){
     box.innerHTML = '<div class="hint" style="color:var(--red)">ดูใบเก่าไม่ได้: '
       + esc(e && e.message ? e.message : e) + '</div>';
   });
+}
+
+/* ยกเลิกเอกสารที่ออกผิด
+   ไม่ทำเป็น "แก้ไข" ที่เขียนทับใบเดิม เพราะใบที่ออกไปแล้วลูกค้าถืออยู่ในมือ
+   แก้ในระบบเงียบ ๆ แล้วใบสองใบไม่ตรงกันคือปัญหาตอนสรรพากรตรวจ
+   วิธีที่ถูกคือติดป้ายว่ายกเลิกพร้อมเหตุผล แล้วออกใบใหม่แทน */
+function askVoid(no, btn, orderNo, boxSel){
+  var row = btn.closest(".row");
+  if (row.querySelector(".vdbox")) { row.querySelector(".vd-why").focus(); return }
+
+  var box = document.createElement("div");
+  box.className = "vdbox";
+  box.innerHTML =
+    '<div class="hint" style="margin-bottom:6px">ยกเลิกใบ <b>'+esc(no)+'</b> — '
+      +'ใบเดิมยังเก็บไว้ในระบบและพิมพ์ดูย้อนหลังได้ แต่จะถูกตีตราว่ายกเลิก '
+      +'และออกใบใหม่ให้ออเดอร์นี้ได้ทันที</div>'
+    +'<input class="vd-why" placeholder="เหตุผล เช่น ออกผิดชนิดเอกสาร / ชื่อลูกค้าผิด">'
+    +'<div style="display:flex;gap:8px;margin-top:8px">'
+    +'<button class="mini red vd-go">ยืนยันยกเลิก</button>'
+    +'<button class="mini vd-no">ไม่ยกเลิก</button></div>'
+    +'<div class="vd-msg hint" style="margin-top:6px"></div>';
+  row.appendChild(box);
+
+  var why = box.querySelector(".vd-why");
+  var msg = box.querySelector(".vd-msg");
+  why.focus();
+  box.querySelector(".vd-no").onclick = function(){ box.remove() };
+  why.onkeydown = function(e){ if (e.key === "Enter") box.querySelector(".vd-go").click() };
+
+  box.querySelector(".vd-go").onclick = function(){
+    var r = why.value.trim();
+    if (r.length < 5) {
+      msg.style.color = "var(--red)";
+      msg.textContent = "ต้องบอกเหตุผลอย่างน้อย 5 ตัวอักษร — บัญชีกับสรรพากรจะอ่านช่องนี้";
+      why.focus();
+      return;
+    }
+    var go = box.querySelector(".vd-go");
+    go.disabled = true; go.textContent = "กำลังยกเลิก…";
+    msg.style.color = ""; msg.textContent = "";
+    api("voidDoc", no, r, byName()).then(function(){
+      toast("ยกเลิกใบ " + no + " แล้ว ออกใบใหม่ได้เลย");
+      drawOldDocs(orderNo, boxSel);
+    }, function(e){
+      go.disabled = false; go.textContent = "ยืนยันยกเลิก";
+      msg.style.color = "var(--red)";
+      msg.textContent = "ยกเลิกไม่สำเร็จ: " + (e && e.message ? e.message : e);
+    });
+  };
 }
 
 function reprint(no, btn, outSel){
@@ -1012,6 +1071,9 @@ function openDoc(o, preType){
       clientKey: "dc-"+o.no+"-"+type+"-"+Date.now()
     }).then(function(r){
       drawDoc(r, o, cust, type, readFormTicks());
+      /* รีเฟรชรายการใบที่ออกไปแล้วทันที ตอนที่รู้ตัวว่าออกผิดคือตอนเพิ่งเห็นใบ
+         ปุ่มยกเลิกจึงต้องอยู่ตรงนั้นเลย ไม่ใช่ต้องปิดหน้าต่างแล้วเปิดใหม่ */
+      drawOldDocs(o.no);
     }, function(e){
       btn.disabled=false;
       $("#dc-out").innerHTML='<div style="color:var(--red)">ออกเอกสารไม่สำเร็จ: '

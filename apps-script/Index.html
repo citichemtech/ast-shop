@@ -104,6 +104,12 @@ textarea{resize:vertical}
 .row .i b{display:block}
 .row .i span{font-size:0.82rem;color:var(--gray)}
 .row .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+/* กล่องถามเหตุผลตอนยกเลิกเอกสาร กินเต็มความกว้างของแถว ไม่เบียดปุ่ม */
+.row{flex-wrap:wrap}
+.vdbox{flex:0 0 100%;margin-top:10px;padding:11px;border:1px solid #f0c9c9;
+  border-radius:10px;background:#fff7f7}
+.vdbox input{margin:0}
+.row .i span+span{display:block;margin-top:2px}
 .sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
 .tag{display:inline-block;font-size:0.8rem;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
 .tag.ok{background:#e6f5ec;color:var(--green)}

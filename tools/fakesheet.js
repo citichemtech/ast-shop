@@ -344,7 +344,9 @@ function load(fixture, opts) {
   ctx.global = ctx;
   vm.createContext(ctx);
   var dir = path.join(__dirname, '..', 'apps-script');
-  ['Sheets.gs', 'Fefo.gs', 'Setup.gs', 'Api.gs'].forEach(function (f) {
+  /* Doc.gs ต้องโหลดด้วย ไม่งั้น issueDoc/voidDoc เรียก docType_ ไม่เจอ
+     ทะเบียนเอกสารเป็นของที่แก้ทีหลังไม่ได้ จึงต้องมีข้อสอบคุมเหมือนส่วนอื่น */
+  ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs'].forEach(function (f) {
     vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f });
   });
   ctx.__props = props;

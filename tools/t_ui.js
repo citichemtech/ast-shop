@@ -493,8 +493,76 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ราคามาตรฐานกลับมา', await page.locator(R1 + '.i-std').isVisible(), true);
   await page.screenshot({ path: 'out/ui-free-item.png' });
 
-  /* ---------- 16. ไม่มี error หลุดใน console ---------- */
-  console.log('\n16. ความสะอาดของหน้าเว็บ');
+  /* ---------- 16. เอกสารออกผิด: ยกเลิกใบเดิม แล้วออกใบใหม่ ----------
+     ใบที่ออกไปแล้วแก้ทับไม่ได้ เพราะลูกค้าถือใบเดิมอยู่ในมือ
+     ข้อสอบนี้จึงตรวจว่ากดยกเลิกได้จริง ต้องบอกเหตุผล และใบเดิมยังพิมพ์ย้อนหลังได้ */
+  console.log('\n16. ยกเลิกเอกสารที่ออกผิด');
+  await page.evaluate(function () { go('list'); });
+  await page.waitForTimeout(500);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec'); });
+  await page.waitForSelector('#dc-old .row', { timeout: 8000 });
+
+  /* ใบที่ออกไว้ในหมวด 14 ยังอยู่ในทะเบียน จึงใช้ใบนั้นเป็นตัวทดสอบได้เลย */
+  var VD = '#dc-old .row ';
+  eq('เห็นใบที่ออกไปแล้วหนึ่งใบ', await page.locator('#dc-old .row').count(), 1);
+  eq('ใบที่ยังใช้ได้ต้องมีปุ่มยกเลิก', await page.locator(VD + '[data-vd]').count(), 1);
+
+  await page.click(VD + '[data-vd]');
+  await page.waitForTimeout(200);
+  truthy('กดแล้วขึ้นช่องให้กรอกเหตุผล', await page.locator(VD + '.vd-why').isVisible());
+
+  console.log('\n   ไม่บอกเหตุผล ต้องยกเลิกให้ไม่ได้');
+  await page.fill(VD + '.vd-why', 'ผิด');
+  await page.click(VD + '.vd-go');
+  await page.waitForTimeout(300);
+  truthy('บอกว่าต้องใส่เหตุผลยาวกว่านี้',
+    /อย่างน้อย 5 ตัวอักษร/.test(await page.textContent(VD + '.vd-msg')));
+  eq('ยังไม่ถูกยกเลิก ปุ่มยกเลิกยังอยู่', await page.locator('#dc-old [data-vd]').count(), 1);
+
+  console.log('\n   กดไม่ยกเลิก ต้องปิดกล่องแล้วไม่มีอะไรเปลี่ยน');
+  await page.click(VD + '.vd-no');
+  await page.waitForTimeout(200);
+  eq('กล่องหายไป', await page.locator('#dc-old .vdbox').count(), 0);
+  eq('ใบยังใช้ได้อยู่', await page.locator('#dc-old [data-vd]').count(), 1);
+
+  console.log('\n   ยกเลิกจริง');
+  await page.click(VD + '[data-vd]');
+  await page.waitForTimeout(200);
+  await page.fill(VD + '.vd-why', 'ออกผิดชนิดเอกสาร ที่ถูกต้องเป็นใบเสนอราคา');
+  await page.click(VD + '.vd-go');
+  await page.waitForTimeout(700);
+  var oldTxt = await page.textContent('#dc-old');
+  truthy('ขึ้นป้ายว่ายกเลิกแล้ว', /ยกเลิกแล้ว/.test(oldTxt));
+  truthy('เห็นเหตุผลที่ยกเลิกในรายการ', /ออกผิดชนิดเอกสาร/.test(oldTxt));
+  eq('ใบที่ยกเลิกแล้วไม่มีปุ่มให้กดยกเลิกซ้ำ', await page.locator('#dc-old [data-vd]').count(), 0);
+  eq('แต่ยังกดพิมพ์ซ้ำได้อยู่', await page.locator('#dc-old [data-rp]').count(), 1);
+
+  console.log('\n   พิมพ์ซ้ำใบที่ยกเลิกแล้ว ต้องดูออกว่าใช้ไม่ได้');
+  await page.click('#dc-old [data-rp]');
+  await page.waitForSelector('#dc-old img.docimg', { timeout: 20000 });
+  await page.waitForTimeout(300);
+  truthy('เตือนว่าใบนี้ยกเลิกไปแล้ว',
+    /ถูกยกเลิกไปแล้ว/.test(await page.textContent('#dc-old')));
+
+  /* ตรา "ยกเลิก" ต้องถูกวาดลงบนกระดาษจริง ไม่ใช่ขึ้นแค่ข้อความบนหน้าจอ
+     เพราะรูปนี้คือสิ่งที่ถูกพิมพ์หรือส่งต่อ ข้อความบนหน้าจอไม่ติดไปด้วย */
+  var stamped = await page.evaluate(async function () {
+    var d = { lines: [{ name: 'x', qty: 1, price: 100, amount: 100 }],
+              base: 100, vat: 7, total: 107, sub: 100, disc: 0, ship: 0 };
+    var m = { no: 'X-1', date: '2026-09-01', cust: { name: 'ก' } };
+    var clean = await buildDocPage(d, m, CFG.doc || {}, 'ต้นฉบับ');
+    m.voidWhy = 'ออกผิดชนิดเอกสาร';
+    var dead = await buildDocPage(d, m, CFG.doc || {}, 'ต้นฉบับ');
+    return { same: clean === dead, len: dead.length };
+  });
+  eq('ใบที่ยกเลิกวาดออกมาไม่เหมือนใบปกติ', stamped.same, false);
+  truthy('และยังเป็นรูปที่มีเนื้อหาจริง', stamped.len > 30000);
+  await page.screenshot({ path: 'out/ui-void.png' });
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+
+  /* ---------- 17. ไม่มี error หลุดใน console ---------- */
+  console.log('\n17. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
   await browser.close();

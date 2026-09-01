@@ -153,6 +153,17 @@ window.google = { script: { run: (function(){
         }).reverse();
       });
     },
+    voidDoc: function(no, why, by){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+        if(!f) throw new Error("ไม่พบเอกสารเลขที่ " + no + " ในชีท เอกสาร");
+        if(f.voidWhy) throw new Error("ใบ " + no + " ถูกยกเลิกไปแล้ว (" + f.voidWhy + ")");
+        var r = String(why||"").trim();
+        if(r.length < 5) throw new Error("ต้องบอกเหตุผลที่ยกเลิกอย่างน้อย 5 ตัวอักษร");
+        f.voidWhy = r + " [ยกเลิกโดย " + (by||"") + " 01/09/2026 19:45]";
+        return { ok:true, no:f.no, type:f.type, orderNo:f.orderNo, voidWhy:f.voidWhy };
+      });
+    },
     getDoc: function(no){
       reply(function(){
         var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];

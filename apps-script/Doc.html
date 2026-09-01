@@ -395,6 +395,40 @@ async function buildDocPage(d, m, cfg, copy) {
     fitLeft(x, "ลงวันที่", X + 24, gy + 168, 74, pt(9), 400);
   });
 
+  /* ใบที่ยกเลิกแล้วต้องดูออกตั้งแต่แวบแรกว่าใช้ไม่ได้
+     ถ้าพิมพ์ออกมาแล้วหน้าตาเหมือนใบที่ยังใช้ได้เป๊ะ วันหนึ่งจะมีใครหยิบผิดไปให้ลูกค้า
+     ทับทั้งใบด้วยตัวอักษรโปร่ง จึงอ่านรายการข้างใต้ได้อยู่ แต่ปฏิเสธไม่ได้ว่าถูกยกเลิก */
+  if (m && m.voidWhy) stampVoid(x, W, H, m.voidWhy);
+
   return c.toDataURL("image/png");
+}
+
+function stampVoid(x, W, H, why) {
+  x.save();
+  x.translate(W / 2, H / 2);
+  x.rotate(-Math.PI / 7);
+  x.textAlign = "center";
+  x.textBaseline = "middle";
+
+  x.globalAlpha = 0.17;
+  x.fillStyle = "#c00";
+  x.font = docWeight(800) + ' 210px ' + DOC_FF;
+  x.fillText("ยกเลิก", 0, -40);
+  x.font = docWeight(700) + ' 74px ' + DOC_FF;
+  x.fillText("CANCELLED", 0, 96);
+
+  /* เหตุผลพิมพ์ทึบกว่าและตัวเล็ก อ่านออกจริงว่าใบนี้ยกเลิกเพราะอะไร
+     ตัดให้พอดีหน้ากระดาษ ไม่ปล่อยให้ล้นออกไปนอกขอบจนอ่านไม่จบประโยค */
+  x.globalAlpha = 0.62;
+  x.font = docWeight(600) + ' 26px ' + DOC_FF;
+  var line = String(why);
+  while (line.length > 8 && x.measureText(line).width > W - 150) line = line.slice(0, -1);
+  if (line.length < String(why).length) line = line.slice(0, -1) + "…";
+  x.fillText(line, 0, 214);
+
+  x.restore();
+  x.textAlign = "left";
+  x.textBaseline = "top";
+  x.globalAlpha = 1;
 }
 </script>

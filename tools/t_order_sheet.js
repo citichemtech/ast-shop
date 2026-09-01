@@ -585,5 +585,80 @@ var over18 = [];
 for (var n18 in fx18.sheets) over18 = over18.concat(fx18.sheets[n18].overwrittenFormulas);
 eq('สูตรของชีทยังอยู่ครบ', over18, []);
 
+/* ================= 19. เอกสารออกผิด — ยกเลิกใบเดิม แล้วออกใบใหม่แทน */
+console.log('\n19. ยกเลิกเอกสารที่ออกผิด');
+
+var fx19 = FS.build();
+var api19 = FS.load(fx19);
+api19.setup();
+var o19 = api19.createOrder(order({ cust: 'ลูกค้าที่พิมพ์ชื่อผิด' }));
+var doc19 = fx19.sheets['เอกสาร'];
+var DC = 5;   // E = เลขที่ออเดอร์
+var DV = 20;  // T = เหตุผลที่ยกเลิก
+
+var d1 = api19.issueDoc({
+  clientKey: 'dk-1', type: 'rec', orderNo: o19.no,
+  cust: { name: 'ชื่อที่พิมพ์ผิด', taxId: '0105500000000' }, by: 'น้องบี'
+});
+eq('ออกใบเสร็จ/ใบกำกับภาษีได้', d1.ok, true);
+
+console.log('\n   ยังไม่ยกเลิก ต้องออกใบชนิดเดิมซ้ำไม่ได้');
+throws('กันออกใบกำกับภาษีสองใบให้การขายครั้งเดียว', function () {
+  api19.issueDoc({ clientKey: 'dk-2', type: 'rec', orderNo: o19.no, cust: { name: 'ชื่อที่ถูก' } });
+}, 'ไปแล้วเป็นใบ');
+
+console.log('\n   เหตุผลสั้นไป ต้องไม่ยอมให้ยกเลิก');
+throws('บังคับให้บอกเหตุผล', function () { api19.voidDoc(d1.no, 'ผิด'); }, 'อย่างน้อย 5 ตัวอักษร');
+throws('ไม่บอกเลยก็ไม่ได้', function () { api19.voidDoc(d1.no, ''); }, 'อย่างน้อย 5 ตัวอักษร');
+throws('ใบที่ไม่มีจริง', function () { api19.voidDoc('ONIV26-99999', 'ออกผิดชนิดเอกสาร'); }, 'ไม่พบเอกสาร');
+
+var row19 = 0;
+for (var r19 = DATA_ROW; r19 <= doc19.getMaxRows(); r19++) {
+  if (doc19.cell(r19, 2).v === d1.no) { row19 = r19; break; }
+}
+eq('ยังไม่ถูกยกเลิก เพราะเหตุผลไม่ผ่าน', doc19.cell(row19, DV).v, '');
+
+console.log('\n   ยกเลิกจริง');
+var vd = api19.voidDoc(d1.no, 'ชื่อลูกค้าบนใบผิด ออกใบใหม่แทน', 'น้องบี');
+eq('บอกกลับมาว่ายกเลิกใบไหน', vd.no, d1.no);
+truthy2('เขียนเหตุผลลงชีทจริง', /ชื่อลูกค้าบนใบผิด/.test(String(doc19.cell(row19, DV).v)));
+truthy2('ติดชื่อคนกดยกเลิกไว้ด้วย', /ยกเลิกโดย น้องบี/.test(String(doc19.cell(row19, DV).v)));
+
+eq('แถวเดิมยังอยู่ ไม่ได้ถูกลบทิ้ง', doc19.cell(row19, 2).v, d1.no);
+eq('ยอดของใบเดิมไม่ถูกแตะ', doc19.cell(row19, 17).v > 0, true);
+eq('ยังอ้างออเดอร์เดิมอยู่', doc19.cell(row19, DC).v, o19.no);
+truthy2('ยังมีภาพถ่ายของใบไว้พิมพ์ย้อนหลัง', String(doc19.cell(row19, 21).v).length > 10);
+
+var back = api19.getDoc(d1.no);
+truthy2('ดึงใบที่ยกเลิกกลับมาดูได้', back.ok);
+truthy2('และบอกว่าถูกยกเลิกแล้ว', /ชื่อลูกค้าบนใบผิด/.test(back.meta.voidWhy));
+
+console.log('\n   ยกเลิกซ้ำใบเดิมไม่ได้ เหตุผลครั้งแรกจะได้ไม่ถูกทับ');
+var keep = String(doc19.cell(row19, DV).v);
+throws('บอกว่ายกเลิกไปแล้ว', function () { api19.voidDoc(d1.no, 'ลองยกเลิกซ้ำดู'); }, 'ถูกยกเลิกไปแล้ว');
+eq('เหตุผลเดิมยังอยู่ครบ', String(doc19.cell(row19, DV).v), keep);
+
+console.log('\n   ยกเลิกแล้วออกใบใหม่ให้ออเดอร์เดิมได้ทันที');
+var d2 = api19.issueDoc({
+  clientKey: 'dk-3', type: 'rec', orderNo: o19.no, cust: { name: 'ชื่อที่ถูกต้อง' }
+});
+eq('ออกใบใหม่ได้โดยไม่ต้องยืนยันซ้ำ', d2.ok, true);
+truthy2('เป็นเลขใบใหม่ ไม่เอาเลขเดิมมาใช้ซ้ำ', d2.no !== d1.no);
+
+var docs19 = api19.listDocs(o19.no);
+eq('ออเดอร์นี้มีสองใบในทะเบียน', docs19.length, 2);
+eq('ใบที่ยกเลิกยังอยู่ในรายการ พร้อมเหตุผล',
+  docs19.filter(function (d) { return d.voidWhy; }).length, 1);
+eq('และมีใบที่ยังใช้ได้อยู่หนึ่งใบ',
+  docs19.filter(function (d) { return !d.voidWhy; }).map(function (d) { return d.no; }), [d2.no]);
+
+eq('ลง Log ว่ายกเลิกใบไหน',
+  rowsWith(fx19.sheets['Log'], 2).map(function (r) { return fx19.sheets['Log'].cell(r, 4).v; })
+    .indexOf('ยกเลิกเอกสาร') > -1, true);
+
+var over19 = [];
+for (var n19 in fx19.sheets) over19 = over19.concat(fx19.sheets[n19].overwrittenFormulas);
+eq('ยกเลิกแล้วไม่มีสูตรถูกเขียนทับ', over19, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

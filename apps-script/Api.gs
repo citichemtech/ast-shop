@@ -280,6 +280,15 @@ function getOrders(limit) {
   return heads;
 }
 
+/* วันเวลาแบบไทยสั้น ๆ สำหรับติดท้ายเหตุผลที่ยกเลิก
+   ใช้เมธอดของ Date ตรง ๆ ซึ่งใน Apps Script อ่านตามเขตเวลาของสคริปต์อยู่แล้ว */
+function stampTime_() {
+  var d = new Date();
+  function p(n) { return n < 10 ? '0' + n : '' + n; }
+  return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() +
+    ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
 function isoDate_(d) {
   function p(n) { return n < 10 ? '0' + n : '' + n; }
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
@@ -509,6 +518,68 @@ function listDocs(orderNo) {
   /* ใบล่าสุดอยู่บนสุด คนมักพิมพ์ซ้ำใบที่เพิ่งออก */
   out.reverse();
   return want ? out : out.slice(0, 20);
+}
+
+/**
+ * ยกเลิกเอกสารที่ออกผิด
+ *
+ * ทำไมไม่ทำเป็น "ปุ่มแก้ไข" ที่เขียนทับใบเดิม: ใบที่ออกไปแล้วลูกค้าถืออยู่ในมือ
+ * ถ้าแก้ตัวเลขในระบบเงียบ ๆ ใบที่ลูกค้าถือกับในระบบจะไม่ตรงกัน ซึ่งเป็นปัญหา
+ * ตอนสรรพากรตรวจ และเป็นเหตุผลเดียวกับที่ระบบเก็บภาพถ่ายของใบไว้ตอนออก
+ *
+ * วิธีที่ถูกคือติดป้ายว่ายกเลิกพร้อมเหตุผล แล้วออกใบใหม่แทน
+ *   - แถวเดิมยังอยู่ครบ ทั้งเลขที่ ยอด และภาพถ่ายของใบ พิมพ์ออกมาดูย้อนหลังได้
+ *   - เลขเดิมไม่ถูกเอากลับมาใช้ซ้ำ (nextDocNo_ ยังนับเลขนั้นอยู่)
+ *   - ใบที่ยกเลิกแล้วไม่นับเป็นใบที่ยังใช้อยู่ จึงออกใบใหม่ให้ออเดอร์เดิมได้เลย
+ *     ไม่ต้องส่ง allowDup มาอีก
+ *
+ * ยกเลิกซ้ำใบเดิมไม่ได้ เพราะจะทับเหตุผลเดิมที่บันทึกไว้ครั้งแรกหายไป
+ */
+function voidDoc(no, why, by) {
+  var email = requireStaff_();
+  var want = String(no || '').trim();
+  if (!want) throw new Error('ไม่ได้บอกว่าจะยกเลิกใบไหน');
+
+  var reason = String(why || '').trim();
+  if (reason.length < 5) {
+    throw new Error('ต้องบอกเหตุผลที่ยกเลิกอย่างน้อย 5 ตัวอักษร — ' +
+      'ช่องนี้คือสิ่งที่บัญชีกับสรรพากรจะอ่านว่าทำไมใบนี้ถึงใช้ไม่ได้');
+  }
+  reason = reason.slice(0, 200);
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var s = sheet_('doc');
+    var last = formulaLimit_('doc');
+    var C = SH.doc.IN;
+    var n = Math.max(0, last - DATA_ROW + 1);
+    var v = n ? s.getRange(DATA_ROW, C.no, n, C.voidWhy - C.no + 1).getValues() : [];
+    for (var i = 0; i < v.length; i++) {
+      if (String(v[i][0] || '').trim() !== want) continue;
+
+      var had = String(v[i][C.voidWhy - C.no] || '').trim();
+      if (had) {
+        throw new Error('ใบ ' + want + ' ถูกยกเลิกไปแล้ว (' + had + ') — ' +
+          'ออกใบใหม่แทนได้เลย ไม่ต้องยกเลิกซ้ำ');
+      }
+
+      var th = String(v[i][C.type - C.no] || '').trim();
+      var ord = String(v[i][C.orderNo - C.no] || '').trim();
+      var who = String(by || '').trim().slice(0, 40) || email;
+      var stamp = reason + ' [ยกเลิกโดย ' + who + ' ' + stampTime_() + ']';
+
+      writeRow_('doc', DATA_ROW + i, { voidWhy: stamp });
+      SpreadsheetApp.flush();
+      writeLog_(email, 'ยกเลิกเอกสาร', SH.doc.name, want, th, 'ใช้ได้', 'ยกเลิก',
+        reason + (ord ? ' (ออเดอร์ ' + ord + ')' : ''));
+
+      return { ok: true, no: want, type: th, orderNo: ord, voidWhy: stamp };
+    }
+    throw new Error('ไม่พบเอกสารเลขที่ ' + want + ' ในชีท ' + SH.doc.name);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
