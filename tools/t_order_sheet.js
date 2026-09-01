@@ -547,7 +547,7 @@ for (var n17 in fx17.sheets) over17 = over17.concat(fx17.sheets[n17].overwritten
 eq('ล้างแล้วสูตรของชีทยังอยู่ครบ ไม่โดนล้างไปด้วย', over17, []);
 
 /* ============ 18. ปุ่ม Run ในหน้า Apps Script ส่งค่าเข้าฟังก์ชันไม่ได้ */
-console.log('\n18. สั่งล้างจากปุ่ม Run (ส่งค่าเข้าฟังก์ชันไม่ได้)');
+console.log('\n18. สั่งล้างจากปุ่ม Run (กดสองครั้ง)');
 
 var fx18 = FS.build();
 var api18 = FS.load(fx18);
@@ -555,22 +555,31 @@ api18.createOrder(order({ date: '2026-08-20' }));
 api18.createOrder(order({ date: isoToday() }));
 var h18 = fx18.sheets['ออเดอร์_หัวบิล'];
 
-throws('ยังไม่ปลดล็อก ต้องล้างไม่ได้', function () { api18.clearOldOrdersNow(); }, 'ยังไม่ได้ปลดล็อก');
-throws('ล้างทั้งหมดก็ต้องปลดล็อกก่อนเหมือนกัน',
-  function () { api18.clearAllOrdersNow(); }, 'ยังไม่ได้ปลดล็อก');
-eq('ออเดอร์ยังอยู่ครบ', rowsWith(h18, 1).length, 2);
+console.log('\n   กดครั้งแรก ต้องได้แต่ตัวเลข ยังไม่ลบ');
+var first = api18.clearOldOrdersNow();
+truthy2('บอกว่ายังไม่ได้ลบอะไร', /ยังไม่ได้ลบอะไรเลย/.test(first));
+truthy2('บอกให้กดซ้ำถึงจะล้างจริง', /กด Run ที่ clearOldOrdersNow อีกครั้ง/.test(first));
+truthy2('เห็นตัวเลขก่อนว่าจะหายกี่ใบ', /จะล้าง \(ก่อนวันนี้\): 1 ใบ/.test(first));
+eq('ออเดอร์ยังอยู่ครบสองใบ', rowsWith(h18, 1).length, 2);
 
-truthy2('ปลดล็อกแล้วบอกขั้นต่อไปให้ชัด', /clearOldOrdersNow/.test(api18.armClear()));
+console.log('\n   ปลดล็อกของคนละฟังก์ชันต้องไม่ทะลุถึงกัน');
+var firstAll = api18.clearAllOrdersNow();
+truthy2('กดตัวล้างทั้งหมดครั้งแรก ก็ยังไม่ลบเหมือนกัน', /ยังไม่ได้ลบอะไรเลย/.test(firstAll));
+eq('ยังอยู่ครบสองใบ', rowsWith(h18, 1).length, 2);
+
+console.log('\n   กดซ้ำครั้งที่สอง ถึงล้างจริง');
 api18.clearOldOrdersNow();
 eq('ล้างของเก่าไป เหลือของวันนี้', rowsWith(h18, 1).length, 1);
 
-throws('ปลดล็อกครั้งเดียวใช้ได้ครั้งเดียว กด Run ซ้ำต้องไม่ล้างซ้ำ',
-  function () { api18.clearAllOrdersNow(); }, 'ยังไม่ได้ปลดล็อก');
+console.log('\n   ปลดล็อกหมดไปกับการกดครั้งที่สอง กด Run ซ้ำต้องไม่ล้างซ้ำ');
+truthy2('กลับไปเป็นแค่รายงานอีกครั้ง',
+  /ยังไม่ได้ลบอะไรเลย/.test(api18.clearOldOrdersNow()));
 eq('ใบของวันนี้ยังอยู่', rowsWith(h18, 1).length, 1);
 
+console.log('\n   armClear ปลดล็อกล่วงหน้าให้ทั้งสองตัว กดครั้งเดียวก็ล้างเลย');
 api18.armClear();
 api18.clearAllOrdersNow();
-eq('ปลดล็อกใหม่แล้วล้างทั้งหมดได้จริง', rowsWith(h18, 1), []);
+eq('ล้างทั้งหมดแล้ว', rowsWith(h18, 1), []);
 
 var over18 = [];
 for (var n18 in fx18.sheets) over18 = over18.concat(fx18.sheets[n18].overwrittenFormulas);

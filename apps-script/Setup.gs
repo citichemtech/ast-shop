@@ -301,39 +301,78 @@ var ARM_KEY = 'arm_clear';
 var ARM_MINUTES = 5;
 
 function armClear() {
-  PropertiesService.getScriptProperties().setProperty(ARM_KEY, String(Date.now()));
+  [OLD_KEY_, ALL_KEY_].forEach(function (k) {
+    PropertiesService.getScriptProperties().setProperty(k, String(Date.now()));
+  });
   var msg = 'ปลดล็อกแล้ว มีเวลา ' + ARM_MINUTES + ' นาที\n\n' +
     'ขั้นต่อไป เลือกฟังก์ชันข้างบนแล้วกด Run\n' +
     '  clearOldOrdersNow  = ล้างออเดอร์เก่า เก็บของวันนี้ไว้\n' +
-    '  clearAllOrdersNow  = ล้างออเดอร์ทั้งหมด ไม่เหลือสักใบ\n\n' +
-    'อยากดูก่อนว่าจะหายกี่ใบ เลือก previewClearOldOrders กด Run ได้เลย ไม่ต้องปลดล็อก';
+    '  clearAllOrdersNow  = ล้างออเดอร์ทั้งหมด ไม่เหลือสักใบ';
   Logger.log(msg);
   return msg;
 }
 
-function checkArmed_(what) {
+/**
+ * กด Run ครั้งแรก = ยังไม่ลบ แต่รายงานว่าจะหายกี่ใบ แล้วปลดล็อกไว้ให้เอง
+ * กด Run ครั้งที่สองภายใน 5 นาที = ล้างจริง
+ *
+ * ไม่ต้องสลับช่องฟังก์ชันไปมา และไม่มีทางลบโดยยังไม่ได้เห็นตัวเลขก่อน
+ * เพราะครั้งแรกบังคับให้เห็นเสมอ
+ *
+ * ปลดล็อกแยกกันคนละฟังก์ชัน กด Run ที่ตัวล้างเฉพาะของเก่าไว้
+ * แล้วเผลอไปกดตัวล้างทั้งหมด จึงไม่ทะลุผ่านไปได้
+ */
+var OLD_KEY_ = ARM_KEY + '_old';
+var ALL_KEY_ = ARM_KEY + '_all';
+
+function armed_(key) {
   var p = PropertiesService.getScriptProperties();
-  var t = Number(p.getProperty(ARM_KEY) || 0);
-  var left = ARM_MINUTES * 60000 - (Date.now() - t);
-  if (!t || left <= 0) {
-    throw new Error('ยังไม่ได้ปลดล็อก (หรือปลดล็อกไว้เกิน ' + ARM_MINUTES + ' นาทีแล้ว)\n' +
-      'ให้เลือกฟังก์ชัน armClear กด Run ก่อน แล้วค่อยกลับมากด Run ที่ ' + what +
-      '\nอยากดูก่อนว่าจะหายกี่ใบโดยยังไม่ลบ ให้ Run ที่ previewClearOldOrders');
+  var t = Number(p.getProperty(key) || 0);
+  if (t && Date.now() - t < ARM_MINUTES * 60000) {
+    p.deleteProperty(key);   // ใช้แล้วหมดไป กด Run ซ้ำโดยไม่ตั้งใจจึงไม่ล้างซ้ำ
+    return true;
   }
-  /* ใช้แล้วหมดไปทันที กด Run ซ้ำโดยไม่ตั้งใจจึงไม่ล้างซ้ำ */
-  p.deleteProperty(ARM_KEY);
+  p.setProperty(key, String(Date.now()));
+  return false;
 }
 
-/** ล้างออเดอร์เก่า เก็บของวันนี้ไว้ — ต้อง Run ที่ armClear ก่อน */
+function again_(what) {
+  return '↑ ยังไม่ได้ลบอะไรเลย — ถ้าตัวเลขข้างบนถูกต้องแล้ว\n' +
+    '   กด Run ที่ ' + what + ' อีกครั้งภายใน ' + ARM_MINUTES + ' นาที จึงจะล้างจริง';
+}
+
+/** ล้างออเดอร์เก่า เก็บของวันนี้ไว้ — กด Run สองครั้ง */
 function clearOldOrdersNow() {
-  checkArmed_('clearOldOrdersNow');
+  if (!armed_(OLD_KEY_)) {
+    var msg = runClearOld_(false) + '\n\n' + again_('clearOldOrdersNow');
+    Logger.log(msg);
+    return msg;
+  }
   return runClearOld_(true);
 }
 
-/** ล้างออเดอร์ทั้งหมด ไม่เหลือสักใบ — ต้อง Run ที่ armClear ก่อน */
+/** ล้างออเดอร์ทั้งหมด ไม่เหลือสักใบ — กด Run สองครั้ง */
 function clearAllOrdersNow() {
-  checkArmed_('clearAllOrdersNow');
+  if (!armed_(ALL_KEY_)) {
+    requireStaff_();
+    var n = countOrders_();
+    var msg = 'ทดลองดูก่อน — ยังไม่ได้ลบอะไรเลย\n' +
+      '  จะล้างออเดอร์ทั้งหมด ' + n + ' ใบ ไม่เหลือสักใบ\n' +
+      '  ' + SH.doc.name + ': ไม่แตะเลย\n\n' + again_('clearAllOrdersNow');
+    Logger.log(msg);
+    return msg;
+  }
   return clearAllOrders('ล้างออเดอร์ทั้งหมด');
+}
+
+function countOrders_() {
+  var s = sheet_('head');
+  var last = formulaLimit_('head');
+  if (last < DATA_ROW) return 0;
+  var v = s.getRange(DATA_ROW, SH.head.IN.no, last - DATA_ROW + 1, 1).getValues();
+  var n = 0;
+  for (var i = 0; i < v.length; i++) if (String(v[i][0] || '').trim()) n++;
+  return n;
 }
 
 /**
