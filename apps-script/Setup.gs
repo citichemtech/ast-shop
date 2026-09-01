@@ -582,6 +582,72 @@ function checkSheet() {
   return msg;
 }
 
+/**
+ * ส่องสูตรของชีทออเดอร์ ว่ายังคำนวณได้อยู่ไหม
+ *
+ * ทำเพราะบันทึกออเดอร์แล้วชีทคำนวณยอดสินค้าได้ 0 ทั้งที่ควรได้ 178
+ * ด่านตรวจยอดจึงถอยใบนั้นออก (ซึ่งถูกแล้ว ดีกว่าปล่อยบิลยอดผิดค้างไว้)
+ * แต่ต้องรู้ให้ได้ว่าสูตรช่องไหนพัง ถึงจะซ่อมถูกจุด
+ *
+ * อ่านอย่างเดียว ไม่แก้ ไม่ลบ ไม่เขียนอะไรทั้งนั้น
+ */
+function checkFormulas() {
+  requireStaff_();
+  var out = [];
+
+  function dump(key, cols, labels) {
+    var cfg = SH[key];
+    var sh = sheet_(key);
+    var limit = formulaLimit_(key);
+    out.push('— ชีท ' + cfg.name + ' (สูตรลากถึงแถว ' + limit + ') —');
+    if (limit < DATA_ROW) { out.push('  ไม่มีสูตรเลยสักแถว'); out.push(''); return; }
+
+    /* แถว 6 เป็นแถวต้นแบบ ถ้าตรงนี้ไม่ใช่สูตร แถวอื่นก็มักไม่ใช่ตามไปด้วย */
+    for (var i = 0; i < cols.length; i++) {
+      var c = cols[i];
+      var f = sh.getRange(DATA_ROW, c).getFormula();
+      var v = sh.getRange(DATA_ROW, c).getValue();
+      out.push('  ' + sh.getRange(DATA_ROW, c).getA1Notation() + ' ' + labels[i] + ': ' +
+        (f ? f.slice(0, 96) : 'ไม่ใช่สูตรแล้ว! ค่าที่ค้างอยู่ = ' + JSON.stringify(v)));
+    }
+
+    /* นับทั้งชีทว่าช่องที่ควรเป็นสูตร กลายเป็นค่านิ่งไปกี่ช่อง */
+    var n = limit - DATA_ROW + 1;
+    var all = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
+    var flat = 0;
+    for (var r = 0; r < all.length; r++) {
+      for (var k = 0; k < (cfg.CALC || []).length; k++) {
+        var col = cfg.CALC[k];
+        if (col > all[r].length) continue;
+        if (String(all[r][col - 1] || '').charAt(0) !== '=') flat++;
+      }
+    }
+    out.push('  ช่องที่ควรเป็นสูตรแต่ไม่ใช่สูตรแล้ว: ' + flat + ' ช่อง');
+    out.push('');
+  }
+
+  dump('head', [SH.head.subtotal, 13, SH.head.net],
+       ['ยอดสินค้า', 'VAT', 'ยอดชำระสุทธิ']);
+  dump('item', [8, 10, 15, 16],
+       ['ราคามาตรฐาน', 'ยอดรวม', 'ลำดับในบิล', 'คีย์อ้างอิง']);
+
+  /* ราคาขายของสินค้าตัวอย่าง ใช้ดูว่าตัวคูณที่สูตรจะไปดึงมีค่าจริงไหม */
+  var rows = readAll_('prod');
+  var shown = 0;
+  out.push('— ราคาขายใน ฐานสินค้า (ตัวอย่าง) —');
+  for (var i = 0; i < rows.length && shown < 5; i++) {
+    var sku = String(rows[i][SH.prod.IN.sku - 1] || '').trim();
+    if (!sku) continue;
+    out.push('  ' + sku + '  ราคาขาย ' + JSON.stringify(rows[i][SH.prod.IN.price - 1]) +
+      '  ต้นทุน ' + JSON.stringify(rows[i][SH.prod.IN.cost - 1]));
+    shown++;
+  }
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 /* ------------------------------------------------- ซ่อมชีทสต๊อกที่ขึ้น #REF! */
 
 /**
