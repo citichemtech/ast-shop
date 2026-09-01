@@ -218,8 +218,14 @@ function build(opts) {
 
   /* ---- คิดสูตรที่ทดสอบต้องใช้จริง ---- */
   function recalc() {
+    /* ราคามาตรฐานอ่านจากชีท ฐานสินค้า ไม่ใช่จากรายการตั้งต้น
+       เพราะแอปเพิ่มสินค้าเข้าฐานเองได้ (ของซื้อมาขายไปที่พิมพ์ชื่อเอง)
+       ถ้าอ่านจากรายการตั้งต้น สินค้าที่เพิ่งเพิ่มจะหายไปจากสูตรของชีทจำลอง */
     var std = {};
-    demo.forEach(function (p) { std[p.sku] = p.price; });
+    for (var pr = DATA_ROW; pr <= 150; pr++) {
+      var psku = prod.cell(pr, 2).v;
+      if (psku) std[psku] = Number(prod.cell(pr, 8).v || 0);
+    }
 
     var seen = {};
     for (var r = DATA_ROW; r <= itemLimit; r++) {

@@ -170,6 +170,10 @@ window.google = { script: { run: (function(){
         if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
         var sub=0;
         p.items.forEach(function(it){
+          if(it.free){
+            sub+=Math.round(Number(it.qty)*(Number(it.price)||0)*100)/100;
+            return;
+          }
           var pr=MOCK_BOOT.products.filter(function(x){return x.sku===it.sku})[0];
           var unit=(it.price===""||it.price==null)?(pr?pr.price:0):Number(it.price);
           sub+=Math.round(Number(it.qty)*unit*100)/100;

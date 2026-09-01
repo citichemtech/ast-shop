@@ -417,8 +417,84 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal(); });
   await page.waitForTimeout(200);
 
-  /* ---------- 15. ไม่มี error หลุดใน console ---------- */
-  console.log('\n15. ความสะอาดของหน้าเว็บ');
+  /* ---------- 15. สินค้าซื้อมาขายไป: พิมพ์ชื่อเอง ไม่ต้องมีรหัส ----------
+     ของที่รับมาขายทีเดียวแล้วจบ ไม่คุ้มที่จะตั้งรหัสไว้ในฐานสินค้าล่วงหน้า
+     แต่ยอดขายต้องเข้าบิลถูก และถ้าใส่ต้นทุนมาด้วยก็ต้องได้กำไรจริง ไม่ใช่เดา */
+  console.log('\n15. สินค้าซื้อมาขายไป (พิมพ์ชื่อเอง)');
+  await page.evaluate(function () { go('new'); resetForm(); window.SENT = []; });
+  await page.waitForTimeout(200);
+  await page.fill('#f-cust', 'ลูกค้าซื้อมาขายไป');
+
+  var R1 = '#items .it:first-child ';
+  eq('ตั้งต้นยังเป็นแบบเลือกจากฐานสินค้า',
+    await page.locator(R1 + '.i-free').isChecked(), false);
+  eq('ช่องพิมพ์ชื่อเองยังซ่อนอยู่', await page.locator(R1 + '.i-name').isVisible(), false);
+
+  await page.check(R1 + '.i-free');
+  await page.waitForTimeout(150);
+  eq('ติ๊กแล้วซ่อนช่องเลือกรหัสสินค้า', await page.locator(R1 + '.i-sku').isVisible(), false);
+  eq('ติ๊กแล้วขึ้นช่องพิมพ์ชื่อ', await page.locator(R1 + '.i-name').isVisible(), true);
+  eq('ติ๊กแล้วขึ้นช่องต้นทุน', await page.locator(R1 + '.i-cost').isVisible(), true);
+  eq('ราคามาตรฐานหายไป เพราะของแบบนี้ไม่มีราคาป้าย',
+    await page.locator(R1 + '.i-std').isVisible(), false);
+
+  await page.fill(R1 + '.i-name', 'สายลมร้อน 2000W');
+  await page.fill(R1 + '.i-qty', '3');
+  await page.fill(R1 + '.i-price', '1200');
+  await page.waitForTimeout(200);
+  eq('ยอดสินค้าคิดจากราคาที่พิมพ์เอง', await page.textContent('#s-sub'), '฿3,600.00');
+  truthy('ไม่ใส่ต้นทุน ต้องเตือนว่ากำไรจะเกินจริง',
+    /กำไร.*สูงเกินจริง/.test(await page.textContent(R1 + '.lotline')));
+  eq('คำเตือนเป็นสีเหลือง ไม่ใช่สีแดงห้ามบันทึก',
+    await page.getAttribute('#items .it:first-child .lotline', 'class'), 'lotline warn');
+
+  console.log('\n   ไม่ใส่ราคาขาย ต้องไม่ยอมให้บันทึก');
+  await page.fill(R1 + '.i-price', '');
+  await page.click('#btn-save');
+  await page.waitForTimeout(300);
+  truthy('บอกว่าต้องใส่ราคาขายจริง',
+    /ต้องใส่ราคาขายจริง/.test(await page.textContent('#err')));
+  eq('ยังไม่ยิงขึ้นชีท', await page.evaluate(function () { return window.SENT.length }), 0);
+  await page.fill(R1 + '.i-price', '1200');
+
+  console.log('\n   ใส่ต้นทุน แล้วต้องบอกว่าจะเพิ่มเข้าฐานสินค้าให้');
+  await page.fill(R1 + '.i-cost', '820');
+  await page.waitForTimeout(200);
+  var fl = await page.textContent(R1 + '.lotline');
+  truthy('บอกว่าจะเพิ่มเข้าฐานสินค้า', /เพิ่ม.*เข้าฐานสินค้า/.test(fl));
+  truthy('บอกว่าจะลงรับเข้าเท่าที่ขาย สต๊อกจึงไม่ติดลบ', /รับเข้า 3 ชิ้น/.test(fl));
+  eq('ข้อความนี้เป็นสีเขียว', await page.getAttribute(R1 + '.lotline', 'class'), 'lotline ok');
+
+  console.log('\n   ปนกับสินค้าที่มีรหัสในใบเดียวกันได้');
+  await page.click('#btn-add');
+  await page.waitForTimeout(150);
+  await page.selectOption('#items .it:nth-child(2) .i-sku', 'SKU-141');
+  await page.fill('#items .it:nth-child(2) .i-qty', '2');
+  await page.waitForTimeout(250);
+  await page.click('#btn-save');
+  await page.waitForTimeout(600);
+  var sf = await page.evaluate(function () { return window.SENT[0]; });
+  eq('ส่งไปสองบรรทัด', sf.items.length, 2);
+  eq('บรรทัดพิมพ์ชื่อเองไม่มีรหัสสินค้าติดไป',
+    [sf.items[0].free, sf.items[0].sku, sf.items[0].name, sf.items[0].qty,
+     sf.items[0].price, sf.items[0].cost],
+    [true, '', 'สายลมร้อน 2000W', '3', '1200', '820']);
+  eq('บรรทัดสินค้าปกติยังส่งรหัสไปเหมือนเดิม',
+    [sf.items[1].free, sf.items[1].sku, sf.items[1].name, sf.items[1].qty],
+    [false, 'SKU-141', '', '2']);
+
+  console.log('\n   ติ๊กออกแล้วต้องกลับไปเลือกจากฐานสินค้าได้เหมือนเดิม');
+  await page.check(R1 + '.i-free');
+  await page.waitForTimeout(120);
+  await page.uncheck(R1 + '.i-free');
+  await page.waitForTimeout(150);
+  eq('ช่องเลือกรหัสกลับมา', await page.locator(R1 + '.i-sku').isVisible(), true);
+  eq('ช่องพิมพ์ชื่อหายไป', await page.locator(R1 + '.i-name').isVisible(), false);
+  eq('ราคามาตรฐานกลับมา', await page.locator(R1 + '.i-std').isVisible(), true);
+  await page.screenshot({ path: 'out/ui-free-item.png' });
+
+  /* ---------- 16. ไม่มี error หลุดใน console ---------- */
+  console.log('\n16. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
   await browser.close();

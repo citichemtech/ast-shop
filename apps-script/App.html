@@ -168,15 +168,21 @@ function addItem(v){
   d.innerHTML =
     '<div class="hd"><b>รายการที่ <span class="n"></span></b>'
    +'<button class="mini red rm" type="button">ลบ</button></div>'
-   +'<div class="fld" style="margin-bottom:8px"><select class="i-sku">'+prodOptions(v.sku)+'</select></div>'
+   +'<div class="fld sku-wrap" style="margin-bottom:8px"><select class="i-sku">'+prodOptions(v.sku)+'</select></div>'
+   /* ของซื้อมาขายไปไม่มีในฐานสินค้า และมักไม่ได้ขายซ้ำ — พิมพ์ชื่อลงไปตรง ๆ ได้เลย */
+   +'<div class="fld free-wrap" style="margin-bottom:8px;display:none">'
+   +'<input class="i-name" type="text" placeholder="พิมพ์ชื่อสินค้า" value="'+esc(v.name||"")+'"></div>'
    +'<div class="three">'
    +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
    +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||"")+'"></div>'
-   +'<div><label style="font-size:13px;color:var(--gray)">ราคามาตรฐาน</label>'
+   +'<div class="std-cell"><label style="font-size:13px;color:var(--gray)">ราคามาตรฐาน</label>'
    +'<input class="i-std" readonly tabindex="-1" style="background:#f2f4f7;color:var(--gray)"></div>'
+   +'<div class="cost-cell" style="display:none"><label style="font-size:13px;color:var(--gray)">ต้นทุน/หน่วย</label>'
+   +'<input class="i-cost" type="number" inputmode="decimal" min="0" placeholder="ไม่ใส่ก็ได้" value="'+(v.cost||"")+'"></div>'
    +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
    +'<input class="i-price" type="number" inputmode="decimal" min="0" placeholder="ปล่อยว่าง" value="'+(v.price||"")+'"></div>'
    +'</div>'
+   +'<label class="giftck"><input type="checkbox" class="i-free"'+(v.free?" checked":"")+'> ซื้อมาขายไป — พิมพ์ชื่อและราคาเอง ไม่ต้องมีรหัสสินค้า</label>'
    /* ของแถมต้องเป็นรายการสินค้าจริง ไม่ใช่ข้อความลอย ๆ สต๊อกจะได้ถูกตัดตามไปด้วย
       ว่าแถมอะไรไปกี่ชิ้น — ติ๊กช่องนี้แล้วราคาขายจริงกลายเป็น 0 */
    +'<label class="giftck"><input type="checkbox" class="i-gift"'+(v.gift?" checked":"")+'> แถมฟรี (ราคา 0 แต่ยังตัดสต๊อก)</label>'
@@ -190,6 +196,10 @@ function addItem(v){
   d.querySelector(".i-sku").onchange = function(){ recalc() };
   d.querySelector(".i-qty").oninput  = function(){ recalc() };
   d.querySelector(".i-price").oninput= function(){ recalc() };
+  d.querySelector(".i-name").oninput = function(){ recalc() };
+  d.querySelector(".i-cost").oninput = function(){ recalc() };
+  d.querySelector(".i-free").onchange = function(){ freeToggle(d) };
+  if(v.free) freeToggle(d);
   d.querySelector(".i-gift").onchange = function(){
     var pr = d.querySelector(".i-price");
     if (this.checked) { pr.value = "0"; pr.readOnly = true; pr.style.background = "#f2f4f7"; }
@@ -202,10 +212,26 @@ function addItem(v){
 function renumber(){
   itemRows().forEach(function(r,i){ r.querySelector(".n").textContent = i+1 });
 }
+
+/* สลับแถวระหว่าง "เลือกจากฐานสินค้า" กับ "พิมพ์ชื่อเอง"
+   ซ่อนช่องที่ไม่ใช้แทนที่จะเพิ่มช่องใหม่ แถวจึงสูงเท่าเดิม อ่านบนมือถือได้เหมือนกัน */
+function freeToggle(d){
+  var on = d.querySelector(".i-free").checked;
+  d.querySelector(".sku-wrap").style.display  = on ? "none" : "";
+  d.querySelector(".free-wrap").style.display = on ? "" : "none";
+  d.querySelector(".std-cell").style.display  = on ? "none" : "";
+  d.querySelector(".cost-cell").style.display = on ? "" : "none";
+  recalc();
+}
+function isFree(r){ return r.querySelector(".i-free").checked }
 function readItems(){
   return itemRows().map(function(r){
+    var free = isFree(r);
     return {
-      sku:   r.querySelector(".i-sku").value,
+      free:  free,
+      sku:   free ? "" : r.querySelector(".i-sku").value,
+      name:  free ? r.querySelector(".i-name").value.trim() : "",
+      cost:  free ? r.querySelector(".i-cost").value : "",
       qty:   r.querySelector(".i-qty").value,
       price: r.querySelector(".i-gift").checked ? "0" : r.querySelector(".i-price").value
     };
@@ -227,10 +253,19 @@ function suggestShip(sub){
 function recalc(){
   var sub = 0, need = {};
   itemRows().forEach(function(r){
-    var sku = r.querySelector(".i-sku").value;
-    var p   = prodBySku(sku);
     var qty = Number(r.querySelector(".i-qty").value)||0;
     var ov  = r.querySelector(".i-price").value;
+
+    /* แถวพิมพ์ชื่อเองไม่มีราคามาตรฐานให้ดึง ยอดจึงมาจากราคาที่กรอกล้วน ๆ
+       และไม่มีล็อตให้ตัด เพราะของยังไม่เคยเข้าสต๊อก */
+    if(isFree(r)){
+      if(qty>0) sub += Math.round(qty*(Number(ov)||0)*100)/100;
+      freeLine(r);
+      return;
+    }
+
+    var sku = r.querySelector(".i-sku").value;
+    var p   = prodBySku(sku);
     r.querySelector(".i-std").value = p ? Number(p.price).toFixed(2) : "";
     var unit = (ov==="" ? (p?Number(p.price):0) : Number(ov))||0;
     if(p && qty>0) sub += Math.round(qty*unit*100)/100;
@@ -241,10 +276,12 @@ function recalc(){
      แถวเดียวไม่ต้องเขียนทับ เพราะข้อความรายแถวบอกละเอียดกว่าอยู่แล้ว */
   var rowsPerSku = {};
   itemRows().forEach(function(r){
+    if(isFree(r)) return;
     var sku = r.querySelector(".i-sku").value;
     if(sku) rowsPerSku[sku] = (rowsPerSku[sku]||0) + 1;
   });
   itemRows().forEach(function(r){
+    if(isFree(r)) return;
     var sku = r.querySelector(".i-sku").value;
     if(!sku || rowsPerSku[sku] < 2) return;
     var lot = (BOOT&&BOOT.lots)?BOOT.lots[sku]:null;
@@ -272,6 +309,25 @@ function recalc(){
   $("#s-vat").textContent  = baht(vat);
   $("#s-vat-row").style.display = isVat ? "" : "none";
   $("#s-net").textContent  = baht(sub-disc+ship+vat);
+}
+
+/* บอกตรงนั้นเลยว่าติ๊กหรือไม่ติ๊กต้นทุนแล้วผลต่างกันยังไง
+   เพราะเป็นจุดเดียวที่ตัวเลขกำไรในชีทจะเพี้ยนได้โดยไม่มีอะไรฟ้อง */
+function freeLine(r){
+  var el = r.querySelector(".lotline");
+  el.className = "lotline"; el.textContent = "";
+  var nm = r.querySelector(".i-name").value.trim();
+  if(!nm) return;
+  var qty = Number(r.querySelector(".i-qty").value)||0;
+  if(r.querySelector(".i-cost").value === ""){
+    el.className = "lotline warn";
+    el.textContent = "ไม่ได้ใส่ต้นทุน — ยอดขายถูก แต่ชีทจะคิดต้นทุนเป็น 0 กำไรใบนี้จะสูงเกินจริง "
+      + "และของตัวนี้จะไม่เข้าฐานสินค้า";
+    return;
+  }
+  el.className = "lotline ok";
+  el.textContent = "จะเพิ่ม \u201C"+nm+"\u201D เข้าฐานสินค้าให้ พร้อมลงรับเข้า "+qty
+    + " ชิ้นเท่าที่ขาย สต๊อกจึงเป็นศูนย์ ไม่ติดลบ และกำไรคิดจากต้นทุนจริง";
 }
 
 function lotLine(r, p, sku){
@@ -324,11 +380,16 @@ function save(){
   if(SAVING) return;
   clearMsg();
 
-  var items = readItems().filter(function(it){ return it.sku });
+  var items = readItems().filter(function(it){ return it.free ? it.name : it.sku });
   if(!items.length){ showErr("ยังไม่ได้เลือกสินค้า"); return }
   for(var i=0;i<items.length;i++){
     var q=Number(items[i].qty);
     if(!(q>0)){ showErr("รายการที่ "+(i+1)+": ยังไม่ได้ใส่จำนวน"); return }
+    if(items[i].free && items[i].price===""){
+      showErr("รายการที่ "+(i+1)+" ("+esc(items[i].name)+"): สินค้าที่พิมพ์ชื่อเอง"
+        +" ต้องใส่ราคาขายจริงด้วย เพราะไม่มีราคามาตรฐานในฐานสินค้าให้ดึง");
+      return;
+    }
   }
   if(!$("#f-cust").value.trim()){ showErr("ยังไม่ได้ใส่ชื่อลูกค้า"); return }
 

@@ -371,5 +371,105 @@ throws('อ่านอีเมลไม่ออก → ปฏิเสธไ�
   FS.load(FS.build(), { email: '' }).createOrder(order());
 }, 'ไม่ทราบว่าคุณเป็นใคร');
 
+/* =========================== 16. สินค้าซื้อมาขายไป (พิมพ์ชื่อเอง ไม่มี SKU) */
+console.log('\n16. สินค้าซื้อมาขายไป');
+
+var fx16 = FS.build();
+var api16 = FS.load(fx16);
+var p16 = fx16.sheets['ฐานสินค้า'], rc16 = fx16.sheets['รับเข้า'];
+var it16 = fx16.sheets['ออเดอร์_รายการ'], hd16 = fx16.sheets['ออเดอร์_หัวบิล'];
+
+console.log('\n   ใส่ต้นทุนมาด้วย → ลงฐานสินค้าและลงรับเข้าให้ครบ');
+var f1 = api16.createOrder(order({
+  items: [{ free: true, name: 'สายลมร้อน 2000W', qty: 3, price: 1200, cost: 820 }]
+}));
+eq('บันทึกผ่าน', f1.ok, true);
+eq('ยอดสินค้า = 3 x 1200', f1.subtotal, 3600);
+
+var newRow = rowsWith(p16, 2).slice(-1)[0];
+eq('เพิ่มสินค้าเข้าฐานสินค้าหนึ่งแถว', rowsWith(p16, 2).length, fx16.demo.length + 1);
+eq('รหัสที่ออกให้เป็นชุด SKU-X', p16.cell(newRow, 2).v, 'SKU-X001');
+eq('อยู่หมวดซื้อมาขายไป ไม่ปนกับของในสต๊อกจริง', p16.cell(newRow, 3).v, 'ซื้อมาขายไป');
+eq('ชื่อสินค้าเก็บตามที่พิมพ์', p16.cell(newRow, 4).v, 'สายลมร้อน 2000W');
+eq('เก็บต้นทุนและราคาขายไว้ครบ', [p16.cell(newRow, 7).v, p16.cell(newRow, 8).v], [820, 1200]);
+eq('ยอดยกมาเป็นศูนย์ ของยังไม่เคยเข้าสต๊อก', p16.cell(newRow, 9).v, 0);
+
+var rcRow = rowsWith(rc16, 6).slice(-1)[0];
+eq('ลงรับเข้าให้หนึ่งแถว', rowsWith(rc16, 6).length, 1);
+eq('รับเข้าอ้างรหัสเดียวกับที่เพิ่งเพิ่ม', rc16.cell(rcRow, 6).v, 'SKU-X001');
+eq('รับเข้าเท่าจำนวนที่ขายพอดี สต๊อกจึงสุทธิเป็นศูนย์ ไม่ติดลบ', rc16.cell(rcRow, 8).v, 3);
+eq('ต้นทุนต่อหน่วยลงตามที่กรอก', rc16.cell(rcRow, 9).v, 820);
+eq('ประเภทเลือกจากรายการในชีท ไม่ใช่คำที่คิดเอง', rc16.cell(rcRow, 4).v, 'ซื้อเข้า');
+eq('อ้างเลขออเดอร์ไว้ ตามรอยกลับได้', rc16.cell(rcRow, 3).v, f1.no);
+
+eq('บรรทัดในออเดอร์อ้างรหัสที่เพิ่งออก ไม่ใช่ชื่อดิบ', it16.cell(6, 4).v, 'SKU-X001');
+eq('ชีทคิดยอดของบรรทัดนี้ได้ถูก', it16.cell(6, 10).v, 3600);
+eq('ลง Log ว่าสินค้าตัวนี้มาจากไหน',
+  rowsWith(fx16.sheets['Log'], 2).map(function (r) { return fx16.sheets['Log'].cell(r, 4).v; })
+    .indexOf('เพิ่มสินค้า') > -1, true);
+
+console.log('\n   ขายชื่อเดิมซ้ำที่ต้นทุนเดิม → ใช้รหัสเดิม ไม่สร้างรหัสใหม่');
+var f2 = api16.createOrder(order({
+  items: [{ free: true, name: '  สายลมร้อน 2000W ', qty: 1, price: 1250, cost: 820 }]
+}));
+eq('ไม่มีสินค้าใหม่เพิ่มอีก', rowsWith(p16, 2).length, fx16.demo.length + 1);
+eq('ยังใช้รหัสเดิม', it16.cell(7, 4).v, 'SKU-X001');
+eq('แต่ลงรับเข้าเพิ่มตามจำนวนที่ขายรอบนี้', rowsWith(rc16, 6).length, 2);
+eq('ราคาขายรอบนี้ต่างจากเดิมได้ ไม่ไปแก้ราคาในฐานสินค้า', p16.cell(newRow, 8).v, 1200);
+eq('ยอดใบนี้ใช้ราคาที่กรอกรอบนี้', f2.subtotal, 1250);
+
+console.log('\n   ชื่อเดิมแต่ต้นทุนเปลี่ยน → แยกรหัสใหม่ กำไรของใบเก่าจะได้ไม่เพี้ยนตาม');
+api16.createOrder(order({
+  items: [{ free: true, name: 'สายลมร้อน 2000W', qty: 2, price: 1300, cost: 900 }]
+}));
+var newRow2 = rowsWith(p16, 2).slice(-1)[0];
+eq('ได้รหัสใหม่', p16.cell(newRow2, 2).v, 'SKU-X002');
+eq('ต้นทุนของรหัสเดิมไม่ถูกแก้', p16.cell(newRow, 7).v, 820);
+eq('รหัสใหม่เก็บต้นทุนรอบนี้', p16.cell(newRow2, 7).v, 900);
+
+console.log('\n   ไม่ใส่ต้นทุน → ไม่ลงฐานสินค้า เขียนชื่อลงบรรทัดไปตรง ๆ');
+var before = rowsWith(p16, 2).length, beforeRecv = rowsWith(rc16, 6).length;
+var f4 = api16.createOrder(order({
+  items: [{ free: true, name: 'ขาตั้งชั่วคราว', qty: 2, price: 500, cost: '' }]
+}));
+eq('ยอดยังคิดถูก', f4.subtotal, 1000);
+eq('ไม่เพิ่มสินค้าเข้าฐาน', rowsWith(p16, 2).length, before);
+eq('ไม่ลงรับเข้า จะได้ไม่มีของผีอยู่ในสต๊อก', rowsWith(rc16, 6).length, beforeRecv);
+eq('ชื่อที่พิมพ์ไปอยู่ในช่องรหัสสินค้าของบรรทัดนั้น',
+  it16.cell(rowsWith(it16, 2).slice(-1)[0], 4).v, 'ขาตั้งชั่วคราว');
+
+console.log('\n   กรอกไม่ครบ ต้องปฏิเสธตั้งแต่ยังไม่เขียนอะไรลงชีท');
+var rows16 = rowsWith(hd16, 1).length;
+throws('พิมพ์ชื่อเองแต่ไม่ใส่ชื่อ', function () {
+  api16.createOrder(order({ items: [{ free: true, name: '  ', qty: 1, price: 100 }] }));
+}, 'ยังไม่ได้ใส่ชื่อ');
+throws('พิมพ์ชื่อเองแต่ไม่ใส่ราคาขาย', function () {
+  api16.createOrder(order({ items: [{ free: true, name: 'ของไม่มีราคา', qty: 1, price: '' }] }));
+}, 'ต้องใส่ราคาขายด้วย');
+throws('ต้นทุนติดลบ', function () {
+  api16.createOrder(order({ items: [{ free: true, name: 'ของทุนติดลบ', qty: 1, price: 10, cost: -5 }] }));
+}, 'ต้นทุนไม่ถูกต้อง');
+eq('ใบที่ปฏิเสธไม่ทิ้งหัวบิลไว้เลย', rowsWith(hd16, 1).length, rows16);
+
+console.log('\n   ล้มกลางทางหลังเขียนสินค้าไปแล้ว ต้องถอยให้เกลี้ยง');
+var fx16b = FS.build();
+var api16b = FS.load(fx16b);
+var p16b = fx16b.sheets['ฐานสินค้า'], rc16b = fx16b.sheets['รับเข้า'];
+var realRecalc16 = fx16b.recalc;
+fx16b.recalc = function () { realRecalc16(); fx16b.sheets['ออเดอร์_หัวบิล'].cell(6, 10).v = 1; };
+throws('บันทึกล้มกลางทาง', function () {
+  api16b.createOrder(order({
+    items: [{ free: true, name: 'ของที่บันทึกไม่สำเร็จ', qty: 1, price: 900, cost: 600 }]
+  }));
+});
+eq('ไม่มีหัวบิลค้าง', rowsWith(fx16b.sheets['ออเดอร์_หัวบิล'], 1), []);
+eq('ไม่มีสินค้าแปลกหน้าค้างในฐานสินค้า', rowsWith(p16b, 2).length, fx16b.demo.length);
+eq('ไม่มีแถวรับเข้าค้าง ทำให้สต๊อกเกินจริง', rowsWith(rc16b, 6), []);
+
+var over16 = [];
+for (var n16 in fx16.sheets) over16 = over16.concat(fx16.sheets[n16].overwrittenFormulas);
+for (var n16b in fx16b.sheets) over16 = over16.concat(fx16b.sheets[n16b].overwrittenFormulas);
+eq('ยังไม่มีสูตรถูกเขียนทับเลย', over16, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

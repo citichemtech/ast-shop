@@ -135,10 +135,12 @@ function readProducts_() {
     if (!sku) continue;
     out.push({
       sku: sku,
+      row: DATA_ROW + i,
       group: String(rows[i][SH.prod.IN.group - 1] || ''),
       name: String(rows[i][SH.prod.IN.name - 1] || ''),
       unit: String(rows[i][SH.prod.IN.unit - 1] || 'ชิ้น'),
       perPack: Number(rows[i][SH.prod.IN.perPack - 1] || 1),
+      cost: Number(rows[i][SH.prod.IN.cost - 1] || 0),
       price: Number(rows[i][SH.prod.IN.price - 1] || 0),
       remain: stock[sku] === undefined ? null : stock[sku]
     });
@@ -650,7 +652,7 @@ function createOrder(payload) {
     throw new Error('มีคนกำลังบันทึกออเดอร์อยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
   }
 
-  var written = { head: 0, item: [], cut: [] };
+  var written = { head: 0, item: [], cut: [], prod: [], recv: [] };
   try {
     done = props.getProperty('ck_' + clientKey);
     if (done) return { ok: true, no: done, duplicate: true };
@@ -667,6 +669,15 @@ function createOrder(payload) {
     writeLog_(email, 'บันทึกออเดอร์', SH.head.name, no,
       'สร้างออเดอร์ใหม่', '', String(plan.items.length) + ' รายการ',
       'คีย์ออเดอร์จากแอป โดย ' + plan.staff + ' (บัญชี ' + email + ')');
+
+    /* สินค้าที่แอปเพิ่มเข้าฐานสินค้าเอง ต้องมีร่องรอยว่ามาจากไหน
+       ไม่งั้นเปิดชีทมาเจอรหัสแปลกหน้าโผล่มาเฉย ๆ แล้วไม่มีใครกล้าลบ */
+    for (var np = 0; np < plan.newProds.length; np++) {
+      writeLog_(email, 'เพิ่มสินค้า', SH.prod.name, plan.newProds[np].sku,
+        'ซื้อมาขายไป', '', plan.newProds[np].name,
+        'พิมพ์ชื่อสินค้าเองตอนคีย์ออเดอร์ ' + no + ' ทุน ' + plan.newProds[np].cost +
+        ' ขาย ' + plan.newProds[np].price + ' (ลงรับเข้าเท่าที่ขายแล้ว สต๊อกจึงเป็นศูนย์)');
+    }
 
     return { ok: true, no: no, subtotal: plan.subtotal, net: plan.net, lots: plan.lotNote };
   } catch (err) {
@@ -699,22 +710,66 @@ function planOrder_(p, email) {
   var subtotal = 0;
   var lotNote = [];
 
+  /* สินค้าซื้อมาขายไปที่พิมพ์ชื่อเอง — เตรียมเลขรหัสไว้ก่อน แต่ยังไม่เขียนลงชีท
+     เพราะขั้นวางแผนต้องไม่แตะชีทเลย ถ้าล้มกลางทางจะได้ไม่มีอะไรค้าง */
+  var newProds = [], recvRows = [], freeSeq = nextFreeSeq_(plist);
+
   for (var k = 0; k < rawItems.length; k++) {
     var it = rawItems[k];
-    var sku = String(it.sku || '').trim();
-    var prod = prods[sku];
-    if (!prod) throw new Error('บรรทัดที่ ' + (k + 1) + ': ไม่พบ SKU "' + sku + '" ในฐานสินค้า');
+    var free = !!it.free;
+    var sku, prod;
 
     var qty = Number(it.qty);
     if (!(qty > 0) || qty !== Math.floor(qty)) {
-      throw new Error('บรรทัดที่ ' + (k + 1) + ' (' + sku + '): จำนวนต้องเป็นจำนวนเต็มมากกว่า 0');
+      throw new Error('บรรทัดที่ ' + (k + 1) + ': จำนวนต้องเป็นจำนวนเต็มมากกว่า 0');
     }
 
     var price = (it.price === '' || it.price === null || it.price === undefined)
       ? null : Number(it.price);
     if (price !== null && !(price >= 0)) {
-      throw new Error('บรรทัดที่ ' + (k + 1) + ' (' + sku + '): ราคาขายจริงไม่ถูกต้อง');
+      throw new Error('บรรทัดที่ ' + (k + 1) + ': ราคาขายจริงไม่ถูกต้อง');
     }
+
+    if (free) {
+      var nm = String(it.name || '').trim();
+      if (!nm) throw new Error('บรรทัดที่ ' + (k + 1) + ': พิมพ์ชื่อสินค้าเองแล้ว แต่ยังไม่ได้ใส่ชื่อ');
+      if (price === null) {
+        throw new Error('บรรทัดที่ ' + (k + 1) + ' (' + nm + '): สินค้าที่พิมพ์ชื่อเอง ' +
+          'ต้องใส่ราคาขายด้วย เพราะไม่มีราคามาตรฐานในฐานสินค้าให้ดึง');
+      }
+      var cost = (it.cost === '' || it.cost === null || it.cost === undefined)
+        ? null : Number(it.cost);
+      if (cost !== null && !(cost >= 0)) {
+        throw new Error('บรรทัดที่ ' + (k + 1) + ' (' + nm + '): ต้นทุนไม่ถูกต้อง');
+      }
+
+      if (cost === null) {
+        /* ไม่กรอกต้นทุน = ไม่ลงฐานสินค้า เขียนชื่อลงช่องรหัสสินค้าไปตรง ๆ
+           ยอดรวมของบิลยังถูก เพราะสูตรยอดรวมใช้ราคาขายจริงคูณจำนวน
+           แต่ชีทจะคิดต้นทุน 0 กำไรจึงดูเต็มราคาขาย — แอปเตือนไว้แล้วตอนคีย์ */
+        sku = nm;
+        prod = { sku: nm, name: nm, price: price };
+      } else {
+        /* กรอกต้นทุน = ลงฐานสินค้าให้ พร้อมลงรับเข้าเท่าจำนวนที่ขาย
+           สต๊อกจึงสุทธิเป็นศูนย์ ไม่ติดลบ และต้นทุนกำไรตรงตามจริง
+           ชื่อซ้ำกับที่เคยขายไปแล้วให้ใช้รหัสเดิม ไม่สร้างรหัสใหม่ทุกครั้ง */
+        var hit = findFreeProduct_(plist, nm, cost);
+        if (hit) {
+          sku = hit.sku;
+        } else {
+          sku = 'SKU-X' + pad3_(freeSeq++);
+          newProds.push({ sku: sku, name: nm, cost: cost, price: price });
+          plist.push({ sku: sku, name: nm, price: price, cost: cost, row: 0 });
+        }
+        prod = { sku: sku, name: nm, price: price };
+        recvRows.push({ sku: sku, name: nm, qty: qty, cost: cost });
+      }
+    } else {
+      sku = String(it.sku || '').trim();
+      prod = prods[sku];
+      if (!prod) throw new Error('บรรทัดที่ ' + (k + 1) + ': ไม่พบ SKU "' + sku + '" ในฐานสินค้า');
+    }
+
     subtotal += round2_(qty * (price === null ? prod.price : price));
 
     var lineNo = k + 1;
@@ -768,14 +823,103 @@ function planOrder_(p, email) {
     status: status, staff: String(p.by || '').trim().slice(0, 40) || email,
     note: String(p.note || '').trim(),
     items: items, cuts: cuts,
+    newProds: newProds, recvRows: recvRows,
+    recvType: recvRows.length ? pickRecvType_(lists.recvType) : '',
     subtotal: round2_(subtotal),
     lotNote: lotNote
   };
 }
 
+/* ---------------------------------------------- สินค้าซื้อมาขายไปที่พิมพ์ชื่อเอง */
+
+var FREE_GROUP = 'ซื้อมาขายไป';
+
+function pad3_(n) { return ('00' + n).slice(-3); }
+
+/**
+ * ประเภทของแถว รับเข้า สำหรับของซื้อมาขายไป
+ *
+ * ช่องนี้มี data validation ผูกกับรายการในชีท ตั้งค่า ถ้าเขียนคำที่ไม่อยู่ในรายการ
+ * ชีทจะขึ้นสามเหลี่ยมเตือนทุกแถว จึงเลือกจากรายการจริงเสมอ ไม่ฮาร์ดโค้ด
+ */
+function pickRecvType_(list) {
+  list = list || [];
+  for (var i = 0; i < list.length; i++) if (list[i].indexOf('ซื้อ') > -1) return list[i];
+  return list.length ? list[0] : 'ซื้อเข้า';
+}
+
+/** เลขรหัสถัดไปของชุด SKU-X — ดูจากที่มีอยู่จริง ไม่ใช่นับจำนวนแถว */
+function nextFreeSeq_(plist) {
+  var max = 0;
+  for (var i = 0; i < plist.length; i++) {
+    var m = /^SKU-X(\d+)$/.exec(String(plist[i].sku || ''));
+    if (m) { var n = Number(m[1]); if (n > max) max = n; }
+  }
+  return max + 1;
+}
+
+/**
+ * เคยขายของชื่อนี้ที่ต้นทุนเท่านี้ไปแล้วหรือยัง
+ *
+ * ต้องตรงทั้งชื่อและต้นทุน ไม่ใช่ชื่ออย่างเดียว เพราะช่องต้นทุนใน ฐานสินค้า
+ * เป็นตัวที่สูตรของ ออเดอร์_รายการ ดึงไปคิดกำไรของ "ทุกใบ" ที่ใช้รหัสนั้น
+ * ถ้าของชื่อเดิมรอบนี้ซื้อมาแพงขึ้นแล้วไปทับต้นทุนของแถวเดิม
+ * กำไรของออเดอร์เก่าที่ปิดไปแล้วจะเปลี่ยนตามไปด้วยโดยไม่มีใครรู้
+ * ต้นทุนคนละราคาจึงแยกเป็นคนละรหัส แล้วไม่ต้องแก้แถวเดิมเลยสักครั้ง
+ */
+function findFreeProduct_(plist, name, cost) {
+  var key = String(name).trim().toLowerCase();
+  for (var i = 0; i < plist.length; i++) {
+    if (!/^SKU-X\d+$/.test(String(plist[i].sku || ''))) continue;
+    if (String(plist[i].name || '').trim().toLowerCase() !== key) continue;
+    if (Math.abs(Number(plist[i].cost || 0) - Number(cost)) > 0.005) continue;
+    return plist[i];
+  }
+  return null;
+}
+
 /** เขียนจริง — เรียกได้เฉพาะตอนถือ lock อยู่ */
 function commitOrder_(plan) {
-  var written = { head: 0, item: [], cut: [] };
+  var written = { head: 0, item: [], cut: [], prod: [], recv: [] };
+
+  /* สินค้าซื้อมาขายไปที่พิมพ์ชื่อเอง — ลงฐานสินค้าก่อน แล้วลงรับเข้าเท่าที่ขาย
+     สต๊อกจึงสุทธิเป็นศูนย์แทนที่จะติดลบ และต้นทุนกำไรของใบนี้คำนวณได้จริง */
+  if (plan.newProds.length) {
+    var stockLimit = formulaLimit_('stock');
+    var pRows = nextRows_('prod', SH.prod.IN.sku, plan.newProds.length);
+    if (!pRows.length) throw new Error('ชีท ' + SH.prod.name + ' เหลือที่ว่างไม่พอ ' +
+      plan.newProds.length + ' รายการ (สูตรมีถึงแถว ' + formulaLimit_('prod') + ') — ต้องลากสูตรลงเพิ่มก่อน');
+    for (var a = 0; a < pRows.length; a++) {
+      /* สต๊อกคงเหลือ ผูกกับ ฐานสินค้า แบบแถวต่อแถว ถ้าเลยแถวสุดท้ายที่มีสูตร
+         สินค้าตัวใหม่จะไม่มียอดคงเหลือ และไม่มีอะไรฟ้อง — กันไว้ตรงนี้ */
+      if (pRows[a] > stockLimit) {
+        throw new Error('ชีท ' + SH.stock.name + ' มีสูตรถึงแถว ' + stockLimit +
+          ' แต่สินค้าใหม่จะลงแถว ' + pRows[a] + ' — ต้องลากสูตรของ ' + SH.stock.name +
+          ' ลงให้ถึงแถวเดียวกันก่อน ไม่งั้นสินค้าตัวใหม่จะไม่มียอดคงเหลือ');
+      }
+      var np = plan.newProds[a];
+      writeRow_('prod', pRows[a], {
+        sku: np.sku, group: FREE_GROUP, name: np.name, perPack: 1, unit: 'ชิ้น',
+        cost: np.cost, price: np.price, opening: 0, reorder: 0
+      });
+      written.prod.push(pRows[a]);
+    }
+  }
+
+  if (plan.recvRows.length) {
+    var rRows = nextRows_('recv', SH.recv.IN.sku, plan.recvRows.length);
+    if (!rRows.length) throw new Error('ชีท ' + SH.recv.name + ' เหลือที่ว่างไม่พอ ' +
+      plan.recvRows.length + ' บรรทัด (สูตรมีถึงแถว ' + formulaLimit_('recv') + ') — ต้องลากสูตรลงเพิ่มก่อน');
+    for (var b = 0; b < rRows.length; b++) {
+      var rv = plan.recvRows[b];
+      writeRow_('recv', rRows[b], {
+        date: plan.date, doc: plan.no, type: plan.recvType, ref: FREE_GROUP,
+        sku: rv.sku, qty: rv.qty, cost: rv.cost, staff: plan.staff,
+        note: 'ซื้อมาขายไปตามออเดอร์ ' + plan.no
+      });
+      written.recv.push(rRows[b]);
+    }
+  }
 
   var hRow = nextRow_('head', SH.head.IN.no);
   if (!hRow) throw new Error('ชีท ' + SH.head.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
@@ -845,6 +989,9 @@ function rollback_(written) {
     for (var i = written.cut.length - 1; i >= 0; i--) clearRow_('cut', written.cut[i]);
     for (var j = written.item.length - 1; j >= 0; j--) clearRow_('item', written.item[j]);
     if (written.head) clearRow_('head', written.head);
+    var rv = written.recv || [], pd = written.prod || [];
+    for (var m = rv.length - 1; m >= 0; m--) clearRow_('recv', rv[m]);
+    for (var n = pd.length - 1; n >= 0; n--) clearRow_('prod', pd[n]);
     SpreadsheetApp.flush();
   } catch (e) {
     Logger.log('ถอยกลับไม่สำเร็จ: ' + e.message + ' ' + JSON.stringify(written));
