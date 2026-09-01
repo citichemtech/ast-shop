@@ -540,6 +540,31 @@ function checkSheet() {
   if (chem.length > 30) out.push('  … อีก ' + (chem.length - 30) + ' รายการ');
   out.push('');
 
+  /* ออเดอร์ที่อยู่ในไฟล์นี้จริง ๆ — ตอบคำถาม "คีย์ออเดอร์ไปเยอะ แต่ทำไมหาไม่เจอ"
+     ถ้าตรงนี้ขึ้น 0 ทั้งที่คีย์ไปแล้ว แปลว่าแอปเขียนลงคนละไฟล์กับที่กำลังเปิดดูอยู่ */
+  var hs = sheet_('head');
+  var hLast = formulaLimit_('head');
+  var nos = [];
+  if (hLast >= DATA_ROW) {
+    var hv = hs.getRange(DATA_ROW, SH.head.IN.no, hLast - DATA_ROW + 1, 1).getValues();
+    for (var h = 0; h < hv.length; h++) {
+      var hno = String(hv[h][0] || '').trim();
+      if (hno) nos.push(hno);
+    }
+  }
+  out.push('ออเดอร์ในไฟล์นี้: ' + nos.length + ' ใบ');
+  if (nos.length) {
+    out.push('  ห้าใบล่าสุด: ' + nos.slice(-5).join(', '));
+    out.push('  ใบต่อไปจะเป็น: ' + peekNextOrderNo_());
+    out.push('  (ชีท ใบสรุปออเดอร์ โชว์ทีละใบ ต้องพิมพ์เลขใบใดใบหนึ่งข้างบนลงช่องสีเหลือง B5');
+    out.push('   ถ้าเลขในช่องนั้นไม่มีอยู่จริง ทั้งชีทจะขึ้น #N/A ซึ่งปกติ ไม่ใช่ของเสีย)');
+  } else {
+    out.push('  ไม่มีออเดอร์เลยสักใบในไฟล์นี้');
+    out.push('  ถ้าคีย์ออเดอร์ไปแล้ว แปลว่าแอปเขียนลงคนละไฟล์กับที่กำลังเปิดดูอยู่');
+    out.push('  ให้กดลิงก์ข้างบนเพื่อเปิดไฟล์ที่แอปเขียนจริง');
+  }
+  out.push('');
+
   /* อ่านอาการของชีทสต๊อกโดยไม่ซ่อม จะได้รู้ว่ายอดคงเหลือที่เห็นเชื่อได้ไหม */
   var st = sheet_('stock');
   var cols = st.getLastColumn();
