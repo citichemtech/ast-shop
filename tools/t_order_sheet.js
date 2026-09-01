@@ -807,5 +807,35 @@ for (var r = DATA_ROW; r <= 1200; r++) i23d.cell(r, 10).f = '';
 truthy2('บอกว่าไม่เหลือสูตรเลย และให้ไปกู้จากประวัติเวอร์ชัน',
   /ไม่เหลือสูตรเลยแม้แต่แถวเดียว/.test(api23d.repairOrderSheets()));
 
+/* ====== 24. ยอดไม่ตรง ต้องบอกสาเหตุและปุ่มที่ต้องกด ไม่ใช่แค่ "สูตรอาจถูกแก้" */
+console.log('\n24. ยอดไม่ตรง ต้องบอกทางแก้');
+
+console.log('\n   กรณีสูตรหายจริง ต้องชี้ชีทและบอกให้สั่งตัวซ่อม');
+var fx24 = FS.build();
+var api24 = FS.load(fx24);
+var i24 = fx24.sheets['ออเดอร์_รายการ'];
+/* สูตรยอดรวมของแถวต้น ๆ หาย ยอดของบิลจึงรวมได้ 0 — อาการเดียวกับที่เจอจริง */
+for (var r24 = DATA_ROW; r24 < DATA_ROW + 10; r24++) i24.cell(r24, 10).f = '';
+var realRecalc24 = fx24.recalc;
+fx24.recalc = function () { realRecalc24(); fx24.sheets['ออเดอร์_หัวบิล'].cell(6, 10).v = 0; };
+
+var m24 = throws('บันทึกไม่ผ่านเพราะยอดไม่ตรง',
+  function () { api24.createOrder(order()); }, 'ไม่ตรงกับที่ควรเป็น');
+truthy2('บอกว่าเป็นเพราะสูตรถูกพิมพ์ทับ', /สูตรในชีทถูกพิมพ์ทับจนหายไป/.test(m24));
+truthy2('ชี้ชื่อชีทที่เสียพร้อมจำนวนช่อง', /ออเดอร์_รายการ \d+ ช่อง/.test(m24));
+truthy2('บอกชื่อฟังก์ชันที่ต้องกด', /repairOrderSheets/.test(m24));
+truthy2('บอกว่าข้อมูลในฟอร์มยังอยู่', /ยังอยู่ครบ/.test(m24));
+eq('และยังถอยออเดอร์ออกหมดเหมือนเดิม', rowsWith(fx24.sheets['ออเดอร์_หัวบิล'], 1), []);
+
+console.log('\n   กรณีสูตรครบแต่ยอดยังไม่ตรง ต้องไม่โทษว่าสูตรหาย');
+var fx24b = FS.build();
+var api24b = FS.load(fx24b);
+var realRecalc24b = fx24b.recalc;
+fx24b.recalc = function () { realRecalc24b(); fx24b.sheets['ออเดอร์_หัวบิล'].cell(6, 10).v = 1; };
+var m24b = throws('บันทึกไม่ผ่าน', function () { api24b.createOrder(order()); }, 'ไม่ตรงกับที่ควรเป็น');
+truthy2('บอกว่าสูตรยังครบดี', /สูตรของชีทยังครบดี/.test(m24b));
+truthy2('และให้ไปดูสูตรจริงด้วย checkFormulas', /checkFormulas/.test(m24b));
+truthy2('ไม่ไปแนะนำตัวซ่อมทั้งที่ไม่มีอะไรให้ซ่อม', m24b.indexOf('repairOrderSheets') < 0);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
