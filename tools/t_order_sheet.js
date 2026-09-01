@@ -750,5 +750,62 @@ var msg22 = throws('งานอื่นที่ต้องเปิดชี
 truthy2('ในข้อความมีอีเมลที่ต้องแชร์ให้', /robot@chem-inno-tech\.com/.test(msg22));
 truthy2('และมีลิงก์ไฟล์ให้กดเปิดไปแชร์ได้เลย', /spreadsheets\/d\//.test(msg22));
 
+/* ====== 23. สูตรของชีทออเดอร์ถูกพิมพ์ทับ ต้องซ่อมได้โดยไม่กินข้อมูลที่คนกรอก */
+console.log('\n23. ซ่อมสูตรของชีทออเดอร์');
+
+var fx23 = FS.build();
+var api23 = FS.load(fx23);
+api23.createOrder(order({ cust: 'ลูกค้าที่ต้องไม่หาย' }));
+var i23 = fx23.sheets['ออเดอร์_รายการ'], h23 = fx23.sheets['ออเดอร์_หัวบิล'];
+
+/* จำลองอาการจริง: วางทับจนสูตรของแถวต้น ๆ กลายเป็นค่านิ่ง
+   (ชีทจริงเสีย 333 ช่อง ราว 28 แถวแรก ส่วนแถวลึก ๆ ยังดี) */
+var CALC_ITEM = [1, 3, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16];
+for (var r23 = DATA_ROW; r23 < DATA_ROW + 20; r23++) {
+  CALC_ITEM.forEach(function (c) { i23.cell(r23, c).f = ''; i23.cell(r23, c).v = ''; });
+}
+var keepNo = i23.cell(DATA_ROW, 2).v, keepSku = i23.cell(DATA_ROW, 4).v, keepQty = i23.cell(DATA_ROW, 7).v;
+truthy2('ก่อนซ่อม ข้อมูลออเดอร์ยังอยู่', !!keepNo && !!keepSku);
+
+var msg23 = api23.repairOrderSheets();
+truthy2('รายงานบอกว่าซ่อมชีทออเดอร์_รายการ', /ออเดอร์_รายการ: ซ่อม \d+ ช่อง/.test(msg23));
+truthy2('บอกว่าใช้แถวไหนเป็นต้นแบบ', /ใช้แถว \d+ เป็นต้นแบบ/.test(msg23));
+truthy2('บอกว่าไม่แตะคอลัมน์ที่คนกรอกเอง', /ไม่ถูกแตะเลย/.test(msg23));
+
+eq('สูตรกลับมาครบ ไม่เหลือช่องที่เป็นค่านิ่ง',
+  (function () {
+    var n = 0;
+    for (var r = DATA_ROW; r < DATA_ROW + 20; r++)
+      CALC_ITEM.forEach(function (c) { if (String(i23.cell(r, c).f || '').charAt(0) !== '=') n++; });
+    return n;
+  })(), 0);
+
+console.log('\n   ข้อมูลที่คนกรอกเองต้องอยู่ครบเป๊ะ ห้ามถูกสูตรทับ');
+eq('เลขออเดอร์ในบรรทัดยังอยู่', i23.cell(DATA_ROW, 2).v, keepNo);
+eq('รหัสสินค้ายังอยู่', i23.cell(DATA_ROW, 4).v, keepSku);
+eq('จำนวนยังอยู่', i23.cell(DATA_ROW, 7).v, keepQty);
+eq('ชื่อลูกค้าในหัวบิลยังอยู่', h23.cell(DATA_ROW, 4).v, 'ลูกค้าที่ต้องไม่หาย');
+
+console.log('\n   ชีทที่ดีอยู่แล้ว ต้องไม่ไปแตะ');
+var msg23b = api23.repairOrderSheets();
+truthy2('สั่งซ้ำแล้วบอกว่าปกติดีอยู่แล้ว', /ปกติดีอยู่แล้ว/.test(msg23b));
+truthy2('และไม่ได้ซ่อมอะไรเพิ่ม', /รวมซ่อม 0 ช่อง/.test(msg23b));
+
+console.log('\n   ไม่มีแถวไหนสูตรครบเลย ต้องบอกตรง ๆ ไม่ใช่เดาสูตรเอง');
+var fx23c = FS.build();
+var api23c = FS.load(fx23c);
+var i23c = fx23c.sheets['ออเดอร์_รายการ'];
+for (var r = DATA_ROW; r <= 1200; r++) i23c.cell(r, 15).f = '';
+truthy2('บอกว่าไม่มีต้นแบบให้คัดลอก',
+  /ไม่มีแถวไหนสูตรครบเลย/.test(api23c.repairOrderSheets()));
+
+console.log('\n   คอลัมน์ที่ใช้วัดถูกล้างหมด ต้องไม่ข้ามไปเงียบ ๆ');
+var fx23d = FS.build();
+var api23d = FS.load(fx23d);
+var i23d = fx23d.sheets['ออเดอร์_รายการ'];
+for (var r = DATA_ROW; r <= 1200; r++) i23d.cell(r, 10).f = '';
+truthy2('บอกว่าไม่เหลือสูตรเลย และให้ไปกู้จากประวัติเวอร์ชัน',
+  /ไม่เหลือสูตรเลยแม้แต่แถวเดียว/.test(api23d.repairOrderSheets()));
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

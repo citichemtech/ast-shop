@@ -297,6 +297,8 @@ function load(fixture, opts) {
     console: console, Date: Date, Math: Math, JSON: JSON, String: String, Number: Number,
     Object: Object, Array: Array, isNaN: isNaN, parseInt: parseInt, parseFloat: parseFloat,
     SpreadsheetApp: {
+      /* วางแบบเฉพาะสูตร ใช้ตอนซ่อมชีทที่มีคอลัมน์กรอกปนกับคอลัมน์สูตร */
+      CopyPasteType: { PASTE_FORMULA: 'PASTE_FORMULA', PASTE_NORMAL: 'PASTE_NORMAL' },
       openById: function () {
         // opts.canOpen === false = บัญชีนี้ไม่มีสิทธิ์เปิดชีท Google โยน error แบบนี้
         if (opts.canOpen === false) throw new Error('You do not have permission to access the requested document.');

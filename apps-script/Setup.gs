@@ -582,6 +582,103 @@ function checkSheet() {
   return msg;
 }
 
+/** นับช่องที่ควรเป็นสูตรตาม CALC แต่กลายเป็นค่านิ่ง พร้อมบอกแถวต้นแบบที่ยังดี */
+function scanCalc_(key) {
+  var cfg = SH[key];
+  var cols = cfg.CALC || [];
+  var out = { flat: 0, rows: 0, good: 0, cols: cols };
+  /* ชีทที่ยังไม่มีในไฟล์ให้ข้ามไป ไม่ใช่ล้มทั้งการซ่อม ชีทอื่นจะได้ซ่อมต่อได้ */
+  if (!cols.length || !ss_().getSheetByName(cfg.name)) { out.cols = []; return out; }
+  var sh = sheet_(key);
+  var limit = formulaLimit_(key);
+  if (limit < DATA_ROW) return out;
+  var n = limit - DATA_ROW + 1;
+  out.rows = n;
+  out.f = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
+  for (var i = 0; i < n; i++) {
+    var whole = true;
+    for (var k = 0; k < cols.length; k++) {
+      var c = cols[k];
+      var isF = c <= out.f[i].length && String(out.f[i][c - 1] || '').charAt(0) === '=';
+      if (!isF) { out.flat++; whole = false; }
+    }
+    /* แถวต้นแบบคือแถวแรกที่ทุกช่องสูตรยังครบ ใช้เป็นตัวคัดลอกไปซ่อมแถวที่พัง */
+    if (whole && !out.good) out.good = DATA_ROW + i;
+  }
+  return out;
+}
+
+/**
+ * ซ่อมสูตรของชีทที่มีคอลัมน์สูตรปนกับคอลัมน์กรอก
+ *
+ * ต่างจาก repairStockSheet ตรงที่ชีทพวกนี้มีข้อมูลที่คนกรอกเองปนอยู่ในแถวเดียวกัน
+ * จะคัดลอกทั้งแถวแบบชีทสต๊อกไม่ได้ เพราะข้อมูลออเดอร์จะถูกทับหาย
+ * จึงคัดลอกเฉพาะคอลัมน์ที่อยู่ใน CALC และวางแบบ "เฉพาะสูตร" เท่านั้น
+ *
+ * และไม่ฮาร์ดโค้ดสูตรไว้ในโค้ด เพราะสูตรพวกนี้เจ้าของร้านเขียนเอง
+ * เดาผิดแม้ช่องเดียวคือใบเสร็จยอดผิด — ใช้แถวที่ยังดีในชีทเดียวกันเป็นต้นแบบแทน
+ * อ้างอิงสัมพัทธ์จะขยับตามแถวให้เอง
+ */
+function repairOrderSheets() {
+  requireStaff_();
+  var keys = ['head', 'item', 'prod', 'recv', 'lot', 'cut', 'doc'];
+  var out = [], total = 0;
+
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var cfg = SH[key];
+    var before = scanCalc_(key);
+    if (!before.cols.length) continue;
+    /* formulaLimit_ วัดจากคอลัมน์เดียว ถ้าคอลัมน์นั้นถูกล้างหมดทั้งชีท
+       จะดูเหมือนไม่มีสูตรเลยและถูกข้ามไปเงียบ ๆ ต้องบอกให้รู้ */
+    if (!before.rows) {
+      out.push('  ' + cfg.name + ': ไม่เหลือสูตรเลยแม้แต่แถวเดียว ' +
+        '(วัดจากคอลัมน์ที่ ' + cfg.probe + ') — ต้องกู้ชีทจากประวัติเวอร์ชันของ Google');
+      continue;
+    }
+    if (!before.flat) { out.push('  ' + cfg.name + ': ปกติดีอยู่แล้ว'); continue; }
+    if (!before.good) {
+      out.push('  ' + cfg.name + ': เสีย ' + before.flat + ' ช่อง แต่ไม่มีแถวไหนสูตรครบเลย ' +
+        'จึงไม่มีต้นแบบให้คัดลอก — ต้องซ่อมด้วยมือ');
+      continue;
+    }
+
+    var sh = sheet_(key);
+    var fixedCells = 0;
+    for (var k = 0; k < before.cols.length; k++) {
+      var c = before.cols[k];
+      /* รวมแถวที่พังซึ่งติดกันเป็นช่วงเดียว แล้วคัดลอกทีเดียว ลดรอบคุยกับ Google */
+      var start = 0, len = 0;
+      for (var r = 0; r <= before.rows; r++) {
+        var bad = false;
+        if (r < before.rows) {
+          var row = before.f[r];
+          bad = !(c <= row.length && String(row[c - 1] || '').charAt(0) === '=');
+        }
+        if (bad) { if (!len) start = DATA_ROW + r; len++; continue; }
+        if (len) {
+          sh.getRange(before.good, c).copyTo(sh.getRange(start, c, len, 1),
+            SpreadsheetApp.CopyPasteType.PASTE_FORMULA, false);
+          fixedCells += len;
+          len = 0;
+        }
+      }
+    }
+
+    SpreadsheetApp.flush();
+    var after = scanCalc_(key);
+    total += fixedCells;
+    out.push('  ' + cfg.name + ': ซ่อม ' + fixedCells + ' ช่อง (เหลือ ' + after.flat + ') ' +
+      'ใช้แถว ' + before.good + ' เป็นต้นแบบ');
+  }
+
+  var msg = 'ซ่อมสูตรของชีทออเดอร์\n' + (out.length ? out.join('\n') : '  ไม่มีอะไรต้องซ่อม') +
+    '\n\nรวมซ่อม ' + total + ' ช่อง' +
+    '\nคอลัมน์ที่คนกรอกเองไม่ถูกแตะเลย คัดลอกเฉพาะช่องสูตรอย่างเดียว';
+  Logger.log(msg);
+  return msg;
+}
+
 /**
  * ส่องสูตรของชีทออเดอร์ ว่ายังคำนวณได้อยู่ไหม
  *
