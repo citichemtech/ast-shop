@@ -297,28 +297,76 @@ function clearAllOrders(confirm) {
  *
  * > เลี่ยงปัญหานี้ในอนาคต: เอาสินค้าออกด้วยการ **ลบค่าในช่อง** ไม่ใช่ **ลบทั้งแถว**
  */
+/**
+ * สูตรตั้งต้นของแถว 6 ในชีท สต๊อกคงเหลือ
+ *
+ * ชีทนี้เป็นสูตรล้วนทุกช่อง ไม่มีอะไรที่คนต้องกรอกเอง แต่เคยเจอกรณีที่คนวาง
+ * "เฉพาะค่า" ทับลงไป ทำให้ห้าคอลัมน์ (C, E, I, K, M) กลายเป็นเลขนิ่ง
+ * ผลคือขายของแล้วยอดคงเหลือไม่ลด ระบบตัดสต๊อกตายเงียบโดยไม่มีอะไรฟ้อง
+ *
+ * ตัวซ่อมเดิมใช้แถว 6 เป็นต้นแบบคัดลอกลงมา ถ้าแถว 6 เองกลายเป็นเลขนิ่ง
+ * มันจะคัดลอกเลขนิ่งลงไปทั้งชีท คือทำให้พังหนักกว่าเดิม
+ * จึงต้องรู้ว่าสูตรที่ถูกต้องหน้าตาเป็นอย่างไร เพื่อประกอบแถว 6 คืนก่อนคัดลอก
+ */
+var STOCK_ROW6 = {
+  1:  '=IF($B6="","",COUNTA($B$6:$B6))',
+  2:  '=IF(\'ฐานสินค้า\'!$B6="","",\'ฐานสินค้า\'!$B6)',
+  3:  '=IF($B6="","",\'ฐานสินค้า\'!$D6)',
+  4:  '=IF($B6="","",\'ฐานสินค้า\'!$F6)',
+  5:  '=IF($B6="","",\'ฐานสินค้า\'!$I6)',
+  9:  '=IF($B6="","",$E6+$F6-$G6-$H6)',
+  10: '=IF($B6="","",\'ฐานสินค้า\'!$J6)',
+  11: '=IF($B6="","",\'ฐานสินค้า\'!$G6)',
+  12: '=IF($B6="","",ROUND($I6*$K6,2))',
+  13: '=IF($B6="","",\'ฐานสินค้า\'!$H6)',
+  14: '=IF($B6="","",ROUND($I6*$M6,2))'
+};
+
 function repairStockSheet() {
   var s = sheet_('stock');
   var cols = s.getLastColumn();
   var tmpl = s.getRange(DATA_ROW, 1, 1, cols);
   var f = tmpl.getFormulas()[0];
 
-  if (f.join('').indexOf('#REF') > -1 || f[1].indexOf(SH.prod.name) < 0) {
-    throw new Error('แถว 6 ของชีท ' + SH.stock.name + ' ก็เสียด้วย จึงไม่มีต้นแบบให้ซ่อม ' +
+  if (f.join('').indexOf('#REF') > -1) {
+    throw new Error('แถว 6 ของชีท ' + SH.stock.name + ' ขึ้น #REF! จึงไม่มีต้นแบบให้ซ่อม ' +
       '— ต้องแก้แถว 6 ด้วยมือก่อน');
+  }
+
+  /* ช่องไหนในแถว 6 ถูกพิมพ์ทับจนไม่เหลือสูตร ให้ประกอบคืนก่อน
+     ไม่งั้นการคัดลอกแถว 6 ลงมาจะแพร่เลขนิ่งไปทั้งชีท */
+  var fixed = [];
+  for (var col in STOCK_ROW6) {
+    col = Number(col);
+    if (col > cols) continue;
+    if (String(f[col - 1] || '').charAt(0) === '=') continue;
+    s.getRange(DATA_ROW, col).setFormula(STOCK_ROW6[col]);
+    fixed.push(s.getRange(DATA_ROW, col).getA1Notation());
+  }
+  if (fixed.length) {
+    SpreadsheetApp.flush();
+    f = tmpl.getFormulas()[0];
   }
 
   var before = countRef_(s, cols);
   var skew = countSkew_(s);
-  if (!before && !skew) return 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
+  var flat = countFlat_(s, cols);
+  if (!before && !skew && !flat && !fixed.length) {
+    return 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
+  }
 
   tmpl.copyTo(s.getRange(DATA_ROW + 1, 1, STOCK_LAST - DATA_ROW, cols));
   SpreadsheetApp.flush();
   var after = countRef_(s, cols), skewAfter = countSkew_(s);
 
+  var flatAfter = countFlat_(s, cols);
   var extra = repairSummaryRange_();
-  return 'ชีท ' + SH.stock.name + ': ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')' +
-    ' · ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')' + extra;
+  return 'ชีท ' + SH.stock.name + ':\n' +
+    (fixed.length ? '  ประกอบสูตรแถว 6 ที่ถูกพิมพ์ทับคืน ' + fixed.length + ' ช่อง (' +
+      fixed.join(', ') + ')\n' : '') +
+    '  ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')\n' +
+    '  ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')\n' +
+    '  ซ่อมช่องที่กลายเป็นเลขนิ่ง ' + flat + ' ช่อง (เหลือ ' + flatAfter + ')' + extra;
 }
 
 /**
@@ -337,6 +385,28 @@ function countSkew_(s) {
   for (var i = 0; i < f.length; i++) {
     var m = /ฐานสินค้า'!\$B(\d+)/.exec(f[i][0] || '');
     if (m && Number(m[1]) !== DATA_ROW + i) n++;
+  }
+  return n;
+}
+
+/**
+ * นับช่องที่ควรเป็นสูตรแต่กลายเป็นเลขนิ่ง
+ *
+ * อาการนี้เงียบที่สุดในบรรดาทั้งหมด — ตัวเลขยังโชว์ปกติ ไม่มี error ไม่มีอะไรผิดสังเกต
+ * แต่ช่อง "คงเหลือ" ที่เป็นเลขนิ่งแปลว่าขายของแล้วสต๊อกไม่ลด ซึ่งคือหัวใจของทั้งระบบ
+ */
+function countFlat_(s, cols) {
+  var last = STOCK_LAST;
+  var f = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, cols).getFormulas();
+  var v = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, cols).getValues();
+  var n = 0;
+  for (var i = 0; i < f.length; i++) {
+    if (v[i][1] === '' || v[i][1] === null) continue;   /* แถวว่างไม่ต้องนับ */
+    for (var col in STOCK_ROW6) {
+      col = Number(col);
+      if (col > cols) continue;
+      if (String(f[i][col - 1] || '').charAt(0) !== '=') n++;
+    }
   }
   return n;
 }
