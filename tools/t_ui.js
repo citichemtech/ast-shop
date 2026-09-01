@@ -561,8 +561,32 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal(); });
   await page.waitForTimeout(200);
 
-  /* ---------- 17. ไม่มี error หลุดใน console ---------- */
-  console.log('\n17. ความสะอาดของหน้าเว็บ');
+  /* ---------- 17. ไม่ได้กรอกที่อยู่ผู้ส่ง ต้องบอกก่อนพิมพ์ ----------
+     ที่อยู่ผู้ส่งมาจากชีท ตั้งค่าแอป และตั้งต้นเป็นช่องว่าง ถ้าไม่บอกอะไรเลย
+     จะรู้ตัวอีกทีตอนแปะใบปะหน้าบนกล่องไปแล้ว */
+  console.log('\n17. เตือนเมื่อยังไม่ได้กรอกที่อยู่ผู้ส่ง');
+  await page.evaluate(function () { go('list'); });
+  await page.waitForTimeout(400);
+  await page.evaluate(function () { openLabel((ORDERS || [])[0]); });
+  await page.waitForTimeout(300);
+  eq('กรอกที่อยู่ไว้แล้ว ต้องไม่ขึ้นคำเตือน',
+    /ยังไม่ได้กรอก/.test(await page.textContent('#m-body')), false);
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+
+  await page.evaluate(function () { CFG.sender = { name: '', addr: '   ', tel: '096' }; });
+  await page.evaluate(function () { openLabel((ORDERS || [])[0]); });
+  await page.waitForTimeout(300);
+  var lbTxt = await page.textContent('#m-body');
+  truthy('ไม่ได้กรอก ต้องขึ้นคำเตือน', /ยังไม่ได้กรอก/.test(lbTxt));
+  truthy('บอกด้วยว่าไปกรอกที่ชีทไหน', /ตั้งค่าแอป/.test(lbTxt));
+  truthy('แต่ยังกดสร้างใบปะหน้าได้อยู่ ไม่ได้ห้าม',
+    await page.locator('#lb-make').count() > 0);
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+
+  /* ---------- 18. ไม่มี error หลุดใน console ---------- */
+  console.log('\n18. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
   await browser.close();

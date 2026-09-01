@@ -1131,6 +1131,12 @@ function openLabel(o){
      '<div class="fld"><label><input type="checkbox" id="lb-cod" style="width:auto;margin-right:8px;transform:scale(1.25)">'
     +'เก็บเงินปลายทาง '+baht(o.net)+'</label>'
     +'<div class="hint">ไม่ติ๊ก = ใบปะหน้าจะพิมพ์ว่า “ไม่ต้องเก็บเงิน”</div></div>'
+    /* ที่อยู่ผู้ส่งมาจากชีท ตั้งค่าแอป ถ้าเว้นว่างไว้ ใบปะหน้าจะไม่มีที่อยู่ผู้ส่ง
+       แล้วไม่มีอะไรฟ้องเลย รู้ตัวอีกทีตอนพิมพ์แปะกล่องไปแล้ว จึงบอกก่อนตรงนี้ */
+    + (String((CFG.sender||{}).addr||"").trim() ? ""
+       : '<div class="msg err" style="display:block">ยังไม่ได้กรอก '
+         +'<b>ที่อยู่ผู้ส่ง</b> ในชีท <b>ตั้งค่าแอป</b> (คอลัมน์ A แถวที่เขียนว่า "ที่อยู่ผู้ส่ง" '
+         +'ใส่ค่าที่คอลัมน์ B) — ใบปะหน้าจะพิมพ์ออกมาโดยไม่มีที่อยู่ผู้ส่ง</div>')
     +'<button class="btn" id="lb-make">สร้างใบปะหน้า</button>'
     +'<div id="lb-out" style="margin-top:12px"></div>');
 

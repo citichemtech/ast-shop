@@ -226,7 +226,10 @@ function getOrders(limit) {
         date: d instanceof Date ? isoDate_(d) : String(d || ''),
         channel: String(hv[i][SH.head.IN.channel - 1] || ''),
         cust: String(hv[i][SH.head.IN.cust - 1] || ''),
-        tel: String(hv[i][SH.head.IN.tel - 1] || ''),
+        /* เบอร์ลูกค้าที่ชีทเก็บเป็นตัวเลข ศูนย์หน้าจะหายไป 0614035852 กลายเป็น 614035852
+             แล้วไปพิมพ์บนใบปะหน้าแบบนั้น คนส่งของโทรหาผู้รับไม่ได้ทั้งใบ
+             (ของผู้ส่งเติมคืนไว้แล้วตั้งแต่แรก ของผู้รับตกหล่นไป) */
+        tel: tel_(hv[i][SH.head.IN.tel - 1]),
         addr: String(hv[i][SH.head.IN.addr - 1] || ''),
         carrier: String(hv[i][SH.head.IN.carrier - 1] || ''),
         track: String(hv[i][SH.head.IN.track - 1] || ''),

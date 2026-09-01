@@ -11,6 +11,7 @@
 'use strict';
 var FS = require('./fakesheet');
 var DATA_ROW = FS.DATA_ROW;
+var SH_TEL = 5;   // ออเดอร์_หัวบิล คอลัมน์ E = เบอร์โทรลูกค้า
 
 var fails = 0;
 function eq(label, got, want) {
@@ -694,6 +695,25 @@ eq('ตัวตรวจอ่านอย่างเดียว ไม่แ
     for (var k in fx20.sheets) o = o.concat(fx20.sheets[k].overwrittenFormulas);
     return o;
   })(), []);
+
+/* ============ 21. เบอร์ผู้รับที่ชีทเก็บเป็นตัวเลข ศูนย์หน้าต้องไม่หาย */
+console.log('\n21. เบอร์โทรผู้รับบนใบปะหน้า');
+
+var fx21 = FS.build();
+var api21 = FS.load(fx21);
+api21.createOrder(order({ cust: 'ลูกค้าเบอร์ศูนย์นำหน้า' }));
+
+/* ชีทจริงตั้งช่องเบอร์เป็นตัวเลข พอคีย์ 0614035852 ลงไปจะเหลือ 614035852
+   จำลองอาการนั้นตรง ๆ ด้วยการเขียนค่าเป็นตัวเลขทับลงไป */
+fx21.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, SH_TEL).v = 614035852;
+var got21 = api21.getOrders(5)[0];
+eq('เติมศูนย์หน้าคืนให้ คนส่งของจะได้โทรหาผู้รับได้', got21.tel, '0614035852');
+
+fx21.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, SH_TEL).v = '0812345678';
+eq('เบอร์ที่เก็บเป็นข้อความอยู่แล้ว ต้องไม่ถูกแก้', api21.getOrders(5)[0].tel, '0812345678');
+
+fx21.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, SH_TEL).v = '02-123-4567';
+eq('เบอร์บ้านที่มีขีดคั่น ต้องไม่ถูกแตะ', api21.getOrders(5)[0].tel, '02-123-4567');
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
