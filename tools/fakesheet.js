@@ -310,7 +310,8 @@ function load(fixture, opts) {
         if (opts.canOpen === false) throw new Error('You do not have permission to access the requested document.');
         return {
           getName: function () { return 'AST_ระบบออเดอร์และสต๊อก3008'; },
-          getSpreadsheetTimeZone: function () { return opts.tz || 'Asia/Bangkok'; },
+          getSpreadsheetTimeZone: function () { return fixture.tz || opts.tz || 'Asia/Bangkok'; },
+          setSpreadsheetTimeZone: function (t) { fixture.tz = t; },
           getUrl: function () { return 'https://docs.google.com/spreadsheets/d/FAKEID/edit'; },
           getSheetByName: function (n) { return fixture.sheets[n] || null; },
           insertSheet: function (n) { return (fixture.sheets[n] = new Sheet(n, 13, 1006)); }
@@ -325,7 +326,9 @@ function load(fixture, opts) {
     Session: {
       getActiveUser: function () { return { getEmail: function () { return opts.email === undefined ? 'somchai@chem-inno-tech.com' : opts.email; } }; },
       /* บัญชีที่รันสคริปต์ ใช้บอกว่าต้องเอาไฟล์ไปแชร์ให้อีเมลไหนตอนเปิดชีทไม่ได้ */
-      getEffectiveUser: function () { return { getEmail: function () { return opts.owner === undefined ? 'citisales01@chem-inno-tech.com' : opts.owner; } }; }
+      getEffectiveUser: function () { return { getEmail: function () { return opts.owner === undefined ? 'citisales01@chem-inno-tech.com' : opts.owner; } }; },
+      /* เขตเวลาของสคริปต์ ตั้งไว้ใน appsscript.json เป็น Asia/Bangkok */
+      getScriptTimeZone: function () { return 'Asia/Bangkok'; }
     },
     PropertiesService: {
       getScriptProperties: function () {

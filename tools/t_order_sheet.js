@@ -863,5 +863,25 @@ console.log('\n   เบอร์ที่มีขีดคั่นก็ต�
 api25.createOrder(order({ tel: '093-259-2583' }));
 eq('เก็บตามที่พิมพ์ทุกตัวอักษร', h25.cell(DATA_ROW + 1, 5).v, '093-259-2583');
 
+/* ====== 26. เขตเวลาของชีทกับของสคริปต์ต้องตรงกัน ไม่งั้นวันที่เลื่อน */
+console.log('\n26. ตั้งเขตเวลาให้ตรงกัน');
+
+var fx26 = FS.build();
+fx26.tz = 'America/Los_Angeles';   // ค่าตั้งต้นของบัญชีที่สมัครแบบสหรัฐฯ
+var api26 = FS.load(fx26);
+
+truthy2('checkSheet บอกว่าเขตเวลาไม่ตรงกัน', /ไม่ตรงกัน! ให้ Run ที่ fixTimeZone/.test(api26.checkSheet()));
+
+var m26 = api26.fixTimeZone();
+truthy2('บอกเขตเวลาเดิมก่อนแก้', /America\/Los_Angeles/.test(m26));
+truthy2('บอกว่าตั้งให้ตรงกันแล้ว', /ตั้งให้ตรงกันแล้ว/.test(m26));
+eq('เปลี่ยนเป็นเวลาไทยจริง', fx26.tz, 'Asia/Bangkok');
+truthy2('บอกว่าออเดอร์เก่าจะแสดงวันที่ถูกเอง', /แสดงวันที่ถูกเองทันที/.test(m26));
+truthy2('บอกว่าสูตร TODAY จะนับถูกด้วย', /TODAY\(\)/.test(m26));
+
+console.log('\n   สั่งซ้ำต้องไม่แก้อะไรอีก');
+truthy2('บอกว่าตรงกันดีอยู่แล้ว', /ตรงกันดีอยู่แล้ว/.test(api26.fixTimeZone()));
+truthy2('checkSheet ไม่เตือนแล้ว', /ตรงกันดี/.test(api26.checkSheet()));
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
