@@ -590,8 +590,64 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal(); });
   await page.waitForTimeout(200);
 
-  /* ---------- 18. ไม่มี error หลุดใน console ---------- */
-  console.log('\n18. ความสะอาดของหน้าเว็บ');
+  /* ---------- 18. ค้นตำบล/อำเภอ/จังหวัด แล้วได้รหัสไปรษณีย์ ----------
+     ของเดิมต้องเปิดกูเกิลหารหัสไปรษณีย์ทีละใบแล้วพิมพ์ตามมือ
+     พิมพ์ผิดทีคือพัสดุไปผิดจังหวัด */
+  console.log('\n18. ค้นที่อยู่ไทย');
+  await page.evaluate(function () { go('new'); resetForm(); });
+  await page.waitForTimeout(200);
+
+  eq('ข้อมูลครบทั้งประเทศ', await page.evaluate(function () { return thRows().length }), 7438);
+
+  console.log('\n   พิมพ์สั้นเกินไป ต้องยังไม่ขึ้นอะไร');
+  await page.fill('#f-addr-find', 'ท');
+  await page.waitForTimeout(150);
+  eq('ตัวเดียวยังไม่ค้น', await page.locator('#f-addr-hit [data-th]').count(), 0);
+
+  console.log('\n   พิมพ์ชื่อตำบล');
+  await page.fill('#f-addr-find', 'ท่าคล้อ');
+  await page.waitForTimeout(200);
+  var hitTxt = await page.textContent('#f-addr-hit');
+  truthy('เจอตำบลท่าคล้อของสระบุรี พร้อมรหัสไปรษณีย์',
+    /ต\.ท่าคล้อ อ\.แก่งคอย จ\.สระบุรี 18110/.test(hitTxt));
+  truthy('ชื่อซ้ำกันคนละจังหวัดก็ขึ้นให้เลือกทั้งคู่',
+    /ศรีสะเกษ/.test(hitTxt) && /สระบุรี/.test(hitTxt));
+
+  console.log('\n   กดเลือกแล้วต้องเติมต่อท้ายที่อยู่ ไม่เขียนทับ');
+  await page.fill('#f-addr', '32 ม.6');
+  await page.fill('#f-addr-find', 'ท่าคล้อ');
+  await page.waitForTimeout(200);
+  await page.click('#f-addr-hit [data-th]:nth-of-type(2)');
+  await page.waitForTimeout(200);
+  var addrNow = await page.inputValue('#f-addr');
+  truthy('บ้านเลขที่ที่ลูกค้าพิมพ์มายังอยู่', /^32 ม\.6/.test(addrNow));
+  truthy('ต่อท้ายด้วยตำบล อำเภอ จังหวัด รหัส',
+    /\n?ต\.ท่าคล้อ อ\.แก่งคอย จ\.สระบุรี 18110$/.test(addrNow));
+  eq('ล้างช่องค้นหาให้พร้อมพิมพ์ใหม่', await page.inputValue('#f-addr-find'), '');
+  eq('เก็บรายการที่ค้นไว้ออกให้', await page.locator('#f-addr-hit [data-th]').count(), 0);
+
+  console.log('\n   ค้นด้วยรหัสไปรษณีย์ก็ได้');
+  await page.fill('#f-addr-find', '18110');
+  await page.waitForTimeout(200);
+  truthy('พิมพ์รหัสแล้วขึ้นตำบลในรหัสนั้น',
+    /จ\.สระบุรี 18110/.test(await page.textContent('#f-addr-hit')));
+
+  console.log('\n   กรุงเทพฯ ต้องใช้ แขวง/เขต ไม่ใช่ ตำบล/อำเภอ');
+  await page.fill('#f-addr-find', 'บางรัก');
+  await page.waitForTimeout(200);
+  truthy('ขึ้นเป็นแขวง/เขต',
+    /แขวงบางรัก เขตบางรัก กรุงเทพมหานคร 10500/.test(await page.textContent('#f-addr-hit')));
+
+  console.log('\n   พิมพ์ชื่อที่ไม่มีจริง ต้องบอกตรง ๆ ไม่ใช่เงียบ');
+  await page.fill('#f-addr-find', 'ตำบลที่ไม่มีอยู่จริงเลย');
+  await page.waitForTimeout(200);
+  truthy('บอกว่าไม่พบ', /ไม่พบ/.test(await page.textContent('#f-addr-hit')));
+  await page.evaluate(function () { resetForm(); });
+  await page.waitForTimeout(150);
+  eq('ล้างฟอร์มแล้วช่องค้นหาว่างด้วย', await page.inputValue('#f-addr-find'), '');
+
+  /* ---------- 19. ไม่มี error หลุดใน console ---------- */
+  console.log('\n19. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
   await browser.close();

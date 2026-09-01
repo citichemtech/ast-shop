@@ -477,7 +477,10 @@ function orderFromForm_(payload, r){
 }
 
 function resetForm(){
-  ["f-cust","f-tel","f-addr","f-track","f-note"].forEach(function(id){ $("#"+id).value="" });
+  ["f-cust","f-tel","f-addr","f-track","f-note","f-addr-find"].forEach(function(id){
+    if ($("#"+id)) $("#"+id).value="";
+  });
+  if ($("#f-addr-hit")) $("#f-addr-hit").innerHTML = "";
   $("#f-disc").value=0;
   $("#f-ship").value=0; $("#f-ship").dataset.touched="";
   $("#paste").value=""; $("#pv-slot").innerHTML="";
@@ -781,6 +784,56 @@ function qMake(){
     $("#q-out").innerHTML = '<div style="color:var(--red)">ออกใบไม่สำเร็จ: '
       +esc(e&&e.message?e.message:e)+'</div>';
   });
+}
+
+/* --------------------------------------------- ค้นตำบล/อำเภอ/จังหวัด */
+
+/**
+ * ผูกช่องค้นหาที่อยู่เข้ากับช่องที่อยู่หนึ่งช่อง
+ *
+ * ที่ร้านทำอยู่ตอนนี้คือเปิดกูเกิลหารหัสไปรษณีย์ทีละใบ แล้วพิมพ์ตามมือ
+ * ซึ่งพิมพ์ผิดได้ และผิดทีคือพัสดุไปผิดจังหวัด
+ * พิมพ์ชื่อตำบลสองตัวอักษรแล้วเลือกจากรายการ จบในสองแตะ
+ *
+ * เติมต่อท้ายที่อยู่เดิม ไม่เขียนทับ เพราะบ้านเลขที่กับชื่อหมู่บ้าน
+ * ลูกค้าพิมพ์มาเองในแชท ไม่มีในฐานข้อมูลไปรษณีย์
+ */
+function bindAddrFind(findSel, hitSel, addrSel){
+  var f = $(findSel), box = $(hitSel), addr = $(addrSel);
+  if (!f || !box || !addr) return;
+
+  function draw(){
+    var q = f.value.trim();
+    if (q.length < 2) { box.innerHTML = ""; return }
+    var hits = thFind(q);
+    if (!hits.length) {
+      box.innerHTML = '<div class="none">ไม่พบ "' + esc(q) + '" — พิมพ์ชื่อตำบล อำเภอ '
+        + 'จังหวัด หรือรหัสไปรษณีย์</div>';
+      return;
+    }
+    box.innerHTML = hits.map(function(r, i){
+      return '<button type="button" data-th="' + i + '">' + esc(thLine(r)) + '</button>';
+    }).join("");
+    box.querySelectorAll("[data-th]").forEach(function(b){
+      b.onclick = function(){
+        var line = thLine(hits[+b.getAttribute("data-th")]);
+        var cur = addr.value.replace(/\s+$/, "");
+        addr.value = cur ? cur + "\n" + line : line;
+        f.value = ""; box.innerHTML = "";
+        addr.focus();
+        toast("เติมที่อยู่ให้แล้ว");
+      };
+    });
+  }
+
+  f.oninput = draw;
+  /* กด Enter แล้วเลือกตัวแรกเลย มือถือจะได้ไม่ต้องเลื่อนหา */
+  f.onkeydown = function(e){
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    var first = box.querySelector("[data-th]");
+    if (first) first.click();
+  };
 }
 
 /* ------------------------------------------------------- พิมพ์เอกสารซ้ำ */
@@ -1591,6 +1644,7 @@ document.addEventListener("DOMContentLoaded", function(){
   /* ตั้งขนาดตัวอักษรก่อนอย่างอื่น จะได้ไม่เห็นหน้าจอกระตุกตอนเปลี่ยนขนาด */
   fsInit();
   $$(".tabs button").forEach(function(b){ b.onclick=function(){ go(b.dataset.go) } });
+  bindAddrFind("#f-addr-find", "#f-addr-hit", "#f-addr");
   $("#btn-add").onclick   = function(){ addItem(); recalc() };
   $("#btn-parse").onclick = doParse;
   $("#btn-save").onclick  = save;
