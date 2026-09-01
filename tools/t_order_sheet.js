@@ -19,6 +19,10 @@ function eq(label, got, want) {
   console.log((ok ? '  ok   ' : '  FAIL ') + label +
     '  ได้ ' + JSON.stringify(got) + (ok ? '' : '  ควรได้ ' + JSON.stringify(want)));
 }
+function truthy2(label, got) {
+  if (!got) fails++;
+  console.log((got ? '  ok   ' : '  FAIL ') + label + '  ได้ ' + JSON.stringify(got));
+}
 function throws(label, fn, needle) {
   var msg = null;
   try { fn(); } catch (e) { msg = e.message; }
@@ -470,6 +474,107 @@ var over16 = [];
 for (var n16 in fx16.sheets) over16 = over16.concat(fx16.sheets[n16].overwrittenFormulas);
 for (var n16b in fx16b.sheets) over16 = over16.concat(fx16b.sheets[n16b].overwrittenFormulas);
 eq('ยังไม่มีสูตรถูกเขียนทับเลย', over16, []);
+
+/* ================ 17. ล้างออเดอร์เก่า เก็บของวันนี้ไว้ (เลิกทดลอง เริ่มของจริง) */
+console.log('\n17. ล้างออเดอร์เก่า เก็บของวันนี้');
+
+function isoToday() {
+  var d = new Date();
+  function p(n) { return n < 10 ? '0' + n : '' + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+var fx17 = FS.build({
+  lots: [{ sku: 'CHEM-001', lotNo: 'L-2610', exp: '2026-10-31', recv: '2026-08-01', qty: 50 }]
+});
+var api17 = FS.load(fx17);
+var TODAY = isoToday();
+
+/* สามใบของเมื่อวาน (ใบทดลอง) + สองใบของวันนี้ (ของจริงที่เพิ่งคีย์) */
+api17.createOrder(order({ date: '2026-08-20', cust: 'ทดลอง ก' }));
+api17.createOrder(order({ date: '2026-08-21', cust: 'ทดลอง ข',
+  items: [{ sku: 'CHEM-001', qty: 4, price: '' }] }));
+api17.createOrder(order({ date: '2026-08-22', cust: 'ทดลอง ค' }));
+var keepA = api17.createOrder(order({ date: TODAY, cust: 'ลูกค้าจริง ก' }));
+var keepB = api17.createOrder(order({ date: TODAY, cust: 'ลูกค้าจริง ข',
+  items: [{ sku: 'CHEM-001', qty: 6, price: '' }] }));
+
+var h17 = fx17.sheets['ออเดอร์_หัวบิล'], i17 = fx17.sheets['ออเดอร์_รายการ'];
+var c17 = fx17.sheets['ตัดล็อต'], lot17 = fx17.sheets['ล็อตสินค้า'];
+eq('ตั้งต้นมีห้าใบ', rowsWith(h17, 1).length, 5);
+eq('ล็อตถูกตัดไปแล้ว 10 ชิ้น เหลือ 40', lot17.cell(DATA_ROW, 9).v, 40);
+
+console.log('\n   ดูก่อน ต้องยังไม่ลบอะไรเลย');
+var pv17 = api17.previewClearOldOrders();
+truthy2('บอกว่ายังไม่ได้ลบ', /ยังไม่ได้ลบอะไรเลย/.test(pv17));
+truthy2('บอกว่าเก็บของวันนี้ไว้ 2 ใบ', /เก็บไว้ \(ของวันนี้\): 2 ใบ/.test(pv17));
+truthy2('บอกว่าจะล้าง 3 ใบ', /จะล้าง \(ก่อนวันนี้\): 3 ใบ/.test(pv17));
+eq('พรีวิวแล้วออเดอร์ยังอยู่ครบห้าใบ', rowsWith(h17, 1).length, 5);
+
+console.log('\n   สั่งจริงต้องพิมพ์คำยืนยันให้ตรง');
+throws('พิมพ์คำยืนยันผิด ต้องไม่ลบอะไร', function () { api17.clearOldOrders('ลบเลย'); }, 'กันกดพลาด');
+eq('ยังอยู่ครบห้าใบ', rowsWith(h17, 1).length, 5);
+
+console.log('\n   ล้างจริง');
+var msg17 = api17.clearOldOrders('ล้างออเดอร์เก่า');
+eq('เหลือเฉพาะของวันนี้ 2 ใบ', rowsWith(h17, 1).length, 2);
+eq('ใบที่เหลือคือใบจริงทั้งคู่',
+  rowsWith(h17, 1).map(function (r) { return h17.cell(r, 4).v; }).sort(),
+  ['ลูกค้าจริง ก', 'ลูกค้าจริง ข']);
+eq('เลขใบที่เหลือไม่ถูกแตะ',
+  rowsWith(h17, 1).map(function (r) { return h17.cell(r, 1).v; }).sort(),
+  [keepA.no, keepB.no].sort());
+
+var leftNos = {};
+rowsWith(h17, 1).forEach(function (r) { leftNos[h17.cell(r, 1).v] = true; });
+eq('บรรทัดสินค้าที่เหลือ อ้างเฉพาะใบที่ยังอยู่',
+  rowsWith(i17, 2).filter(function (r) { return !leftNos[i17.cell(r, 2).v]; }), []);
+eq('แถวตัดล็อตที่เหลือ อ้างเฉพาะใบที่ยังอยู่',
+  rowsWith(c17, 2).filter(function (r) { return !leftNos[c17.cell(r, 2).v]; }), []);
+
+eq('ของในล็อตที่ใบทดลองตัดไป คืนกลับมาแล้ว', lot17.cell(DATA_ROW, 9).v, 50 - 6);
+truthy2('รายงานบอกว่าชีทเอกสารไม่ถูกแตะ', /เอกสาร: ไม่แตะเลย/.test(msg17));
+eq('ลง Log ไว้ว่าใครล้าง',
+  rowsWith(fx17.sheets['Log'], 2).map(function (r) { return fx17.sheets['Log'].cell(r, 4).v; })
+    .indexOf('ล้างออเดอร์') > -1, true);
+
+console.log('\n   สั่งซ้ำอีกรอบ ต้องไม่ไปกินใบของวันนี้');
+api17.clearOldOrders('ล้างออเดอร์เก่า');
+eq('ยังเหลือสองใบเท่าเดิม', rowsWith(h17, 1).length, 2);
+
+var over17 = [];
+for (var n17 in fx17.sheets) over17 = over17.concat(fx17.sheets[n17].overwrittenFormulas);
+eq('ล้างแล้วสูตรของชีทยังอยู่ครบ ไม่โดนล้างไปด้วย', over17, []);
+
+/* ============ 18. ปุ่ม Run ในหน้า Apps Script ส่งค่าเข้าฟังก์ชันไม่ได้ */
+console.log('\n18. สั่งล้างจากปุ่ม Run (ส่งค่าเข้าฟังก์ชันไม่ได้)');
+
+var fx18 = FS.build();
+var api18 = FS.load(fx18);
+api18.createOrder(order({ date: '2026-08-20' }));
+api18.createOrder(order({ date: isoToday() }));
+var h18 = fx18.sheets['ออเดอร์_หัวบิล'];
+
+throws('ยังไม่ปลดล็อก ต้องล้างไม่ได้', function () { api18.clearOldOrdersNow(); }, 'ยังไม่ได้ปลดล็อก');
+throws('ล้างทั้งหมดก็ต้องปลดล็อกก่อนเหมือนกัน',
+  function () { api18.clearAllOrdersNow(); }, 'ยังไม่ได้ปลดล็อก');
+eq('ออเดอร์ยังอยู่ครบ', rowsWith(h18, 1).length, 2);
+
+truthy2('ปลดล็อกแล้วบอกขั้นต่อไปให้ชัด', /clearOldOrdersNow/.test(api18.armClear()));
+api18.clearOldOrdersNow();
+eq('ล้างของเก่าไป เหลือของวันนี้', rowsWith(h18, 1).length, 1);
+
+throws('ปลดล็อกครั้งเดียวใช้ได้ครั้งเดียว กด Run ซ้ำต้องไม่ล้างซ้ำ',
+  function () { api18.clearAllOrdersNow(); }, 'ยังไม่ได้ปลดล็อก');
+eq('ใบของวันนี้ยังอยู่', rowsWith(h18, 1).length, 1);
+
+api18.armClear();
+api18.clearAllOrdersNow();
+eq('ปลดล็อกใหม่แล้วล้างทั้งหมดได้จริง', rowsWith(h18, 1), []);
+
+var over18 = [];
+for (var n18 in fx18.sheets) over18 = over18.concat(fx18.sheets[n18].overwrittenFormulas);
+eq('สูตรของชีทยังอยู่ครบ', over18, []);
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

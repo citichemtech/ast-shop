@@ -281,6 +281,190 @@ function clearAllOrders(confirm) {
   }
 }
 
+/* ---------------------------------------- ปุ่ม Run ส่งค่าเข้าฟังก์ชันไม่ได้ */
+
+/**
+ * ตัวปลดล็อกสองขั้น สำหรับสั่งจากหน้าจอ Apps Script
+ *
+ * ปุ่ม Run ในหน้า Apps Script เรียกฟังก์ชันแบบไม่ส่งค่าเข้าไปเลย
+ * คำยืนยันที่ต้องพิมพ์ (clearAllOrders('...')) จึงไปไม่ถึงตัวฟังก์ชัน
+ * กด Run ทีไรก็ติดด่านกันกดพลาดทุกที ทั้งที่ตั้งใจจะล้างจริง ๆ
+ *
+ * เปลี่ยนเป็นสองขั้นแทน ซึ่งกันพลาดได้เท่ากันแต่กดจากหน้าจอได้จริง
+ *   ขั้น 1  เลือก armClear         แล้วกด Run
+ *   ขั้น 2  เลือก clearOldOrdersNow (หรือ clearAllOrdersNow) แล้วกด Run ภายใน 5 นาที
+ *
+ * ปลดล็อกแล้วใช้ได้ครั้งเดียว หมดเวลาหรือใช้ไปแล้วต้องปลดล็อกใหม่
+ * เผลอกด Run ค้างไว้ข้ามวันจึงไม่ล้างข้อมูลทิ้งโดยไม่ตั้งใจ
+ */
+var ARM_KEY = 'arm_clear';
+var ARM_MINUTES = 5;
+
+function armClear() {
+  PropertiesService.getScriptProperties().setProperty(ARM_KEY, String(Date.now()));
+  var msg = 'ปลดล็อกแล้ว มีเวลา ' + ARM_MINUTES + ' นาที\n\n' +
+    'ขั้นต่อไป เลือกฟังก์ชันข้างบนแล้วกด Run\n' +
+    '  clearOldOrdersNow  = ล้างออเดอร์เก่า เก็บของวันนี้ไว้\n' +
+    '  clearAllOrdersNow  = ล้างออเดอร์ทั้งหมด ไม่เหลือสักใบ\n\n' +
+    'อยากดูก่อนว่าจะหายกี่ใบ เลือก previewClearOldOrders กด Run ได้เลย ไม่ต้องปลดล็อก';
+  Logger.log(msg);
+  return msg;
+}
+
+function checkArmed_(what) {
+  var p = PropertiesService.getScriptProperties();
+  var t = Number(p.getProperty(ARM_KEY) || 0);
+  var left = ARM_MINUTES * 60000 - (Date.now() - t);
+  if (!t || left <= 0) {
+    throw new Error('ยังไม่ได้ปลดล็อก (หรือปลดล็อกไว้เกิน ' + ARM_MINUTES + ' นาทีแล้ว)\n' +
+      'ให้เลือกฟังก์ชัน armClear กด Run ก่อน แล้วค่อยกลับมากด Run ที่ ' + what +
+      '\nอยากดูก่อนว่าจะหายกี่ใบโดยยังไม่ลบ ให้ Run ที่ previewClearOldOrders');
+  }
+  /* ใช้แล้วหมดไปทันที กด Run ซ้ำโดยไม่ตั้งใจจึงไม่ล้างซ้ำ */
+  p.deleteProperty(ARM_KEY);
+}
+
+/** ล้างออเดอร์เก่า เก็บของวันนี้ไว้ — ต้อง Run ที่ armClear ก่อน */
+function clearOldOrdersNow() {
+  checkArmed_('clearOldOrdersNow');
+  return runClearOld_(true);
+}
+
+/** ล้างออเดอร์ทั้งหมด ไม่เหลือสักใบ — ต้อง Run ที่ armClear ก่อน */
+function clearAllOrdersNow() {
+  checkArmed_('clearAllOrdersNow');
+  return clearAllOrders('ล้างออเดอร์ทั้งหมด');
+}
+
+/**
+ * ล้างเฉพาะออเดอร์เก่า เก็บของวันนี้ไว้
+ *
+ * ใช้ตอนเลิกทดลองแล้วเริ่มคีย์ของจริง แต่ของจริงคีย์ไปแล้วบางส่วน
+ * clearAllOrders() ล้างหมดทั้งชีท ซึ่งจะกินใบจริงที่เพิ่งคีย์ไปด้วย
+ *
+ * "วันนี้" ยึดจากช่องวันที่ในหัวบิล ไม่ใช่เวลาที่กดบันทึก จะได้ตรงกับเลข
+ * ที่หน้าสรุปยอดโชว์ในแท็บ "วันนี้" เป๊ะ ๆ ไม่มีทางเถียงกันเอง
+ *
+ * แถวใน ตัดล็อต ของใบที่ล้าง ถูกล้างไปด้วย ของในล็อตจึงคืนกลับมาเอง
+ * ไม่ใช่หายไปพร้อมออเดอร์ทดลอง
+ *
+ * ชีท เอกสาร ไม่ถูกแตะ (เหมือน clearAllOrders) เพราะใบกำกับภาษีที่ออกไปแล้ว
+ * ลบไม่ได้ตามกฎหมาย แต่รายงานจะบอกว่ามีกี่ใบที่อ้างออเดอร์ที่กำลังจะหายไป
+ */
+function clearOldOrders(confirm) {
+  var WORD = 'ล้างออเดอร์เก่า';
+  if (String(confirm || '').trim() !== WORD) {
+    throw new Error('เพื่อกันกดพลาด ต้องสั่งแบบนี้:  clearOldOrders(\'' + WORD + '\')' +
+      '  — ล้างแล้วกู้คืนไม่ได้ อยากดูก่อนว่าจะหายกี่ใบให้สั่ง previewClearOldOrders() ก่อน');
+  }
+  return runClearOld_(true);
+}
+
+/** ดูก่อนว่าจะหายใบไหนบ้าง โดยยังไม่ลบอะไรเลย */
+function previewClearOldOrders() {
+  return runClearOld_(false);
+}
+
+function runClearOld_(doIt) {
+  var email = requireStaff_();
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var today = isoDate_(new Date());
+    var hs = sheet_('head');
+    var hLast = formulaLimit_('head');
+    if (hLast < DATA_ROW) return 'ยังไม่มีออเดอร์ในชีทเลย';
+
+    var hv = hs.getRange(DATA_ROW, 1, hLast - DATA_ROW + 1, SH.head.net).getValues();
+    var killRows = [], killNos = {}, keep = 0, keepNet = 0, killNet = 0, noDate = [];
+
+    for (var i = 0; i < hv.length; i++) {
+      var no = String(hv[i][SH.head.IN.no - 1] || '').trim();
+      if (!no) continue;
+      var d = hv[i][SH.head.IN.date - 1];
+      var iso = (d instanceof Date) ? isoDate_(d) : String(d || '').slice(0, 10);
+      var net = Number(hv[i][SH.head.net - 1] || 0);
+      if (iso === today) { keep++; keepNet += net; continue; }
+      /* วันที่อ่านไม่ออก = ไม่ใช่ของวันนี้แน่ ๆ จึงล้าง แต่ต้องขึ้นในรายงานให้เห็นชัด
+         จะได้ไม่มีใบไหนหายไปเงียบ ๆ โดยเจ้าของร้านไม่รู้ว่าหายเพราะอะไร */
+      if (!iso) noDate.push(no);
+      killRows.push(DATA_ROW + i);
+      killNos[no] = true;
+      killNet += net;
+    }
+
+    var nKill = killRows.length;
+    var lines = [];
+    lines.push((doIt ? 'ล้างออเดอร์เก่าเรียบร้อย' : 'ทดลองดูก่อน — ยังไม่ได้ลบอะไรเลย'));
+    lines.push('วันนี้คือ ' + today);
+    lines.push('  เก็บไว้ (ของวันนี้): ' + keep + ' ใบ  ยอดรวม ' + money_(keepNet));
+    lines.push('  ' + (doIt ? 'ล้างไป' : 'จะล้าง') + ' (ก่อนวันนี้): ' + nKill + ' ใบ  ยอดรวม ' + money_(killNet));
+    if (noDate.length) {
+      lines.push('  ในนั้นมี ' + noDate.length + ' ใบที่ช่องวันที่ว่างหรืออ่านไม่ออก: ' +
+        noDate.slice(0, 10).join(', ') + (noDate.length > 10 ? ' …' : ''));
+    }
+
+    /* นับแถวลูกของใบที่จะหาย ทั้งตอนพรีวิวและตอนล้างจริง ใช้ทางเดินเดียวกัน
+       เลขที่พรีวิวบอกจึงเป็นเลขเดียวกับที่จะเกิดขึ้นจริง ไม่ใช่คนละตัวนับ */
+    [['item', SH.item.IN.no], ['cut', SH.cut.IN.no]].forEach(function (pair) {
+      var key = pair[0], col = pair[1];
+      var sh = sheet_(key);
+      var last = formulaLimit_(key);
+      var n = 0;
+      if (last >= DATA_ROW) {
+        var v = sh.getRange(DATA_ROW, col, last - DATA_ROW + 1, 1).getValues();
+        for (var j = 0; j < v.length; j++) {
+          var ono = String(v[j][0] || '').trim();
+          if (!ono || !killNos[ono]) continue;
+          if (doIt) clearRow_(key, DATA_ROW + j);
+          n++;
+        }
+      }
+      lines.push('  ' + SH[key].name + ': ' + (doIt ? 'ล้าง ' : 'จะล้าง ') + n + ' แถว');
+    });
+
+    if (doIt) for (var k = killRows.length - 1; k >= 0; k--) clearRow_('head', killRows[k]);
+
+    /* ใบกำกับภาษีที่ออกไปแล้วลบไม่ได้ตามกฎหมาย จึงไม่แตะ แต่ต้องบอกให้รู้
+       ว่ามีใบที่ชี้ไปหาออเดอร์ที่ไม่มีอยู่แล้ว จะได้ไม่งงตอนเปิดชีท เอกสาร */
+    var orphan = 0;
+    if (ss_().getSheetByName(SH.doc.name)) {
+      var ds = sheet_('doc'), dLast = formulaLimit_('doc');
+      if (dLast >= DATA_ROW) {
+        var dv = ds.getRange(DATA_ROW, SH.doc.IN.orderNo, dLast - DATA_ROW + 1, 1).getValues();
+        for (var m = 0; m < dv.length; m++) {
+          if (killNos[String(dv[m][0] || '').trim()]) orphan++;
+        }
+      }
+    }
+    lines.push('  ' + SH.doc.name + ': ไม่แตะเลย' +
+      (orphan ? ' (แต่มี ' + orphan + ' ใบที่อ้างออเดอร์ที่หายไป)' : ''));
+
+    if (doIt) {
+      SpreadsheetApp.flush();
+      writeLog_(email, 'ล้างออเดอร์', SH.head.name, '', 'เฉพาะก่อนวันที่ ' + today,
+        nKill + keep, keep, 'ล้างออเดอร์ทดลอง เก็บของวันนี้ไว้');
+      lines.push('');
+      lines.push('ของในล็อตที่ใบเก่าตัดไป คืนกลับมาแล้ว');
+      lines.push('ใบต่อไปจะเป็น ' + peekNextOrderNo_());
+    } else {
+      lines.push('');
+      lines.push('ถ้าตัวเลขถูกต้องแล้ว สั่งจริงด้วย  clearOldOrders(\'' + 'ล้างออเดอร์เก่า' + '\')');
+    }
+
+    var msg = lines.join('\n');
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function money_(n) {
+  var v = Math.round(Number(n || 0) * 100) / 100;
+  return '฿' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 /* ------------------------------------------------- ซ่อมชีทสต๊อกที่ขึ้น #REF! */
 
 /**

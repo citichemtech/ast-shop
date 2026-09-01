@@ -317,7 +317,8 @@ function load(fixture, opts) {
       getScriptProperties: function () {
         return {
           getProperty: function (k) { return Object.prototype.hasOwnProperty.call(props, k) ? props[k] : null; },
-          setProperty: function (k, v) { props[k] = String(v); }
+          setProperty: function (k, v) { props[k] = String(v); },
+          deleteProperty: function (k) { delete props[k]; }
         };
       }
     },
