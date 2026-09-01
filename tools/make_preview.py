@@ -42,6 +42,8 @@ BOOT = {
         "status": ["รอชำระ", "ชำระแล้ว", "จัดของแล้ว", "ส่งแล้ว", "ยกเลิก"],
         "recvType": ["ซื้อเข้า", "ตรวจนับ", "คืนจากลูกค้า", "ปรับเพิ่ม", "ปรับลด"],
     },
+    "file": {"name": "AST_Stock List Tooling chemical newapp",
+             "url": "https://docs.google.com/spreadsheets/d/FAKEID/edit"},
     "app": {
         "sender": {"name": "",
                    "addr": "2/1 ซ.พัฒนาชนบท 3 แยก 9 แขวงคลองสองต้นนุ่น "

@@ -114,9 +114,14 @@ function escapeHtml_(s) {
 function getBootstrap() {
   var email = requireStaff_();
   var cfg = cfgGet_();
+  var ss = ss_();
   return {
     staff: email,
     shop: cfg.shop,
+    /* ไฟล์ที่แอปผูกอยู่จริง ๆ — ในไดรฟ์มีไฟล์ชื่อคล้ายกันหลายอัน
+       เคยเสียเวลาทั้งคืนเพราะแก้อยู่คนละไฟล์กับที่แอปเขียน
+       โชว์ไว้ในแอปให้กดเปิดได้เลย จะได้ไม่ต้องเดากันอีก */
+    file: { name: ss.getName(), url: ss.getUrl() },
     vatRate: cfg.vatRate,
     lists: cfgLists_(),
     app: appCfg_(),

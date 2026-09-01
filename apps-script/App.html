@@ -1544,6 +1544,16 @@ function drawSummary(all){
   h += '<div class="hint" style="padding:0 2px">ตัวเลขทั้งหมดมาจากชีทโดยตรง '
     + 'ไม่ได้คิดซ้ำในแอป · ไม่รวมออเดอร์ที่ยกเลิก</div>';
 
+  /* บอกให้ชัดว่าตัวเลขพวกนี้มาจากไฟล์ไหน กดเปิดได้เลย
+     ในไดรฟ์มีไฟล์ชื่อคล้ายกันหลายอัน เคยหลงแก้อยู่คนละไฟล์กับที่แอปเขียนมาแล้ว */
+  var f = (BOOT && BOOT.file) || {};
+  if (f.name) {
+    h += '<div class="hint" style="padding:8px 2px 0">ข้อมูลทั้งหมดอยู่ในไฟล์ '
+      + (f.url ? '<a href="'+esc(f.url)+'" target="_blank" rel="noopener"><b>'+esc(f.name)+'</b></a>'
+               : '<b>'+esc(f.name)+'</b>')
+      + ' — ไฟล์อื่นที่ชื่อคล้ายกันในไดรฟ์ ไม่ใช่ตัวที่แอปเขียน</div>';
+  }
+
   $("#summary").innerHTML = h;
 }
 
