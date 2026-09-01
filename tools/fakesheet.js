@@ -313,7 +313,11 @@ function load(fixture, opts) {
         return b;
       }
     },
-    Session: { getActiveUser: function () { return { getEmail: function () { return opts.email === undefined ? 'somchai@chem-inno-tech.com' : opts.email; } }; } },
+    Session: {
+      getActiveUser: function () { return { getEmail: function () { return opts.email === undefined ? 'somchai@chem-inno-tech.com' : opts.email; } }; },
+      /* บัญชีที่รันสคริปต์ ใช้บอกว่าต้องเอาไฟล์ไปแชร์ให้อีเมลไหนตอนเปิดชีทไม่ได้ */
+      getEffectiveUser: function () { return { getEmail: function () { return opts.owner === undefined ? 'citisales01@chem-inno-tech.com' : opts.owner; } }; }
+    },
     PropertiesService: {
       getScriptProperties: function () {
         return {

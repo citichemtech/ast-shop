@@ -730,5 +730,25 @@ eq('เบอร์ที่เก็บเป็นข้อความอย�
 fx21.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, SH_TEL).v = '02-123-4567';
 eq('เบอร์บ้านที่มีขีดคั่น ต้องไม่ถูกแตะ', api21.getOrders(5)[0].tel, '02-123-4567');
 
+/* ====== 22. เปิดชีทไม่ได้ ต้องบอกว่าบัญชีไหนและต้องแชร์ให้ใคร */
+console.log('\n22. เปิดชีทไม่ได้ ต้องบอกทางแก้ให้ครบ');
+
+var fx22 = FS.build();
+var api22 = FS.load(fx22);
+truthy2('เปิดได้ปกติ ต้องบอกว่าใช้งานได้เลย', /ใช้งานได้เลย/.test(api22.whoAmI()));
+truthy2('บอกบัญชีที่รันสคริปต์', /citisales01@chem-inno-tech\.com/.test(api22.whoAmI()));
+truthy2('บอกลิงก์ไฟล์ที่ผูกอยู่', /spreadsheets\/d\//.test(api22.whoAmI()));
+
+var blocked = FS.load(FS.build(), { canOpen: false, owner: 'robot@chem-inno-tech.com' });
+var w22 = blocked.whoAmI();
+truthy2('เปิดไม่ได้ ต้องบอกตรง ๆ', /เปิดไฟล์นี้ไม่ได้/.test(w22));
+truthy2('บอกอีเมลที่ต้องเอาไปแชร์', /robot@chem-inno-tech\.com/.test(w22));
+truthy2('บอกว่าต้องให้สิทธิ์ระดับไหน', /ผู้แก้ไข/.test(w22));
+
+var msg22 = throws('งานอื่นที่ต้องเปิดชีท ต้องได้ข้อความเดียวกัน ไม่ใช่ error ดิบของ Google',
+  function () { blocked.getBootstrap(); }, 'เปิดชีทไม่ได้ด้วยบัญชี');
+truthy2('ในข้อความมีอีเมลที่ต้องแชร์ให้', /robot@chem-inno-tech\.com/.test(msg22));
+truthy2('และมีลิงก์ไฟล์ให้กดเปิดไปแชร์ได้เลย', /spreadsheets\/d\//.test(msg22));
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

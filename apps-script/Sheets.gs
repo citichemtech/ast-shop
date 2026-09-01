@@ -138,7 +138,60 @@ var SH = {
   app: { name: 'ตั้งค่าแอป' }
 };
 
-function ss_() { return SpreadsheetApp.openById(SHEET_ID); }
+/**
+ * เปิดชีทที่แอปผูกอยู่
+ *
+ * ถ้าเปิดไม่ได้ Google โยนคำว่า "You do not have permission to access the requested
+ * document." ออกมาดื้อ ๆ ซึ่งไม่ได้บอกเลยว่าไฟล์ไหน และต้องแชร์ให้ใคร
+ * คนอ่านจึงเดาไม่ออกว่าต้องทำอะไรต่อ — เปลี่ยนเป็นบอกให้ครบว่า
+ * บัญชีไหนกำลังเปิด ไฟล์ไหน และต้องทำอะไรถึงจะผ่าน
+ */
+function ss_() {
+  try {
+    return SpreadsheetApp.openById(SHEET_ID);
+  } catch (e) {
+    var who = '';
+    try { who = Session.getEffectiveUser().getEmail() || ''; } catch (e2) { who = ''; }
+    throw new Error(
+      'เปิดชีทไม่ได้ด้วยบัญชี ' + (who || '(ไม่ทราบบัญชี)') + '\n\n' +
+      'ไฟล์ที่แอปผูกอยู่: https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/edit\n\n' +
+      'วิธีแก้: เปิดไฟล์นั้น กดปุ่ม แชร์ ใส่อีเมล ' + (who || 'บัญชีที่รันสคริปต์') +
+      ' แล้วเลือกสิทธิ์ "ผู้แก้ไข" กดส่ง จากนั้นลองใหม่\n' +
+      '(ถ้าเพิ่งเปลี่ยนไฟล์ ไฟล์ใหม่มักยังไม่ได้แชร์ให้บัญชีนี้ ต่างจากไฟล์เดิม)\n\n' +
+      'ข้อความจาก Google: ' + e.message);
+  }
+}
+
+/**
+ * บอกว่าใครกำลังรันสคริปต์ และเปิดชีทที่ผูกไว้ได้ไหม
+ *
+ * กด เรียกใช้ ได้เลยโดยไม่ต้องส่งค่าอะไร และไม่แตะข้อมูลในชีทแม้แต่ช่องเดียว
+ * มีไว้ตอบคำถามเดียวคือ "ต้องเอาไฟล์ไปแชร์ให้อีเมลไหน"
+ */
+function whoAmI() {
+  var act = '', eff = '';
+  try { act = Session.getActiveUser().getEmail() || ''; } catch (e) { act = ''; }
+  try { eff = Session.getEffectiveUser().getEmail() || ''; } catch (e) { eff = ''; }
+
+  var out = [];
+  out.push('บัญชีที่รันสคริปต์นี้: ' + (eff || '(อ่านไม่ออก)'));
+  if (act && act !== eff) out.push('บัญชีที่กำลังเปิดหน้าจอ: ' + act);
+  out.push('ไฟล์ที่แอปผูกอยู่: https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/edit');
+  out.push('');
+  try {
+    var name = SpreadsheetApp.openById(SHEET_ID).getName();
+    out.push('เปิดไฟล์ได้ปกติ ชื่อไฟล์: ' + name);
+    out.push('ไม่ต้องแชร์อะไรเพิ่ม ใช้งานได้เลย');
+  } catch (e) {
+    out.push('เปิดไฟล์นี้ไม่ได้');
+    out.push('ให้เปิดลิงก์ข้างบน กดปุ่ม แชร์ ใส่อีเมล ' + (eff || 'บัญชีที่รันสคริปต์') +
+      ' เลือกสิทธิ์ "ผู้แก้ไข" กดส่ง แล้วกลับมา Run ที่ whoAmI อีกครั้ง');
+    out.push('ข้อความจาก Google: ' + e.message);
+  }
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
 
 function sheet_(key) {
   var name = SH[key].name;
