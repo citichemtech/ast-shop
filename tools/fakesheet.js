@@ -129,8 +129,14 @@ Range.prototype.copyTo = function (dst) {
   for (var i = 0; i < dst.nr; i++) for (var j = 0; j < dst.nc; j++) dst.s.cell(dst.r + i, dst.c + j).f = f;
   return this;
 };
+/* จำรูปแบบช่องไว้ตรวจได้ เบอร์โทรกับเลขภาษีต้องถูกตั้งเป็นข้อความก่อนเขียนเสมอ */
+Range.prototype.setNumberFormat = function (f) {
+  for (var i = 0; i < this.nr; i++) for (var j = 0; j < this.nc; j++)
+    this.s.cell(this.r + i, this.c + j).fmt = f;
+  return this;
+};
 ['setBackground', 'setFontColor', 'setFontWeight', 'setFontSize', 'setVerticalAlignment',
-  'setHorizontalAlignment', 'setWrap', 'setNumberFormat', 'setDataValidation'
+  'setHorizontalAlignment', 'setWrap', 'setDataValidation'
 ].forEach(function (m) { Range.prototype[m] = function () { return this; }; });
 
 /* ------------------------------------------------------------ สร้างชีทตัวอย่าง */
@@ -304,6 +310,7 @@ function load(fixture, opts) {
         if (opts.canOpen === false) throw new Error('You do not have permission to access the requested document.');
         return {
           getName: function () { return 'AST_ระบบออเดอร์และสต๊อก3008'; },
+          getSpreadsheetTimeZone: function () { return opts.tz || 'Asia/Bangkok'; },
           getUrl: function () { return 'https://docs.google.com/spreadsheets/d/FAKEID/edit'; },
           getSheetByName: function (n) { return fixture.sheets[n] || null; },
           insertSheet: function (n) { return (fixture.sheets[n] = new Sheet(n, 13, 1006)); }
@@ -327,6 +334,15 @@ function load(fixture, opts) {
           setProperty: function (k, v) { props[k] = String(v); },
           deleteProperty: function (k) { delete props[k]; }
         };
+      }
+    },
+    /* พอสร้างวันที่ตามเขตเวลาของสเปรดชีต ต้องมีตัวแปลงให้เรียกเหมือนของจริง */
+    Utilities: {
+      parseDate: function (txt, tz, fmt) {
+        var m = String(txt).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+        if (!m) throw new Error('parseDate: รูปแบบไม่ตรง ' + txt);
+        return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+          Number(m[4]), Number(m[5]), Number(m[6]));
       }
     },
     LockService: {

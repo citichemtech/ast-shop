@@ -1336,6 +1336,12 @@ function num_(n){
 
 function orderMsg(o){
   var t = "📦 สรุปออเดอร์ลูกค้า\n📅 วันที่ " + dmy_(o.date) + "\n\n";
+  /* ชื่อกับเบอร์อยู่หัวข้อความ ตำแหน่งเดียวกับที่ร้านพิมพ์เองมาตลอด
+     ลูกค้าจะได้เห็นว่าเราจดชื่อเบอร์ถูก และร้านเอาไปเทียบกับใบปะหน้าได้
+     (ข้อความนี้ยังอ่านกลับด้วยตัวแยกข้อความของแอปเองได้เหมือนเดิม) */
+  if (o.cust) t += "👤 " + o.cust + "\n";
+  if (o.tel)  t += "📞 " + o.tel + "\n";
+  if (o.cust || o.tel) t += "\n";
   var lastFam = null;
   (o.items||[]).forEach(function(it){
     var p = splitName_(it.name || it.sku);

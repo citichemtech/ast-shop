@@ -256,10 +256,33 @@ function nextRow_(key, keyCol) {
  *
  * คอลัมน์ที่ติดกันเขียนรวดเดียว ลดจำนวนรอบคุยกับ Google ต่อ 1 ออเดอร์
  */
+/**
+ * ช่องที่ต้องเก็บเป็นข้อความเท่านั้น ห้ามให้ชีทตีความเป็นตัวเลข
+ *
+ * เบอร์ 0932592583 ถูกชีทอ่านเป็นตัวเลขแล้วศูนย์หน้าหาย
+ * และเบอร์ที่มีขีดคั่นอย่าง 093-259-2583 ยิ่งหนักกว่า เพราะกลายเป็นการลบเลข
+ * ได้ผลลัพธ์ติดลบอย่าง -932592583 ไปโผล่บนใบปะหน้าและในข้อความที่ส่งลูกค้า
+ * เลขผู้เสียภาษีที่ขึ้นต้นด้วยศูนย์ก็โดนแบบเดียวกัน และใบกำกับภาษีใช้ไม่ได้ทันที
+ */
+var TEXT_IN = {
+  head: { tel: 1, track: 1 },
+  doc: { custTaxId: 1, custTel: 1, custCode: 1 }
+};
+
 function writeRow_(key, row, obj) {
   var cfg = SH[key];
   var s = sheet_(key);
   var cells = {};
+
+  /* ตั้งรูปแบบช่องเป็นข้อความก่อนเขียน ไม่งั้นค่าจะถูกแปลงตั้งแต่ตอนลง */
+  var textFields = TEXT_IN[key];
+  if (textFields) {
+    for (var tf in textFields) {
+      if (!Object.prototype.hasOwnProperty.call(obj, tf)) continue;
+      if (obj[tf] === undefined || obj[tf] === null || obj[tf] === '') continue;
+      s.getRange(row, cfg.IN[tf]).setNumberFormat('@');
+    }
+  }
   for (var f in obj) {
     if (!Object.prototype.hasOwnProperty.call(cfg.IN, f)) {
       throw new Error('เขียนช่อง "' + f + '" ของชีท ' + cfg.name + ' ไม่ได้ — ไม่ใช่ช่องกรอก');
