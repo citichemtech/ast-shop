@@ -302,6 +302,7 @@ function load(fixture, opts) {
         if (opts.canOpen === false) throw new Error('You do not have permission to access the requested document.');
         return {
           getName: function () { return 'AST_ระบบออเดอร์และสต๊อก3008'; },
+          getUrl: function () { return 'https://docs.google.com/spreadsheets/d/FAKEID/edit'; },
           getSheetByName: function (n) { return fixture.sheets[n] || null; },
           insertSheet: function (n) { return (fixture.sheets[n] = new Sheet(n, 13, 1006)); }
         };

@@ -660,5 +660,40 @@ var over19 = [];
 for (var n19 in fx19.sheets) over19 = over19.concat(fx19.sheets[n19].overwrittenFormulas);
 eq('ยกเลิกแล้วไม่มีสูตรถูกเขียนทับ', over19, []);
 
+/* ========== 20. ตรวจว่าแอปอ่านไฟล์ไหน และในไฟล์นั้นมีรหัสอะไรอยู่จริง */
+console.log('\n20. ตัวตรวจว่าแอปอ่านไฟล์ไหน');
+
+var fx20 = FS.build({ products: [
+  { sku: 'SKU-141', name: 'End Mill 3.0', price: 129, cost: 35 },
+  { sku: 'SKU-Chem-99', name: 'ล้างคราบน้ำมัน So Cleaner O-014 (1000ml)', price: 250, cost: 120 },
+  { sku: 'SKU-Chem-104', name: 'Acetone 99.9% (20 ลิตร)', price: 1200, cost: 800 }
+] });
+var api20 = FS.load(fx20);
+var chk = api20.checkSheet();
+
+truthy2('บอกชื่อไฟล์ที่แอปกำลังอ่าน', /AST_ระบบออเดอร์และสต๊อก3008/.test(chk));
+truthy2('บอกลิงก์ไฟล์ให้กดเทียบได้', /docs\.google\.com\/spreadsheets/.test(chk));
+truthy2('นับสินค้าทั้งหมด', /ฐานสินค้า: 3 รายการ/.test(chk));
+truthy2('แยกเฉพาะเคมีออกมา', /เป็นเคมี 2 รายการ/.test(chk));
+truthy2('โชว์รหัสเคมีที่อยู่ในชีทจริง', /SKU-Chem-99/.test(chk) && /SKU-Chem-104/.test(chk));
+truthy2('ไม่เอาสินค้าที่ไม่ใช่เคมีมาปน', chk.indexOf('SKU-141  End Mill') < 0);
+truthy2('บอกทั้งยอดยกมาและยอดคงเหลือ', /ยกมา 1000/.test(chk) && /คงเหลือ 1000/.test(chk));
+truthy2('รายงานอาการของชีทสต๊อกด้วย', /สูตรที่ถูกพิมพ์ทับเป็นเลขนิ่ง/.test(chk));
+truthy2('ชีทดี ต้องบอกว่ายอดที่เห็นเชื่อได้', /ยอดคงเหลือที่เห็นในแอปเชื่อได้/.test(chk));
+
+console.log('\n   ชีทสต๊อกพัง ต้องเตือนว่ายอดที่เห็นยังเชื่อไม่ได้');
+var st20 = fx20.sheets['สต๊อกคงเหลือ'];
+st20.cell(8, 9).v = 1234; st20.cell(8, 9).f = '';   // สูตรถูกพิมพ์ทับเป็นเลขนิ่ง
+var chk2 = api20.checkSheet();
+truthy2('จับได้ว่ามีสูตรถูกพิมพ์ทับ', /เป็นเลขนิ่ง [1-9]/.test(chk2));
+truthy2('และบอกให้ไปซ่อมก่อน', /repairStockSheet/.test(chk2));
+
+eq('ตัวตรวจอ่านอย่างเดียว ไม่แก้อะไรในชีทเลย',
+  (function () {
+    var o = [];
+    for (var k in fx20.sheets) o = o.concat(fx20.sheets[k].overwrittenFormulas);
+    return o;
+  })(), []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

@@ -504,6 +504,59 @@ function money_(n) {
   return '฿' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+/**
+ * ตรวจว่าแอปกำลังอ่านไฟล์ไหน และในไฟล์นั้นมีอะไรอยู่จริง
+ *
+ * ทำเพราะเถียงกันไม่จบว่า "รหัสในแอปไม่ตรงกับที่แก้ในชีท" ซึ่งมีได้สองสาเหตุ
+ * คือแก้คนละไฟล์กัน หรือแก้ไฟล์ถูกแล้วแต่ยังไม่ได้บันทึก
+ * ฟังก์ชันนี้อ่านอย่างเดียว ไม่แก้ ไม่ลบ ไม่เขียนอะไรทั้งนั้น กด Run ได้ไม่ต้องกลัว
+ */
+function checkSheet() {
+  requireStaff_();
+  var ss = ss_();
+  var out = [];
+  out.push('แอปกำลังอ่านไฟล์นี้');
+  out.push('  ชื่อไฟล์: ' + ss.getName());
+  out.push('  ลิงก์: ' + ss.getUrl());
+  out.push('  (ถ้าไม่ใช่ไฟล์ที่เพิ่งแก้ แปลว่าแก้คนละไฟล์กัน)');
+  out.push('');
+
+  var rows = readAll_('prod');
+  var C = SH.prod.IN;
+  var stock = readStock_();
+  var all = 0, chem = [];
+  for (var i = 0; i < rows.length; i++) {
+    var sku = String(rows[i][C.sku - 1] || '').trim();
+    if (!sku) continue;
+    all++;
+    if (sku.toLowerCase().indexOf('chem') < 0) continue;
+    chem.push('  ' + sku + '  ' + String(rows[i][C.name - 1] || '').slice(0, 46) +
+      '  ยกมา ' + (rows[i][C.opening - 1] === '' ? '(ว่าง)' : rows[i][C.opening - 1]) +
+      '  คงเหลือ ' + (stock[sku] === undefined ? '(ไม่มีในชีทสต๊อก)' : stock[sku]));
+  }
+  out.push('ฐานสินค้า: ' + all + ' รายการ  เป็นเคมี ' + chem.length + ' รายการ');
+  out.push('รหัสเคมีที่อยู่ในชีทตอนนี้จริง ๆ (ยกมา = ช่องที่กรอกเอง, คงเหลือ = ที่สูตรคำนวณ)');
+  out = out.concat(chem.slice(0, 30));
+  if (chem.length > 30) out.push('  … อีก ' + (chem.length - 30) + ' รายการ');
+  out.push('');
+
+  /* อ่านอาการของชีทสต๊อกโดยไม่ซ่อม จะได้รู้ว่ายอดคงเหลือที่เห็นเชื่อได้ไหม */
+  var st = sheet_('stock');
+  var cols = st.getLastColumn();
+  var ref = countRef_(st, cols), skew = countSkew_(st), flat = countFlat_(st, cols);
+  out.push('อาการของชีท ' + SH.stock.name);
+  out.push('  #REF! ' + ref + ' ช่อง');
+  out.push('  แถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว');
+  out.push('  สูตรที่ถูกพิมพ์ทับเป็นเลขนิ่ง ' + flat + ' ช่อง');
+  out.push((ref || skew || flat)
+    ? '  → ยอดคงเหลือที่เห็นในแอปยังเชื่อไม่ได้ ให้ Run ที่ repairStockSheet ก่อน'
+    : '  → ปกติดี ยอดคงเหลือที่เห็นในแอปเชื่อได้');
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 /* ------------------------------------------------- ซ่อมชีทสต๊อกที่ขึ้น #REF! */
 
 /**
