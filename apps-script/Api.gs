@@ -681,22 +681,44 @@ function findOrder_(no) {
 
 /* -------------------------------------------------------------- เลขที่ออเดอร์ */
 
-/** เลขถัดไปแบบดูเฉย ๆ — ยังไม่จอง ต้องเรียกใต้ lock อีกทีตอนบันทึกจริง */
+/** เลขถัดไปแบบดูเฉย ๆ — ยังไม่จอง ต้องเรียกใต้ lock อีกทีตอนบันทึกจริง
+ *
+ *  ดูจากสองที่ ไม่ใช่ที่เดียว
+ *    ชีทออเดอร์  = ใบที่ยังอยู่ในระบบ
+ *    ชีทเอกสาร   = ใบที่ออกให้ลูกค้าไปแล้ว ซึ่งอยู่ต่อแม้ออเดอร์จะถูกล้าง
+ *
+ *  ถ้าดูแต่ชีทออเดอร์ พอล้างออเดอร์ทดลองทีเลขจะวนกลับไปที่ 0001
+ *  แล้วชนกับใบเสร็จที่ลูกค้าถืออยู่ — ค้นเลขเดียวเจอลูกค้าสองราย
+ *  และระบบจะไม่ยอมออกใบชนิดเดิมซ้ำ โดยชี้ไปที่ใบของอีกคน */
 function peekNextOrderNo_() {
   var cfg = cfgGet_();
+  var max = 0;
+
   var s = sheet_('head');
   var last = formulaLimit_('head');
-  var max = 0;
   if (last >= DATA_ROW) {
     var v = s.getRange(DATA_ROW, SH.head.IN.no, last - DATA_ROW + 1, 1).getValues();
-    for (var i = 0; i < v.length; i++) {
-      var no = String(v[i][0] || '');
-      if (no.indexOf(cfg.prefix) !== 0) continue;
-      var n = parseInt(no.substring(cfg.prefix.length), 10);
-      if (!isNaN(n) && n > max) max = n;
+    for (var i = 0; i < v.length; i++) max = maxOrderNo_(max, v[i][0], cfg.prefix);
+  }
+
+  var ds = sheetIfAny_('doc');
+  if (ds) {
+    var dlast = formulaLimit_('doc');
+    if (dlast >= DATA_ROW) {
+      var dv = ds.getRange(DATA_ROW, SH.doc.IN.orderNo, dlast - DATA_ROW + 1, 1).getValues();
+      for (var j = 0; j < dv.length; j++) max = maxOrderNo_(max, dv[j][0], cfg.prefix);
     }
   }
+
   return cfg.prefix + pad4_(max + 1);
+}
+
+/** เลขที่มากกว่าระหว่างค่าเดิมกับเลขออเดอร์ในช่องนั้น — ช่องที่ไม่ใช่เลขออเดอร์ข้ามไป */
+function maxOrderNo_(max, cell, prefix) {
+  var no = String(cell || '').trim();
+  if (no.indexOf(prefix) !== 0) return max;
+  var n = parseInt(no.substring(prefix.length), 10);
+  return (!isNaN(n) && n > max) ? n : max;
 }
 
 function pad4_(n) {

@@ -200,10 +200,14 @@ function whoAmI() {
 }
 
 function sheet_(key) {
-  var name = SH[key].name;
-  var s = ss_().getSheetByName(name);
-  if (!s) throw new Error('ไม่พบชีท "' + name + '" — ยังไม่ได้สั่ง setup() หรือมีคนเปลี่ยนชื่อชีท');
+  var s = sheetIfAny_(key);
+  if (!s) throw new Error('ไม่พบชีท "' + SH[key].name + '" — ยังไม่ได้สั่ง setup() หรือมีคนเปลี่ยนชื่อชีท');
   return s;
+}
+
+/** เหมือน sheet_ แต่คืน null แทนที่จะโยน error — ใช้กับชีทที่ไม่มีก็ยังทำงานต่อได้ */
+function sheetIfAny_(key) {
+  return ss_().getSheetByName(SH[key].name) || null;
 }
 
 /**
