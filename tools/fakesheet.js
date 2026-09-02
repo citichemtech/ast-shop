@@ -232,10 +232,13 @@ function build(opts) {
     /* ราคามาตรฐานอ่านจากชีท ฐานสินค้า ไม่ใช่จากรายการตั้งต้น
        เพราะแอปเพิ่มสินค้าเข้าฐานเองได้ (ของซื้อมาขายไปที่พิมพ์ชื่อเอง)
        ถ้าอ่านจากรายการตั้งต้น สินค้าที่เพิ่งเพิ่มจะหายไปจากสูตรของชีทจำลอง */
-    var std = {};
+    var std = {}, pname = {};
     for (var pr = DATA_ROW; pr <= 150; pr++) {
       var psku = prod.cell(pr, 2).v;
-      if (psku) std[psku] = Number(prod.cell(pr, 8).v || 0);
+      if (psku) {
+        std[psku] = Number(prod.cell(pr, 8).v || 0);
+        pname[psku] = String(prod.cell(pr, 4).v || '');
+      }
     }
 
     var seen = {};
@@ -246,6 +249,10 @@ function build(opts) {
       var qty = Number(item.cell(r, 7).v || 0);
       var pv = item.cell(r, 9).v;
       var unit = (pv === '' || pv === null || pv === undefined) ? Number(std[sku] || 0) : Number(pv);
+      /* ช่องชื่อสินค้าเป็นสูตร VLOOKUP หารหัสในฐานสินค้า หาไม่เจอได้ "ไม่พบ SKU"
+         ของจริงเป็นแบบนี้ และคำนั้นเคยไปพิมพ์บนใบกำกับภาษีที่ส่งลูกค้าจริง
+         ชีทจำลองไม่เคยคิดช่องนี้เลย ข้อสอบจึงไม่มีทางจับได้ */
+      item.cell(r, 5).v = (pname[sku] === undefined) ? 'ไม่พบ SKU' : pname[sku];
       item.cell(r, 8).v = Number(std[sku] || 0);
       item.cell(r, 10).v = Math.round(qty * unit * 100) / 100;
       seen[no] = (seen[no] || 0) + 1;

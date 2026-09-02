@@ -145,7 +145,13 @@ function readProducts_() {
       name: String(rows[i][SH.prod.IN.name - 1] || ''),
       unit: String(rows[i][SH.prod.IN.unit - 1] || 'ชิ้น'),
       perPack: Number(rows[i][SH.prod.IN.perPack - 1] || 1),
-      cost: Number(rows[i][SH.prod.IN.cost - 1] || 0),
+      /* ต้นทุนว่างต้องคงความว่างไว้ ไม่ใช่แปลงเป็นศูนย์
+         ว่าง = ยังไม่รู้ต้นทุน · 0 = รู้ว่าไม่มีต้นทุน — คนละความหมาย
+         และเป็นตัวที่ใช้ตัดสินว่าของที่พิมพ์ชื่อเองซ้ำ ควรใช้รหัสเดิมหรือรหัสใหม่ */
+      cost: (rows[i][SH.prod.IN.cost - 1] === '' ||
+             rows[i][SH.prod.IN.cost - 1] === null ||
+             rows[i][SH.prod.IN.cost - 1] === undefined)
+              ? '' : Number(rows[i][SH.prod.IN.cost - 1] || 0),
       price: Number(rows[i][SH.prod.IN.price - 1] || 0),
       remain: stock[sku] === undefined ? null : stock[sku]
     });
@@ -275,7 +281,7 @@ function getOrders(limit) {
       if (!owner) continue;
       owner.items.push({
         sku: String(iv[j][SH.item.IN.sku - 1] || ''),
-        name: String(iv[j][4] || ''),
+        name: itemName_(iv[j][4], iv[j][SH.item.IN.sku - 1]),
         unit: String(iv[j][5] || ''),
         qty: Number(iv[j][SH.item.IN.qty - 1] || 0),
         price: Number(iv[j][SH.item.IN.price - 1] || iv[j][7] || 0),
@@ -976,27 +982,30 @@ function planOrder_(p, email) {
         throw new Error('บรรทัดที่ ' + (k + 1) + ' (' + nm + '): ต้นทุนไม่ถูกต้อง');
       }
 
-      if (cost === null) {
-        /* ไม่กรอกต้นทุน = ไม่ลงฐานสินค้า เขียนชื่อลงช่องรหัสสินค้าไปตรง ๆ
-           ยอดรวมของบิลยังถูก เพราะสูตรยอดรวมใช้ราคาขายจริงคูณจำนวน
-           แต่ชีทจะคิดต้นทุน 0 กำไรจึงดูเต็มราคาขาย — แอปเตือนไว้แล้วตอนคีย์ */
-        sku = nm;
-        prod = { sku: nm, name: nm, price: price };
+      /* ลงฐานสินค้าให้เสมอ ไม่ว่าจะกรอกต้นทุนหรือไม่
+         พร้อมลงรับเข้าเท่าจำนวนที่ขาย สต๊อกจึงสุทธิเป็นศูนย์ ไม่ติดลบ
+
+         ของเดิม: ไม่กรอกต้นทุน = ไม่ลงฐานสินค้า แล้วเขียนชื่อลงช่องรหัสแทน
+         ยอดเงินถูกก็จริง แต่ช่องชื่อสินค้าในชีทเป็นสูตร VLOOKUP หารหัสในฐานสินค้า
+         หาไม่เจอจึงขึ้นว่า "ไม่พบ SKU" แล้วคำนั้นไปพิมพ์บนใบกำกับภาษีที่ส่งลูกค้า
+         (เกิดขึ้นจริงกับใบ ONIV26-00245) ชื่อสินค้าบนใบภาษีผิดคือใบใช้ไม่ได้ทั้งใบ
+
+         ไม่กรอกต้นทุนก็ยังลงได้ แค่เว้นช่องต้นทุนไว้ ชีทมีช่องเตือน
+         "ยังไม่มีต้นทุน" ให้อยู่แล้ว ซึ่งบอกเรื่องนี้ได้ตรงกว่าและไม่ทำใบเสีย
+
+         ชื่อซ้ำกับที่เคยขายไปแล้วให้ใช้รหัสเดิม ไม่สร้างรหัสใหม่ทุกครั้ง
+         (ต้นทุนต่างกันถือเป็นคนละตัว เพราะช่องต้นทุนในฐานสินค้าคือตัวที่สูตร
+          ดึงไปคิดกำไรของทุกใบที่ใช้รหัสนั้น ทับแล้วกำไรใบเก่าเปลี่ยนตามเงียบ ๆ) */
+      var hit = findFreeProduct_(plist, nm, cost);
+      if (hit) {
+        sku = hit.sku;
       } else {
-        /* กรอกต้นทุน = ลงฐานสินค้าให้ พร้อมลงรับเข้าเท่าจำนวนที่ขาย
-           สต๊อกจึงสุทธิเป็นศูนย์ ไม่ติดลบ และต้นทุนกำไรตรงตามจริง
-           ชื่อซ้ำกับที่เคยขายไปแล้วให้ใช้รหัสเดิม ไม่สร้างรหัสใหม่ทุกครั้ง */
-        var hit = findFreeProduct_(plist, nm, cost);
-        if (hit) {
-          sku = hit.sku;
-        } else {
-          sku = 'SKU-X' + pad3_(freeSeq++);
-          newProds.push({ sku: sku, name: nm, cost: cost, price: price });
-          plist.push({ sku: sku, name: nm, price: price, cost: cost, row: 0 });
-        }
-        prod = { sku: sku, name: nm, price: price };
-        recvRows.push({ sku: sku, name: nm, qty: qty, cost: cost });
+        sku = 'SKU-X' + pad3_(freeSeq++);
+        newProds.push({ sku: sku, name: nm, cost: cost, price: price });
+        plist.push({ sku: sku, name: nm, price: price, cost: cost, row: 0 });
       }
+      prod = { sku: sku, name: nm, price: price };
+      recvRows.push({ sku: sku, name: nm, qty: qty, cost: cost });
     } else {
       sku = String(it.sku || '').trim();
       prod = prods[sku];
@@ -1081,6 +1090,24 @@ function pickRecvType_(list) {
   return list.length ? list[0] : 'ซื้อเข้า';
 }
 
+/**
+ * ชื่อสินค้าที่จะพิมพ์ลงบนใบ
+ *
+ * ช่องชื่อสินค้าในชีทเป็นสูตร VLOOKUP หารหัสในฐานสินค้า หาไม่เจอจะได้คำว่า
+ * "ไม่พบ SKU" กลับมา — และคำนั้นเคยไปพิมพ์บนใบกำกับภาษีที่ส่งลูกค้าจริง
+ * (ONIV26-00245) ชื่อสินค้าบนใบภาษีผิด = ใบใช้ไม่ได้ทั้งใบ
+ *
+ * ออเดอร์ที่คีย์หลังจากนี้ไม่เกิดอีกแล้ว เพราะของที่พิมพ์ชื่อเองถูกลงฐานสินค้าให้เสมอ
+ * แต่แถวที่คีย์ไปแล้วยังอยู่ในชีท และต้องพิมพ์ซ้ำได้ถูกต้อง — แถวพวกนั้นเก็บชื่อจริง
+ * ไว้ในช่องรหัสสินค้า จึงหยิบจากตรงนั้นมาแทน ดีกว่าพิมพ์คำว่า "ไม่พบ SKU" ออกไป
+ */
+function itemName_(nameCell, skuCell) {
+  var nm = String(nameCell == null ? '' : nameCell).trim();
+  if (nm && nm.indexOf('ไม่พบ') !== 0 && nm.charAt(0) !== '#') return nm;
+  var sku = String(skuCell == null ? '' : skuCell).trim();
+  return sku || nm;
+}
+
 /** เลขรหัสถัดไปของชุด SKU-X — ดูจากที่มีอยู่จริง ไม่ใช่นับจำนวนแถว */
 function nextFreeSeq_(plist) {
   var max = 0;
@@ -1105,7 +1132,15 @@ function findFreeProduct_(plist, name, cost) {
   for (var i = 0; i < plist.length; i++) {
     if (!/^SKU-X\d+$/.test(String(plist[i].sku || ''))) continue;
     if (String(plist[i].name || '').trim().toLowerCase() !== key) continue;
-    if (Math.abs(Number(plist[i].cost || 0) - Number(cost)) > 0.005) continue;
+    /* ต้นทุนว่างกับต้นทุน 0 ไม่ใช่เรื่องเดียวกัน
+       ว่าง = ยังไม่รู้ต้นทุน · 0 = รู้ว่าไม่มีต้นทุน (ของแถม ของตัวอย่าง)
+       ถ้าตีรวมกัน ของที่ยังไม่รู้ต้นทุนจะไปเกาะรหัสของที่ต้นทุนศูนย์
+       แล้วกำไรของใบเก่าจะเปลี่ยนตามโดยไม่มีใครรู้ */
+    var have = plist[i].cost;
+    var blankHave = (have === '' || have === null || have === undefined);
+    var blankWant = (cost === null);
+    if (blankHave !== blankWant) continue;
+    if (!blankWant && Math.abs(Number(have) - Number(cost)) > 0.005) continue;
     return plist[i];
   }
   return null;
