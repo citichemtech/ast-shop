@@ -714,6 +714,26 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ใบที่ยังไม่ได้เซ็น ช่องนั้นแทบไม่มีหมึก', stamped.off >= 0);
   truthy('เซ็นแล้วหมึกในช่องนั้นเพิ่มขึ้นจริง', stamped.on > stamped.off + 100);
 
+  console.log('\n   ที่ตั้งลายเซ็นต้องหาเจอเสมอ แม้ช่วงที่เลือกไม่มีออเดอร์');
+  await page.click('.tabs button[data-go="sum"]');
+  await page.waitForTimeout(700);
+  eq('เข้าหน้าสรุปยอดแล้วเจอปุ่มตั้งลายเซ็นสองช่อง',
+    await page.locator('#sig-box button[data-signbtn]').count(), 2);
+  eq('มีปุ่มใช้รูปลายเซ็นที่มีอยู่แล้วด้วย',
+    await page.locator('#sig-box button[data-sigimg]').count(), 2);
+
+  /* เลือกช่วงเวลาที่ไม่มีออเดอร์ กล่องสรุปยอดจะถูกแทนที่ด้วยข้อความว่าง
+     ที่ตั้งลายเซ็นต้องยังอยู่ ไม่หายไปพร้อมกัน (ของเดิมหายทั้งอันโดยไม่มีอะไรบอก) */
+  await page.evaluate(function () {
+    SUM_RANGE = 'today';
+    drawSummary([{ no: 'X', date: '2000-01-01', status: 'รอชำระ', items: [] }]);
+  });
+  await page.waitForTimeout(200);
+  truthy('กล่องสรุปยอดขึ้นว่าไม่มีออเดอร์',
+    /ยังไม่มีออเดอร์ในช่วงนี้/.test(await page.textContent('#summary')));
+  eq('แต่ที่ตั้งลายเซ็นยังอยู่ครบ',
+    await page.locator('#sig-box button[data-signbtn]').count(), 2);
+
   /* ---------- 20. ไฟล์ PDF ---------- */
   console.log('\n20. ไฟล์ PDF');
 
