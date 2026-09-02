@@ -914,7 +914,10 @@ function createOrder(payload) {
     for (var np = 0; np < plan.newProds.length; np++) {
       writeLog_(email, 'เพิ่มสินค้า', SH.prod.name, plan.newProds[np].sku,
         'ซื้อมาขายไป', '', plan.newProds[np].name,
-        'พิมพ์ชื่อสินค้าเองตอนคีย์ออเดอร์ ' + no + ' ทุน ' + plan.newProds[np].cost +
+        /* ต้นทุนอาจว่างได้ (คีย์โดยยังไม่รู้ทุน) เขียนให้อ่านออกว่ายังไม่ระบุ
+           ไม่ใช่ปล่อยให้กลายเป็นคำว่า null ในสมุดบันทึกที่คนเปิดอ่านจริง */
+        'พิมพ์ชื่อสินค้าเองตอนคีย์ออเดอร์ ' + no + ' ทุน ' +
+        (plan.newProds[np].cost === null ? 'ยังไม่ระบุ' : plan.newProds[np].cost) +
         ' ขาย ' + plan.newProds[np].price + ' (ลงรับเข้าเท่าที่ขายแล้ว สต๊อกจึงเป็นศูนย์)');
     }
 
