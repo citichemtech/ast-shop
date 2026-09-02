@@ -939,5 +939,85 @@ truthy2('ชีทตั้งค่าแอปมีช่องยกยอ�
 eq('ใบแจ้งหนี้ใบแรกเดินต่อจากเล่มเดิม', api28.peekDocNos().inv, 'IV26-00241');
 eq('แก้เล่มใบแจ้งหนี้แล้วเล่มใบเสร็จไม่ขยับตาม', api28.peekDocNos().rec, rec28);
 
+/* ====== 29. ลายเซ็น
+
+   สองที่เก็บ ตั้งใจให้แยกกัน
+     ตั้งค่าแอป  ลายเซ็นฝั่งร้าน เซ็นครั้งเดียวใช้ทุกใบ
+     เอกสาร     ลายเซ็นผู้รับของ เป็นของใบนั้นใบเดียว และมาทีหลังตอนของถึงมือ
+   ห้ามเขียนปนกับช่อง snap เพราะ snap คือ "ใบตอนที่ออก" ที่ต้องพิมพ์ซ้ำได้เหมือนเดิม */
+console.log('\n29. ลายเซ็น');
+
+/* คอลัมน์ของชีท เอกสาร — ต้องตรงกับ SH.doc.IN ใน Sheets.gs
+   ถ้าคอลัมน์ขยับแล้วลืมแก้ตรงนี้ ข้อสอบจะฟ้องทันทีเพราะค่าที่อ่านได้ไม่ตรง */
+var DOC_TOTAL = 17, DOC_SNAP = 21, DOC_SIGN = 22;
+
+var fx29 = FS.build();
+var api29 = FS.load(fx29, {});
+api29.setup();
+var cfg29 = fx29.sheets['ตั้งค่าแอป'];
+
+function cfgVal29(name) {
+  for (var r = 1; r < 80; r++) {
+    if (String(cfg29.cell(r, 1).v || '') === name) return cfg29.cell(r, 2);
+  }
+  return null;
+}
+
+truthy2('setup เติมแถวลายเซ็นผู้มีอำนาจลงนามให้', !!cfgVal29('ลายเซ็นผู้มีอำนาจลงนาม'));
+truthy2('setup เติมแถวลายเซ็นผู้รับเงินให้', !!cfgVal29('ลายเซ็นผู้รับเงิน/พนักงานขาย'));
+eq('ยังไม่ได้เซ็น ช่องต้องว่าง ไม่ใช่ค่าเดา', cfgVal29('ลายเซ็นผู้มีอำนาจลงนาม').v, '');
+
+var SIG = JSON.stringify({ w: 600, h: 200, s: [[10, 20, 300, 40, 590, 180]] });
+api29.saveSignature('auth', SIG);
+eq('เก็บลายเซ็นลงชีทตั้งค่าแอปจริง', cfgVal29('ลายเซ็นผู้มีอำนาจลงนาม').v, SIG);
+eq('ตั้งช่องเป็นข้อความก่อนเขียน ไม่ให้ชีทเดาชนิดเอง',
+  cfgVal29('ลายเซ็นผู้มีอำนาจลงนาม').fmt, '@');
+eq('แอปอ่านกลับไปใช้ได้', api29.getBootstrap().app.sign.auth, SIG);
+eq('อีกช่องไม่ถูกแตะ', api29.getBootstrap().app.sign.cashier, '');
+
+console.log('\n   ลบลายเซ็นทิ้งได้ ไม่ใช่เซ็นแล้วเซ็นตลอดไป');
+api29.saveSignature('auth', '');
+eq('ลบแล้วช่องว่างจริง', cfgVal29('ลายเซ็นผู้มีอำนาจลงนาม').v, '');
+
+console.log('\n   ค่าที่ไม่ใช่ลายเซ็นต้องไม่ถูกเก็บลงชีท');
+throws('ไม่ใช่ JSON', function(){ api29.saveSignature('auth', 'ลายเซ็นของฉัน') }, 'รูปแบบลายเซ็น');
+throws('JSON ที่ไม่มีเส้น', function(){ api29.saveSignature('auth', '{"w":600,"h":200,"s":[]}') }, 'ว่างเปล่า');
+throws('ไม่รู้ว่าเป็นลายเซ็นของใคร', function(){ api29.saveSignature('somebody', SIG) }, 'ลายเซ็นของใคร');
+var HUGE = '{"w":600,"h":200,"s":[[' + new Array(30000).join('1,') + '1]]}';
+throws('ยาวเกินช่องในชีท', function(){ api29.saveSignature('auth', HUGE) }, 'ยาวเกินไป');
+eq('ของที่ล้มเหลวไม่ทิ้งอะไรไว้ในชีท', cfgVal29('ลายเซ็นผู้มีอำนาจลงนาม').v, '');
+
+console.log('\n   รูปลายเซ็นที่สแกนมาก็ใช้ได้ แต่ลิงก์จากเน็ตห้าม');
+var IMG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+api29.saveSignature('cashier', IMG);
+eq('เก็บรูปลายเซ็นได้', api29.getBootstrap().app.sign.cashier, IMG);
+throws('ลิงก์รูปจากเน็ตไม่รับ',
+  function(){ api29.saveSignature('cashier', 'https://example.com/sig.png') }, 'รูปแบบลายเซ็น');
+
+console.log('\n   ลูกค้าเซ็นรับของบนใบที่ออกไปแล้ว');
+var d29 = fx29.sheets['เอกสาร'];
+d29.cell(DATA_ROW, 2).v = 'ONIV26-00243';
+d29.cell(DATA_ROW, 3).v = 'ใบเสร็จรับเงิน';
+d29.cell(DATA_ROW, 5).v = 'AST-26-0015';
+d29.cell(DATA_ROW, DOC_SNAP).v = '{"v":1,"no":"ONIV26-00243"}';
+
+api29.signDoc('ONIV26-00243', SIG, 'น้องบี');
+eq('ลายเซ็นลงคอลัมน์ของตัวเอง', d29.cell(DATA_ROW, DOC_SIGN).v, SIG);
+eq('ภาพถ่ายของใบตอนที่ออกไม่ถูกแตะแม้แต่ตัวอักษรเดียว',
+  d29.cell(DATA_ROW, DOC_SNAP).v, '{"v":1,"no":"ONIV26-00243"}');
+eq('เลขที่เอกสารไม่ถูกแตะ', d29.cell(DATA_ROW, 2).v, 'ONIV26-00243');
+eq('ยอดเงินไม่ถูกแตะ', d29.cell(DATA_ROW, DOC_TOTAL).v, '');
+throws('ใบที่ไม่มีจริง', function(){ api29.signDoc('ONIV26-99999', SIG) }, 'ไม่พบเอกสาร');
+
+console.log('\n   ใบที่ยกเลิกไปแล้วเซ็นรับของไม่ได้ — เป็นหลักฐานที่ขัดกันเอง');
+api29.voidDoc('ONIV26-00243', 'ออกผิดชนิดเอกสาร', 'น้องบี');
+throws('เซ็นบนใบที่ยกเลิกแล้ว',
+  function(){ api29.signDoc('ONIV26-00243', SIG) }, 'ถูกยกเลิกไปแล้ว');
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over29 = [];
+for (var nm29 in fx29.sheets) over29 = over29.concat(fx29.sheets[nm29].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over29, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

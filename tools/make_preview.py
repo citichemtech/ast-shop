@@ -103,6 +103,7 @@ MOCK = """
 var MOCK_BOOT = __BOOT__;
 var MOCK_ORDERS = __ORDERS__;
 var MOCK_DOCS = [];       /* ทะเบียนเอกสารที่ออกไปแล้วในรอบนี้ */
+var MOCK_SIGN = {};       /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ (ของจริงอยู่ในชีท ตั้งค่าแอป) */
 window.SENT = [];
 window.google = { script: { run: (function(){
   var ok=null, bad=null;
@@ -153,6 +154,24 @@ window.google = { script: { run: (function(){
                    custName:d.cust.name, total:d.doc.total, voidWhy:d.voidWhy||"",
                    hasSnap:true };
         }).reverse();
+      });
+    },
+    saveSignature: function(which, sig){
+      reply(function(){
+        if(["cashier","auth"].indexOf(String(which)) < 0)
+          throw new Error("ไม่รู้ว่าจะเก็บลายเซ็นของใคร");
+        MOCK_SIGN[which] = String(sig||"");
+        return { ok:true, which:which, has: !!MOCK_SIGN[which] };
+      });
+    },
+    signDoc: function(no, sig, by){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+        if(!f) throw new Error("ไม่พบเอกสารเลขที่ " + no + " ในชีท เอกสาร");
+        if(f.voidWhy) throw new Error("ใบ " + no + " ถูกยกเลิกไปแล้ว (" + f.voidWhy + ")");
+        if(!sig) throw new Error("ยังไม่ได้เซ็น");
+        f.sign = String(sig);
+        return { ok:true, no:f.no, at:"02/09/2026 13:20" };
       });
     },
     voidDoc: function(no, why, by){
@@ -222,8 +241,8 @@ def main():
         return (GS / (name + ".html")).read_text(encoding="utf-8")
 
     page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
-    if n not in (0, 6):
-        sys.exit("คาดว่าจะมี include 6 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
+    if n not in (0, 7):
+        sys.exit("คาดว่าจะมี include 7 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
 
     page = page.replace('"<?= staffEmail ?>"', json.dumps(BOOT["staff"]))
     if "<?" in page:

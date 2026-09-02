@@ -646,8 +646,124 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(150);
   eq('ล้างฟอร์มแล้วช่องค้นหาว่างด้วย', await page.inputValue('#f-addr-find'), '');
 
-  /* ---------- 19. ไม่มี error หลุดใน console ---------- */
-  console.log('\n19. ความสะอาดของหน้าเว็บ');
+  /* ---------- 19. ลายเซ็น ---------- */
+  console.log('\n19. ลายเซ็น');
+
+  /* วาดลายเซ็นแบบเส้น แล้วดูว่ามีหมึกลงบนกระดาษจริงตรงช่องที่ควรลง
+     ไม่ใช่แค่ "ฟังก์ชันไม่ throw" — ช่องเซ็นที่ยังว่างคือบั๊กที่เงียบที่สุด */
+  var sigInk = await page.evaluate(async function () {
+    var sig = { w: 600, h: 200, s: [[40, 150, 180, 40, 320, 160, 470, 45, 560, 120]] };
+    var cv = document.createElement('canvas');
+    cv.width = 400; cv.height = 140;
+    var g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 400, 140);
+    var drew = signDraw(g, sig, 10, 10, 380, 120);
+    var d = g.getImageData(0, 0, 400, 140).data, ink = 0;
+    for (var i = 0; i < d.length; i += 4) if (d[i] < 200 || d[i + 1] < 200) ink++;
+    return { drew: drew, ink: ink };
+  });
+  eq('signDraw บอกว่าวาดแล้ว', sigInk.drew, true);
+  truthy('มีหมึกลงบนผืนผ้าใบจริง ไม่ใช่ช่องว่าง', sigInk.ink > 200);
+
+  console.log('\n   ค่าที่พังต้องไม่ทำให้ใบออกไม่ได้ แค่เว้นช่องไว้เซ็นมือ');
+  var bad = await page.evaluate(function () {
+    var g = document.createElement('canvas').getContext('2d');
+    return ['', null, 'ไม่ใช่ json', '{}', '{"s":[]}', 12345].map(function (v) {
+      try { return signDraw(g, v, 0, 0, 100, 50); } catch (e) { return 'THREW:' + e.message; }
+    });
+  });
+  eq('ค่าพังทุกแบบคืน false เฉย ๆ ไม่โยน error', bad, [false, false, false, false, false, false]);
+
+  console.log('\n   เก็บลายเซ็นของร้าน แล้วต้องขึ้นบนใบที่ออกหลังจากนั้น');
+  var stamped = await page.evaluate(async function () {
+    var sig = JSON.stringify({ w: 600, h: 200, s: [[40, 150, 300, 40, 560, 150]] });
+    await api('saveSignature', 'auth', sig);
+    CFG.doc = CFG.doc || {}; CFG.doc.sign = CFG.doc.sign || {};
+    CFG.doc.sign.auth = sig;
+
+    /* วาดใบสองรอบ — ไม่มีลายเซ็น กับมีลายเซ็น แล้วนับหมึกเฉพาะช่องขวาสุด
+       (ผู้มีอำนาจลงนาม) ถ้าตัวเลขไม่ต่างกัน แปลว่าลายเซ็นไม่ได้ลงบนกระดาษจริง */
+    var d = { no: 'TEST-1', type: 'ใบเสร็จรับเงิน', vatRate: 0.07,
+              lines: [{ name: 'ของทดสอบ', po: '', qty: 1, unit: 'ชิ้น', price: 100, amount: 100 }],
+              base: 100, vat: 7, total: 107, totalText: 'หนึ่งร้อยเจ็ดบาทถ้วน' };
+    var m = { no: 'TEST-1', date: '2026-09-02', cust: { name: 'ลูกค้าทดสอบ' }, form: [0] };
+
+    function ink(url) {
+      return new Promise(function (res) {
+        var im = new Image();
+        im.onload = function () {
+          var c = document.createElement('canvas');
+          c.width = im.naturalWidth; c.height = im.naturalHeight;
+          var g = c.getContext('2d');
+          g.drawImage(im, 0, 0);
+          /* ช่องขวาสุดของแถวลายเซ็น อยู่ท้ายกระดาษ */
+          var x = Math.round(c.width * 0.70), y = Math.round(c.height * 0.855);
+          var w = Math.round(c.width * 0.25), h = Math.round(c.height * 0.05);
+          var p = g.getImageData(x, y, w, h).data, n = 0;
+          for (var i = 0; i < p.length; i += 4) if (p[i] < 200 || p[i + 2] < 200) n++;
+          res(n);
+        };
+        im.onerror = function () { res(-1); };
+        im.src = url;
+      });
+    }
+    var off = await ink(await buildDocPage(d, m, { co: {} }, 'ต้นฉบับ'));
+    var on  = await ink(await buildDocPage(d, m, { co: {}, sign: { auth: sig } }, 'ต้นฉบับ'));
+    return { off: off, on: on };
+  });
+  truthy('ใบที่ยังไม่ได้เซ็น ช่องนั้นแทบไม่มีหมึก', stamped.off >= 0);
+  truthy('เซ็นแล้วหมึกในช่องนั้นเพิ่มขึ้นจริง', stamped.on > stamped.off + 100);
+
+  /* ---------- 20. ไฟล์ PDF ---------- */
+  console.log('\n20. ไฟล์ PDF');
+
+  var pdf = await page.evaluate(async function () {
+    var cv = document.createElement('canvas');
+    cv.width = 300; cv.height = 424;
+    var g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 300, 424);
+    g.fillStyle = '#000'; g.fillRect(30, 30, 240, 60);
+    var blob = pdfFromCanvas(cv, 210, 297, 'ONIV26-00243');
+    var buf = new Uint8Array(await blob.arrayBuffer());
+    var head = '', tail = '';
+    for (var i = 0; i < 8; i++) head += String.fromCharCode(buf[i]);
+    for (var j = buf.length - 8; j < buf.length; j++) tail += String.fromCharCode(buf[j]);
+
+    /* ตำแหน่งใน xref ต้องชี้ไปที่หัว object จริง ถ้าคลาดไปไบต์เดียวไฟล์เปิดไม่ได้
+       และ "เปิดไม่ได้" คือสิ่งที่จะไปโผล่ตอนส่งให้บัญชีลูกค้า ไม่ใช่ตอนทดสอบ */
+    var all = '';
+    for (var k = 0; k < buf.length; k++) all += String.fromCharCode(buf[k]);
+    var sx = all.lastIndexOf('startxref');
+    var off = parseInt(all.slice(sx + 9).trim(), 10);
+    var lines = all.slice(off).split('\n');
+    var okOff = true;
+    for (var n = 1; n <= 6; n++) {
+      var o = parseInt(lines[2 + n], 10);
+      if (all.slice(o, o + String(n).length + 6) !== n + ' 0 obj') okOff = false;
+    }
+    /* ไบต์แรกของรูปต้องอยู่ติดหลัง "stream\n" พอดี และยาวเท่า /Length เป๊ะ
+       เกินมาตัวเดียว ตัวอ่าน PDF จะอ่านรูปเลื่อนไปหนึ่งไบต์ ไฟล์เปิดได้แต่รูปเสีย
+       ซึ่งจะไปโผล่ตอนบัญชีลูกค้าเปิดดู ไม่ใช่ตอนเราทดสอบ */
+    var im = /\/Length (\d+) >>\nstream\n/.exec(all.slice(all.indexOf('/DCTDecode')));
+    var st = all.indexOf('/DCTDecode') + im.index + im[0].length;
+    var jpg = all.slice(st, st + Number(im[1]));
+
+    return { type: blob.type, size: blob.size, head: head, tail: tail.trim(),
+             xrefHead: lines[0], okOff: okOff,
+             jpgHead: jpg.charCodeAt(0) + ',' + jpg.charCodeAt(1),
+             jpgTail: jpg.charCodeAt(jpg.length-2) + ',' + jpg.charCodeAt(jpg.length-1) };
+  });
+  eq('ชนิดไฟล์เป็น PDF', pdf.type, 'application/pdf');
+  eq('ขึ้นต้นด้วยหัว PDF', pdf.head, '%PDF-1.4');
+  truthy('ปิดท้ายด้วย %%EOF', /%%EOF$/.test(pdf.tail));
+  eq('มีตาราง xref', pdf.xrefHead, 'xref');
+  eq('ทุกตำแหน่งใน xref ชี้ไปที่หัว object จริง', pdf.okOff, true);
+  truthy('ไฟล์มีเนื้อจริง ไม่ใช่ไฟล์เปล่า', pdf.size > 1000);
+  eq('รูปข้างในเริ่มที่หัว JPEG พอดี ไม่มีไบต์แปลกปลอมนำหน้า', pdf.jpgHead, '255,216');
+  eq('และจบที่ท้าย JPEG พอดีตามความยาวที่ประกาศไว้', pdf.jpgTail, '255,217');
+
+  /* ---------- 21. ไม่มี error หลุดใน console ---------- */
+  console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
   await browser.close();

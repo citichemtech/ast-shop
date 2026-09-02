@@ -130,7 +130,11 @@ var SH = {
       /* ภาพถ่ายของใบตอนที่ออก เก็บเป็น JSON เพื่อ "พิมพ์ซ้ำ" ให้ได้ใบเดิมเป๊ะ
          ถ้าไปประกอบใหม่จากออเดอร์ตอนพิมพ์ซ้ำ แล้วออเดอร์ถูกแก้ทีหลัง
          ใบที่พิมพ์ซ้ำจะไม่ตรงกับใบที่ลูกค้าถืออยู่ ซึ่งเป็นปัญหาทางภาษี */
-      snap: 21
+      snap: 21,
+      /* ลายเซ็นผู้รับของ — ลูกค้าเซ็นบนจอตอนรับของ เก็บแยกจาก snap ตั้งใจ
+         snap คือ "ใบตอนที่ออก" ห้ามขยับ ส่วนลายเซ็นมาทีหลังตอนของถึงมือ
+         ถ้าเขียนปนกัน การพิมพ์ซ้ำจะไม่ได้ใบเดิมเป๊ะอีกต่อไป */
+      sign: 22
     },
     CALC: [1],
     probe: 1
@@ -270,7 +274,9 @@ function nextRow_(key, keyCol) {
  */
 var TEXT_IN = {
   head: { tel: 1, track: 1 },
-  doc: { custTaxId: 1, custTel: 1, custCode: 1 }
+  /* snap กับ sign เป็น JSON ยาว ที่ขึ้นต้นด้วย { — ถ้าไม่ตั้งเป็นข้อความก่อน
+     ชีทจะเดาชนิดเอง และค่าที่อ่านกลับมาอาจไม่ใช่ตัวอักษรเดิมทุกตัว */
+  doc: { custTaxId: 1, custTel: 1, custCode: 1, snap: 1, sign: 1 }
 };
 
 function writeRow_(key, row, obj) {
@@ -379,6 +385,9 @@ function appCfg_() {
     co: { name: '', nameEn: '', shortName: '', addr: '', taxId: '', branch: '', tel: '', email: '' },
     bank: '', thanks: '', docTerms: '', website: '', docSeller: '', docSellerEmail: '', vatMode: 'excl',
     docPrefix: { rec: 'ONIV26-', inv: 'IV26-', quote: 'QO26-', dep: 'DR26-' },
+    /* ลายเซ็นฝั่งร้านที่เซ็นครั้งเดียวแล้วประทับให้ทุกใบ เก็บเป็นพิกัดเส้น (ดู Sign.html)
+       ไม่ใช่รูป เพราะช่องในชีทรับได้ 50,000 ตัวอักษร และต้องคมตอนพิมพ์ 300 dpi */
+    sign: { cashier: '', auth: '' },
     /* เลขที่ยกยอดมาจากระบบเดิม ระบบจะออกเลขถัดจากตัวนี้เสมอ แม้ชีทยังว่าง */
     docStart: { rec: 0, inv: 0, quote: 0, dep: 0 },
     quoteDays: 7
@@ -424,6 +433,8 @@ function appCfg_() {
     else if (k === 'ยกยอดเลขใบแจ้งหนี้มาจาก') out.docStart.inv = Number(val || 0) || 0;
     else if (k === 'ยกยอดเลขใบเสนอราคามาจาก') out.docStart.quote = Number(val || 0) || 0;
     else if (k === 'ยกยอดเลขใบรับเงินมัดจำมาจาก') out.docStart.dep = Number(val || 0) || 0;
+    else if (k === 'ลายเซ็นผู้รับเงิน/พนักงานขาย') out.sign.cashier = String(val || '');
+    else if (k === 'ลายเซ็นผู้มีอำนาจลงนาม') out.sign.auth = String(val || '');
     else if (k === 'ใบเสนอราคายืนราคากี่วัน') out.quoteDays = Number(val || 7) || 7;
     else if (k === 'รายชื่อพนักงาน') out.staffList = String(val || '')
       .split(/[,\n]+/).map(function (x) { return x.trim() }).filter(function (x) { return x });

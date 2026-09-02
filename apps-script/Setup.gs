@@ -173,7 +173,7 @@ function setupDocSheet_(ss) {
   if (fresh) s = ss.insertSheet(name);
 
   if (s.getMaxRows() < DOC_LAST) s.insertRowsAfter(s.getMaxRows(), DOC_LAST - s.getMaxRows());
-  if (s.getMaxColumns() < 21) s.insertColumnsAfter(s.getMaxColumns(), 21 - s.getMaxColumns());
+  if (s.getMaxColumns() < 22) s.insertColumnsAfter(s.getMaxColumns(), 22 - s.getMaxColumns());
 
   s.getRange('A2').setValue('ทะเบียนเอกสารขาย — ระบบเขียนให้เอง')
     .setFontWeight('bold').setFontSize(12);
@@ -186,7 +186,8 @@ function setupDocSheet_(ss) {
     'ชื่อลูกค้า', 'เลขประจำตัว\nผู้เสียภาษี', 'สำนักงานใหญ่\n/ สาขา', 'ที่อยู่ตามใบกำกับภาษี',
     'โทรศัพท์', 'อีเมล', 'รหัสลูกค้า', 'เลขที่ PO', 'เงื่อนไขชำระเงิน',
     'มูลค่าสินค้า\n(ก่อน VAT)', 'ภาษีมูลค่าเพิ่ม', 'รวมทั้งสิ้น', 'ผู้ออกเอกสาร',
-    'หมายเหตุ', 'เหตุผลที่ยกเลิก', 'รายการในใบ\n(ระบบใช้พิมพ์ซ้ำ ห้ามแก้)'];
+    'หมายเหตุ', 'เหตุผลที่ยกเลิก', 'รายการในใบ\n(ระบบใช้พิมพ์ซ้ำ ห้ามแก้)',
+    'ลายเซ็นผู้รับของ\n(ลูกค้าเซ็นในแอป ห้ามแก้)'];
   s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
     .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
     .setVerticalAlignment('middle').setWrap(true);
@@ -195,7 +196,7 @@ function setupDocSheet_(ss) {
   fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
 
   var inCols = [];
-  for (var c = 2; c <= 21; c++) inCols.push(c);
+  for (var c = 2; c <= 22; c++) inCols.push(c);
   paintCols_(s, n, inCols, [1]);
 
   s.getRange(DATA_ROW, SH.doc.IN.date, n, 1).setNumberFormat('dd/mm/yyyy');
@@ -215,6 +216,8 @@ function setupDocSheet_(ss) {
      (ข้อมูลยังอยู่ครบ แค่ไม่เกะกะสายตาตอนเปิดชีทดู) */
   s.setColumnWidth(SH.doc.IN.snap, 60);
   s.getRange(DATA_ROW, SH.doc.IN.snap, n, 1).setFontColor('#9aa0a6').setNumberFormat('@');
+  s.setColumnWidth(SH.doc.IN.sign, 60);
+  s.getRange(DATA_ROW, SH.doc.IN.sign, n, 1).setFontColor('#9aa0a6').setNumberFormat('@');
 
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' ใบ ราวปีครึ่งที่ 20 ใบ/วัน)';
 }
@@ -1022,7 +1025,12 @@ function setupAppSheet_(ss) {
     ['ยกยอดเลขใบแจ้งหนี้มาจาก', 0],
     ['ยกยอดเลขใบเสนอราคามาจาก', 0],
     ['ยกยอดเลขใบรับเงินมัดจำมาจาก', 0],
-    ['ใบเสนอราคายืนราคากี่วัน', 7]
+    ['ใบเสนอราคายืนราคากี่วัน', 7],
+    /* ลายเซ็นฝั่งร้าน — เซ็นในแอปครั้งเดียว (ตั้งค่า → ลายเซ็น) แล้วประทับให้ทุกใบ
+       เก็บเป็นพิกัดเส้นแบบ JSON ไม่ใช่รูป จะได้คมตอนพิมพ์และไม่ล้นช่อง
+       ห้ามพิมพ์ทับด้วยมือ ให้เซ็นใหม่ในแอปแทน */
+    ['ลายเซ็นผู้รับเงิน/พนักงานขาย', ''],
+    ['ลายเซ็นผู้มีอำนาจลงนาม', '']
   ];
   for (var i = 0; i < rows.length; i++) {
     var r = DATA_ROW + i;
@@ -1030,7 +1038,7 @@ function setupAppSheet_(ss) {
     // เบอร์โทรต้องเป็นช่องข้อความ ไม่งั้นชีทแปลงเป็นตัวเลขแล้วศูนย์นำหน้าหาย
     /* ช่องที่ขึ้นต้นด้วยศูนย์ต้องเป็นช่องข้อความ ไม่งั้นชีทแปลงเป็นตัวเลขแล้วศูนย์นำหน้าหาย
        เลขผู้เสียภาษี 0105558055790 จะกลายเป็น 105558055790 แล้วใบกำกับภาษีใช้ไม่ได้ */
-    if (/เบอร์โทร|มือถือ|แฟกซ์|ผู้เสียภาษี/.test(rows[i][0])) s.getRange(r, 2).setNumberFormat('@');
+    if (/เบอร์โทร|มือถือ|แฟกซ์|ผู้เสียภาษี|ลายเซ็น/.test(rows[i][0])) s.getRange(r, 2).setNumberFormat('@');
     // ค่าที่เจ้าของร้านกรอกไว้แล้ว ห้ามทับ — เติมให้เฉพาะตอนที่ยังว่าง
     if (s.getRange(r, 2).getValue() === '') s.getRange(r, 2).setValue(rows[i][1]);
   }

@@ -659,6 +659,138 @@ function getDoc(no) {
   throw new Error('ไม่พบใบ ' + want + ' ในชีท เอกสาร');
 }
 
+/* ------------------------------------------------------------------ ลายเซ็น */
+
+/* ลายเซ็นเก็บเป็นพิกัดเส้นแบบ JSON (รูปทรงอยู่ใน Sign.html) ไม่ใช่รูป
+   ราว 1-2 KB ต่อลายเซ็น ช่องในชีทรับได้ 50,000 ตัวอักษร จึงเหลือเฟือ
+   แต่ต้องกันไว้อยู่ดี เพราะถ้าเกิน ชีทจะตัดปลายทิ้งเงียบ ๆ แล้วลายเซ็นจะพัง */
+var SIGN_MAX = 40000;
+
+/** ตรวจว่าเป็นก้อนลายเซ็นที่ใช้ได้จริง คืนข้อความ JSON ที่พร้อมเขียนลงชีท
+    ค่าว่างแปลว่า "ลบลายเซ็นทิ้ง" ซึ่งเป็นคำสั่งที่ถูกต้อง ไม่ใช่ error */
+function signClean_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  var t = (typeof v === 'string') ? v.trim() : JSON.stringify(v);
+  if (!t) return '';
+  if (t.length > SIGN_MAX) {
+    throw new Error('ลายเซ็นยาวเกินไป (' + t.length + ' ตัวอักษร) — ' +
+      'ลองเซ็นใหม่แบบไม่ต้องลากเส้นถี่มาก');
+  }
+  /* รับสองแบบ — เส้นที่เซ็นในแอป กับรูปลายเซ็นที่สแกน/เซ็นมาจากที่อื่น
+     รูปรับเฉพาะ data: ของตัวเอง ไม่รับลิงก์จากเน็ต เพราะใบต้องพิมพ์ซ้ำได้เหมือนเดิม
+     ทุกวันแม้เน็ตล่มหรือรูปปลายทางถูกลบ */
+  if (/^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(t)) return t;
+
+  var o;
+  try { o = JSON.parse(t); } catch (e) {
+    throw new Error('รูปแบบลายเซ็นไม่ถูกต้อง — ต้องเป็นลายเซ็นที่เซ็นในแอป ' +
+      'หรือรูปแบบ data:image/png;base64,...');
+  }
+  if (!o || !o.s || !o.s.length) throw new Error('ลายเซ็นว่างเปล่า — ยังไม่ได้เซ็น');
+  return t;
+}
+
+/**
+ * เก็บลายเซ็นฝั่งร้านไว้ใช้กับทุกใบ — เซ็นครั้งเดียวพอ
+ *   which  'cashier' = ผู้รับเงิน/พนักงานขาย · 'auth' = ผู้มีอำนาจลงนาม
+ *   sig    ก้อนลายเซ็น หรือค่าว่างเพื่อลบทิ้ง
+ *
+ * เขียนลงชีท ตั้งค่าแอป ช่องเดียวกับที่ appCfg_ อ่าน จึงไม่มีที่เก็บสองแห่ง
+ */
+function saveSignature(which, sig) {
+  var email = requireStaff_();
+  var KEY = {
+    cashier: 'ลายเซ็นผู้รับเงิน/พนักงานขาย',
+    auth: 'ลายเซ็นผู้มีอำนาจลงนาม'
+  };
+  var key = KEY[String(which || '')];
+  if (!key) throw new Error('ไม่รู้ว่าจะเก็บลายเซ็นของใคร');
+
+  var json = signClean_(sig);
+  var s = ss_().getSheetByName(SH.app.name);
+  if (!s) throw new Error('ยังไม่มีชีท ' + SH.app.name + ' — สั่ง setup ก่อนหนึ่งครั้ง');
+
+  var n = Math.max(1, s.getLastRow() - DATA_ROW + 1);
+  var v = s.getRange(DATA_ROW, 1, n, 1).getValues();
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][0] || '').trim() !== key) continue;
+    var cell = s.getRange(DATA_ROW + i, 2);
+    cell.setNumberFormat('@');       /* ต้องตั้งก่อนเขียน ไม่งั้นชีทเดาชนิดเอง */
+    cell.setValue(json);
+    writeLog_(email, 'ลายเซ็น', SH.app.name, key, '', json ? 'ลบ/ของเดิม' : 'มีลายเซ็น',
+      json ? 'เซ็นใหม่' : 'ลบทิ้ง', 'ตั้งค่าลายเซ็นจากแอป');
+    return { ok: true, which: which, has: !!json };
+  }
+  throw new Error('ไม่พบแถว "' + key + '" ในชีท ' + SH.app.name +
+    ' — สั่ง setup อีกครั้งเพื่อเติมแถวนี้ให้');
+}
+
+/**
+ * ลูกค้าเซ็นรับของบนใบที่ออกไปแล้ว
+ *
+ * เขียนลงคอลัมน์ของตัวเอง **ไม่แตะ snap** เพราะ snap คือภาพถ่ายของใบตอนที่ออก
+ * ซึ่งต้องพิมพ์ซ้ำได้เหมือนเดิมทุกตัวอักษร ส่วนลายเซ็นเป็นสิ่งที่เกิดทีหลังตอนของถึงมือ
+ *
+ * ใบที่ยกเลิกไปแล้วเซ็นไม่ได้ — เซ็นรับของบนใบที่ใช้ไม่ได้คือหลักฐานที่ขัดกันเอง
+ */
+function signDoc(no, sig, by) {
+  var email = requireStaff_();
+  var want = String(no || '').trim();
+  if (!want) throw new Error('ไม่ได้บอกว่าจะเซ็นใบไหน');
+  var json = signClean_(sig);
+  if (!json) throw new Error('ยังไม่ได้เซ็น');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var s = sheet_('doc');
+    var last = formulaLimit_('doc');
+    var C = SH.doc.IN;
+    var n = Math.max(0, last - DATA_ROW + 1);
+    var v = n ? s.getRange(DATA_ROW, C.no, n, C.voidWhy - C.no + 1).getValues() : [];
+    for (var i = 0; i < v.length; i++) {
+      if (String(v[i][0] || '').trim() !== want) continue;
+
+      var voided = String(v[i][C.voidWhy - C.no] || '').trim();
+      if (voided) {
+        throw new Error('ใบ ' + want + ' ถูกยกเลิกไปแล้ว (' + voided + ') — ' +
+          'ออกใบใหม่ก่อน แล้วให้ลูกค้าเซ็นบนใบใหม่');
+      }
+
+      var who = String(by || '').trim().slice(0, 40) || email;
+      writeRow_('doc', DATA_ROW + i, { sign: json });
+      SpreadsheetApp.flush();
+      writeLog_(email, 'ลายเซ็น', SH.doc.name, want,
+        String(v[i][C.type - C.no] || '').trim(), '', 'ลูกค้าเซ็นรับของ',
+        'รับส่งโดย ' + who + ' ' + stampTime_());
+
+      return { ok: true, no: want, at: stampTime_() };
+    }
+    throw new Error('ไม่พบเอกสารเลขที่ ' + want + ' ในชีท ' + SH.doc.name);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** ลายเซ็นผู้รับของของใบหนึ่ง — ใช้ตอนพิมพ์ซ้ำ จะได้ได้ใบที่มีลายเซ็นเหมือนตอนส่งมอบ */
+function readDocSign_(no) {
+  var want = String(no || '').trim();
+  if (!want) return '';
+  var s = sheetIfAny_('doc');
+  if (!s) return '';
+  var last = formulaLimit_('doc');
+  var n = Math.max(0, last - DATA_ROW + 1);
+  if (!n) return '';
+  var C = SH.doc.IN;
+  var v = s.getRange(DATA_ROW, C.no, n, 1).getValues();
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][0] || '').trim() === want) {
+      return String(s.getRange(DATA_ROW + i, C.sign).getValue() || '');
+    }
+  }
+  return '';
+}
+
 /** เลขเอกสารถัดไปของแต่ละชนิด — ให้หน้าจอโชว์ก่อนกดออกจริง */
 function peekDocNos() {
   requireStaff_();

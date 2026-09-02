@@ -81,7 +81,11 @@ function boot(){
        โลโก้บนเอกสารใช้ตัวความละเอียดสูงกว่าของใบปะหน้า เพราะพิมพ์ลง A4 */
     CFG.doc = { co: APP.co || {}, bank: APP.bank || "", thanks: APP.thanks || "",
                 terms: APP.docTerms || "", website: APP.website || "",
-                logo: (typeof DOC_LOGO !== "undefined") ? DOC_LOGO : CFG.logo };
+                logo: (typeof DOC_LOGO !== "undefined") ? DOC_LOGO : CFG.logo,
+                /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ครั้งเดียว — ประทับให้ทุกใบเอง
+                   ยังไม่ได้เซ็นก็ออกใบได้ตามปกติ ช่องนั้นจะว่างไว้ให้เซ็นมือเหมือนเดิม */
+                sign: (APP.sign || {}) };
+    /* ลายเซ็นของผู้รับของอยู่กับใบแต่ละใบ ไม่ใช่ค่าตั้งของร้าน จึงไม่อยู่ตรงนี้ */
     CFG.docSeller = APP.docSeller || "";
     CFG.docSellerEmail = APP.docSellerEmail || "";
 
@@ -773,7 +777,8 @@ function qMake(){
         +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
         +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
         +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
-        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>';
+        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+        +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>';
       bindLabelButtons(url, r.no+".png", "a4");
       bindDocCopy("#q-out", r, m, r.no);
       drawOldDocs("", "#q-old");
@@ -955,10 +960,13 @@ function reprint(no, btn, outSel){
         +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
         +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
         +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+        +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
+        + (m.voidWhy ? '' : '<button class="btn ghost" id="dc-sign" style="margin-top:9px">ให้ลูกค้าเซ็นรับของ</button>')
         +'<div class="hint" style="text-align:center;margin-top:10px">'
         +'พิมพ์ซ้ำใบเดิม เลขที่เอกสารยังเป็น '+esc(no)+' · ไม่ได้ออกใบใหม่ ไม่ตัดสต๊อกซ้ำ</div>';
       bindLabelButtons(url, no+".png", "a4");
       bindDocCopy(outSel || "#rp-out", r, m, no);
+      bindDocSign(outSel || "#rp-out", r, m, no);
       if (btn) { btn.disabled = false; btn.textContent = "พิมพ์ซ้ำ" }
     });
   }).catch(function(e){
@@ -1156,10 +1164,13 @@ function drawDoc(r, o, cust, type, form){
       +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
       +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
       +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+      +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
+      +'<button class="btn ghost" id="dc-sign" style="margin-top:9px">ให้ลูกค้าเซ็นรับของ</button>'
       +'<div class="hint" style="text-align:center;margin-top:10px">A4 · พิมพ์ได้ · ส่งเป็นรูปในแชทได้<br>'
       +'พิมพ์ต้นฉบับให้ลูกค้า แล้วกด “ดูสำเนา” พิมพ์อีกใบเก็บส่งบัญชี</div>';
     bindLabelButtons(url, r.no+".png", "a4");
     bindDocCopy("#dc-out", r, m, r.no);
+    bindDocSign("#dc-out", r, m, r.no);
   }, function(e){
     $("#dc-out").innerHTML='<div style="color:var(--red)">ใบลงชีทแล้ว (เลข '+esc(r.no)
       +') แต่วาดรูปไม่สำเร็จ: '+esc(e&&e.message?e.message:e)+'</div>';
@@ -1202,6 +1213,7 @@ function openLabel(o){
        +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
        +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+       +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
        +'<div class="hint" style="text-align:center;margin-top:10px">ขนาด 100×150 มม.</div>';
       bindLabelButtons(url, "ใบปะหน้า-"+o.no+".png");
     }, function(e){
@@ -1219,6 +1231,16 @@ function labelData(o, cod){
     qty:(o.items||[]).reduce(function(n,it){return n+(Number(it.qty)||0)},0),
     items:(o.items||[]).map(function(it){ return {name:it.name||it.sku, qty:it.qty} })
   };
+}
+
+function savePdf(blob, pname){
+  try{
+    var href=URL.createObjectURL(blob);
+    var a=document.createElement("a"); a.href=href; a.download=pname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){URL.revokeObjectURL(href)},4000);
+    toast("บันทึก PDF แล้ว ดูในโฟลเดอร์ดาวน์โหลด");
+  }catch(e){ toast("บันทึก PDF ไม่ได้") }
 }
 
 function bindLabelButtons(url, name, paper){
@@ -1257,6 +1279,30 @@ function bindLabelButtons(url, name, paper){
     thumb.title = "แตะเพื่อดูเต็มจอ / ซูม";
     thumb.onclick = function(){ $("#lb-open").click() };
   }
+  /* PDF — บัญชีกับลูกค้าองค์กรขอเป็น PDF ไม่ใช่รูป และ PDF พิมพ์ออกมาได้ขนาดกระดาษตรง
+     ไม่ต้องลุ้นว่าเครื่องพิมพ์จะย่อหรือขยายรูปเอง เขียนไฟล์เองในเครื่อง ไม่ต้องพึ่งเน็ต */
+  if ($("#lb-pdf")) $("#lb-pdf").onclick=function(){
+    var b=this; b.disabled=true; b.textContent="กำลังทำไฟล์ PDF…";
+    var mm = paper==="a4" ? [210,297] : [100,150];
+    var pname = name.replace(/\.png$/,"") + ".pdf";
+    pdfFromDataURL(url, mm[0], mm[1], name.replace(/\.png$/,"")).then(function(blob){
+      b.disabled=false; b.textContent="บันทึกเป็นไฟล์ PDF";
+      var f=new File([blob],pname,{type:"application/pdf"});
+      /* มือถือเปิดแชร์ได้ ส่งเข้าไลน์/อีเมลได้เลยโดยไม่ต้องหาไฟล์ในเครื่องก่อน
+         เครื่องที่แชร์ไฟล์ไม่ได้ค่อยตกไปเป็นดาวน์โหลดตามปกติ */
+      if(navigator.canShare && navigator.canShare({files:[f]})){
+        navigator.share({files:[f],title:pname}).catch(function(e){
+          if(e&&e.name==="AbortError") return;
+          savePdf(blob,pname);
+        });
+        return;
+      }
+      savePdf(blob,pname);
+    }, function(e){
+      b.disabled=false; b.textContent="บันทึกเป็นไฟล์ PDF";
+      toast("ทำไฟล์ PDF ไม่สำเร็จ: "+(e&&e.message?e.message:e));
+    });
+  };
   $("#lb-open").onclick=function(){
     var w=window.open();
     if(!w){ toast("เบราว์เซอร์บล็อกแท็บใหม่"); return }
@@ -1284,6 +1330,43 @@ function bindLabelButtons(url, name, paper){
    สองใบเนื้อความเหมือนกันทุกตัวอักษร ต่างกันแค่ตราชุดมุมขวาบน
    ปุ่มนี้จึงวาดใบเดิมซ้ำในโหมดสำเนา ไม่ได้ออกเลขใหม่ เลขที่เอกสารยังเป็นใบเดียวกัน
    (ออกเลขใหม่ให้สำเนา = เอกสารภาษีซ้ำซ้อน บัญชีจะตีกลับ) */
+/* ให้ลูกค้าเซ็นรับของบนใบที่ออกไปแล้ว
+
+   ใบเสนอราคายังไม่มีการส่งของ จึงไม่มีปุ่มนี้ · ใบที่ยกเลิกแล้วก็ไม่มี
+   เซ็นแล้วเขียนลงคอลัมน์ของตัวเองในชีท ไม่แตะภาพถ่ายของใบตอนที่ออก
+   แล้ววาดใบใหม่ให้เห็นลายเซ็นทันที จะได้กดบันทึก/แชร์ใบที่มีลายเซ็นส่งต่อได้เลย */
+function bindDocSign(boxSel, r, m, no){
+  var box = $(boxSel);
+  if(!box) return;
+  var b = box.querySelector("#dc-sign");
+  if(!b) return;
+  b.onclick = function(){
+    signPad("ลายเซ็นผู้รับของ — " + no,
+      "ให้ลูกค้าเซ็นในกรอบด้วยนิ้วหรือปากกาสไตลัส แล้วกด “ใช้ลายเซ็นนี้”")
+    .then(function(sig){
+      if(!sig){ toast("ยังไม่ได้เซ็น"); return; }
+      b.disabled = true; b.textContent = "กำลังบันทึกลายเซ็น…";
+      api("signDoc", no, JSON.stringify(sig), byName()).then(function(){
+        m.sign = m.sign || {};
+        m.sign.recv = sig;
+        m.signDate = todayISO();
+        return buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+          var img = box.querySelector("img.docimg");
+          if (img) img.src = url;
+          bindLabelButtons(url, no + ".png", "a4");
+          bindDocCopy(boxSel, r, m, no);
+          b.disabled = false;
+          b.textContent = "เซ็นรับของใหม่";
+          toast("เก็บลายเซ็นผู้รับของแล้ว");
+        });
+      }).catch(function(e){
+        b.disabled = false; b.textContent = "ให้ลูกค้าเซ็นรับของ";
+        toast("บันทึกลายเซ็นไม่สำเร็จ: " + (e && e.message ? e.message : e));
+      });
+    });
+  };
+}
+
 function bindDocCopy(boxSel, r, m, no){
   var box = $(boxSel), b = box.querySelector("#dc-copy");
   if(!b) return;
@@ -1613,7 +1696,99 @@ function drawSummary(all){
       + ' — ไฟล์อื่นที่ชื่อคล้ายกันในไดรฟ์ ไม่ใช่ตัวที่แอปเขียน</div>';
   }
 
+  /* ลายเซ็นฝั่งร้าน — เซ็นครั้งเดียวแล้วทุกใบที่ออกหลังจากนี้มีลายเซ็นเอง
+     วางไว้หน้าสรุปยอดเพราะเป็นของที่ตั้งครั้งเดียวจบ ไม่ใช่ของที่ใช้ทุกวัน */
+  h += '<div class="sec-hd" style="margin-top:22px"><h2>ลายเซ็นของร้าน</h2></div>'
+    + '<div class="hint" style="padding:0 2px 4px">เซ็นเก็บไว้ครั้งเดียว '
+    + 'แล้วเอกสารทุกใบที่ออกหลังจากนี้จะมีลายเซ็นขึ้นเอง ไม่ต้องพิมพ์ออกมาเซ็นแล้วสแกนกลับ<br>'
+    + 'ช่อง “ลายเซ็นของผู้รับของ” ไม่ได้อยู่ตรงนี้ — ให้ลูกค้าเซ็นตอนส่งของ จากหน้าเอกสารของใบนั้น</div>'
+    + '<div id="sig-box"></div>';
+
   $("#summary").innerHTML = h;
+  drawSigSettings();
+}
+
+/* ------------------------------------------------------------ ตั้งลายเซ็นร้าน */
+
+var SIG_KINDS = [
+  { key: "auth",    title: "ผู้มีอำนาจลงนาม",       note: "ช่องขวาสุดของใบ" },
+  { key: "cashier", title: "ผู้รับเงิน/พนักงานขาย", note: "ช่องกลางของใบ" }
+];
+
+function drawSigSettings(){
+  var box = $("#sig-box");
+  if (!box) return;
+  var have = (CFG.doc && CFG.doc.sign) || {};
+  box.innerHTML = SIG_KINDS.map(function(k){
+    var on = !!signParse(have[k.key]);
+    return '<div class="fld" data-sig="'+k.key+'">'
+      + '<label>'+esc(k.title)+' <span class="hint" style="font-weight:400">· '+esc(k.note)+'</span></label>'
+      + '<div class="signprev"><canvas data-prev="'+k.key+'" width="600" height="150"></canvas></div>'
+      + '<button class="btn ghost" data-signbtn="'+k.key+'" style="margin-top:8px">'
+      + (on ? 'เซ็นใหม่ / ลบลายเซ็นนี้' : 'เซ็นลายเซ็น')+'</button>'
+      /* คนที่มีลายเซ็นสแกนไว้อยู่แล้วไม่ต้องเซ็นใหม่บนจอ ซึ่งมักออกมาไม่เหมือนของจริง
+         แอปตัดขอบขาว ทำพื้นโปร่ง และย่อให้พอดีช่องในชีทให้เอง */
+      + '<button class="btn ghost" data-sigimg="'+k.key+'" style="margin-top:7px">'
+      + 'ใช้รูปลายเซ็นที่มีอยู่แล้ว</button>'
+      + '<input type="file" accept="image/*" data-sigfile="'+k.key+'" style="display:none">'
+      + '</div>';
+  }).join("");
+
+  SIG_KINDS.forEach(function(k){
+    var cv = box.querySelector('canvas[data-prev="'+k.key+'"]');
+    if (cv) {
+      var g = cv.getContext("2d");
+      g.clearRect(0,0,cv.width,cv.height);
+      if (!signDraw(g, have[k.key], 20, 12, cv.width-40, cv.height-24)) {
+        g.fillStyle = "#9aa0a6"; g.font = "26px sans-serif"; g.textAlign = "center";
+        g.fillText("ยังไม่ได้เซ็น", cv.width/2, cv.height/2+9);
+        g.textAlign = "left";
+      }
+    }
+    var b = box.querySelector('button[data-signbtn="'+k.key+'"]');
+    if (b) b.onclick = function(){ askSign(k); };
+
+    var pick = box.querySelector('button[data-sigimg="'+k.key+'"]');
+    var file = box.querySelector('input[data-sigfile="'+k.key+'"]');
+    if (pick && file) {
+      pick.onclick = function(){ file.value = ""; file.click(); };
+      file.onchange = function(){
+        var f = file.files && file.files[0];
+        if (!f) return;
+        pick.disabled = true; pick.textContent = "กำลังจัดรูป…";
+        signFromImage(f).then(function(url){
+          pick.textContent = "กำลังบันทึก…";
+          return api("saveSignature", k.key, url).then(function(){
+            CFG.doc.sign = CFG.doc.sign || {};
+            CFG.doc.sign[k.key] = url;
+            drawSigSettings();
+            toast("ใช้รูปลายเซ็นนี้แล้ว");
+          });
+        }).catch(function(e){
+          pick.disabled = false; pick.textContent = "ใช้รูปลายเซ็นที่มีอยู่แล้ว";
+          toast("ใช้รูปนี้ไม่ได้: " + (e && e.message ? e.message : e));
+        });
+      };
+    }
+  });
+}
+
+function askSign(k){
+  signPad("ลายเซ็น" + k.title,
+    "เซ็นในกรอบด้วยนิ้วหรือปากกาสไตลัส · กด “ล้าง” แล้วกด “ใช้ลายเซ็นนี้” ทั้งที่ว่าง = ลบลายเซ็นเดิมทิ้ง")
+  .then(function(sig){
+    var btn = $('button[data-signbtn="'+k.key+'"]');
+    if (btn) { btn.disabled = true; btn.textContent = "กำลังบันทึก…"; }
+    api("saveSignature", k.key, sig ? JSON.stringify(sig) : "").then(function(){
+      CFG.doc.sign = CFG.doc.sign || {};
+      CFG.doc.sign[k.key] = sig ? JSON.stringify(sig) : "";
+      drawSigSettings();
+      toast(sig ? "เก็บลายเซ็นแล้ว ใบที่ออกหลังจากนี้จะมีลายเซ็นเอง" : "ลบลายเซ็นแล้ว");
+    }, function(e){
+      drawSigSettings();
+      toast("บันทึกไม่สำเร็จ: " + (e && e.message ? e.message : e));
+    });
+  });
 }
 
 /* -------------------------------------------------------------------- modal */
