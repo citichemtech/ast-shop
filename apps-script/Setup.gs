@@ -731,6 +731,140 @@ function repairOrderSheets() {
   return msg;
 }
 
+/* ------------------------------------------------- เลขเอกสารที่หายไปจากเล่ม */
+
+/** เลขที่หายไปของแต่ละชุดเอกสาร — อ่านอย่างเดียว ไม่เขียนอะไร */
+function docGaps_() {
+  var cfg = appCfg_();
+  var s = sheetIfAny_('doc');
+  var out = [];
+  if (!s) return out;
+  var last = formulaLimit_('doc');
+  if (last < DATA_ROW) return out;
+
+  var C = SH.doc.IN;
+  var v = s.getRange(DATA_ROW, C.no, last - DATA_ROW + 1, 1).getValues();
+
+  for (var k = 0; k < DOC_TYPES.length; k++) {
+    var t = DOC_TYPES[k];
+    var prefix = cfg.docPrefix[t.key] || (t.code + '26-');
+    var used = {}, max = 0, min = 0;
+    for (var i = 0; i < v.length; i++) {
+      var no = String(v[i][0] || '').trim();
+      if (no.indexOf(prefix) !== 0) continue;
+      var n = parseInt(no.substring(prefix.length), 10);
+      if (isNaN(n)) continue;
+      used[n] = true;
+      if (n > max) max = n;
+      if (!min || n < min) min = n;
+    }
+    if (!max) continue;
+
+    /* เริ่มนับช่องว่างจากเลขแรกที่ระบบออกเอง ไม่ใช่จากเลข 1
+       เล่มก่อนหน้าที่ยกยอดมาไม่ได้อยู่ในชีทนี้ จึงไม่ใช่ช่องว่างของเรา */
+    var floor = Number(cfg.docStart[t.key] || 0) || 0;
+    var from = Math.max(min, floor + 1);
+    var miss = [];
+    for (var n2 = from; n2 <= max; n2++) if (!used[n2]) miss.push(prefix + pad5_(n2));
+    if (miss.length) out.push({ key: t.key, th: t.th, prefix: prefix, miss: miss });
+  }
+  return out;
+}
+
+function pad5_(n) {
+  var t = String(n);
+  while (t.length < 5) t = '0' + t;
+  return t;
+}
+
+/** ดูก่อนว่าเล่มขาดเลขอะไรบ้าง โดยยังไม่เขียนอะไรลงชีท */
+function previewDocGaps() {
+  requireStaff_();
+  var g = docGaps_();
+  if (!g.length) {
+    var okMsg = 'เลขเอกสารเรียงครบทุกชุด ไม่มีเลขขาด';
+    Logger.log(okMsg);
+    return okMsg;
+  }
+  var out = ['เลขที่หายไปจากเล่ม (ยังไม่ได้เติมให้)'];
+  var n = 0;
+  for (var i = 0; i < g.length; i++) {
+    out.push('  ' + g[i].th + ': ' + g[i].miss.join(', '));
+    n += g[i].miss.length;
+  }
+  out.push('');
+  out.push('รวม ' + n + ' เลข — สั่ง fillDocGaps() เพื่อเติมกลับเข้าเล่ม');
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * เติมเลขที่หายไปกลับเข้าเล่ม เพื่อให้เลขเอกสารเรียงครบไม่มีรู
+ *
+ * สิ่งที่สรรพากรถามเวลาตรวจคือ "เลขนี้ไปไหน" — เลขที่หายไปเฉย ๆ ตอบไม่ได้
+ * ส่วนใบที่ยกเลิกแล้วแต่ยังอยู่ในเล่มพร้อมเหตุผล ตอบได้ทันทีและถือว่าถูกต้อง
+ *
+ * เลขหายได้สองทาง และทั้งสองทางเกิดขึ้นจริงกับร้านนี้แล้ว
+ *   ตั้งช่องยกยอดสูงกว่าเลขที่ออกไปจริง ระบบเลยข้ามไปเลขถัดไป (ONIV26-00241)
+ *   ลบแถวใบที่ยกเลิกทิ้งทั้งแถว แทนที่จะปล่อยไว้พร้อมเหตุผล (00248-00250)
+ *
+ * ตัวนี้เติมแถวใหม่ให้เฉพาะเลขที่ไม่มีในชีทเลย ไม่แตะแถวที่มีอยู่แล้วแม้แต่แถวเดียว
+ * และกรอกเหตุผลกลาง ๆ ไว้ให้ ต้องไปแก้เป็นเหตุผลจริงทีหลัง
+ *
+ * ใบที่เคยออกแล้วยกเลิกไป ถ้ายังอยากได้ยอดกับชื่อลูกค้าเดิมคืน
+ * ให้กู้จากประวัติเวอร์ชันของ Google ก่อน (ไฟล์ › ประวัติเวอร์ชัน) แล้วค่อยสั่งตัวนี้
+ * ตัวนี้ทำได้แค่ทำให้เลขครบ ไม่รู้ว่าใบที่หายไปเคยมีอะไรอยู่
+ */
+function fillDocGaps() {
+  var email = requireStaff_();
+  var g = docGaps_();
+  if (!g.length) {
+    var okMsg = 'เลขเอกสารเรียงครบทุกชุดอยู่แล้ว ไม่มีอะไรต้องเติม';
+    Logger.log(okMsg);
+    return okMsg;
+  }
+
+  var total = 0;
+  for (var i = 0; i < g.length; i++) total += g[i].miss.length;
+  if (total > 50) {
+    throw new Error('เลขที่หายไปมีถึง ' + total + ' เลข ซึ่งมากผิดปกติ — ' +
+      'น่าจะตั้งช่องยกยอดผิดมากกว่าเลขหายจริง ให้สั่ง previewDocGaps() ดูก่อน ' +
+      'แล้วแก้ช่อง "ยกยอดเลข...มาจาก" ในชีท ตั้งค่าแอป ให้ตรงกับเล่มเดิมก่อน');
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var why = 'ไม่ได้ใช้เลขนี้ — เติมกลับเข้าเล่มให้เลขครบ ' +
+      '(ถ้าเคยออกใบจริงแล้วยกเลิก ให้แก้เหตุผลตรงนี้ให้ตรงกับของจริง)';
+    var done = [];
+    for (var a = 0; a < g.length; a++) {
+      for (var b = 0; b < g[a].miss.length; b++) {
+        var no = g[a].miss[b];
+        var row = nextRow_('doc', SH.doc.IN.no);
+        if (!row) throw new Error('ชีท ' + SH.doc.name + ' เต็มแล้ว — สั่ง setup() อีกครั้งเพื่อขยายแถว');
+        /* เขียนแค่สามช่อง เลข ชนิด และเหตุผล — ไม่ใส่วันที่และไม่ใส่ยอด
+           เพราะใบนี้ไม่ได้ออกจริง ใส่ตัวเลขไปจะกลายเป็นยอดขายผีในรายงาน */
+        writeRow_('doc', row, { no: no, type: g[a].th, voidWhy: why });
+        writeLog_(email, 'เติมเลขเอกสาร', SH.doc.name, no, g[a].th, '', 'ไม่ได้ใช้',
+          'เติมกลับเข้าเล่มให้เลขเรียงครบ โดย ' + email);
+        done.push(no);
+      }
+    }
+    SpreadsheetApp.flush();
+
+    var msg = 'เติมเลขกลับเข้าเล่มแล้ว ' + done.length + ' เลข\n  ' + done.join(', ') +
+      '\n\nทุกแถวใส่เหตุผลกลาง ๆ ไว้ให้ — ให้เปิดชีท ' + SH.doc.name +
+      ' แล้วแก้ช่อง "เหตุผลที่ยกเลิก" ของแถวที่เคยออกใบจริงให้ตรงกับความจริง' +
+      '\nเลขใบถัดไปไม่เปลี่ยน เพราะเลขที่เติมเป็นเลขที่ต่ำกว่าเลขล่าสุดอยู่แล้ว';
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /**
  * ส่องสูตรของชีทออเดอร์ ว่ายังคำนวณได้อยู่ไหม
  *

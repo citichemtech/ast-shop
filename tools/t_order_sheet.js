@@ -1615,5 +1615,73 @@ var over35 = [];
 for (var nm35 in fx35.sheets) over35 = over35.concat(fx35.sheets[nm35].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over35, []);
 
+/* ====== 36. เลขเอกสารที่หายไปจากเล่ม ต้องเติมกลับได้
+
+   เกิดขึ้นจริงกับร้านนี้สองทาง
+     ตั้งช่องยกยอดสูงกว่าเลขที่ออกไปแล้ว ระบบเลยข้ามหนึ่งเลข (ONIV26-00241)
+     ลบแถวใบที่ยกเลิกทิ้งทั้งแถว แทนที่จะปล่อยไว้พร้อมเหตุผล (00248-00250)
+
+   สิ่งที่สรรพากรถามคือ "เลขนี้ไปไหน" เลขหายเฉย ๆ ตอบไม่ได้
+   ใบยกเลิกที่ยังอยู่ในเล่มพร้อมเหตุผล ตอบได้ทันที */
+console.log('\n36. เติมเลขเอกสารที่หายไปกลับเข้าเล่ม');
+
+var fx36 = FS.build();
+var api36 = FS.load(fx36, {});
+api36.setup();
+var doc36 = fx36.sheets['เอกสาร'];
+
+/* วางเล่มให้เหมือนของจริง: มี 231-233 แล้วข้าม 234 ไป 235-236 */
+[['ONIV26-00231', 'ใบเสร็จรับเงิน'],
+ ['ONIV26-00232', 'ใบเสร็จรับเงิน'],
+ ['ONIV26-00233', 'ใบเสร็จรับเงิน'],
+ ['ONIV26-00235', 'ใบเสร็จรับเงิน'],
+ ['ONIV26-00236', 'ใบเสร็จรับเงิน']].forEach(function (d, i) {
+  doc36.cell(DATA_ROW + i, 2).v = d[0];
+  doc36.cell(DATA_ROW + i, 3).v = d[1];
+  doc36.cell(DATA_ROW + i, 17).v = 1000;
+});
+fx36.recalc();
+
+console.log('\n   ดูก่อนว่าขาดเลขอะไร โดยยังไม่เขียนอะไรลงชีท');
+var before36 = rowsWith(doc36, 2).length;
+var pv36 = api36.previewDocGaps();
+truthy2('บอกว่าเลข 00234 หายไป', pv36.indexOf('ONIV26-00234') > -1);
+eq('ยังไม่เขียนแถวใหม่เลย', rowsWith(doc36, 2).length, before36);
+
+console.log('\n   เติมจริง');
+var r36 = api36.fillDocGaps();
+truthy2('รายงานว่าเติมเลขไหน', r36.indexOf('ONIV26-00234') > -1);
+eq('ได้แถวเพิ่มมาหนึ่งแถว', rowsWith(doc36, 2).length, before36 + 1);
+
+var row36 = rowsWith(doc36, 2).filter(function (r) {
+  return doc36.cell(r, 2).v === 'ONIV26-00234';
+})[0];
+truthy2('เลขที่เติมอยู่ในเล่มแล้ว', !!row36);
+eq('ชนิดเอกสารถูกชุด', doc36.cell(row36, 3).v, 'ใบเสร็จรับเงิน');
+truthy2('มีเหตุผลกำกับไว้ ไม่ใช่แถวเปล่า',
+  String(doc36.cell(row36, 20).v).indexOf('ไม่ได้ใช้เลขนี้') > -1);
+eq('ไม่ใส่ยอดเงิน จะได้ไม่กลายเป็นยอดขายผี', doc36.cell(row36, 17).v, '');
+eq('ไม่ใส่วันที่ เพราะใบนี้ไม่ได้ออกจริง', doc36.cell(row36, 4).v, '');
+
+console.log('\n   ของเดิมต้องไม่ถูกแตะแม้แต่แถวเดียว');
+eq('ใบเดิมยังอยู่ครบ', rowsWith(doc36, 2).map(function (r) { return doc36.cell(r, 2).v }).sort(),
+  ['ONIV26-00231', 'ONIV26-00232', 'ONIV26-00233', 'ONIV26-00234',
+   'ONIV26-00235', 'ONIV26-00236']);
+eq('ยอดของใบเดิมไม่ขยับ', doc36.cell(DATA_ROW, 17).v, 1000);
+
+console.log('\n   เลขใบถัดไปต้องไม่เปลี่ยน เพราะเลขที่เติมต่ำกว่าเลขล่าสุด');
+var peek36 = api36.peekDocNos();
+eq('ใบเสร็จใบถัดไปยังเป็น 00237', peek36.rec, 'ONIV26-00237');
+
+console.log('\n   สั่งซ้ำต้องไม่เติมซ้ำ');
+var again36 = api36.fillDocGaps();
+truthy2('บอกว่าเรียงครบแล้ว', again36.indexOf('เรียงครบ') > -1);
+eq('จำนวนแถวเท่าเดิม', rowsWith(doc36, 2).length, before36 + 1);
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over36 = [];
+for (var nm36 in fx36.sheets) over36 = over36.concat(fx36.sheets[nm36].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over36, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
