@@ -1046,6 +1046,81 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.click('.tabs button[data-go="list"]');
   await page.waitForTimeout(200);
 
+  /* ---------- 24. เน็ตหลุดกลางทาง ---------- */
+  console.log('\n24. เน็ตหลุดกลางทาง (HTTP 0) — ของจริงเจอตอนกดแก้รายการใบ AST-26-0018');
+
+  var nm = await page.evaluate(function () {
+    return {
+      http0: netMsg_('NetworkError: การเชื่อมต่อล้มเหลวเนื่องจาก HTTP 0'),
+      fetch: netMsg_('Failed to fetch'),
+      other: netMsg_('ออเดอร์ AST-26-0018 ถูกยกเลิกไปแล้ว แก้รายการไม่ได้')
+    };
+  });
+  truthy('บอกว่ายังไม่รู้ว่าบันทึกลงไปแล้วหรือยัง', /ยังไม่รู้ว่าบันทึกลงไปแล้วหรือยัง/.test(nm.http0));
+  truthy('บอกว่ากดซ้ำได้ ระบบกันงานซ้ำไว้ให้', /กดปุ่มเดิมซ้ำได้เลย/.test(nm.http0));
+  truthy('บอกทางออกว่าให้เปิดแอปใหม่', /เปิดลิงก์ใหม่/.test(nm.http0));
+  truthy('ไม่มีคำว่า HTTP 0 ดิบ ๆ เหลืออยู่ให้คนอ่านงง', nm.http0.indexOf('HTTP 0') < 0);
+  truthy('ข้อความแบบอื่นก็แปลด้วย', /ยังไม่รู้ว่าบันทึก/.test(nm.fetch));
+  eq('ข้อความปกติของระบบต้องไม่ถูกแปลทับ', nm.other,
+    'ออเดอร์ AST-26-0018 ถูกยกเลิกไปแล้ว แก้รายการไม่ได้');
+
+  console.log('\n   กดซ้ำหลังเน็ตหลุด ต้องใช้กุญแจกันซ้ำตัวเดิม ไม่ใช่ตัวใหม่');
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { loadOrders(true) });
+  await page.waitForTimeout(600);
+  await page.locator('#list [data-ed]').first().click();
+  await page.waitForTimeout(350);
+
+  /* ตัดสายจริง ๆ ที่ชั้น google.script.run — ทางเดียวกับที่ของจริงล้ม
+     จะได้ทดสอบทั้งการแปลข้อความและกุญแจกันซ้ำพร้อมกันในทางเดินเดียว */
+  await page.evaluate(function () {
+    window.CAPKEYS = [];
+    window.__realRun = google.script.run;
+    var stub = {
+      withSuccessHandler: function () { return stub },
+      withFailureHandler: function (f) { stub.__fail = f; return stub },
+      editOrderItems: function (no, items, by, ck) {
+        window.CAPKEYS.push(ck);
+        setTimeout(function () {
+          stub.__fail({ message: 'NetworkError: การเชื่อมต่อล้มเหลวเนื่องจาก HTTP 0' });
+        }, 5);
+      }
+    };
+    google.script.run = stub;
+  });
+
+  await page.click('#ed-save');
+  await page.waitForTimeout(400);
+  truthy('ขึ้นข้อความเน็ตหลุดที่อ่านรู้เรื่อง',
+    /ยังไม่รู้ว่าบันทึกลงไปแล้วหรือยัง/.test(await page.textContent('#ed-msg')));
+  truthy('ปุ่มกลับมากดได้อีก ไม่ค้างเป็นกำลังบันทึก',
+    !(await page.locator('#ed-save').isDisabled()));
+
+  await page.click('#ed-save');
+  await page.waitForTimeout(400);
+  var keys = await page.evaluate(function () { return window.CAPKEYS });
+  eq('ยิงไปสองรอบ', keys.length, 2);
+  eq('กุญแจเป็นตัวเดิมทั้งสองรอบ เซิร์ฟเวอร์จึงกันซ้ำได้จริง', keys[0], keys[1]);
+
+  await page.evaluate(function () {
+    google.script.run = window.__realRun;
+    closeModal();
+  });
+  await page.waitForTimeout(200);
+
+  console.log('\n   บันทึกสำเร็จแล้ว กุญแจต้องเปลี่ยน ไม่งั้นแก้รอบสองจะเงียบหาย');
+  await page.locator('#list [data-ed]').first().click();
+  await page.waitForTimeout(350);
+  var k1 = await page.evaluate(function () { return ED_KEY });
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.locator('#ed-rows .edrow').first().locator('.i-qty').fill('4');
+  await page.click('#ed-save');
+  await page.waitForTimeout(700);
+  var k2 = await page.evaluate(function () { return ED_KEY });
+  truthy('กุญแจเปลี่ยนหลังบันทึกสำเร็จ', !!k1 && !!k2 && k1 !== k2);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

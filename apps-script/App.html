@@ -25,12 +25,32 @@ function showOk(msg){
 }
 function clearMsg(){ $("#err").classList.remove("on"); $("#ok").classList.remove("on") }
 
+/**
+ * เน็ตหลุดกลางทาง — แปลเป็นข้อความที่บอกได้ว่าต้องทำอะไรต่อ
+ *
+ * ของเดิมโชว์ดิบ ๆ ว่า "NetworkError: การเชื่อมต่อล้มเหลวเนื่องจาก HTTP 0"
+ * ซึ่งไม่ตอบคำถามเดียวที่คนกดอยากรู้ตอนนั้นเลย: บันทึกลงชีทแล้วหรือยัง
+ * แล้วสิ่งที่คนจะทำเองคือกดซ้ำรัว ๆ ซึ่งเป็นทางเดียวที่ทำให้ข้อมูลซ้ำได้จริง
+ *
+ * HTTP 0 คือคำขอไม่ถึงเซิร์ฟเวอร์หรือขาดตอนกลางทาง จึงไม่มีใครรู้ผล
+ * เจอบ่อยตอนเปิดหน้าค้างไว้นานจนเซสชันของ Google หมดอายุ หรือมีการปล่อย
+ * เวอร์ชันใหม่ระหว่างที่หน้าเดิมยังเปิดอยู่ — ทางออกคือเปิดแอปใหม่
+ */
+function netMsg_(m){
+  m = String(m == null ? "" : m);
+  if(!/HTTP 0|NetworkError|Failed to fetch|network ?error|เชื่อมต่อล้มเหลว/i.test(m)) return m;
+  return "เน็ตหลุดตอนกำลังส่งขึ้นชีท — ยังไม่รู้ว่าบันทึกลงไปแล้วหรือยัง\n"
+       + "กดปุ่มเดิมซ้ำได้เลย ระบบกันงานซ้ำไว้ให้แล้ว ไม่มีทางได้สองรอบ\n"
+       + "ถ้ายังไม่ได้อีก ให้ปิดแอปแล้วเปิดลิงก์ใหม่ (มักเกิดตอนเปิดหน้าค้างไว้นาน "
+       + "หรือเพิ่งปล่อยเวอร์ชันใหม่) แล้วดูในแท็บ ออเดอร์ ก่อนว่าลงไปแล้วไหม";
+}
+
 /* เรียกฟังก์ชันฝั่งเซิร์ฟเวอร์ — ทุกจุดที่ล้มต้องมีทางออกที่ผู้ใช้เห็น */
 function call(fn, args, done, fail){
   google.script.run
     .withSuccessHandler(function(r){ try{ done(r) }catch(e){ showErr("แสดงผลไม่สำเร็จ: "+e.message) } })
     .withFailureHandler(function(e){
-      var m=(e&&e.message)?e.message:String(e);
+      var m=netMsg_((e&&e.message)?e.message:String(e));
       if(fail) fail(m); else showErr(m);
     })[fn].apply(null, args||[]);
 }
@@ -638,7 +658,14 @@ function renderOrders(){
 var CX_WHY = ["ลูกค้าเปลี่ยนใจไม่รับของ", "ลูกค้าไม่รับสาย ติดต่อไม่ได้",
               "ของหมด ส่งให้ไม่ได้", "คีย์ผิดใบ ออเดอร์ซ้ำ"];
 
+/* กุญแจกันงานซ้ำต้องเป็นตัวเดิมตลอดการกดซ้ำของงานชิ้นเดียวกัน
+   ถ้าสร้างใหม่ทุกครั้งที่กด ด่านกันซ้ำฝั่งเซิร์ฟเวอร์จะไม่มีความหมายเลย —
+   และพังตรงกรณีเดียวที่มันมีไว้เพื่อ: เน็ตหลุด ไม่รู้ผล จึงกดซ้ำ
+   เปลี่ยนเป็นตัวใหม่เมื่อสำเร็จแล้วเท่านั้น การกดครั้งต่อไปจึงเป็นงานใหม่จริง */
+var CX_KEY = null, ED_KEY = null, DC_KEY = null;
+
 function openCancel(o){
+  CX_KEY = newKey();
   openModal("ยกเลิกออเดอร์ — " + o.no,
      '<div class="hint" style="margin-bottom:10px">'
     +'<b>ของในใบนี้จะถูกคืนเข้าสต๊อกและล็อตทันที</b> · ยอดของใบนี้จะกลายเป็น ฿0 '
@@ -674,8 +701,9 @@ function cxSave(o, btn){
   btn.disabled = true; btn.textContent = "กำลังยกเลิก…";
   $("#cx-msg").innerHTML = "";
   /* กุญแจกันกดซ้ำ — เน็ตช้าแล้วกดสองที ต้องไม่ยกเลิกสองรอบ */
-  var ck = "cx-" + o.no + "-" + Date.now() + "-" + Math.random().toString(36).slice(2);
-  api("cancelOrder", o.no, why, byName(), ck).then(function(r){
+  if(!CX_KEY) CX_KEY = newKey();
+  api("cancelOrder", o.no, why, byName(), "cx-" + o.no + "-" + CX_KEY).then(function(r){
+    CX_KEY = newKey();
     $("#cx-msg").innerHTML = '<div class="msg ok" style="display:block">ยกเลิก <b>'
       + esc(o.no) + '</b> แล้ว · คืนของเข้าสต๊อก ' + (r.items||0) + ' รายการ'
       + (r.lots && r.lots.length ? ' · ล็อตที่คืน ' + esc(r.lots.join(" · ")) : '')
@@ -1228,6 +1256,7 @@ function taxMemoSave(name, o){
 }
 
 function openDoc(o, preType){
+  DC_KEY = newKey();
   var memo = taxMemo(o.cust) || {};
   openModal("ออกเอกสาร — "+o.no,
      '<div id="dc-old"></div>'
@@ -1333,9 +1362,12 @@ function openDoc(o, preType){
       terms:$("#dc-terms").value, date:o.date, by:byName(),
       vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
       form: readFormTicks(),
-      clientKey: "dc-"+o.no+"-"+type+"-"+Date.now()
+      /* เน็ตหลุดตอนออกเอกสารคือกรณีที่แพงที่สุด เพราะเลขเอกสารอาจถูกใช้ไปแล้ว
+         กุญแจตัวเดิมทำให้กดซ้ำได้ใบเดิม ไม่ใช่กินเลขใหม่ไปอีกใบ */
+      clientKey: "dc-"+o.no+"-"+type+"-"+DC_KEY
     }).then(function(r){
       drawDoc(r, o, cust, type, readFormTicks());
+      DC_KEY = newKey();   /* ออกใบถัดไปในหน้าต่างเดิมเป็นงานใหม่ ไม่ใช่การกดซ้ำ */
       /* ข้อมูลผู้เสียภาษีของลูกค้ารายนี้เพิ่งลงชีทไป โหลดรายชื่อใหม่รอบหน้า
          ใบต่อไปของลูกค้าคนเดิมจะได้ดึงเลข 13 หลักมาให้เลย ไม่ต้องพิมพ์ซ้ำ */
       CUSTS = null;
@@ -1423,6 +1455,7 @@ function openEditItems(o){
   });
   if(!(o.items||[]).length) edRow({});
 
+  ED_KEY = newKey();
   $("#ed-add").onclick = function(){ edRow({}); };
   $("#ed-save").onclick = function(){ edSave(o, this); };
   edSum();
@@ -1520,8 +1553,11 @@ function edSave(o, btn){
   btn.disabled = true; btn.textContent = "กำลังบันทึก…";
   $("#ed-msg").innerHTML = "";
   /* กุญแจกันบันทึกซ้ำ — กดสองทีเพราะเน็ตช้า ต้องไม่ได้ผลสองรอบ */
-  var ck = "ed-" + o.no + "-" + Date.now() + "-" + Math.random().toString(36).slice(2);
-  api("editOrderItems", o.no, items, byName(), ck).then(function(r){
+  if(!ED_KEY) ED_KEY = newKey();
+  api("editOrderItems", o.no, items, byName(), "ed-" + o.no + "-" + ED_KEY).then(function(r){
+    /* สำเร็จแล้วเปลี่ยนกุญแจ ไม่งั้นถ้าแก้รายการต่ออีกรอบในหน้าต่างเดิม
+       เซิร์ฟเวอร์จะเห็นเป็นการกดซ้ำของงานเดิม แล้วไม่ทำอะไรให้เงียบ ๆ */
+    ED_KEY = newKey();
     $("#ed-msg").innerHTML = '<div class="msg ok" style="display:block">แก้รายการของ <b>'
       + esc(o.no) + '</b> แล้ว จาก ' + r.before + ' เป็น ' + r.after + ' รายการ · ยอดสินค้า '
       + baht(r.subtotal) + (r.lots && r.lots.length ? '<br>ล็อตที่ตัด: ' + esc(r.lots.join(" · ")) : '')

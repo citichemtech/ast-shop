@@ -1360,5 +1360,84 @@ var over32 = [];
 for (var nm32 in fx32.sheets) over32 = over32.concat(fx32.sheets[nm32].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over32, []);
 
+/* ====== 33. ซ่อมใบเก่าที่คีย์ของซื้อมาขายไปโดยไม่ใส่ต้นทุน
+
+   ของจริงคือใบ AST-26-0018 — ชื่อสินค้าไปอยู่ในช่องรหัส ช่องชื่อจึงขึ้นว่า "ไม่พบ SKU"
+   (ช่องชื่อเป็นสูตร VLOOKUP) ต้นทุนเป็น 0 กำไรจึงเท่ากับยอดขายทั้งก้อน
+
+   ทางซ่อมที่จะบอกให้เจ้าของร้านกด คือกดแก้รายการแล้วใส่ต้นทุนลงไป
+   หมวดนี้พิสูจน์ว่ากดแล้วได้ครบทั้งสี่อย่าง ไม่ใช่แค่ตัวเลขต้นทุนเปลี่ยน
+     ลงฐานสินค้าให้เป็นรหัสจริง · ช่องชื่อเลิกขึ้น "ไม่พบ SKU" ·
+     ลงรับเข้าเท่าที่ขายจึงไม่มีสต๊อกผี · ยอดขายไม่ขยับแม้แต่สตางค์ */
+console.log('\n33. ซ่อมใบเก่าที่ไม่ได้ใส่ต้นทุน (แบบใบ AST-26-0018)');
+
+var fx33 = FS.build();
+var api33 = FS.load(fx33, {});
+api33.setup();
+var hd33 = fx33.sheets['ออเดอร์_หัวบิล'];
+var it33 = fx33.sheets['ออเดอร์_รายการ'];
+var pd33 = fx33.sheets['ฐานสินค้า'];
+var rc33 = fx33.sheets['รับเข้า'];
+
+/* สร้างใบให้เหมือนของจริง: 2 ขวด ขาย 247 แล้วเขียนชื่อสินค้าลงช่องรหัส
+   ซึ่งคือรูปร่างที่โค้ดรุ่นก่อนทิ้งไว้ในชีทจริง */
+var NAME33 = 'น้ำยาหล่อเย็นชนิดน้ำนม 1000ml';
+var b33 = api33.createOrder(order({
+  cust: 'ลูกค้าใบซื้อมาขายไป', ship: 50, discount: 0,
+  items: [{ sku: 'SKU-141', qty: 2, price: 247 }]
+}));
+var iRow33 = rowsWith(it33, 2).filter(function (r) { return it33.cell(r, 2).v === b33.no })[0];
+var hRow33 = rowsWith(hd33, 1).filter(function (r) { return hd33.cell(r, 1).v === b33.no })[0];
+it33.cell(iRow33, 4).v = NAME33;      /* ช่องรหัส = ชื่อสินค้า (อาการของจริง) */
+fx33.recalc();
+
+eq('ตั้งต้น: ช่องชื่อสินค้าขึ้นว่าไม่พบ SKU', it33.cell(iRow33, 5).v, 'ไม่พบ SKU');
+eq('ตั้งต้น: ยอดขายถูกอยู่แล้ว', hd33.cell(hRow33, 10).v, 494);
+
+console.log('\n   กดแก้รายการแล้วใส่ต้นทุน 210 ต่อขวด');
+var pd33Before = rowsWith(pd33, 2).length;
+var r33 = api33.editOrderItems(b33.no,
+  [{ free: true, name: NAME33, qty: 2, price: 247, cost: 210 }], 'AEY', 'ck-fix-18');
+eq('ยอดสินค้าไม่ขยับ ยังเป็น 494 เท่าเดิม', r33.subtotal, 494);
+eq('ยอดสินค้าในชีทก็ยัง 494', hd33.cell(hRow33, 10).v, 494);
+eq('ยอดสุทธิยังรวมค่าส่ง 50 เหมือนเดิม', hd33.cell(hRow33, 14).v, 544);
+
+console.log('\n   สินค้าต้องเข้าฐานสินค้าเป็นรหัสจริง');
+eq('ฐานสินค้าได้สินค้าใหม่หนึ่งตัว', rowsWith(pd33, 2).length, pd33Before + 1);
+var pRow33 = rowsWith(pd33, 2).filter(function (r) { return pd33.cell(r, 4).v === NAME33 })[0];
+truthy2('หารหัสของสินค้าตัวนั้นได้', !!pRow33);
+eq('รหัสเป็นชุดซื้อมาขายไป', String(pd33.cell(pRow33, 2).v).slice(0, 6), 'SKU-X0');
+eq('หมวดเป็นซื้อมาขายไป', pd33.cell(pRow33, 3).v, 'ซื้อมาขายไป');
+eq('ต้นทุนต่อหน่วยลงเป็น 210', pd33.cell(pRow33, 7).v, 210);
+eq('ราคาขายลงเป็น 247', pd33.cell(pRow33, 8).v, 247);
+
+console.log('\n   ช่องชื่อบนใบกำกับภาษีต้องเลิกขึ้นว่าไม่พบ SKU');
+var iRow33b = rowsWith(it33, 2).filter(function (r) { return it33.cell(r, 2).v === b33.no })[0];
+eq('ช่องรหัสเป็นรหัสจริงแล้ว', it33.cell(iRow33b, 4).v, pd33.cell(pRow33, 2).v);
+eq('ช่องชื่อขึ้นชื่อสินค้าจริง', it33.cell(iRow33b, 5).v, NAME33);
+
+console.log('\n   ต้องลงรับเข้าคู่ไว้ ไม่งั้นสต๊อกติดลบ');
+var rRow33 = rowsWith(rc33, 6).filter(function (r) { return rc33.cell(r, 3).v === b33.no })[0];
+truthy2('มีแถวรับเข้าของใบนี้', !!rRow33);
+eq('รับเข้าเท่าจำนวนที่ขายพอดี', rc33.cell(rRow33, 8).v, 2);
+eq('ต้นทุนในแถวรับเข้าตรงกัน', rc33.cell(rRow33, 9).v, 210);
+
+console.log('\n   กดซ่อมสองรอบต้องไม่ได้สินค้าซ้ำสองรหัส');
+api33.editOrderItems(b33.no,
+  [{ free: true, name: NAME33, qty: 2, price: 247, cost: 210 }], 'AEY', 'ck-fix-18b');
+eq('ฐานสินค้าไม่งอกรหัสใหม่', rowsWith(pd33, 2).length, pd33Before + 1);
+eq('แถวรับเข้าก็ไม่งอกเป็นสองแถว',
+  rowsWith(rc33, 6).filter(function (r) { return rc33.cell(r, 3).v === b33.no }).length, 1);
+
+console.log('\n   ต้นทุนคนละราคาถือเป็นคนละรหัส กำไรใบเก่าจะได้ไม่เปลี่ยนตาม');
+api33.editOrderItems(b33.no,
+  [{ free: true, name: NAME33, qty: 2, price: 247, cost: 356 }], 'AEY', 'ck-fix-18c');
+eq('ได้รหัสใหม่เพราะต้นทุนไม่เท่าเดิม', rowsWith(pd33, 2).length, pd33Before + 2);
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over33 = [];
+for (var nm33 in fx33.sheets) over33 = over33.concat(fx33.sheets[nm33].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over33, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
