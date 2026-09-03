@@ -1065,5 +1065,119 @@ var over29 = [];
 for (var nm29 in fx29.sheets) over29 = over29.concat(fx29.sheets[nm29].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over29, []);
 
+/* ====== 30. แก้รายการสินค้าของออเดอร์ที่คีย์ไปแล้ว
+
+   ลูกค้าขอเพิ่มของก่อนร้านแพ็คส่ง — ของเดิมทำได้ทางเดียวคือยกเลิกใบแล้วคีย์ใหม่
+   สิ่งที่ต้องถูกทั้งหมด: หัวบิลไม่ขยับ · ล็อตเก่าคืนเข้าสต๊อก · ล็อตใหม่ตัดตาม FEFO
+   และถ้าออกใบกำกับภาษีไปแล้วต้องแก้ไม่ได้ เพราะใบที่ลูกค้าถืออยู่จะไม่ตรงกับของจริง */
+console.log('\n30. แก้รายการสินค้าของออเดอร์ที่คีย์ไปแล้ว');
+
+/* คอลัมน์ของ ออเดอร์_หัวบิล — ต้องตรงกับ SH.head.IN ใน Sheets.gs */
+var SH_HEAD_CUST = 4, SH_HEAD_SHIP = 12;
+
+var fx30 = FS.build({
+  lots: [
+    { sku: 'CHEM-001', lotNo: 'L-EARLY', exp: '2026-10-01', recv: '2026-08-01', qty: 3 },
+    { sku: 'CHEM-001', lotNo: 'L-LATE',  exp: '2027-03-01', recv: '2026-08-01', qty: 50 }
+  ]
+});
+var api30 = FS.load(fx30, {});
+api30.setup();
+var hd30 = fx30.sheets['ออเดอร์_หัวบิล'];
+var it30 = fx30.sheets['ออเดอร์_รายการ'];
+var ct30 = fx30.sheets['ตัดล็อต'];
+
+var made = api30.createOrder(order({
+  items: [{ sku: 'SKU-141', qty: 2, price: 100 }]
+}));
+var hRow30 = rowsWith(hd30, 1)[0];
+eq('ตั้งต้นมีบรรทัดเดียว', linesOf30(made.no).length, 1);
+eq('ยอดสินค้าตั้งต้น', made.subtotal, 200);
+
+function linesOf30(no) {
+  return rowsWith(it30, 2).filter(function (r) { return it30.cell(r, 2).v === no });
+}
+
+var custBefore = hd30.cell(hRow30, SH_HEAD_CUST).v;
+var shipBefore = hd30.cell(hRow30, SH_HEAD_SHIP).v;
+
+console.log('\n   ลูกค้าขอเพิ่มของอีกอย่าง');
+var r30 = api30.editOrderItems(made.no, [
+  { sku: 'SKU-141', qty: 2, price: 100 },
+  { sku: 'SKU-143', qty: 3, price: 50 }
+], 'น้องบี', 'ck-edit-1');
+
+eq('บอกว่าจากกี่รายการเป็นกี่รายการ', [r30.before, r30.after], [1, 2]);
+eq('ยอดสินค้าใหม่', r30.subtotal, 350);
+eq('ชีทมีสองบรรทัดแล้ว', linesOf30(made.no).length, 2);
+
+console.log('\n   หัวบิลต้องไม่ถูกแตะเลย');
+eq('ยังมีหัวบิลใบเดียว', rowsWith(hd30, 1).length, 1);
+eq('เลขออเดอร์เดิม', hd30.cell(hRow30, 1).v, made.no);
+eq('ชื่อลูกค้าเดิม', hd30.cell(hRow30, SH_HEAD_CUST).v, custBefore);
+eq('ค่าจัดส่งเดิม', hd30.cell(hRow30, SH_HEAD_SHIP).v, shipBefore);
+
+console.log('\n   ลดจำนวนแล้วล็อตต้องคืนเข้าสต๊อก ไม่ใช่ค้างตัดไว้');
+var api30b = FS.load(fx30, {});
+var mk = api30b.createOrder(order({ items: [{ sku: 'CHEM-001', qty: 3, price: 1200 }] }));
+var cutOf = function (no) {
+  return rowsWith(ct30, 2).filter(function (r) { return ct30.cell(r, 2).v === no })
+    .map(function (r) { return ct30.cell(r, 5).v + ' x' + ct30.cell(r, 6).v });
+};
+eq('ตัดล็อตที่หมดอายุก่อนจนหมดล็อต', cutOf(mk.no), ['L-EARLY x3']);
+
+api30b.editOrderItems(mk.no, [{ sku: 'CHEM-001', qty: 1, price: 1200 }], 'น้องบี', 'ck-edit-2');
+eq('ตัดใหม่เหลือหนึ่งชิ้น จากล็อตที่หมดอายุก่อนเหมือนเดิม', cutOf(mk.no), ['L-EARLY x1']);
+
+console.log('\n   เพิ่มจนเกินล็อตแรก ต้องไหลไปล็อตถัดไปตามวันหมดอายุ');
+api30b.editOrderItems(mk.no, [{ sku: 'CHEM-001', qty: 5, price: 1200 }], 'น้องบี', 'ck-edit-3');
+eq('ล็อตหมดอายุก่อนหมดแล้วค่อยไปล็อตหลัง', cutOf(mk.no), ['L-EARLY x3', 'L-LATE x2']);
+
+console.log('\n   ออกใบกำกับภาษีไปแล้ว ห้ามแก้ของในใบ');
+var d30 = fx30.sheets['เอกสาร'];
+d30.cell(DATA_ROW, 2).v = 'ONIV26-00250';
+d30.cell(DATA_ROW, 3).v = 'ใบเสร็จรับเงิน';
+d30.cell(DATA_ROW, 5).v = made.no;
+throws('มีใบที่ยังไม่ยกเลิกอยู่',
+  function () { api30.editOrderItems(made.no, [{ sku: 'SKU-141', qty: 1, price: 100 }], 'บี', 'ck-x1') },
+  'ออกเอกสารไปแล้ว');
+eq('ของเดิมยังอยู่ครบ ไม่ถูกรื้อทิ้ง', linesOf30(made.no).length, 2);
+
+console.log('\n   ยกเลิกใบนั้นแล้วแก้ได้');
+d30.cell(DATA_ROW, 20).v = 'ออกผิด ยกเลิกเพื่อแก้รายการ';
+var r30c = api30.editOrderItems(made.no, [{ sku: 'SKU-141', qty: 1, price: 100 }], 'บี', 'ck-x2');
+eq('แก้ผ่านแล้ว', r30c.after, 1);
+
+console.log('\n   สิ่งที่ต้องปฏิเสธ');
+throws('ออเดอร์ที่ไม่มีจริง',
+  function () { api30.editOrderItems('AST-26-9999', [{ sku: 'SKU-141', qty: 1 }], 'บี', 'ck-x3') },
+  'ไม่พบออเดอร์');
+throws('รายการว่างเปล่า',
+  function () { api30.editOrderItems(made.no, [], 'บี', 'ck-x4') }, 'อย่างน้อยหนึ่งบรรทัด');
+
+console.log('\n   กดซ้ำเพราะเน็ตช้า ต้องไม่ได้ผลสองรอบ');
+var beforeDup = linesOf30(made.no).length;
+var dup = api30.editOrderItems(made.no,
+  [{ sku: 'SKU-141', qty: 1, price: 100 }, { sku: 'SKU-143', qty: 1, price: 50 }], 'บี', 'ck-x2');
+truthy2('ตอบว่าเป็นการกดซ้ำ', !!dup.duplicate);
+eq('ไม่มีบรรทัดงอกเพิ่ม', linesOf30(made.no).length, beforeDup);
+
+console.log('\n   แก้ไม่สำเร็จ ต้องเขียนรายการเดิมคืน ไม่ทิ้งหัวบิลเปล่า');
+var beforeFail = linesOf30(made.no).map(function (r) {
+  return it30.cell(r, 4).v + '|' + it30.cell(r, 7).v;
+});
+throws('สินค้าที่ไม่มีในฐาน',
+  function () {
+    api30.editOrderItems(made.no, [{ sku: 'SKU-ไม่มีจริง', qty: 1, price: 10 }], 'บี', 'ck-x5');
+  }, 'ไม่พบ SKU');
+eq('รายการเดิมกลับมาเหมือนเดิมทุกบรรทัด',
+  linesOf30(made.no).map(function (r) { return it30.cell(r, 4).v + '|' + it30.cell(r, 7).v }),
+  beforeFail);
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over30 = [];
+for (var nm30 in fx30.sheets) over30 = over30.concat(fx30.sheets[nm30].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over30, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

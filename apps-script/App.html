@@ -610,6 +610,9 @@ function renderOrders(){
       +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
       +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
       +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">📄</button>'
+      /* ลูกค้าทักมาขอเพิ่มของก่อนร้านแพ็คส่ง เป็นเรื่องปกติของหน้างาน
+         ทางที่เคยทำได้มีแค่ยกเลิกใบเดิมแล้วคีย์ใหม่ทั้งใบ เสียเลขออเดอร์ไปหนึ่งใบทุกครั้ง */
+      +'<button class="sq" data-ed="'+i+'" title="แก้รายการสินค้า / เพิ่มสินค้า">✏️</button>'
       +'</div></div>';
   }).join("");
 }
@@ -1186,6 +1189,149 @@ function taxIdOk(v){
   var sum=0;
   for(var i=0;i<12;i++) sum += Number(t.charAt(i))*(13-i);
   return (11-(sum%11))%10 === Number(t.charAt(12));
+}
+
+/* --------------------------------------------- แก้รายการสินค้าของออเดอร์ที่คีย์แล้ว
+
+   ลูกค้าทักมาขอเพิ่มของก่อนร้านแพ็คส่ง เป็นเรื่องปกติของหน้างาน
+   ของเดิมทำได้ทางเดียวคือยกเลิกใบเดิมแล้วคีย์ใหม่ทั้งใบ เสียเลขออเดอร์ไปหนึ่งใบทุกครั้ง
+
+   ฝั่งชีทรื้อรายการเดิมกับล็อตที่ตัดไปออกก่อน แล้ววางแผนใหม่ทั้งชุด
+   จึงได้ FEFO ที่ถูกต้อง — หน้าจอนี้แค่รวบรวมว่ารายการใหม่ทั้งใบมีอะไรบ้าง       */
+
+function openEditItems(o){
+  openModal("แก้รายการสินค้า — " + o.no,
+    /* คำอธิบายสั้นที่สุดเท่าที่ยังบอกครบ — บนมือถือ ถ้ายาวกว่านี้
+       ของที่ต้องแก้จริงจะถูกดันตกจอไปหมด ต้องเลื่อนก่อนถึงจะเริ่มทำงานได้ */
+     '<div class="hint" style="margin-bottom:10px">'
+    +'<b>สต๊อกกับล็อตคิดใหม่ทั้งใบ</b> ให้ตรงกับรายการที่เหลือ · '
+    +'เลขออเดอร์ ลูกค้า ค่าส่ง ส่วนลด ยังเป็นของเดิม<br>'
+    +'ใบที่ออกเอกสารไปแล้ว ต้องยกเลิกใบเดิมก่อนจึงแก้ได้</div>'
+    +'<div id="ed-rows"></div>'
+    +'<button class="btn ghost" id="ed-add" style="margin-top:8px">+ เพิ่มสินค้า</button>'
+    +'<div class="sum" id="ed-sum" style="margin-top:12px"></div>'
+    +'<button class="btn" id="ed-save" style="margin-top:12px">บันทึกรายการใหม่</button>'
+    +'<div id="ed-msg" style="margin-top:10px"></div>');
+
+  (o.items||[]).forEach(function(it){
+    /* ของซื้อมาขายไปที่พิมพ์ชื่อเอง จะไม่มีรหัสอยู่ในรายการสินค้า
+       เปิดมาเป็นโหมดพิมพ์ชื่อให้เลย ไม่ใช่ปล่อยช่องเลือกว่างแล้วให้เดาเอง */
+    edRow({ sku: it.sku, name: it.name, qty: it.qty, price: it.price,
+            free: !prodBySku(it.sku) });
+  });
+  if(!(o.items||[]).length) edRow({});
+
+  $("#ed-add").onclick = function(){ edRow({}); };
+  $("#ed-save").onclick = function(){ edSave(o, this); };
+  edSum();
+}
+
+function edRow(v){
+  var box = $("#ed-rows");
+  var d = document.createElement("div");
+  d.className = "it edrow";
+  d.innerHTML =
+     '<div class="hd"><b>รายการที่ <span class="n"></span></b>'
+    +'<button class="mini red rm" type="button">ลบ</button></div>'
+    +'<div class="fld ed-sku-wrap" style="margin-bottom:8px">'
+    +'<select class="i-sku">'+prodOptions(v.sku||"")+'</select></div>'
+    +'<div class="fld ed-free-wrap" style="margin-bottom:8px;display:none">'
+    +'<input class="i-name" type="text" placeholder="พิมพ์ชื่อสินค้า" value="'+esc(v.name||"")+'">'
+    +'<input class="i-cost" type="number" inputmode="decimal" min="0" '
+    +'placeholder="ต้นทุน/หน่วย (ไม่ใส่ก็ได้)" style="margin-top:6px"></div>'
+    +'<div class="three">'
+    +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
+    +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||1)+'"></div>'
+    +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
+    +'<input class="i-price" type="number" inputmode="decimal" min="0" '
+    +'placeholder="ปล่อยว่าง = ราคามาตรฐาน" value="'+(v.price===""||v.price===undefined?"":v.price)+'"></div>'
+    +'<div></div></div>'
+    +'<label class="giftck"><input type="checkbox" class="i-free"'+(v.free?" checked":"")+'>'
+    +' ซื้อมาขายไป — พิมพ์ชื่อและราคาเอง</label>';
+  box.appendChild(d);
+
+  function toggle(){
+    var on = d.querySelector(".i-free").checked;
+    d.querySelector(".ed-sku-wrap").style.display  = on ? "none" : "";
+    d.querySelector(".ed-free-wrap").style.display = on ? "" : "none";
+    edSum();
+  }
+  d.querySelector(".i-free").onchange = toggle;
+  if(v.free) toggle();
+
+  d.querySelector(".rm").onclick = function(){
+    if($$("#ed-rows .edrow").length <= 1){ toast("ต้องมีสินค้าอย่างน้อย 1 รายการ"); return }
+    d.remove(); edSum();
+  };
+  ["i-sku","i-qty","i-price","i-name"].forEach(function(c){
+    var el = d.querySelector("."+c);
+    if(el) el.oninput = el.onchange = edSum;
+  });
+  edSum();
+}
+
+function edItems(){
+  return $$("#ed-rows .edrow").map(function(r){
+    var free = r.querySelector(".i-free").checked;
+    return {
+      free: free,
+      sku:   free ? "" : r.querySelector(".i-sku").value,
+      name:  free ? r.querySelector(".i-name").value.trim() : "",
+      cost:  free ? r.querySelector(".i-cost").value : "",
+      qty:   r.querySelector(".i-qty").value,
+      price: r.querySelector(".i-price").value
+    };
+  });
+}
+
+/** ยอดสินค้าที่คิดให้ดูก่อนกดบันทึก — ยอดจริงยังยึดที่ชีทคำนวณเสมอ */
+function edSum(){
+  var box = $("#ed-sum");
+  if(!box) return;
+  $$("#ed-rows .edrow").forEach(function(r,i){ r.querySelector(".n").textContent = i+1 });
+  var sub = 0, unknown = 0;
+  edItems().forEach(function(it){
+    var qty = Number(it.qty)||0;
+    var pr = it.price === "" ? null : Number(it.price);
+    if(pr === null){
+      var p = it.free ? null : prodBySku(it.sku);
+      if(p) pr = Number(p.price)||0; else { unknown++; pr = 0; }
+    }
+    sub += qty * pr;
+  });
+  box.innerHTML = '<div class="line"><span>ยอดสินค้า (ประมาณ)</span><b>'+baht(sub)+'</b></div>'
+    + (unknown ? '<div class="hint">มี '+unknown+' บรรทัดที่ยังไม่ได้เลือกสินค้าหรือใส่ราคา</div>' : '')
+    + '<div class="hint">ยอดสุทธิจริงชีทเป็นคนคิด รวมค่าส่งกับส่วนลดของใบเดิม</div>';
+}
+
+function edSave(o, btn){
+  var items = edItems();
+  for(var i=0;i<items.length;i++){
+    var it = items[i];
+    if(!(Number(it.qty)>0)){ toast("รายการที่ "+(i+1)+": จำนวนต้องมากกว่า 0"); return }
+    if(it.free && !it.name){ toast("รายการที่ "+(i+1)+": ยังไม่ได้ใส่ชื่อสินค้า"); return }
+    if(!it.free && !it.sku){ toast("รายการที่ "+(i+1)+": ยังไม่ได้เลือกสินค้า"); return }
+  }
+  if(!confirm("บันทึกรายการใหม่ของออเดอร์ "+o.no+" ?\n\n"
+            + "สต๊อกกับล็อตจะถูกคิดใหม่ทั้งใบให้ตรงกับรายการนี้")) return;
+
+  btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+  $("#ed-msg").innerHTML = "";
+  /* กุญแจกันบันทึกซ้ำ — กดสองทีเพราะเน็ตช้า ต้องไม่ได้ผลสองรอบ */
+  var ck = "ed-" + o.no + "-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+  api("editOrderItems", o.no, items, byName(), ck).then(function(r){
+    $("#ed-msg").innerHTML = '<div class="msg ok" style="display:block">แก้รายการของ <b>'
+      + esc(o.no) + '</b> แล้ว จาก ' + r.before + ' เป็น ' + r.after + ' รายการ · ยอดสินค้า '
+      + baht(r.subtotal) + (r.lots && r.lots.length ? '<br>ล็อตที่ตัด: ' + esc(r.lots.join(" · ")) : '')
+      + '</div>';
+    btn.disabled = false; btn.textContent = "บันทึกรายการใหม่";
+    SUM_CACHE = null;          /* ยอดสรุปเปลี่ยนแล้ว ต้องโหลดใหม่ ไม่ใช้ของที่จำไว้ */
+    loadOrders(true);
+  }, function(e){
+    btn.disabled = false; btn.textContent = "บันทึกรายการใหม่";
+    $("#ed-msg").innerHTML = '<div class="msg err" style="display:block">'
+      + esc(e && e.message ? e.message : e) + '</div>';
+  });
 }
 
 /* -------------------------------------------------------------- ใบปะหน้าพัสดุ */
@@ -1828,12 +1974,13 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
 
   $("#list").addEventListener("click", function(e){
-    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc]");
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc],[data-ed]");
     if(!b) return;
     if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
     else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
     else if(b.dataset.sm!==undefined) openMsg(ORDERS[+b.dataset.sm]);
     else if(b.dataset.dc!==undefined) openDoc(ORDERS[+b.dataset.dc]);
+    else if(b.dataset.ed!==undefined) openEditItems(ORDERS[+b.dataset.ed]);
   });
 
   boot();

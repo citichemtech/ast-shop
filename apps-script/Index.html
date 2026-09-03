@@ -104,6 +104,12 @@ textarea{resize:vertical}
 .row .i b{display:block}
 .row .i span{font-size:0.82rem;color:var(--gray)}
 .row .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+/* จอแคบ: ปุ่มห้าอันเบียดจนชื่อลูกค้ากับเลขออเดอร์ตกบรรทัดทีละคำ อ่านยาก
+   ให้ปุ่มลงไปอยู่แถวของตัวเองเต็มความกว้างแทน ข้อความจะได้เต็มบรรทัด */
+@media (max-width:430px){
+  .row .i{flex:0 0 100%}
+  .row .acts{flex:0 0 100%;justify-content:flex-start;margin-top:8px}
+}
 /* กล่องถามเหตุผลตอนยกเลิกเอกสาร กินเต็มความกว้างของแถว ไม่เบียดปุ่ม */
 .row{flex-wrap:wrap}
 .vdbox{flex:0 0 100%;margin-top:10px;padding:11px;border:1px solid #f0c9c9;

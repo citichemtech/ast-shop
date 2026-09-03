@@ -156,6 +156,31 @@ window.google = { script: { run: (function(){
         }).reverse();
       });
     },
+    editOrderItems: function(no, items, by, ck){
+      reply(function(){
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === String(no) })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + no);
+        if(!items || !items.length)
+          throw new Error("ออเดอร์ต้องมีสินค้าอย่างน้อยหนึ่งบรรทัด");
+        var live = MOCK_DOCS.filter(function(d){
+          return d.orderNo === String(no) && !d.voidWhy;
+        }).map(function(d){ return d.no + " (" + d.type + ")" });
+        if(live.length) throw new Error("ออเดอร์ " + no + " ออกเอกสารไปแล้ว: "
+          + live.join(", ") + " — ให้ยกเลิกใบเดิมก่อน");
+        var before = (o.items||[]).length, sub = 0;
+        o.items = items.map(function(it, i){
+          var qty = Number(it.qty)||0;
+          var pr = it.price === "" ? 100 : Number(it.price);
+          sub += qty * pr;
+          return { sku: it.free ? ("SKU-X00"+(i+1)) : it.sku,
+                   name: it.free ? it.name : ("สินค้า " + it.sku),
+                   qty: qty, price: pr, total: qty*pr };
+        });
+        o.subtotal = sub;
+        o.net = sub + Number(o.ship||0) - Number(o.discount||0);
+        return { ok:true, no:o.no, subtotal:sub, lots:[], before:before, after:o.items.length };
+      });
+    },
     saveSignature: function(which, sig){
       reply(function(){
         if(["cashier","auth"].indexOf(String(which)) < 0)

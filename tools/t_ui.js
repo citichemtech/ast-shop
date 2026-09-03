@@ -646,6 +646,74 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(150);
   eq('ล้างฟอร์มแล้วช่องค้นหาว่างด้วย', await page.inputValue('#f-addr-find'), '');
 
+  /* ---------- 18.5 แก้รายการสินค้าของออเดอร์ที่คีย์แล้ว ---------- */
+  console.log('\n18.5 แก้รายการสินค้าของออเดอร์ที่คีย์แล้ว');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(600);
+  truthy('ทุกออเดอร์มีปุ่มแก้รายการ',
+    await page.locator('#list [data-ed]').count() > 0);
+
+  await page.locator('#list [data-ed]').first().click();
+  await page.waitForTimeout(350);
+  var edStart = await page.locator('#ed-rows .edrow').count();
+  truthy('เปิดมาแล้วเห็นรายการเดิมของใบนั้น', edStart > 0);
+
+  console.log('\n   กดเพิ่มสินค้าแล้วต้องมีบรรทัดใหม่ให้กรอก');
+  await page.click('#ed-add');
+  await page.waitForTimeout(200);
+  eq('ได้บรรทัดเพิ่มมาหนึ่ง', await page.locator('#ed-rows .edrow').count(), edStart + 1);
+
+  /* เลือกสินค้าและใส่จำนวนในบรรทัดใหม่ แล้วยอดที่คิดให้ดูต้องขยับตาม */
+  var lastRow = page.locator('#ed-rows .edrow').last();
+  var sku2 = await page.evaluate(function () { return CFG.products[1].sku });
+  await lastRow.locator('.i-sku').selectOption(sku2);
+  await lastRow.locator('.i-qty').fill('2');
+  await lastRow.locator('.i-price').fill('150');
+  await page.waitForTimeout(200);
+  truthy('ยอดที่คิดให้ดูรวมของใหม่เข้าไปด้วย',
+    /300|฿/.test(await page.textContent('#ed-sum')));
+
+  console.log('\n   ลบบรรทัดได้ แต่ห้ามลบจนไม่เหลือเลย');
+  var n1 = await page.locator('#ed-rows .edrow').count();
+  await page.locator('#ed-rows .edrow .rm').last().click();
+  await page.waitForTimeout(150);
+  eq('ลบแล้วเหลือน้อยลงหนึ่ง', await page.locator('#ed-rows .edrow').count(), n1 - 1);
+
+  while (await page.locator('#ed-rows .edrow').count() > 1) {
+    await page.locator('#ed-rows .edrow .rm').last().click();
+    await page.waitForTimeout(80);
+  }
+  await page.locator('#ed-rows .edrow .rm').last().click();
+  await page.waitForTimeout(150);
+  eq('บรรทัดสุดท้ายลบไม่ได้', await page.locator('#ed-rows .edrow').count(), 1);
+
+  console.log('\n   บันทึกจริงแล้วรายการในใบต้องเปลี่ยนตาม');
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.locator('#ed-rows .edrow').first().locator('.i-qty').fill('7');
+  await page.click('#ed-save');
+  await page.waitForTimeout(700);
+  truthy('ขึ้นว่าแก้รายการแล้ว',
+    /แก้รายการของ/.test(await page.textContent('#ed-msg')));
+  eq('ส่งจำนวนใหม่ขึ้นชีทจริง',
+    await page.evaluate(function () {
+      return MOCK_ORDERS[0].items[0].qty;
+    }), 7);
+
+  console.log('\n   ใบที่ออกเอกสารไปแล้วต้องแก้ไม่ได้ และบอกเหตุผลตรง ๆ');
+  await page.evaluate(function () {
+    MOCK_DOCS.push({ no: 'ONIV26-09999', type: 'ใบเสร็จรับเงิน',
+                     orderNo: MOCK_ORDERS[0].no, voidWhy: '' });
+  });
+  await page.click('#ed-save');
+  await page.waitForTimeout(600);
+  truthy('บอกว่าออกเอกสารไปแล้ว',
+    /ออกเอกสารไปแล้ว/.test(await page.textContent('#ed-msg')));
+  truthy('บอกด้วยว่าต้องยกเลิกใบเดิมก่อน',
+    /ยกเลิกใบเดิมก่อน/.test(await page.textContent('#ed-msg')));
+  await page.evaluate(function () { MOCK_DOCS.pop(); closeModal(); });
+  await page.waitForTimeout(200);
+
   /* ---------- 19. ลายเซ็น ---------- */
   console.log('\n19. ลายเซ็น');
 

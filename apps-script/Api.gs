@@ -930,6 +930,187 @@ function createOrder(payload) {
   }
 }
 
+/* --------------------------------------------- แก้รายการสินค้าของออเดอร์ที่คีย์แล้ว */
+
+/** แถวของออเดอร์หนึ่งใบในชีทที่ต้องรื้อพร้อมกัน — รายการสินค้ากับล็อตที่ตัดไป */
+function orderRows_(no) {
+  var out = { item: [], cut: [] };
+  var want = String(no).trim();
+
+  var is = sheet_('item'), iLast = formulaLimit_('item');
+  if (iLast >= DATA_ROW) {
+    var iv = is.getRange(DATA_ROW, SH.item.IN.no, iLast - DATA_ROW + 1, 1).getValues();
+    for (var i = 0; i < iv.length; i++) {
+      if (String(iv[i][0] || '').trim() === want) out.item.push(DATA_ROW + i);
+    }
+  }
+
+  var cs = sheetIfAny_('cut');
+  if (cs) {
+    var cLast = formulaLimit_('cut');
+    if (cLast >= DATA_ROW) {
+      var cv = cs.getRange(DATA_ROW, SH.cut.IN.no, cLast - DATA_ROW + 1, 1).getValues();
+      for (var j = 0; j < cv.length; j++) {
+        if (String(cv[j][0] || '').trim() === want) out.cut.push(DATA_ROW + j);
+      }
+    }
+  }
+  return out;
+}
+
+/** อ่านค่าช่องกรอกของแถวหนึ่งเก็บไว้ เพื่อเขียนคืนได้ถ้าแก้แล้วล้มกลางทาง */
+function snapRows_(key, rows) {
+  var s = sheet_(key), cfg = SH[key], out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var one = { row: rows[i], v: {} };
+    for (var f in cfg.IN) one.v[f] = s.getRange(rows[i], cfg.IN[f]).getValue();
+    out.push(one);
+  }
+  return out;
+}
+
+function restoreRows_(key, snaps) {
+  for (var i = 0; i < snaps.length; i++) {
+    var v = {}, any = false;
+    for (var f in snaps[i].v) {
+      if (snaps[i].v[f] !== '' && snaps[i].v[f] !== null) { v[f] = snaps[i].v[f]; any = true; }
+    }
+    if (any) writeRow_(key, snaps[i].row, v);
+  }
+}
+
+/** ใบที่ออกให้ออเดอร์นี้และยังไม่ถูกยกเลิก — แก้ของในออเดอร์ทั้งที่ใบออกไปแล้วไม่ได้ */
+function liveDocsOf_(no) {
+  var want = String(no).trim(), out = [];
+  var s = sheetIfAny_('doc');
+  if (!s) return out;
+  var last = formulaLimit_('doc');
+  var n = Math.max(0, last - DATA_ROW + 1);
+  if (!n) return out;
+  var C = SH.doc.IN;
+  var v = s.getRange(DATA_ROW, C.no, n, C.voidWhy - C.no + 1).getValues();
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][C.orderNo - C.no] || '').trim() !== want) continue;
+    if (String(v[i][C.voidWhy - C.no] || '').trim()) continue;   /* ยกเลิกแล้วไม่นับ */
+    out.push(String(v[i][0] || '').trim() + ' (' + String(v[i][C.type - C.no] || '').trim() + ')');
+  }
+  return out;
+}
+
+/**
+ * แก้รายการสินค้าของออเดอร์ที่คีย์ไปแล้ว — เพิ่มของ ลดจำนวน แก้ราคา หรือเอาบรรทัดออก
+ *
+ * ลูกค้าทักมาขอเพิ่มของก่อนร้านแพ็คส่ง เป็นเรื่องปกติของหน้างาน
+ * ทางที่เคยทำได้มีแค่ยกเลิกใบเดิมแล้วคีย์ใหม่ทั้งใบ ซึ่งเสียเลขออเดอร์ไปหนึ่งใบทุกครั้ง
+ *
+ * วิธีทำ: รื้อรายการเดิมกับล็อตที่ตัดไปออกให้หมดก่อน (ล็อตคืนเข้าสต๊อกเอง
+ * เพราะยอดตัดมาจากชีท ตัดล็อต) แล้ววางแผนใหม่ทั้งชุดด้วยตัววางแผนตัวเดียวกับตอนคีย์ใหม่
+ * จึงได้ FEFO ที่ถูกต้อง ไม่ใช่ค่อย ๆ ต่อของใหม่ทับของเดิมจนล็อตเพี้ยน
+ *
+ * หัวบิลไม่ถูกแตะ — เลขออเดอร์ ลูกค้า วันที่ ค่าส่ง ส่วนลด ยังเป็นของเดิม
+ *
+ * สองอย่างที่ทำไม่ได้ และปฏิเสธตรง ๆ ดีกว่าปล่อยให้ข้อมูลขัดกันเอง
+ *   ออเดอร์ที่ยกเลิกไปแล้ว
+ *   ออเดอร์ที่ออกใบกำกับภาษี/ใบเสร็จไปแล้วและยังไม่ยกเลิกใบนั้น —
+ *   ใบที่ลูกค้าถืออยู่จะไม่ตรงกับของที่ส่งจริง ต้องยกเลิกใบเดิมก่อนแล้วออกใบใหม่
+ */
+function editOrderItems(no, items, by, clientKey) {
+  var email = requireStaff_();
+  var want = String(no || '').trim();
+  if (!want) throw new Error('ไม่ได้บอกว่าจะแก้ออเดอร์ไหน');
+  if (!items || !items.length) {
+    throw new Error('ออเดอร์ต้องมีสินค้าอย่างน้อยหนึ่งบรรทัด — ' +
+      'ถ้าจะยกเลิกทั้งใบให้เปลี่ยนสถานะเป็น "ยกเลิก" แทน');
+  }
+
+  var ck = String(clientKey || '').trim();
+  var props = PropertiesService.getScriptProperties();
+  if (ck && props.getProperty('ek_' + ck)) return { ok: true, no: want, duplicate: true };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('มีคนกำลังบันทึกอยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
+
+  var oldItem = [], oldCut = [], written = { head: 0, item: [], cut: [], prod: [], recv: [] };
+  var cleared = false;
+  try {
+    if (ck && props.getProperty('ek_' + ck)) return { ok: true, no: want, duplicate: true };
+
+    var head = findOrder_(want);
+    if (!head) throw new Error('ไม่พบออเดอร์ ' + want);
+    if (String(head.status || '').trim() === 'ยกเลิก') {
+      throw new Error('ออเดอร์ ' + want + ' ถูกยกเลิกไปแล้ว แก้รายการไม่ได้');
+    }
+
+    var docs = liveDocsOf_(want);
+    if (docs.length) {
+      throw new Error('ออเดอร์ ' + want + ' ออกเอกสารไปแล้ว: ' + docs.join(', ') +
+        ' — แก้รายการตอนนี้จะทำให้ใบที่ลูกค้าถืออยู่ไม่ตรงกับของที่ส่งจริง ' +
+        'ให้ยกเลิกใบเดิมก่อน แล้วแก้รายการ แล้วค่อยออกใบใหม่');
+    }
+
+    var rows = orderRows_(want);
+    oldItem = snapRows_('item', rows.item);
+    oldCut = snapRows_('cut', rows.cut);
+
+    /* รื้อของเดิมออกก่อน แล้ว flush ให้ชีทคืนยอดล็อต
+       ถ้าไม่ flush ตัววางแผนจะเห็นล็อตที่ยังถูกตัดค้างอยู่ แล้วบอกว่าของไม่พอทั้งที่พอ */
+    for (var c = 0; c < rows.cut.length; c++) clearRow_('cut', rows.cut[c]);
+    for (var i = 0; i < rows.item.length; i++) clearRow_('item', rows.item[i]);
+    cleared = true;
+    SpreadsheetApp.flush();
+
+    /* วางแผนใหม่ด้วยหัวบิลเดิม เปลี่ยนแค่รายการสินค้า */
+    var plan = planOrder_({
+      cust: head.cust, tel: head.tel, addr: head.addr, date: head.date,
+      channel: head.channel, carrier: head.carrier, status: head.status,
+      vat: String(head.vat || '').indexOf('ไม่') !== 0,
+      discount: head.discount, ship: head.ship, note: head.note,
+      by: String(by || '').trim() || head.staff,
+      items: items
+    }, email);
+    plan.no = want;
+
+    written = commitOrderLines_(plan);
+    SpreadsheetApp.flush();
+    verifyOrder_(plan);
+
+    if (ck) props.setProperty('ek_' + ck, want);
+    writeLog_(email, 'แก้รายการออเดอร์', SH.item.name, want, 'รายการสินค้า',
+      String(rows.item.length) + ' รายการ', String(plan.items.length) + ' รายการ',
+      'แก้จากแอป โดย ' + plan.staff + ' (บัญชี ' + email + ') · ยอดสินค้าใหม่ ' + plan.subtotal);
+
+    return { ok: true, no: want, subtotal: plan.subtotal, lots: plan.lotNote,
+             before: rows.item.length, after: plan.items.length };
+  } catch (err) {
+    rollback_(written);
+    /* ของเดิมถูกรื้อไปแล้วต้องเขียนคืน ไม่งั้นออเดอร์จะเหลือหัวบิลเปล่า ๆ ไม่มีของ
+       ซึ่งแย่กว่าการแก้ไม่สำเร็จเสียอีก */
+    if (cleared) {
+      try {
+        restoreRows_('item', oldItem);
+        restoreRows_('cut', oldCut);
+        SpreadsheetApp.flush();
+      } catch (e2) {
+        Logger.log('เขียนรายการเดิมคืนไม่สำเร็จ: ' + e2.message);
+        throw new Error((err && err.message ? err.message : err) +
+          ' — และเขียนรายการเดิมคืนไม่สำเร็จด้วย ให้เปิดชีท ' + SH.item.name +
+          ' ตรวจออเดอร์ ' + want + ' ด้วยมือ');
+      }
+    }
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** เขียนเฉพาะส่วนที่เป็นของ "รายการในออเดอร์" — ไม่แตะหัวบิล ใช้ตอนแก้ของในใบเดิม */
+function commitOrderLines_(plan) {
+  var keep = plan.skipHead;
+  plan.skipHead = true;
+  try { return commitOrder_(plan); }
+  finally { plan.skipHead = keep; }
+}
+
 /** ตรวจและเตรียมทุกอย่างให้ครบก่อน แล้วค่อยเริ่มเขียน — กันล้มกลางทางตั้งแต่ต้นทาง */
 function planOrder_(p, email) {
   var cfg = cfgGet_();
@@ -1192,17 +1373,21 @@ function commitOrder_(plan) {
     }
   }
 
-  var hRow = nextRow_('head', SH.head.IN.no);
-  if (!hRow) throw new Error('ชีท ' + SH.head.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
-    formulaLimit_('head') + ') — ต้องลากสูตรลงเพิ่มก่อนจึงบันทึกออเดอร์ใหม่ได้');
+  /* ตอนแก้รายการของใบเดิม หัวบิลมีอยู่แล้วและต้องไม่ถูกแตะ
+     เลขออเดอร์ ลูกค้า วันที่ เลขพัสดุ ค่าส่ง ส่วนลด ยังเป็นของเดิมทั้งหมด */
+  if (!plan.skipHead) {
+    var hRow = nextRow_('head', SH.head.IN.no);
+    if (!hRow) throw new Error('ชีท ' + SH.head.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
+      formulaLimit_('head') + ') — ต้องลากสูตรลงเพิ่มก่อนจึงบันทึกออเดอร์ใหม่ได้');
 
-  writeRow_('head', hRow, {
-    no: plan.no, date: plan.date, channel: plan.channel, cust: plan.cust,
-    tel: plan.tel, addr: plan.addr, carrier: plan.carrier, track: plan.track,
-    vat: plan.vat, discount: plan.discount, ship: plan.ship,
-    status: plan.status, staff: plan.staff, note: plan.note
-  });
-  written.head = hRow;
+    writeRow_('head', hRow, {
+      no: plan.no, date: plan.date, channel: plan.channel, cust: plan.cust,
+      tel: plan.tel, addr: plan.addr, carrier: plan.carrier, track: plan.track,
+      vat: plan.vat, discount: plan.discount, ship: plan.ship,
+      status: plan.status, staff: plan.staff, note: plan.note
+    });
+    written.head = hRow;
+  }
 
   var iRows = nextRows_('item', SH.item.IN.no, plan.items.length);
   if (!iRows.length) throw new Error('ชีท ' + SH.item.name + ' เหลือที่ว่างไม่พอ ' +
