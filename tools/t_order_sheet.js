@@ -1179,5 +1179,186 @@ var over30 = [];
 for (var nm30 in fx30.sheets) over30 = over30.concat(fx30.sheets[nm30].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over30, []);
 
+/* ====== 31. ยกเลิกทั้งออเดอร์ — ลูกค้าเปลี่ยนใจไม่รับของ
+
+   ข้อสอบข้อสำคัญที่สุดของหมวดนี้คือ "ของกลับเข้าสต๊อกจริงไหม"
+   ไม่ใช่แค่ช่องสถานะเปลี่ยนเป็นคำว่ายกเลิก เพราะถ้าของไม่คืน
+   ยอดในชีทจะน้อยกว่าของบนชั้นตลอดไป และรอบหน้าระบบจะบอกว่าของไม่พอทั้งที่พอ */
+console.log('\n31. ยกเลิกทั้งออเดอร์');
+
+var SH_HEAD_STATUS = 17, SH_HEAD_NOTE = 20, SH_HEAD_DISC = 11, SH_HEAD_NET = 14;
+
+var fx31 = FS.build({
+  lots: [
+    { sku: 'CHEM-001', lotNo: 'L-A', exp: '2026-10-01', recv: '2026-08-01', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'L-B', exp: '2027-03-01', recv: '2026-08-01', qty: 10 }
+  ]
+});
+var api31 = FS.load(fx31, {});
+api31.setup();
+var hd31 = fx31.sheets['ออเดอร์_หัวบิล'];
+var it31 = fx31.sheets['ออเดอร์_รายการ'];
+var ct31 = fx31.sheets['ตัดล็อต'];
+var lt31 = fx31.sheets['ล็อตสินค้า'];
+var rc31 = fx31.sheets['รับเข้า'];
+
+function lotLeft31(lotNo) {
+  var rows = rowsWith(lt31, 2);
+  for (var i = 0; i < rows.length; i++) {
+    if (lt31.cell(rows[i], 4).v === lotNo) return lt31.cell(rows[i], 9).v;
+  }
+  return null;
+}
+
+var c31 = api31.createOrder(order({
+  cust: 'คุณเปลี่ยนใจ ไม่รับของ', ship: 50, discount: 20,
+  items: [{ sku: 'CHEM-001', qty: 4, price: 1200 }]
+}));
+var row31 = rowsWith(hd31, 1).filter(function (r) { return hd31.cell(r, 1).v === c31.no })[0];
+eq('ตัดล็อตที่หมดอายุก่อนไป 4 ชิ้น', lotLeft31('L-A'), 6);
+eq('ยอดสุทธิก่อนยกเลิก', hd31.cell(row31, SH_HEAD_NET).v, 4 * 1200 - 20 + 50);
+
+console.log('\n   เหตุผลสั้นเกินไป ต้องไม่ยอมให้ยกเลิก');
+throws('เหตุผลว่างเปล่า', function () { api31.cancelOrder(c31.no, '', 'บี', 'x1') },
+  'อย่างน้อย 5 ตัวอักษร');
+eq('ของยังไม่คืน สถานะยังไม่เปลี่ยน', lotLeft31('L-A'), 6);
+
+console.log('\n   ยกเลิกจริง');
+var x31 = api31.cancelOrder(c31.no, 'ลูกค้าเปลี่ยนใจไม่รับของ', 'น้องบี', 'x2');
+eq('บอกจำนวนบรรทัดที่รื้อออก', [x31.items, x31.cuts], [1, 1]);
+eq('บอกยอดเดิมของใบที่ยกเลิก', x31.netBefore, 4 * 1200 - 20 + 50);
+eq('ของคืนเข้าล็อตครบ', lotLeft31('L-A'), 10);
+eq('รายการสินค้าของใบนี้ถูกรื้อออกหมด',
+  rowsWith(it31, 2).filter(function (r) { return it31.cell(r, 2).v === c31.no }).length, 0);
+eq('แถวตัดล็อตของใบนี้ถูกรื้อออกหมด',
+  rowsWith(ct31, 2).filter(function (r) { return ct31.cell(r, 2).v === c31.no }).length, 0);
+
+console.log('\n   หัวบิลยังอยู่ แต่ยอดต้องเป็นศูนย์');
+eq('หัวบิลไม่ถูกลบทิ้ง', hd31.cell(row31, 1).v, c31.no);
+eq('ชื่อลูกค้ายังอยู่', hd31.cell(row31, SH_HEAD_CUST).v, 'คุณเปลี่ยนใจ ไม่รับของ');
+eq('สถานะเป็นยกเลิก', hd31.cell(row31, SH_HEAD_STATUS).v, 'ยกเลิก');
+eq('ยอดสินค้าเป็นศูนย์', hd31.cell(row31, 10).v, 0);
+eq('ค่าส่งกับส่วนลดถูกล้าง ยอดสุทธิจึงเป็นศูนย์', hd31.cell(row31, SH_HEAD_NET).v, 0);
+eq('ส่วนลดเดิมถูกล้าง', hd31.cell(row31, SH_HEAD_DISC).v, 0);
+truthy2('เหตุผลถูกจดไว้ในหมายเหตุ',
+  String(hd31.cell(row31, SH_HEAD_NOTE).v).indexOf('ลูกค้าเปลี่ยนใจไม่รับของ') > -1);
+truthy2('หมายเหตุบอกด้วยว่าใครเป็นคนยกเลิก',
+  String(hd31.cell(row31, SH_HEAD_NOTE).v).indexOf('น้องบี') > -1);
+
+console.log('\n   Log ต้องจดของที่คืนเข้าสต๊อกไว้ ไม่ใช่หายไปเฉย ๆ');
+var log31 = fx31.sheets['Log'];
+var logLine31 = rowsWith(log31, 2).map(function (r) {
+  return [log31.cell(r, 4).v, log31.cell(r, 6).v, log31.cell(r, 10).v].join(' ');
+}).filter(function (t) { return t.indexOf('ยกเลิกออเดอร์') === 0 })[0] || '';
+truthy2('Log บอกว่าเป็นการยกเลิกใบไหน', logLine31.indexOf(c31.no) > -1);
+truthy2('Log บอกว่าของอะไรคืนเข้าสต๊อก', logLine31.indexOf('CHEM-001 x4') > -1);
+truthy2('Log บอกล็อตที่คืน', logLine31.indexOf('L-A x4') > -1);
+
+console.log('\n   กดซ้ำเพราะเน็ตช้า ต้องไม่ทำงานสองรอบ');
+var dup31 = api31.cancelOrder(c31.no, 'ลูกค้าเปลี่ยนใจไม่รับของ', 'น้องบี', 'x2');
+truthy2('ตอบว่าเป็นการกดซ้ำ', !!dup31.duplicate);
+
+console.log('\n   ยกเลิกซ้ำใบเดิมด้วยกุญแจใหม่ ต้องปฏิเสธ');
+throws('ยกเลิกไปแล้ว', function () { api31.cancelOrder(c31.no, 'กดผิด กดซ้ำอีกที', 'บี', 'x3') },
+  'ถูกยกเลิกไปแล้ว');
+
+console.log('\n   ของซื้อมาขายไป — ขารับต้องถูกรื้อพร้อมขาขาย');
+var f31 = api31.createOrder(order({
+  cust: 'คุณซื้อมาขายไป', ship: 0, discount: 0,
+  items: [{ free: true, name: 'ดอกกัดพิเศษสั่งทำ', qty: 2, price: 500, cost: 300 }]
+}));
+function recvOf31(no) {
+  return rowsWith(rc31, 6).filter(function (r) { return rc31.cell(r, 3).v === no; });
+}
+eq('ตอนขายมีแถวรับเข้าคู่ไว้หนึ่งแถว', recvOf31(f31.no).length, 1);
+var xf31 = api31.cancelOrder(f31.no, 'ลูกค้ายกเลิกของสั่งทำ', 'บี', 'x4');
+eq('บอกว่ารื้อแถวรับเข้าไปด้วย', xf31.recv, 1);
+eq('แถวรับเข้าถูกรื้อออก ไม่เหลือของผีในสต๊อก', recvOf31(f31.no).length, 0);
+
+console.log('\n   ออกใบกำกับภาษีไปแล้ว ยกเลิกออเดอร์เฉย ๆ ไม่ได้');
+var g31 = api31.createOrder(order({ cust: 'คุณมีใบแล้ว', items: [{ sku: 'SKU-141', qty: 1, price: 100 }] }));
+var doc31 = fx31.sheets['เอกสาร'];
+doc31.cell(DATA_ROW, 2).v = 'ONIV26-00300';
+doc31.cell(DATA_ROW, 3).v = 'ใบเสร็จรับเงิน/ใบกำกับภาษี';
+doc31.cell(DATA_ROW, 5).v = g31.no;
+throws('มีใบที่ยังไม่ยกเลิกอยู่',
+  function () { api31.cancelOrder(g31.no, 'ลูกค้าเปลี่ยนใจไม่รับของ', 'บี', 'x5') },
+  'ออกเอกสารไปแล้ว');
+eq('ของยังไม่ถูกรื้อ ใบยังอยู่ครบ',
+  rowsWith(it31, 2).filter(function (r) { return it31.cell(r, 2).v === g31.no }).length, 1);
+
+console.log('\n   ยกเลิกใบเอกสารก่อน แล้วจึงยกเลิกออเดอร์ได้');
+doc31.cell(DATA_ROW, 20).v = 'ลูกค้าไม่รับของ ยกเลิกทั้งใบ';
+var g31x = api31.cancelOrder(g31.no, 'ลูกค้าเปลี่ยนใจไม่รับของ', 'บี', 'x6');
+eq('ยกเลิกผ่านแล้ว', g31x.items, 1);
+
+console.log('\n   ออเดอร์ที่ไม่มีจริง');
+throws('ไม่มีเลขนี้ในชีท',
+  function () { api31.cancelOrder('AST-26-9999', 'ลูกค้าเปลี่ยนใจไม่รับของ', 'บี', 'x7') },
+  'ไม่พบออเดอร์');
+
+console.log('\n   ใบที่ยกเลิกแล้วต้องไม่ถูกแก้รายการต่อ');
+throws('แก้ของในใบที่ยกเลิกไปแล้ว',
+  function () { api31.editOrderItems(c31.no, [{ sku: 'SKU-141', qty: 1, price: 10 }], 'บี', 'x8') },
+  'ถูกยกเลิกไปแล้ว');
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over31 = [];
+for (var nm31 in fx31.sheets) over31 = over31.concat(fx31.sheets[nm31].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over31, []);
+
+/* ====== 32. รายชื่อลูกค้าเก่า — คีย์ออเดอร์ซ้ำลูกค้าเดิมไม่ต้องพิมพ์ที่อยู่ใหม่ */
+console.log('\n32. รายชื่อลูกค้าเก่า');
+
+var fx32 = FS.build();
+var api32 = FS.load(fx32, {});
+api32.setup();
+
+api32.createOrder(order({
+  cust: 'บริษัท ทดสอบ จำกัด', tel: '021234567', date: '2026-08-01',
+  addr: 'ที่อยู่เก่า 1 ถ.เก่า', items: [{ sku: 'SKU-141', qty: 1, price: 100 }]
+}));
+api32.createOrder(order({
+  cust: 'บริษัท ทดสอบ จำกัด', tel: '0812223333', date: '2026-09-01',
+  addr: 'ที่อยู่ใหม่ 99 ถ.ใหม่', items: [{ sku: 'SKU-141', qty: 1, price: 100 }]
+}));
+api32.createOrder(order({
+  cust: 'คุณอีกคน', tel: '0899999999', date: '2026-08-15',
+  addr: 'บ้านเลขที่ 5', items: [{ sku: 'SKU-141', qty: 1, price: 100 }]
+}));
+
+var cs32 = api32.getCustomers();
+eq('รวมชื่อซ้ำเป็นคนเดียว ไม่ขึ้นสองบรรทัด', cs32.length, 2);
+eq('เรียงคนที่ซื้อล่าสุดขึ้นก่อน', cs32[0].name, 'บริษัท ทดสอบ จำกัด');
+eq('นับจำนวนครั้งที่ซื้อ', cs32[0].n, 2);
+eq('ใช้ที่อยู่ของครั้งล่าสุด ไม่ใช่ครั้งแรก', cs32[0].addr, 'ที่อยู่ใหม่ 99 ถ.ใหม่');
+eq('ใช้เบอร์ของครั้งล่าสุด', cs32[0].tel, '0812223333');
+
+console.log('\n   เบอร์ที่ขึ้นต้นด้วยศูนย์ต้องไม่หายไปกับการเป็นตัวเลข');
+eq('ศูนย์หน้ายังอยู่', cs32[1].tel, '0899999999');
+
+console.log('\n   ข้อมูลผู้เสียภาษีมาจากชีทเอกสาร');
+var doc32 = fx32.sheets['เอกสาร'];
+doc32.cell(DATA_ROW, 2).v = 'ONIV26-00400';
+doc32.cell(DATA_ROW, 3).v = 'ใบเสร็จรับเงิน/ใบกำกับภาษี';
+doc32.cell(DATA_ROW, 4).v = new Date('2026-09-02T00:00:00');
+doc32.cell(DATA_ROW, 6).v = 'บริษัท ทดสอบ จำกัด';
+doc32.cell(DATA_ROW, 7).v = '0105511000011';
+doc32.cell(DATA_ROW, 8).v = 'สำนักงานใหญ่';
+doc32.cell(DATA_ROW, 9).v = 'ที่อยู่ตามใบกำกับภาษี 77';
+doc32.cell(DATA_ROW, 11).v = 'acc@test.co.th';
+var cs32b = api32.getCustomers();
+var one32 = cs32b.filter(function (c) { return c.name === 'บริษัท ทดสอบ จำกัด' })[0];
+eq('ได้เลขผู้เสียภาษีมาด้วย', one32.taxId, '0105511000011');
+eq('ได้อีเมลมาด้วย', one32.email, 'acc@test.co.th');
+eq('ได้สาขามาด้วย', one32.branch, 'สำนักงานใหญ่');
+eq('ที่อยู่ตามใบกำกับภาษีเก็บแยก', one32.taxAddr, 'ที่อยู่ตามใบกำกับภาษี 77');
+eq('ที่อยู่ส่งของไม่ถูกที่อยู่จดทะเบียนทับ', one32.addr, 'ที่อยู่ใหม่ 99 ถ.ใหม่');
+
+console.log('\n   อ่านอย่างเดียว ต้องไม่เขียนอะไรลงชีทเลย');
+var over32 = [];
+for (var nm32 in fx32.sheets) over32 = over32.concat(fx32.sheets[nm32].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over32, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

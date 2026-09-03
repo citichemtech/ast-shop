@@ -905,6 +905,147 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('รูปข้างในเริ่มที่หัว JPEG พอดี ไม่มีไบต์แปลกปลอมนำหน้า', pdf.jpgHead, '255,216');
   eq('และจบที่ท้าย JPEG พอดีตามความยาวที่ประกาศไว้', pdf.jpgTail, '255,217');
 
+  /* ---------- 22. ยกเลิกทั้งออเดอร์ ---------- */
+  console.log('\n22. ยกเลิกทั้งออเดอร์ — ลูกค้าเปลี่ยนใจไม่รับของ');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { loadOrders(true) });
+  await page.waitForTimeout(600);
+  truthy('ใบที่ยังไม่ยกเลิกมีปุ่มยกเลิกให้กด',
+    await page.locator('#list [data-cx]').count() > 0);
+
+  /* เลือกใบสุดท้ายในรายการ ไม่ใช่ใบที่หมวดก่อนหน้าเพิ่งแก้รายการไป */
+  var cxLast = await page.locator('#list [data-cx]').count() - 1;
+  var cxNo = await page.evaluate(function (i) {
+    var b = document.querySelectorAll('#list [data-cx]')[i];
+    return ORDERS[Number(b.dataset.cx)].no;
+  }, cxLast);
+  var cxWas = await page.evaluate(function (no) {
+    return MOCK_ORDERS.filter(function (o) { return o.no === no })[0].status;
+  }, cxNo);
+
+  await page.locator('#list [data-cx]').nth(cxLast).click();
+  await page.waitForTimeout(350);
+  truthy('เปิดหน้าต่างยกเลิกของใบที่กด',
+    (await page.textContent('#m-title')).indexOf(cxNo) > -1);
+  truthy('บอกก่อนว่าของจะคืนเข้าสต๊อก',
+    /คืนเข้าสต๊อก/.test(await page.textContent('#m-body')));
+  truthy('บอกว่ายกเลิกแล้วย้อนกลับไม่ได้',
+    /ย้อนกลับไม่ได้/.test(await page.textContent('#m-body')));
+
+  console.log('\n   ไม่ใส่เหตุผล ต้องไม่ยอมให้ยกเลิก');
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.click('#cx-go');
+  await page.waitForTimeout(250);
+  truthy('บอกว่าต้องมีเหตุผลอย่างน้อย 5 ตัวอักษร',
+    /5 ตัวอักษร/.test(await page.textContent('#cx-msg')));
+  eq('ออเดอร์ยังไม่ถูกแตะเลย', await page.evaluate(function (no) {
+    return MOCK_ORDERS.filter(function (o) { return o.no === no })[0].status;
+  }, cxNo), cxWas);
+
+  console.log('\n   กดเหตุผลสำเร็จรูปได้ ไม่ต้องพิมพ์เองทุกครั้ง');
+  await page.locator('#cx-quick button').first().click();
+  await page.waitForTimeout(150);
+  eq('เหตุผลลงช่องให้แล้ว', await page.inputValue('#cx-why'), 'ลูกค้าเปลี่ยนใจไม่รับของ');
+
+  console.log('\n   ใบที่ออกเอกสารไปแล้ว ต้องยกเลิกใบเอกสารก่อน');
+  await page.evaluate(function (no) {
+    MOCK_DOCS.push({ no: 'ONIV26-08888', type: 'ใบเสร็จรับเงิน', orderNo: no, voidWhy: '' });
+  }, cxNo);
+  await page.click('#cx-go');
+  await page.waitForTimeout(600);
+  truthy('บอกว่าออกเอกสารไปแล้ว',
+    /ออกเอกสารไปแล้ว/.test(await page.textContent('#cx-msg')));
+  eq('ยังไม่ยกเลิกให้', await page.evaluate(function (no) {
+    return MOCK_ORDERS.filter(function (o) { return o.no === no })[0].status;
+  }, cxNo), cxWas);
+  await page.evaluate(function () { MOCK_DOCS.pop() });
+
+  console.log('\n   ยกเลิกจริง');
+  await page.click('#cx-go');
+  await page.waitForTimeout(700);
+  truthy('ขึ้นว่ายกเลิกแล้ว', /ยกเลิก/.test(await page.textContent('#cx-msg')));
+  var cxAfter = await page.evaluate(function (no) {
+    var o = MOCK_ORDERS.filter(function (x) { return x.no === no })[0];
+    return { status: o.status, net: o.net, items: (o.items || []).length, note: o.note };
+  }, cxNo);
+  eq('สถานะเป็นยกเลิก', cxAfter.status, 'ยกเลิก');
+  eq('ยอดของใบนี้เป็นศูนย์', cxAfter.net, 0);
+  eq('รายการสินค้าถูกรื้อออก ของจึงคืนเข้าสต๊อก', cxAfter.items, 0);
+  truthy('เหตุผลถูกส่งขึ้นชีทด้วย', /ลูกค้าเปลี่ยนใจไม่รับของ/.test(cxAfter.note));
+
+  console.log('\n   ใบที่ยกเลิกแล้วต้องไม่มีปุ่มให้กดต่อ');
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(500);
+  var deadRow = await page.evaluate(function (no) {
+    var rows = document.querySelectorAll('#list .row');
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].textContent.indexOf(no) > -1) {
+        return { txt: rows[i].querySelector('.acts').textContent,
+                 btns: rows[i].querySelectorAll('.acts button').length };
+      }
+    }
+    return null;
+  }, cxNo);
+  truthy('แถวนั้นบอกว่ายกเลิกแล้ว', deadRow && /ยกเลิกแล้ว/.test(deadRow.txt));
+  eq('ไม่มีปุ่มพิมพ์ใบปะหน้าหรือออกเอกสารเหลืออยู่เลย', deadRow && deadRow.btns, 0);
+
+  /* ---------- 23. พิมพ์ชื่อลูกค้าเก่าแล้วเติมเบอร์กับที่อยู่ให้ ---------- */
+  console.log('\n23. ลูกค้าเก่า — พิมพ์ชื่อแล้วขึ้นข้อมูลเดิมให้เลือก');
+
+  await page.click('.tabs button[data-go="new"]');
+  await page.evaluate(function () { resetForm() });
+  await page.waitForTimeout(200);
+
+  await page.fill('#f-cust', 'ล');
+  await page.waitForTimeout(400);
+  eq('พิมพ์ตัวเดียวยังไม่ขึ้นรายชื่อ กันเด้งใส่ทุกตัวอักษร',
+    await page.locator('#f-cust-hit button').count(), 0);
+
+  await page.fill('#f-cust', 'ลูกค้า');
+  await page.waitForTimeout(600);
+  truthy('ขึ้นรายชื่อลูกค้าเก่าให้เลือก',
+    await page.locator('#f-cust-hit button').count() > 0);
+  truthy('ในรายการบอกเบอร์ให้ดูก่อนกด ไม่ใช่มีแต่ชื่อ',
+    /08\d{8}/.test(await page.textContent('#f-cust-hit')));
+
+  await page.locator('#f-cust-hit button').first().click();
+  await page.waitForTimeout(300);
+  var picked = await page.evaluate(function () {
+    return { cust: document.querySelector('#f-cust').value,
+             tel: document.querySelector('#f-tel').value,
+             addr: document.querySelector('#f-addr').value };
+  });
+  truthy('ใส่ชื่อลงช่องให้', picked.cust.length > 0);
+  truthy('เติมเบอร์ของครั้งล่าสุดให้', /^0\d{8,9}$/.test(picked.tel));
+  truthy('เติมที่อยู่ของครั้งล่าสุดให้', picked.addr.length > 10);
+  eq('เลือกแล้วกล่องรายชื่อปิดเอง', await page.locator('#f-cust-hit button').count(), 0);
+
+  console.log('\n   ที่อยู่ที่พิมพ์ไว้เองแล้ว ต้องไม่ถูกที่อยู่เก่าทับ');
+  await page.evaluate(function () { resetForm() });
+  await page.fill('#f-addr', 'ส่งที่หน้างานโครงการใหม่ 99 ถ.สมมติ');
+  await page.fill('#f-cust', 'ลูกค้า');
+  await page.waitForTimeout(600);
+  await page.locator('#f-cust-hit button').first().click();
+  await page.waitForTimeout(300);
+  eq('ที่อยู่ที่คีย์ไว้ยังอยู่ครบ', await page.inputValue('#f-addr'),
+    'ส่งที่หน้างานโครงการใหม่ 99 ถ.สมมติ');
+  truthy('แต่เบอร์ที่ยังว่างอยู่ยังเติมให้',
+    /^0\d{8,9}$/.test(await page.inputValue('#f-tel')));
+
+  console.log('\n   ใบเสนอราคาก็ดึงลูกค้าเก่าได้เหมือนกัน');
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(300);
+  await page.fill('#q-name', 'ลูกค้า');
+  await page.waitForTimeout(600);
+  truthy('ขึ้นรายชื่อในหน้าใบเสนอราคาด้วย',
+    await page.locator('#q-name-hit button').count() > 0);
+  await page.locator('#q-name-hit button').first().click();
+  await page.waitForTimeout(300);
+  truthy('เติมที่อยู่ให้ในใบเสนอราคา', (await page.inputValue('#q-addr')).length > 10);
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(200);
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

@@ -196,6 +196,61 @@ window.google = { script: { run: (function(){
         return { ok:true, no:o.no, subtotal:sub, lots:[], before:before, after:o.items.length };
       });
     },
+    /* ยกเลิกทั้งออเดอร์ — ของคืนเข้าสต๊อก ยอดกลายเป็นศูนย์ สถานะเป็นยกเลิก */
+    cancelOrder: function(no, why, by, ck){
+      reply(function(){
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === String(no) })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + no + " ในชีท");
+        if(String(o.status||"").trim() === "ยกเลิก")
+          throw new Error("ออเดอร์ " + no + " ถูกยกเลิกไปแล้ว");
+        if(String(why||"").trim().length < 5)
+          throw new Error("ต้องบอกเหตุผลที่ยกเลิกอย่างน้อย 5 ตัวอักษร");
+        var live = MOCK_DOCS.filter(function(d){
+          return d.orderNo === String(no) && !d.voidWhy;
+        }).map(function(d){ return d.no + " (" + d.type + ")" });
+        if(live.length) throw new Error("ออเดอร์ " + no + " ออกเอกสารไปแล้ว: "
+          + live.join(", ") + " — ให้กดยกเลิกใบเดิมในหน้าเอกสารก่อน");
+        var n = (o.items||[]).length;
+        o.items = []; o.subtotal = 0; o.vatAmt = 0; o.discount = 0; o.ship = 0;
+        o.net = 0; o.cost = 0; o.profit = 0;
+        o.status = "ยกเลิก";
+        o.note = (o.note ? o.note + " " : "") + "[ยกเลิก: " + why + " โดย " + (by||"") + "]";
+        return { ok:true, no:o.no, cust:o.cust, netBefore:0, items:n, cuts:n, recv:0, lots:[] };
+      });
+    },
+    /* รายชื่อลูกค้าเก่า — ของจริงอ่านจากชีทหัวบิลกับชีทเอกสาร แล้วรวมชื่อซ้ำเป็นคนเดียว */
+    getCustomers: function(limit){
+      reply(function(){
+        var by = {};
+        MOCK_ORDERS.forEach(function(o){
+          var k = String(o.cust||"").trim();
+          if(!k) return;
+          var c = by[k] || (by[k] = { name:k, tel:"", addr:"", taxAddr:"", taxId:"",
+                                      branch:"", email:"", last:"", n:0 });
+          c.n++;
+          if(String(o.date||"") >= c.last){
+            c.last = String(o.date||"");
+            if(o.tel) c.tel = o.tel;
+            if(o.addr) c.addr = o.addr;
+          }
+        });
+        MOCK_DOCS.forEach(function(d){
+          var k = String((d.cust||{}).name||"").trim();
+          if(!k) return;
+          var c = by[k] || (by[k] = { name:k, tel:"", addr:"", taxAddr:"", taxId:"",
+                                      branch:"", email:"", last:"", n:0 });
+          if(d.cust.taxId) c.taxId = d.cust.taxId;
+          if(d.cust.addr)  c.taxAddr = d.cust.addr;
+          if(d.cust.tel)   c.tel = d.cust.tel;
+          if(d.cust.email) c.email = d.cust.email;
+          if(d.cust.branch) c.branch = d.cust.branch;
+        });
+        var out = [];
+        for(var k in by) out.push(by[k]);
+        out.sort(function(a,b){ return a.last < b.last ? 1 : (a.last > b.last ? -1 : 0) });
+        return out.slice(0, Number(limit) || 400);
+      });
+    },
     saveSignature: function(which, sig){
       reply(function(){
         if(["cashier","auth"].indexOf(String(which)) < 0)

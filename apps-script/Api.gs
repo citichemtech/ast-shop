@@ -935,9 +935,19 @@ function createOrder(payload) {
 
 /* --------------------------------------------- แก้รายการสินค้าของออเดอร์ที่คีย์แล้ว */
 
-/** แถวของออเดอร์หนึ่งใบในชีทที่ต้องรื้อพร้อมกัน — รายการสินค้ากับล็อตที่ตัดไป */
+/**
+ * แถวของออเดอร์หนึ่งใบในชีทที่ต้องรื้อพร้อมกัน
+ *
+ *   item = รายการสินค้า
+ *   cut  = ล็อตที่ตัดไป (ล้างแล้วของคืนเข้าล็อตเอง เพราะยอดคงเหลือเป็นสูตร)
+ *   recv = แถว รับเข้า ของ "ซื้อมาขายไป" ที่แอปลงคู่กับการขายไว้เท่าจำนวนที่ขาย
+ *
+ * แถว รับเข้า ต้องรื้อพร้อมกันเสมอ ไม่งั้นพอรายการขายหายไป จะเหลือแต่ขารับ
+ * สต๊อกของสินค้าตัวนั้นจะบวกขึ้นมาทั้งที่ของไม่เคยมีอยู่จริงในร้าน
+ * (ตอนแก้รายการก็เข้าข่ายเดียวกัน เพราะตัววางแผนลงแถวรับเข้าให้ใหม่ทุกครั้ง)
+ */
 function orderRows_(no) {
-  var out = { item: [], cut: [] };
+  var out = { item: [], cut: [], recv: [] };
   var want = String(no).trim();
 
   var is = sheet_('item'), iLast = formulaLimit_('item');
@@ -955,6 +965,22 @@ function orderRows_(no) {
       var cv = cs.getRange(DATA_ROW, SH.cut.IN.no, cLast - DATA_ROW + 1, 1).getValues();
       for (var j = 0; j < cv.length; j++) {
         if (String(cv[j][0] || '').trim() === want) out.cut.push(DATA_ROW + j);
+      }
+    }
+  }
+
+  /* เฉพาะแถวที่แอปลงเองตอนขายของซื้อมาขายไป — ดูทั้งเลขออเดอร์และช่องอ้างอิง
+     แถวรับเข้าที่คนกรอกเองไว้ไม่ถูกแตะ แม้จะพิมพ์เลขออเดอร์เดียวกันไว้ในช่องเอกสาร */
+  var rs = sheetIfAny_('recv');
+  if (rs) {
+    var rLast = formulaLimit_('recv');
+    if (rLast >= DATA_ROW) {
+      var R = SH.recv.IN;
+      var rv = rs.getRange(DATA_ROW, R.doc, rLast - DATA_ROW + 1, R.ref - R.doc + 1).getValues();
+      for (var m = 0; m < rv.length; m++) {
+        if (String(rv[m][0] || '').trim() !== want) continue;
+        if (String(rv[m][R.ref - R.doc] || '').trim() !== FREE_GROUP) continue;
+        out.recv.push(DATA_ROW + m);
       }
     }
   }
@@ -1023,7 +1049,8 @@ function editOrderItems(no, items, by, clientKey) {
   if (!want) throw new Error('ไม่ได้บอกว่าจะแก้ออเดอร์ไหน');
   if (!items || !items.length) {
     throw new Error('ออเดอร์ต้องมีสินค้าอย่างน้อยหนึ่งบรรทัด — ' +
-      'ถ้าจะยกเลิกทั้งใบให้เปลี่ยนสถานะเป็น "ยกเลิก" แทน');
+      'ถ้าจะยกเลิกทั้งใบ ให้กดปุ่ม ✖ ยกเลิกออเดอร์ ในรายการออเดอร์แทน ' +
+      'ของจะได้คืนเข้าสต๊อกให้ด้วย');
   }
 
   var ck = String(clientKey || '').trim();
@@ -1033,7 +1060,8 @@ function editOrderItems(no, items, by, clientKey) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw new Error('มีคนกำลังบันทึกอยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
 
-  var oldItem = [], oldCut = [], written = { head: 0, item: [], cut: [], prod: [], recv: [] };
+  var oldItem = [], oldCut = [], oldRecv = [];
+  var written = { head: 0, item: [], cut: [], prod: [], recv: [] };
   var cleared = false;
   try {
     if (ck && props.getProperty('ek_' + ck)) return { ok: true, no: want, duplicate: true };
@@ -1054,11 +1082,17 @@ function editOrderItems(no, items, by, clientKey) {
     var rows = orderRows_(want);
     oldItem = snapRows_('item', rows.item);
     oldCut = snapRows_('cut', rows.cut);
+    oldRecv = snapRows_('recv', rows.recv);
 
     /* รื้อของเดิมออกก่อน แล้ว flush ให้ชีทคืนยอดล็อต
-       ถ้าไม่ flush ตัววางแผนจะเห็นล็อตที่ยังถูกตัดค้างอยู่ แล้วบอกว่าของไม่พอทั้งที่พอ */
+       ถ้าไม่ flush ตัววางแผนจะเห็นล็อตที่ยังถูกตัดค้างอยู่ แล้วบอกว่าของไม่พอทั้งที่พอ
+
+       แถว รับเข้า ของซื้อมาขายไปต้องรื้อด้วย เพราะตัววางแผนลงให้ใหม่ทุกครั้ง
+       ถ้าปล่อยของเดิมไว้ ขารับจะซ้ำสองรอบแต่ขาขายมีรอบเดียว
+       สต๊อกของสินค้าตัวนั้นจึงบวกขึ้นมาเองทั้งที่ของไม่มีอยู่จริง */
     for (var c = 0; c < rows.cut.length; c++) clearRow_('cut', rows.cut[c]);
     for (var i = 0; i < rows.item.length; i++) clearRow_('item', rows.item[i]);
+    for (var v = 0; v < rows.recv.length; v++) clearRow_('recv', rows.recv[v]);
     cleared = true;
     SpreadsheetApp.flush();
 
@@ -1092,6 +1126,7 @@ function editOrderItems(no, items, by, clientKey) {
       try {
         restoreRows_('item', oldItem);
         restoreRows_('cut', oldCut);
+        restoreRows_('recv', oldRecv);
         SpreadsheetApp.flush();
       } catch (e2) {
         Logger.log('เขียนรายการเดิมคืนไม่สำเร็จ: ' + e2.message);
@@ -1112,6 +1147,268 @@ function commitOrderLines_(plan) {
   plan.skipHead = true;
   try { return commitOrder_(plan); }
   finally { plan.skipHead = keep; }
+}
+
+/* ------------------------------------------------------------ ยกเลิกทั้งออเดอร์ */
+
+/** แถวของออเดอร์ในหัวบิล — 0 ถ้าไม่มีในชีท (ดูทั้งชีท ไม่ใช่แค่ 40 ใบล่าสุด) */
+function headRow_(no) {
+  var s = sheet_('head');
+  var last = formulaLimit_('head');
+  if (last < DATA_ROW) return 0;
+  var want = String(no || '').trim();
+  var v = s.getRange(DATA_ROW, SH.head.IN.no, last - DATA_ROW + 1, 1).getValues();
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][0] || '').trim() === want) return DATA_ROW + i;
+  }
+  return 0;
+}
+
+/** สรุปของในใบเป็นข้อความสั้น ๆ ก่อนรื้อทิ้ง — เก็บไว้ใน Log จะได้ตามย้อนได้ว่ามีอะไรบ้าง */
+function snapText_(snaps, fields, sep) {
+  var out = [];
+  for (var i = 0; i < snaps.length; i++) {
+    var v = snaps[i].v, one = [];
+    for (var f = 0; f < fields.length; f++) {
+      var x = v[fields[f]];
+      if (x === '' || x === null || x === undefined) continue;
+      one.push(String(x));
+    }
+    if (one.length) out.push(one.join(sep || ' x'));
+  }
+  return out;
+}
+
+/**
+ * ยกเลิกทั้งออเดอร์ — ลูกค้าเปลี่ยนใจไม่รับของ
+ *
+ * ของที่ตัดไปแล้วต้องกลับเข้าสต๊อกจริง ไม่ใช่แค่เปลี่ยนคำว่าสถานะเป็น "ยกเลิก"
+ * เปลี่ยนแต่สถานะแล้วปล่อยรายการไว้ ของจะยังถูกนับว่าขายออกไปแล้วตลอดไป
+ * ยอดคงเหลือในชีทจึงน้อยกว่าของบนชั้นจริง แล้วรอบหน้าระบบจะบอกว่าของไม่พอทั้งที่พอ
+ *
+ * วิธีทำจึงเหมือนตอนแก้รายการ คือรื้อรายการ ล็อตที่ตัด และแถวรับเข้าของซื้อมาขายไป
+ * ออกให้หมด (ยอดคงเหลือในล็อตเป็นสูตร พอไม่มีแถวตัด ของก็คืนเอง)
+ * แล้วปิดหัวบิลด้วยสถานะ "ยกเลิก" พร้อมเหตุผลในช่องหมายเหตุ
+ *
+ * ส่วนลดกับค่าส่งถูกล้างเป็นศูนย์ด้วย เพราะถ้าเหลือค่าส่งไว้ ยอดสุทธิของใบที่ยกเลิก
+ * จะเท่ากับค่าส่ง แล้วไปโผล่เป็นยอดขายในหน้าสรุปทั้งที่ไม่ได้ขายอะไรเลย
+ * ค่าเดิมทั้งสองช่องถูกจดไว้ใน Log ก่อนล้างเสมอ
+ *
+ * หัวบิลไม่ถูกลบทิ้ง — เลขออเดอร์ ลูกค้า วันที่ ยังอยู่ครบ ใบที่ยกเลิกจึงยังค้นเจอ
+ * และเลขใบนั้นไม่ถูกเอาไปใช้ซ้ำกับลูกค้าคนอื่น
+ *
+ * ยกเลิกออเดอร์ที่ออกใบกำกับภาษี/ใบเสร็จไปแล้วไม่ได้ ต้องยกเลิกใบเดิมก่อน
+ * ใบที่ลูกค้าถืออยู่กับของที่ส่งจริงต้องตรงกันเสมอ
+ */
+function cancelOrder(no, why, by, clientKey) {
+  var email = requireStaff_();
+  var want = String(no || '').trim();
+  if (!want) throw new Error('ไม่ได้บอกว่าจะยกเลิกออเดอร์ไหน');
+
+  var reason = String(why || '').trim();
+  if (reason.length < 5) {
+    throw new Error('ต้องบอกเหตุผลที่ยกเลิกอย่างน้อย 5 ตัวอักษร — ' +
+      'เดือนหน้าย้อนมาดูจะได้รู้ว่าใบนี้หายไปเพราะอะไร');
+  }
+
+  var ck = String(clientKey || '').trim();
+  var props = PropertiesService.getScriptProperties();
+  if (ck && props.getProperty('xk_' + ck)) return { ok: true, no: want, duplicate: true };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('มีคนกำลังบันทึกอยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
+
+  var oldItem = [], oldCut = [], oldRecv = [], back = null, row = 0, cleared = false;
+  try {
+    if (ck && props.getProperty('xk_' + ck)) return { ok: true, no: want, duplicate: true };
+
+    var hs = sheet_('head');
+    var C = SH.head.IN;
+    row = headRow_(want);
+    if (!row) throw new Error('ไม่พบออเดอร์ ' + want + ' ในชีท');
+
+    back = {
+      status: hs.getRange(row, C.status).getValue(),
+      discount: hs.getRange(row, C.discount).getValue(),
+      ship: hs.getRange(row, C.ship).getValue(),
+      note: hs.getRange(row, C.note).getValue()
+    };
+    if (String(back.status || '').trim() === 'ยกเลิก') {
+      throw new Error('ออเดอร์ ' + want + ' ถูกยกเลิกไปแล้ว — ของคืนเข้าสต๊อกไปเรียบร้อยแล้ว ' +
+        'ถ้าลูกค้ากลับมาสั่งใหม่ ให้คีย์เป็นใบใหม่');
+    }
+
+    var docs = liveDocsOf_(want);
+    if (docs.length) {
+      throw new Error('ออเดอร์ ' + want + ' ออกเอกสารไปแล้ว: ' + docs.join(', ') +
+        ' — ยกเลิกออเดอร์เฉย ๆ จะทำให้ใบที่ลูกค้าถืออยู่ไม่ตรงกับความจริง ' +
+        'ให้กดยกเลิกใบเดิมในหน้าเอกสารก่อน แล้วค่อยยกเลิกออเดอร์');
+    }
+
+    var netBefore = Number(hs.getRange(row, SH.head.net).getValue() || 0);
+    var cust = String(hs.getRange(row, C.cust).getValue() || '');
+
+    var rows = orderRows_(want);
+    oldItem = snapRows_('item', rows.item);
+    oldCut = snapRows_('cut', rows.cut);
+    oldRecv = snapRows_('recv', rows.recv);
+
+    var hadItems = snapText_(oldItem, ['sku', 'qty']);
+    var backLots = snapText_(oldCut, ['lotNo', 'qty']);
+
+    for (var c = 0; c < rows.cut.length; c++) clearRow_('cut', rows.cut[c]);
+    for (var i = 0; i < rows.item.length; i++) clearRow_('item', rows.item[i]);
+    for (var v = 0; v < rows.recv.length; v++) clearRow_('recv', rows.recv[v]);
+    cleared = true;
+
+    var who = String(by || '').trim() || email;
+    var note = String(back.note || '').trim();
+    note = (note ? note + ' ' : '') + '[ยกเลิก: ' + reason + ' โดย ' + who + ' ' + stampTime_() + ']';
+
+    writeRow_('head', row, {
+      status: pickFrom_('ยกเลิก', cfgLists_().status, 'สถานะออเดอร์'),
+      discount: 0, ship: 0, note: note.slice(0, 900)
+    });
+    SpreadsheetApp.flush();
+
+    /* อ่านกลับมาดูจริงว่ายอดเป็นศูนย์แล้ว ถ้าไม่ใช่แปลว่ามีอะไรค้างอยู่
+       ปล่อยไว้จะกลายเป็นใบที่เขียนว่ายกเลิกแต่ยังมียอดขายอยู่ในหน้าสรุป */
+    var subAfter = Number(hs.getRange(row, SH.head.subtotal).getValue() || 0);
+    var netAfter = Number(hs.getRange(row, SH.head.net).getValue() || 0);
+    if (Math.abs(subAfter) > 0.005 || Math.abs(netAfter) > 0.005) {
+      throw new Error('ยกเลิกแล้วแต่ยอดในชีทยังไม่เป็นศูนย์ (ยอดสินค้า ' + subAfter +
+        ' ยอดสุทธิ ' + netAfter + ') — ระบบคืนออเดอร์ใบนี้กลับเป็นเหมือนเดิมแล้ว');
+    }
+
+    if (ck) props.setProperty('xk_' + ck, want);
+    writeLog_(email, 'ยกเลิกออเดอร์', SH.head.name, want, 'สถานะ',
+      String(back.status || '') + ' ยอด ' + netBefore, 'ยกเลิก ยอด 0',
+      reason + ' · โดย ' + who + ' (บัญชี ' + email + ')' +
+      ' · ลูกค้า ' + cust +
+      ' · ของที่คืนเข้าสต๊อก ' + (hadItems.length ? hadItems.join(', ') : 'ไม่มีรายการ') +
+      (backLots.length ? ' · ล็อตที่คืน ' + backLots.join(', ') : '') +
+      ' · ส่วนลดเดิม ' + numOr0_(back.discount) + ' ค่าส่งเดิม ' + numOr0_(back.ship));
+
+    return {
+      ok: true, no: want, cust: cust, netBefore: netBefore,
+      items: rows.item.length, cuts: rows.cut.length, recv: rows.recv.length,
+      lots: backLots
+    };
+  } catch (err) {
+    /* คืนทุกอย่างกลับให้เหมือนก่อนกด ดีกว่าปล่อยออเดอร์ค้างครึ่ง ๆ กลาง ๆ ไว้ */
+    if (cleared) {
+      try {
+        restoreRows_('item', oldItem);
+        restoreRows_('cut', oldCut);
+        restoreRows_('recv', oldRecv);
+        if (row && back) {
+          writeRow_('head', row, {
+            status: back.status === null || back.status === undefined ? '' : back.status,
+            discount: back.discount === null || back.discount === undefined ? '' : back.discount,
+            ship: back.ship === null || back.ship === undefined ? '' : back.ship,
+            note: back.note === null || back.note === undefined ? '' : back.note
+          });
+        }
+        SpreadsheetApp.flush();
+      } catch (e2) {
+        Logger.log('คืนออเดอร์กลับไม่สำเร็จ: ' + e2.message);
+        throw new Error((err && err.message ? err.message : err) +
+          ' — และคืนออเดอร์กลับไม่สำเร็จด้วย ให้เปิดชีท ' + SH.head.name +
+          ' ตรวจออเดอร์ ' + want + ' ด้วยมือ');
+      }
+    }
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ------------------------------------------------------------ ลูกค้าเก่า */
+
+/**
+ * รายชื่อลูกค้าที่เคยซื้อ พร้อมเบอร์ ที่อยู่ และข้อมูลผู้เสียภาษีล่าสุด
+ *
+ * ลูกค้าประจำสั่งซ้ำเดือนละหลายครั้ง แต่ทุกครั้งต้องพิมพ์ชื่อ เบอร์ และที่อยู่ใหม่ทั้งชุด
+ * ที่อยู่ยาวสามบรรทัดพิมพ์บนมือถือ พลาดตัวเดียวคือพัสดุไปผิดที่
+ *
+ * อ่านสองชีท เพราะข้อมูลของลูกค้าคนเดียวกันอยู่คนละที่
+ *   ออเดอร์_หัวบิล = ชื่อ เบอร์ ที่อยู่ที่ส่งของ (addr)
+ *   เอกสาร         = ชื่อผู้เสียภาษี เลข 13 หลัก ที่อยู่ตามใบกำกับภาษี (taxAddr) อีเมล
+ *
+ * ยึด "ครั้งล่าสุด" เป็นหลักเสมอ ลูกค้าย้ายที่อยู่แล้วจะได้ไม่ถูกที่อยู่เก่าทับ
+ */
+function getCustomers(limit) {
+  requireStaff_();
+  var cap = Number(limit) || 400;
+  var by = {};
+
+  function key(name) { return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function slot(name, when) {
+    var k = key(name);
+    if (!k) return null;
+    var c = by[k];
+    if (!c) {
+      c = by[k] = { name: String(name).trim(), tel: '', addr: '', taxAddr: '',
+                    taxId: '', branch: '', email: '', last: '', n: 0 };
+    }
+    /* ครั้งที่ใหม่กว่าเป็นคนกำหนดทั้งชื่อที่สะกดและข้อมูลติดต่อ */
+    if (when && when >= (c.last || '')) { c.last = when; c.name = String(name).trim(); c.fresh = true; }
+    else c.fresh = false;
+    return c;
+  }
+  function put(c, field, val) {
+    var x = String(val === null || val === undefined ? '' : val).trim();
+    if (!x) return;
+    if (!c[field] || c.fresh) c[field] = x;
+  }
+
+  var hs = sheet_('head');
+  var hLast = formulaLimit_('head');
+  if (hLast >= DATA_ROW) {
+    var H = SH.head.IN;
+    var hv = hs.getRange(DATA_ROW, 1, hLast - DATA_ROW + 1, H.addr).getValues();
+    for (var i = 0; i < hv.length; i++) {
+      var name = String(hv[i][H.cust - 1] || '').trim();
+      if (!name) continue;
+      var d = hv[i][H.date - 1];
+      var c = slot(name, d instanceof Date ? isoDate_(d) : String(d || '').slice(0, 10));
+      if (!c) continue;
+      c.n++;
+      put(c, 'tel', tel_(hv[i][H.tel - 1]));
+      put(c, 'addr', hv[i][H.addr - 1]);
+    }
+  }
+
+  var ds = sheetIfAny_('doc');
+  if (ds) {
+    var dLast = formulaLimit_('doc');
+    if (dLast >= DATA_ROW) {
+      var D = SH.doc.IN;
+      var dv = ds.getRange(DATA_ROW, D.no, dLast - DATA_ROW + 1, D.custCode - D.no + 1).getValues();
+      for (var j = 0; j < dv.length; j++) {
+        var dname = String(dv[j][D.custName - D.no] || '').trim();
+        if (!dname) continue;
+        var dd = dv[j][D.date - D.no];
+        var dc = slot(dname, dd instanceof Date ? isoDate_(dd) : String(dd || '').slice(0, 10));
+        if (!dc) continue;
+        put(dc, 'taxId', dv[j][D.custTaxId - D.no]);
+        put(dc, 'branch', dv[j][D.custBranch - D.no]);
+        /* ที่อยู่ตามใบกำกับภาษีเก็บแยกจากที่อยู่ส่งของ เป็นคนละที่กันจริง ๆ
+           ถ้าเอามาทับกัน พัสดุจะถูกส่งไปที่สำนักงานใหญ่แทนที่จะไปหน้างาน */
+        put(dc, 'taxAddr', dv[j][D.custAddr - D.no]);
+        put(dc, 'tel', tel_(dv[j][D.custTel - D.no]));
+        put(dc, 'email', dv[j][D.custEmail - D.no]);
+      }
+    }
+  }
+
+  var out = [];
+  for (var k in by) { delete by[k].fresh; out.push(by[k]); }
+  out.sort(function (a, b) {
+    if (a.last !== b.last) return a.last < b.last ? 1 : -1;
+    return a.name < b.name ? -1 : 1;
+  });
+  return out.slice(0, cap);
 }
 
 /** ตรวจและเตรียมทุกอย่างให้ครบก่อน แล้วค่อยเริ่มเขียน — กันล้มกลางทางตั้งแต่ต้นทาง */

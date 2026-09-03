@@ -117,6 +117,7 @@ textarea{resize:vertical}
 .vdbox input{margin:0}
 .row .i span+span{display:block;margin-top:2px}
 .sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
+.sq.red{color:var(--red);border-color:#f0c9c9}
 .tag{display:inline-block;font-size:0.8rem;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
 .tag.ok{background:#e6f5ec;color:var(--green)}
 .tag.wait{background:#fdf1e0;color:var(--amber)}
@@ -270,7 +271,9 @@ textarea{resize:vertical}
           <div class="fld"><label>วันที่</label><input id="f-date" type="date"></div>
           <div class="fld"><label>ช่องทางขาย</label><select id="f-channel"></select></div>
         </div>
-        <div class="fld"><label>ชื่อลูกค้า</label><input id="f-cust" placeholder="ชื่อผู้รับ"></div>
+        <div class="fld"><label>ชื่อลูกค้า</label><input id="f-cust" placeholder="ชื่อผู้รับ" autocomplete="off">
+          <div id="f-cust-hit" class="thhit"></div>
+          <div class="hint">พิมพ์ชื่อลูกค้าเก่า แล้วกดเลือก ระบบจะเติมเบอร์กับที่อยู่ครั้งล่าสุดให้</div></div>
         <div class="fld"><label>เบอร์โทร</label><input id="f-tel" inputmode="tel"></div>
         <div class="fld"><label>ที่อยู่จัดส่ง</label><textarea id="f-addr" rows="3"></textarea>
           <input id="f-addr-find" placeholder="พิมพ์ตำบล อำเภอ จังหวัด หรือรหัสไปรษณีย์ แล้วเลือก">
@@ -327,7 +330,9 @@ textarea{resize:vertical}
         <div class="fld"><label>วันที่</label><input id="q-date" type="date"></div>
         <div class="fld"><label>ยืนราคาถึง</label><input id="q-valid" type="date"></div>
       </div>
-      <div class="fld"><label>ชื่อลูกค้า / ชื่อบริษัท</label><input id="q-name" placeholder="บริษัท ... จำกัด"></div>
+      <div class="fld"><label>ชื่อลูกค้า / ชื่อบริษัท</label>
+        <input id="q-name" placeholder="บริษัท ... จำกัด" autocomplete="off">
+        <div id="q-name-hit" class="thhit"></div></div>
       <div class="two">
         <div class="fld"><label>เลขประจำตัวผู้เสียภาษี</label>
           <input id="q-tax" inputmode="numeric" maxlength="17"></div>
