@@ -402,6 +402,32 @@ function pdfFromCanvas(cv, wmm, hmm, title) {
 }
 
 /**
+ * แปลงรูปที่วาดเสร็จแล้วให้เป็น JPEG — คืน data URL ใหม่
+ *
+ * กระดาษ A4 ที่ 300 dpi เป็น PNG ได้ไฟล์ราวหนึ่งเมกะไบต์ ส่งในไลน์ทีนึงหนัก
+ * JPEG ที่คุณภาพ 0.85 เล็กลงราวหนึ่งในสาม โดยความละเอียดเท่าเดิม ไม่ได้ย่อรูป
+ * ถ้าแปลงไม่ได้ด้วยเหตุใดก็ตาม คืนของเดิมไป ดีกว่าปุ่มเซฟตายทั้งปุ่ม
+ */
+function toJpegUrl(url, quality) {
+  return new Promise(function (resolve) {
+    var im = new Image();
+    im.onload = function () {
+      try {
+        var c = document.createElement("canvas");
+        c.width = im.naturalWidth; c.height = im.naturalHeight;
+        var g = c.getContext("2d");
+        /* JPEG ไม่มีช่องโปร่งใส ต้องทาพื้นขาวก่อน ไม่งั้นส่วนโปร่งกลายเป็นดำ */
+        g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+        g.drawImage(im, 0, 0);
+        resolve(c.toDataURL("image/jpeg", quality || 0.85));
+      } catch (e) { resolve(url); }
+    };
+    im.onerror = function () { resolve(url); };
+    im.src = url;
+  });
+}
+
+/**
  * เดียวกับ pdfFromCanvas แต่รับรูปที่วาดเสร็จแล้วเป็น data URL
  * เพราะหน้าจอเก็บใบไว้เป็น data URL อยู่แล้ว ไม่ได้ถือ canvas ไว้
  */

@@ -251,6 +251,9 @@ function getOrders(limit) {
         staff: String(hv[i][SH.head.IN.staff - 1] || ''),
         note: String(hv[i][SH.head.IN.note - 1] || ''),
         subtotal: Number(hv[i][SH.head.subtotal - 1] || 0),
+        /* ยอด VAT เป็นบาท — ข้อความที่ส่งลูกค้าต้องมีบรรทัดนี้ ไม่งั้นตัวเลขบวกไม่ลง
+           (ของจริง: 237 + ค่าส่ง 50 แต่ยอดชำระ 303.59 ลูกค้าอ่านแล้วงงว่าบวกผิด) */
+        vatAmt: Number(hv[i][SH.head.vatAmt - 1] || 0),
         net: Number(hv[i][SH.head.net - 1] || 0),
         /* ต้นทุนกับกำไรเอาที่ชีทคำนวณมาเลย (O, P) ไม่คิดเองซ้ำในแอป
            ตัวเลขบนหน้าสรุปจะได้ตรงกับชีทเสมอ ไม่มีทางเถียงกันเอง */

@@ -1395,29 +1395,46 @@ function bindLabelButtons(url, name, paper){
   /* paper "a4" สำหรับเอกสารขาย · ไม่ใส่ = ใบปะหน้าพัสดุ 100x150 มม. เหมือนเดิม
      ถ้าส่ง A4 ไปพิมพ์ด้วยขนาดซอง เครื่องพิมพ์จะย่อหน้าลง ตัวหนังสือที่เพิ่งขยายจะเล็กกลับไปอีก */
   var pg = paper === "a4" ? "@page{size:A4;margin:6mm}" : "@page{size:100mm 150mm;margin:0}";
+
+  /* เอกสาร A4 เซฟเป็น JPEG ไม่ใช่ PNG
+
+     กระดาษ A4 ที่ 300 dpi เป็น PNG ได้ไฟล์ราวหนึ่งเมกะไบต์ ส่งในไลน์ทีนึงหนักมาก
+     เจ้าของร้านต้องเอาไปบีบเองก่อนทุกใบ · JPEG คุณภาพ 0.85 เล็กลงราวหนึ่งในสาม
+     โดยตัวหนังสือยังคมเท่าเดิมเมื่อดูที่ 1:1 และพิมพ์ลงกระดาษได้เหมือนกัน
+     (ความละเอียดยังเป็น 300 dpi เท่าเดิม ไม่ได้ย่อรูป — ซูมดูในมือถือยังไม่แตก)
+
+     ใบปะหน้าพัสดุยังเป็น PNG เพราะไฟล์เล็กอยู่แล้ว และเป็นเส้นคมล้วน
+     ที่เครื่องพิมพ์ความร้อนพิมพ์ออกมาสวยกว่าเมื่อไม่มีรอยบีบ */
+  var isDoc = paper === "a4";
+  var fileName = isDoc ? name.replace(/\.png$/i, ".jpg") : name;
+  var fileType = isDoc ? "image/jpeg" : "image/png";
+  var filePromise = isDoc ? toJpegUrl(url, 0.85) : Promise.resolve(url);
+
   var toFile=function(){
-    var b=atob(url.split(",")[1]), n=b.length, u8=new Uint8Array(n);
-    while(n--) u8[n]=b.charCodeAt(n);
-    var blob=new Blob([u8],{type:"image/png"});
-    return {blob:blob, file:new File([blob],name,{type:"image/png"})};
+    return filePromise.then(function(u){
+      var b=atob(u.split(",")[1]), n=b.length, u8=new Uint8Array(n);
+      while(n--) u8[n]=b.charCodeAt(n);
+      var blob=new Blob([u8],{type:fileType});
+      return {blob:blob, file:new File([blob],fileName,{type:fileType})};
+    });
   };
   $("#lb-share").onclick=async function(){
     try{
-      var f=toFile();
+      var f=await toFile();
       if(navigator.canShare && navigator.canShare({files:[f.file]})){
-        await navigator.share({files:[f.file],title:"ใบปะหน้าพัสดุ"}); return;
+        await navigator.share({files:[f.file],title:fileName}); return;
       }
     }catch(e){ if(e&&e.name==="AbortError") return; }
     try{ window.print() }catch(e){ toast("เครื่องนี้แชร์ไม่ได้ ลองปุ่มบันทึกลงเครื่องแทน") }
   };
   $("#lb-save").onclick=function(){
-    try{
-      var f=toFile(), href=URL.createObjectURL(f.blob);
-      var a=document.createElement("a"); a.href=href; a.download=name;
+    toFile().then(function(f){
+      var href=URL.createObjectURL(f.blob);
+      var a=document.createElement("a"); a.href=href; a.download=fileName;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){URL.revokeObjectURL(href)},4000);
       toast("บันทึกแล้ว ดูในโฟลเดอร์ดาวน์โหลด");
-    }catch(e){ toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่") }
+    }, function(){ toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่") });
   };
   /* แตะที่ตัวรูปได้เลย เท่ากับกดปุ่มเปิดในแท็บใหม่ — บนมือถือคนหาปุ่มไม่เจอ
      แล้วไปถ่างนิ้วบนรูปเล็กในแอปแทน ซึ่งซูมไม่ขึ้นเพราะติดกรอบ iframe ของ Apps Script */
@@ -1641,6 +1658,19 @@ function orderMsg(o){
   t += "💵 รวมค่าสินค้า : " + num_(o.subtotal) + " บาท\n";
   if (Number(o.discount) > 0) t += "🏷️ ส่วนลด : " + num_(o.discount) + " บาท\n";
   t += "🚚 ค่าจัดส่ง : " + num_(o.ship) + " บาท\n";
+
+  /* บรรทัด VAT ต้องมี ไม่งั้นตัวเลขในข้อความบวกไม่ลง แล้วลูกค้าทักมาว่าคิดเงินผิด
+     ของจริง: 237 + ค่าส่ง 50 = 287 แต่ยอดชำระขึ้น 303.59 (ส่วนต่างคือ VAT 16.59)
+
+     ยอดที่เหลือคิดจาก "ยอดสุทธิ ลบด้วยบรรทัดที่พิมพ์ไปแล้ว" ไม่ใช่คูณ 7% เอาเอง
+     ยอดสุทธิเป็นตัวที่ชีทคำนวณและเป็นตัวที่ลูกค้าต้องจ่ายจริง บรรทัดที่พิมพ์
+     จึงต้องบวกได้เท่านั้นเสมอ ไม่ว่าสูตรในชีทจะคิด VAT จากฐานไหน */
+  var shown = Number(o.subtotal||0) - Number(o.discount||0) + Number(o.ship||0);
+  var rest = Math.round((Number(o.net||0) - shown) * 100) / 100;
+  if (Math.abs(rest) >= 0.01) {
+    t += (String(o.vat||"").indexOf("ไม่") !== 0 ? "🧾 ภาษีมูลค่าเพิ่ม : " : "➕ ค่าใช้จ่ายอื่น : ")
+       + num_(rest) + " บาท\n";
+  }
   t += "✅ ยอดชำระทั้งหมด : " + num_(o.net) + " บาท\n";
   if (o.addr) t += "━━━━━━━━━━━━━\n📍 ที่อยู่จัดส่ง\n" + o.addr + "\n";
   return t;

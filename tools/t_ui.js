@@ -344,8 +344,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.click('#sum-range button[data-r="all"]');
   await page.waitForTimeout(300);
   var sum = await page.textContent('#summary');
-  truthy('นับจำนวนออเดอร์', /1 ใบ/.test(sum));
-  truthy('มียอดชำระสุทธิ', /฿800.00/.test(sum));
+  truthy('นับจำนวนออเดอร์', /2 ใบ/.test(sum));
+  truthy('มียอดชำระสุทธิ', /฿1,103.59/.test(sum));
   truthy('มีกำไรขั้นต้น', /กำไรขั้นต้น/.test(sum));
   truthy('แยกตามค่ายขนส่ง', /Flash Express/.test(sum));
   truthy('แยกตามช่องทางขาย', /เพจ Facebook/.test(sum));
@@ -801,6 +801,61 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     /ยังไม่มีออเดอร์ในช่วงนี้/.test(await page.textContent('#summary')));
   eq('แต่ที่ตั้งลายเซ็นยังอยู่ครบ',
     await page.locator('#sig-box button[data-signbtn]').count(), 2);
+
+  /* ---------- 19.5 ข้อความส่งลูกค้าต้องบวกลงตัว + ไฟล์ต้องไม่ใหญ่เกินส่ง ---------- */
+  console.log('\n19.5 ข้อความส่งลูกค้า: ตัวเลขต้องบวกลงตัว');
+
+  /* ของจริง: 237 + ค่าส่ง 50 = 287 แต่ยอดชำระขึ้น 303.59 ลูกค้าทักมาว่าบวกผิด
+     เพราะบรรทัด VAT ไม่ได้ถูกพิมพ์ลงในข้อความ */
+  var msg = await page.evaluate(function () {
+    var o = ORDERS.filter(function (x) { return x.no === 'AST-26-0006' })[0];
+    return orderMsg(o);
+  });
+  truthy('มีบรรทัดภาษีมูลค่าเพิ่ม', /ภาษีมูลค่าเพิ่ม : 16\.59 บาท/.test(msg));
+
+  /* ข้อสอบที่สำคัญกว่าการมีบรรทัด: ตัวเลขที่พิมพ์ต้องบวกได้เท่ายอดชำระเสมอ */
+  var lines = msg.split('\n');
+  function pick(re) {
+    for (var i = 0; i < lines.length; i++) {
+      var m = re.exec(lines[i]);
+      if (m) return Number(m[1].replace(/,/g, ''));
+    }
+    return null;
+  }
+  var mSub  = pick(/รวมค่าสินค้า : ([\d,.]+)/);
+  var mVat  = pick(/ภาษีมูลค่าเพิ่ม : ([\d,.]+)/);
+  var mShip = pick(/ค่าจัดส่ง : ([\d,.]+)/);
+  var mNet  = pick(/ยอดชำระทั้งหมด : ([\d,.]+)/);
+  eq('บรรทัดที่พิมพ์บวกกันได้เท่ายอดชำระพอดี',
+    Math.round((mSub + mVat + mShip) * 100) / 100, mNet);
+
+  console.log('\n   ใบที่ไม่รับ VAT ต้องไม่มีบรรทัดนั้นโผล่มาเปล่า ๆ');
+  var msg2 = await page.evaluate(function () {
+    var o = ORDERS.filter(function (x) { return x.no === 'AST-26-0005' })[0];
+    return orderMsg(o);
+  });
+  eq('ไม่มีบรรทัดภาษี', /ภาษีมูลค่าเพิ่ม/.test(msg2), false);
+  var s2 = /รวมค่าสินค้า : ([\d,.]+)/.exec(msg2), n2 = /ยอดชำระทั้งหมด : ([\d,.]+)/.exec(msg2),
+      p2 = /ค่าจัดส่ง : ([\d,.]+)/.exec(msg2);
+  eq('ยังบวกลงตัวเหมือนเดิม',
+    Number(s2[1].replace(/,/g,'')) + Number(p2[1].replace(/,/g,'')),
+    Number(n2[1].replace(/,/g,'')));
+
+  console.log('\n   ไฟล์เอกสารต้องเล็กพอส่งในไลน์ได้ ไม่ต้องเอาไปบีบเอง');
+  var fsz = await page.evaluate(async function () {
+    var d = { no:'X', type:'ใบเสร็จรับเงิน', vatRate:0.07,
+      lines:[{name:'End Mill Corn cut 2F 1.0*7.0*3.175*38L (1pcs)',po:'',qty:3,unit:'ชิ้น',price:79,amount:237}],
+      base:237, vat:16.59, total:303.59, totalText:'สามร้อยสามบาท' };
+    var url = await buildDocPage(d, { no:'X', date:'2026-09-03', cust:{name:'ก'} },
+                                 { co:{} }, 'ต้นฉบับ');
+    var jpg = await toJpegUrl(url, 0.85);
+    var b64 = function(u){ return Math.round(u.split(',')[1].length * 0.75 / 1024) };
+    return { png: b64(url), jpg: b64(jpg), isJpeg: jpg.indexOf('data:image/jpeg') === 0 };
+  });
+  eq('แปลงเป็น JPEG จริง', fsz.isJpeg, true);
+  truthy('เล็กลงจริงเมื่อเทียบกับ PNG (' + fsz.png + ' KB → ' + fsz.jpg + ' KB)',
+    fsz.jpg < fsz.png * 0.8);
+  truthy('ไฟล์ไม่เกินครึ่งเมกะไบต์', fsz.jpg < 512);
 
   /* ---------- 20. ไฟล์ PDF ---------- */
   console.log('\n20. ไฟล์ PDF');
