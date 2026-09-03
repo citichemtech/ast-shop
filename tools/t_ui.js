@@ -1121,6 +1121,42 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal() });
   await page.waitForTimeout(200);
 
+  /* ---------- 24.5 ค่าส่ง/ส่วนลด แก้ได้ในหน้าต่างแก้รายการ ---------- */
+  console.log('\n24.5 แก้ค่าส่งกับส่วนลดพร้อมรายการสินค้า');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { MOCK_DOCS.length = 0; loadOrders(true) });
+  await page.waitForTimeout(500);
+  await page.locator('#list [data-ed]').first().click();
+  await page.waitForTimeout(400);
+
+  truthy('มีช่องค่าจัดส่งให้แก้', await page.locator('#ed-ship').count() > 0);
+  truthy('มีช่องส่วนลดให้แก้', await page.locator('#ed-disc').count() > 0);
+  eq('ค่าส่งขึ้นค่าเดิมของใบนั้น', await page.inputValue('#ed-ship'),
+     String(await page.evaluate(function () { return Number(ORDERS[0].ship) || 0 })));
+
+  console.log('\n   กล่องสรุปต้องโชว์ยอดสุทธิ ไม่ใช่แค่ยอดก่อน VAT');
+  truthy('มีบรรทัดยอดสุทธิ', /ยอดสุทธิ/.test(await page.textContent('#ed-sum')));
+
+  console.log('\n   ลบค่าส่งแล้วยอดสุทธิต้องลดลงทันทีบนหน้าจอ');
+  var netBefore = await page.textContent('#ed-sum');
+  await page.fill('#ed-ship', '0');
+  await page.waitForTimeout(250);
+  var netAfter = await page.textContent('#ed-sum');
+  truthy('ตัวเลขบนกล่องสรุปเปลี่ยนตาม', netBefore !== netAfter);
+  truthy('ไม่มีบรรทัดค่าจัดส่งเหลือแล้ว', !/ค่าจัดส่ง/.test(netAfter));
+
+  console.log('\n   บันทึกแล้วค่าส่งต้องขึ้นชีทจริง');
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.click('#ed-save');
+  await page.waitForTimeout(800);
+  eq('ค่าส่งในชีทเป็นศูนย์แล้ว',
+     await page.evaluate(function () { return Number(MOCK_ORDERS[0].ship) }), 0);
+  truthy('ข้อความยืนยันบอกยอดสุทธิด้วย',
+    /ยอดสุทธิ/.test(await page.textContent('#ed-msg')));
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
   /* ---------- 25. แก้ใบที่ยังไม่ได้ส่ง + ปุ่มส่งแล้ว ---------- */
   console.log('\n25. แก้ใบที่ยังไม่ได้ส่งลูกค้า และปุ่ม "ส่งแล้ว"');
 

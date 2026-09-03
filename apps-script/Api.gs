@@ -1302,7 +1302,7 @@ function editOrderItems(no, items, by, clientKey, opts) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw new Error('มีคนกำลังบันทึกอยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
 
-  var oldItem = [], oldCut = [], oldRecv = [];
+  var oldItem = [], oldCut = [], oldRecv = [], headBack = null, hRow = 0;
   var written = { head: 0, item: [], cut: [], prod: [], recv: [] };
   var cleared = false;
   try {
@@ -1327,6 +1327,16 @@ function editOrderItems(no, items, by, clientKey, opts) {
         'แล้วแก้รายการ แล้วค่อยออกใบใหม่');
     }
 
+    /* ค่าส่งกับส่วนลดแก้พร้อมรายการได้ในทีเดียว
+       ของเดิมแก้ได้แต่รายการสินค้า พอลูกค้าเปลี่ยนใจเรื่องค่าส่งทีต้องไปเปิดชีทแก้เอง
+       ซึ่งพลาดง่ายมาก — ยอดสุทธิผิดทั้งใบทั้งที่รายการสินค้าถูกหมด */
+    hRow = headRow_(want);
+    var setShip = opts && opts.ship !== undefined && opts.ship !== null && opts.ship !== '';
+    var setDisc = opts && opts.discount !== undefined && opts.discount !== null && opts.discount !== '';
+    if ((setShip || setDisc) && hRow) {
+      headBack = { ship: head.ship, discount: head.discount };
+    }
+
     var rows = orderRows_(want);
     oldItem = snapRows_('item', rows.item);
     oldCut = snapRows_('cut', rows.cut);
@@ -1344,12 +1354,21 @@ function editOrderItems(no, items, by, clientKey, opts) {
     cleared = true;
     SpreadsheetApp.flush();
 
-    /* วางแผนใหม่ด้วยหัวบิลเดิม เปลี่ยนแค่รายการสินค้า */
+    var newShip = setShip ? numOr0_(opts.ship) : head.ship;
+    var newDisc = setDisc ? numOr0_(opts.discount) : head.discount;
+    if (headBack) {
+      var patch = {};
+      if (setShip) patch.ship = newShip;
+      if (setDisc) patch.discount = newDisc;
+      writeRow_('head', hRow, patch);
+    }
+
+    /* วางแผนใหม่ด้วยหัวบิลเดิม เปลี่ยนแค่รายการสินค้า (และค่าส่ง/ส่วนลดถ้าส่งมา) */
     var plan = planOrder_({
       cust: head.cust, tel: head.tel, addr: head.addr, date: head.date,
       channel: head.channel, carrier: head.carrier, status: head.status,
       vat: String(head.vat || '').indexOf('ไม่') !== 0,
-      discount: head.discount, ship: head.ship, note: head.note,
+      discount: newDisc, ship: newShip, note: head.note,
       by: String(by || '').trim() || head.staff,
       items: items
     }, email);
@@ -1372,7 +1391,14 @@ function editOrderItems(no, items, by, clientKey, opts) {
       SpreadsheetApp.flush();
     }
 
-    return { ok: true, no: want, subtotal: plan.subtotal, lots: plan.lotNote,
+    if (headBack) {
+      writeLog_(email, 'แก้ค่าส่ง/ส่วนลด', SH.head.name, want, 'ค่าส่ง / ส่วนลด',
+        numOr0_(headBack.ship) + ' / ' + numOr0_(headBack.discount),
+        newShip + ' / ' + newDisc, 'แก้พร้อมรายการสินค้า โดย ' + plan.staff);
+    }
+
+    return { ok: true, no: want, subtotal: plan.subtotal, net: plan.net, lots: plan.lotNote,
+             ship: newShip, discount: newDisc,
              before: rows.item.length, after: plan.items.length,
              docs: fixed.map(function (f) { return f.no + ' → ' + f.doc.total; }) };
   } catch (err) {
@@ -1384,6 +1410,13 @@ function editOrderItems(no, items, by, clientKey, opts) {
         restoreRows_('item', oldItem);
         restoreRows_('cut', oldCut);
         restoreRows_('recv', oldRecv);
+        /* ค่าส่งกับส่วนลดที่เพิ่งเขียนไปต้องคืนด้วย ไม่งั้นแก้ไม่สำเร็จแต่ยอดเปลี่ยนไปแล้ว */
+        if (headBack && hRow) {
+          writeRow_('head', hRow, {
+            ship: headBack.ship === '' || headBack.ship === null ? '' : headBack.ship,
+            discount: headBack.discount === '' || headBack.discount === null ? '' : headBack.discount
+          });
+        }
         SpreadsheetApp.flush();
       } catch (e2) {
         Logger.log('เขียนรายการเดิมคืนไม่สำเร็จ: ' + e2.message);

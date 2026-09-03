@@ -1610,7 +1610,47 @@ throws('ใบที่ยกเลิกแล้ว',
   function () { api35.reviseDoc({ no: d35.no, why: 'ขอแก้ยอดอีกที', clientKey: 'rk-35-5' }) },
   'ถูกยกเลิกไปแล้ว');
 
+console.log('\n   แก้ค่าส่งกับส่วนลดพร้อมรายการได้ในทีเดียว');
+var fx35b = FS.build();
+var api35b = FS.load(fx35b, {});
+api35b.setup();
+var hd35 = fx35b.sheets['ออเดอร์_หัวบิล'];
+var o35b = api35b.createOrder(order({
+  cust: 'คุณค่าส่ง', ship: 50, discount: 0, vat: true,
+  items: [{ sku: 'SKU-141', qty: 2, price: 100 }]
+}));
+var r35h = rowsWith(hd35, 1)[0];
+eq('ตั้งต้น ค่าส่ง 50 ยอดสุทธิ 264', hd35.cell(r35h, 14).v, 264);   /* 200 + VAT 14 + 50 */
+
+api35b.editOrderItems(o35b.no, [{ sku: 'SKU-141', qty: 2, price: 100 }], 'AEY', 'ck-ship-1',
+  { ship: 0 });
+eq('ค่าส่งถูกล้างเป็นศูนย์', hd35.cell(r35h, 12).v, 0);
+eq('ยอดสุทธิลดลงตาม', hd35.cell(r35h, 14).v, 214);                  /* 200 + VAT 14 */
+
+api35b.editOrderItems(o35b.no, [{ sku: 'SKU-141', qty: 2, price: 100 }], 'AEY', 'ck-ship-2',
+  { discount: 20 });
+eq('ใส่ส่วนลดได้', hd35.cell(r35h, 11).v, 20);
+eq('ค่าส่งที่ไม่ได้ส่งมาไม่ถูกแตะ', hd35.cell(r35h, 12).v, 0);
+eq('ยอดสุทธิคิดส่วนลดแล้ว', hd35.cell(r35h, 14).v, 192.6);          /* 180 + VAT 12.60 */
+
+console.log('\n   ไม่ส่งค่าส่ง/ส่วนลดมา ต้องไม่ไปแตะของเดิม');
+api35b.editOrderItems(o35b.no, [{ sku: 'SKU-141', qty: 3, price: 100 }], 'AEY', 'ck-ship-3');
+eq('ส่วนลดเดิมยังอยู่', hd35.cell(r35h, 11).v, 20);
+eq('ค่าส่งเดิมยังอยู่', hd35.cell(r35h, 12).v, 0);
+
+console.log('\n   แก้ไม่สำเร็จ ค่าส่งที่เพิ่งเขียนต้องคืนค่าเดิม');
+throws('สินค้าที่ไม่มีในฐาน',
+  function () {
+    api35b.editOrderItems(o35b.no, [{ sku: 'SKU-ไม่มีจริง', qty: 1, price: 10 }], 'AEY', 'ck-ship-4',
+      { ship: 999, discount: 888 });
+  }, 'ไม่พบ SKU');
+eq('ค่าส่งกลับเป็นของเดิม', hd35.cell(r35h, 12).v, 0);
+eq('ส่วนลดกลับเป็นของเดิม', hd35.cell(r35h, 11).v, 20);
+
 console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over35b = [];
+for (var nb in fx35b.sheets) over35b = over35b.concat(fx35b.sheets[nb].overwrittenFormulas);
+eq('ชีทของหมวดค่าส่งก็ไม่มีช่องสูตรถูกแตะ', over35b, []);
 var over35 = [];
 for (var nm35 in fx35.sheets) over35 = over35.concat(fx35.sheets[nm35].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over35, []);

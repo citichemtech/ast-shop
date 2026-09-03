@@ -1534,7 +1534,10 @@ function taxIdOk(v){
    ฝั่งชีทรื้อรายการเดิมกับล็อตที่ตัดไปออกก่อน แล้ววางแผนใหม่ทั้งชุด
    จึงได้ FEFO ที่ถูกต้อง — หน้าจอนี้แค่รวบรวมว่ารายการใหม่ทั้งใบมีอะไรบ้าง       */
 
+var ED_ORDER = null;
+
 function openEditItems(o){
+  ED_ORDER = o;
   openModal("แก้รายการสินค้า — " + o.no,
     /* คำอธิบายสั้นที่สุดเท่าที่ยังบอกครบ — บนมือถือ ถ้ายาวกว่านี้
        ของที่ต้องแก้จริงจะถูกดันตกจอไปหมด ต้องเลื่อนก่อนถึงจะเริ่มทำงานได้ */
@@ -1543,9 +1546,18 @@ function openEditItems(o){
     +'เลขออเดอร์ ลูกค้า ค่าส่ง ส่วนลด ยังเป็นของเดิม<br>'
     +'ใบที่ออกเอกสารไปแล้ว ต้องยกเลิกใบเดิมก่อนจึงแก้ได้</div>'
     +'<div id="ed-rows"></div>'
-    +'<label class="giftck" style="margin-top:8px"><input type="checkbox" id="ed-fixdoc">'
-    +' แก้ใบที่ออกไปแล้วตามด้วย (ใช้เลขเดิม) — เฉพาะใบที่ยังไม่ได้กด “ส่งแล้ว”</label>'
     +'<button class="btn ghost" id="ed-add" style="margin-top:8px">+ เพิ่มสินค้า</button>'
+    /* ค่าส่งกับส่วนลดต้องแก้ได้ตรงนี้ด้วย ไม่งั้นแก้รายการเสร็จแล้วยอดสุทธิยังผิด
+       เพราะค่าส่งเดิมยังค้างอยู่ ต้องไปเปิดชีทแก้เองซึ่งพลาดง่ายมาก */
+    +'<div class="two" style="margin-top:12px">'
+    +'<div class="fld"><label>ส่วนลด (บาท)</label>'
+    +'<input id="ed-disc" type="number" inputmode="decimal" min="0" step="0.01" value="'
+    + (Number(o.discount)||0) + '"></div>'
+    +'<div class="fld"><label>ค่าจัดส่ง (บาท)</label>'
+    +'<input id="ed-ship" type="number" inputmode="decimal" min="0" step="0.01" value="'
+    + (Number(o.ship)||0) + '"></div></div>'
+    +'<label class="giftck"><input type="checkbox" id="ed-fixdoc">'
+    +' แก้ใบที่ออกไปแล้วตามด้วย (ใช้เลขเดิม) — เฉพาะใบที่ยังไม่ได้กด “ส่งแล้ว”</label>'
     +'<div class="sum" id="ed-sum" style="margin-top:12px"></div>'
     +'<button class="btn" id="ed-save" style="margin-top:12px">บันทึกรายการใหม่</button>'
     +'<div id="ed-msg" style="margin-top:10px"></div>');
@@ -1561,7 +1573,10 @@ function openEditItems(o){
   ED_KEY = newKey();
   $("#ed-add").onclick = function(){ edRow({}); };
   $("#ed-save").onclick = function(){ edSave(o, this); };
-  edSum();
+  ["#ed-disc","#ed-ship"].forEach(function(sel){
+    $(sel).addEventListener("input", function(){ edSum(o) });
+  });
+  edSum(o);
 }
 
 function edRow(v){
@@ -1595,6 +1610,7 @@ function edRow(v){
     edSum();
   }
   d.querySelector(".i-free").onchange = toggle;
+  /* แถวสินค้าไม่รู้จักหัวบิล จึงคิดยอดสุทธิเองไม่ได้ ให้กล่องสรุปไปอ่านค่าจากฟอร์มเอง */
   if(v.free) toggle();
 
   d.querySelector(".rm").onclick = function(){
@@ -1623,9 +1639,12 @@ function edItems(){
 }
 
 /** ยอดสินค้าที่คิดให้ดูก่อนกดบันทึก — ยอดจริงยังยึดที่ชีทคำนวณเสมอ */
-function edSum(){
+function edSum(o){
   var box = $("#ed-sum");
   if(!box) return;
+  /* แถวสินค้าเรียก edSum() มาแบบไม่มีหัวบิล จึงต้องจำใบที่กำลังแก้ไว้
+     ไม่งั้นบรรทัด VAT จะหายไปทุกครั้งที่พิมพ์จำนวนหรือราคา */
+  o = o || ED_ORDER;
   $$("#ed-rows .edrow").forEach(function(r,i){ r.querySelector(".n").textContent = i+1 });
   var sub = 0, unknown = 0;
   edItems().forEach(function(it){
@@ -1637,9 +1656,22 @@ function edSum(){
     }
     sub += qty * pr;
   });
-  box.innerHTML = '<div class="line"><span>ยอดสินค้า (ประมาณ)</span><b>'+baht(sub)+'</b></div>'
+  /* คิดยอดสุทธิให้ดูด้วย เพราะหน้าจอเดิมโชว์แต่ยอดก่อน VAT
+     แล้วคนอ่านนึกว่ายอดผิด ทั้งที่ VAT กับค่าส่งยังไม่ได้บวกเข้าไป */
+  var disc = Number(($("#ed-disc")||{}).value || 0) || 0;
+  var ship = Number(($("#ed-ship")||{}).value || 0) || 0;
+  var isVat = o && String(o.vat||"").indexOf("ไม่") !== 0;
+  var rate = Number(BOOT ? BOOT.vatRate : 0) || 0;
+  var vat = isVat ? Math.round((sub - disc) * rate * 100) / 100 : 0;
+  var net = Math.round((sub - disc + ship + vat) * 100) / 100;
+
+  box.innerHTML = '<div class="line"><span>ยอดสินค้า</span><b>'+baht(sub)+'</b></div>'
+    + (disc ? '<div class="line"><span>ส่วนลด</span><b>-'+baht(disc)+'</b></div>' : '')
+    + (isVat ? '<div class="line"><span>ภาษีมูลค่าเพิ่ม '+Math.round(rate*100)+'%</span><b>'+baht(vat)+'</b></div>' : '')
+    + (ship ? '<div class="line"><span>ค่าจัดส่ง</span><b>'+baht(ship)+'</b></div>' : '')
+    + '<div class="line"><span><b>ยอดสุทธิ (ประมาณ)</b></span><b>'+baht(net)+'</b></div>'
     + (unknown ? '<div class="hint">มี '+unknown+' บรรทัดที่ยังไม่ได้เลือกสินค้าหรือใส่ราคา</div>' : '')
-    + '<div class="hint">ยอดสุทธิจริงชีทเป็นคนคิด รวมค่าส่งกับส่วนลดของใบเดิม</div>';
+    + '<div class="hint">ยอดจริงชีทเป็นคนคิดตอนบันทึก ตัวเลขนี้ไว้ดูคร่าว ๆ ก่อนกด</div>';
 }
 
 function edSave(o, btn){
@@ -1659,13 +1691,17 @@ function edSave(o, btn){
   if(!ED_KEY) ED_KEY = newKey();
   var fixDoc = $("#ed-fixdoc") && $("#ed-fixdoc").checked;
   api("editOrderItems", o.no, items, byName(), "ed-" + o.no + "-" + ED_KEY,
-      { reviseDocs: !!fixDoc }).then(function(r){
+      { reviseDocs: !!fixDoc,
+        ship: $("#ed-ship") ? $("#ed-ship").value : undefined,
+        discount: $("#ed-disc") ? $("#ed-disc").value : undefined }).then(function(r){
     /* สำเร็จแล้วเปลี่ยนกุญแจ ไม่งั้นถ้าแก้รายการต่ออีกรอบในหน้าต่างเดิม
        เซิร์ฟเวอร์จะเห็นเป็นการกดซ้ำของงานเดิม แล้วไม่ทำอะไรให้เงียบ ๆ */
     ED_KEY = newKey();
     $("#ed-msg").innerHTML = '<div class="msg ok" style="display:block">แก้รายการของ <b>'
       + esc(o.no) + '</b> แล้ว จาก ' + r.before + ' เป็น ' + r.after + ' รายการ · ยอดสินค้า '
-      + baht(r.subtotal) + (r.lots && r.lots.length ? '<br>ล็อตที่ตัด: ' + esc(r.lots.join(" · ")) : '')
+      + baht(r.subtotal)
+      + (r.net !== undefined ? ' · <b>ยอดสุทธิ ' + baht(r.net) + '</b>' : '')
+      + (r.lots && r.lots.length ? '<br>ล็อตที่ตัด: ' + esc(r.lots.join(" · ")) : '')
       + (r.docs && r.docs.length ? '<br>แก้ใบตามให้แล้ว: ' + esc(r.docs.join(" · ")) : '')
       + '</div>';
     btn.disabled = false; btn.textContent = "บันทึกรายการใหม่";

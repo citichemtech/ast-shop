@@ -188,6 +188,11 @@ window.google = { script: { run: (function(){
         if(fix) liveDocs.forEach(function(d){
           if(d.sentAt) throw new Error("ใบ " + d.no + " ถูกทำเครื่องหมายว่าส่งให้ลูกค้าแล้ว");
         });
+        /* ค่าส่งกับส่วนลดแก้พร้อมรายการได้ */
+        if(opts && opts.ship !== undefined && opts.ship !== null && opts.ship !== "")
+          o.ship = Number(opts.ship) || 0;
+        if(opts && opts.discount !== undefined && opts.discount !== null && opts.discount !== "")
+          o.discount = Number(opts.discount) || 0;
         var before = (o.items||[]).length, sub = 0;
         o.items = items.map(function(it, i){
           var qty = Number(it.qty)||0;
@@ -198,7 +203,10 @@ window.google = { script: { run: (function(){
                    qty: qty, price: pr, total: qty*pr };
         });
         o.subtotal = sub;
-        o.net = sub + Number(o.ship||0) - Number(o.discount||0);
+        var vat35 = String(o.vat||"").indexOf("ไม่") !== 0
+          ? Math.round((sub - Number(o.discount||0)) * 0.07 * 100) / 100 : 0;
+        o.vatAmt = vat35;
+        o.net = Math.round((sub - Number(o.discount||0) + Number(o.ship||0) + vat35) * 100) / 100;
         var fixed = [];
         if(fix) liveDocs.forEach(function(d){
           var b = DOC_SRV.buildDoc_(
@@ -208,8 +216,8 @@ window.google = { script: { run: (function(){
           d.doc = JSON.parse(JSON.stringify(b));
           fixed.push(d.no + " → " + b.total);
         });
-        return { ok:true, no:o.no, subtotal:sub, lots:[], before:before,
-                 after:o.items.length, docs:fixed };
+        return { ok:true, no:o.no, subtotal:sub, net:o.net, lots:[], before:before,
+                 after:o.items.length, ship:o.ship, discount:o.discount, docs:fixed };
       });
     },
     /* แก้เนื้อใบเดิมโดยใช้เลขเดิม — ใช้ได้จนกว่าจะกดว่าส่งแล้ว */
