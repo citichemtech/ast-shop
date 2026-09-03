@@ -1489,5 +1489,131 @@ var over34 = [];
 for (var nm34 in fx34.sheets) over34 = over34.concat(fx34.sheets[nm34].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over34, []);
 
+/* ====== 35. แก้เนื้อใบที่ออกผิดแต่ยังไม่ได้ส่งลูกค้า — เลขใบเดิม
+
+   ของเดิมมีทางเดียวคือยกเลิกแล้วออกใหม่ ซึ่งเผาเลขทิ้งใบหนึ่งทุกครั้งที่พิมพ์ผิด
+   เล่มจริงของร้านจึงเต็มไปด้วยใบยกเลิก และเจ้าของร้านตามเลขไม่ทัน
+
+   สิ่งที่ต้องถูกทั้งหมด: เลขไม่เปลี่ยน · วันที่ไม่ขยับ · ยอดใหม่ตรงกับออเดอร์ตอนนี้
+   ภาพถ่ายของใบถูกเขียนใหม่ด้วย (ไม่งั้นพิมพ์ซ้ำจะได้ใบเก่า) และยอดเดิมต้องตามย้อนได้ */
+console.log('\n35. แก้เนื้อใบที่ยังไม่ได้ส่งลูกค้า');
+
+var DOC_NO = 2, DOC_DATE = 4, DOC_BASE = 15, DOC_VAT = 16, DOC_TOTAL = 17,
+    DOC_NOTE = 19, DOC_VOID = 20, DOC_SNAP = 21;
+
+var fx35 = FS.build();
+var api35 = FS.load(fx35, {});
+api35.setup();
+var doc35 = fx35.sheets['เอกสาร'];
+
+var o35 = api35.createOrder(order({
+  cust: 'บริษัท ทดสอบแก้ใบ จำกัด', ship: 0, discount: 0,
+  items: [{ sku: 'SKU-141', qty: 10, price: 100 }]
+}));
+var d35 = api35.issueDoc({
+  type: 'rec', orderNo: o35.no, cust: { name: 'บริษัท ทดสอบแก้ใบ จำกัด', taxId: '0105511000011' },
+  date: '2026-09-03', by: 'AEY', vatMode: 'excl', clientKey: 'dk-35-1'
+});
+var row35 = rowsWith(doc35, DOC_NO).filter(function (r) { return doc35.cell(r, DOC_NO).v === d35.no })[0];
+eq('ออกใบแรกได้ ยอด 1,000 + VAT', doc35.cell(row35, DOC_TOTAL).v, 1070);
+var date35 = doc35.cell(row35, DOC_DATE).v;
+
+console.log('\n   แก้รายการทั้งที่ออกใบแล้ว ต้องเตือนก่อน ไม่แก้ให้เงียบ ๆ');
+throws('ไม่ได้ติ๊กว่าให้แก้ใบตาม',
+  function () { api35.editOrderItems(o35.no, [{ sku: 'SKU-141', qty: 10, price: 80 }], 'AEY', 'ck-35-0') },
+  'ออกเอกสารไปแล้ว');
+eq('ใบยังเป็นยอดเดิม ยังไม่ถูกแตะ', doc35.cell(row35, DOC_TOTAL).v, 1070);
+
+console.log('\n   ลูกค้าขอลดราคา แก้ออเดอร์แล้วแก้ใบด้วยเลขเดิม');
+api35.editOrderItems(o35.no, [{ sku: 'SKU-141', qty: 10, price: 80 }], 'AEY', 'ck-35-1',
+  { reviseDocs: true });
+eq('ใบถูกแก้ตามให้เลยตอนแก้ออเดอร์', doc35.cell(row35, DOC_TOTAL).v, 856);
+eq('ยังเป็นใบเดียว ไม่มีใบใหม่งอก', rowsWith(doc35, DOC_NO).length, 1);
+console.log('\n   กดปุ่มแก้ใบตรง ๆ ก็ได้ ใช้เลขเดิมเหมือนกัน');
+var r35 = api35.reviseDoc({
+  no: d35.no, why: 'ตรวจแล้วชื่อผู้เสียภาษีตกหล่น', by: 'AEY',
+  cust: { name: 'บริษัท ทดสอบแก้ใบ จำกัด', taxId: '0105511000011' },
+  vatMode: 'excl', clientKey: 'rk-35-1'
+});
+eq('ยังเป็นใบเลขเดิม', r35.no, d35.no);
+eq('นับต่อเป็นครั้งที่ 2', r35.times, 2);
+eq('ยอดยังเป็นยอดที่ตรงกับออเดอร์', doc35.cell(row35, DOC_TOTAL).v, 856);
+eq('ฐานภาษีใหม่', doc35.cell(row35, DOC_BASE).v, 800);
+eq('วันที่บนใบไม่ขยับ', doc35.cell(row35, DOC_DATE).v, date35);
+eq('ไม่มีแถวใบใหม่งอกขึ้นมา', rowsWith(doc35, DOC_NO).length, 1);
+truthy2('ชื่อผู้เสียภาษีที่ส่งมาใหม่ถูกเขียนลงใบ',
+  String(doc35.cell(row35, 7).v) === '0105511000011');
+
+console.log('\n   ภาพถ่ายของใบต้องถูกเขียนใหม่ ไม่งั้นพิมพ์ซ้ำได้ใบเก่า');
+truthy2('ภาพถ่ายเก็บยอดใหม่', String(doc35.cell(row35, DOC_SNAP).v).indexOf('856') > -1);
+var got35 = api35.getDoc(d35.no);
+eq('พิมพ์ซ้ำแล้วได้ยอดใหม่', got35.doc.total, 856);
+truthy2('ยังเป็นใบที่มีภาพถ่ายจริง ไม่ใช่ประกอบใหม่แบบเดา', got35.exact);
+
+console.log('\n   ยอดเดิมต้องตามย้อนได้ ไม่ใช่หายไปกับการเขียนทับ');
+var note35 = String(doc35.cell(row35, DOC_NOTE).v);
+truthy2('หมายเหตุบอกว่าแก้ครั้งที่ 1', note35.indexOf('แก้ไขครั้งที่ 1') > -1);
+truthy2('หมายเหตุจดยอดเดิมไว้', note35.indexOf('1070') > -1);
+truthy2('หมายเหตุบอกเหตุผล', note35.indexOf('แก้รายการสินค้าในออเดอร์') > -1);
+var log35 = fx35.sheets['Log'];
+var lg35 = rowsWith(log35, 2).map(function (r) {
+  return [log35.cell(r, 4).v, log35.cell(r, 6).v, log35.cell(r, 8).v, log35.cell(r, 9).v].join(' ');
+}).filter(function (t) { return t.indexOf('แก้ไขเอกสาร') === 0 })[0] || '';
+truthy2('Log จดทั้งยอดเดิมและยอดใหม่', /1070/.test(lg35) && /856/.test(lg35));
+
+console.log('\n   แก้รอบสามต้องนับต่อ ไม่ทับร่องรอยเดิม');
+api35.editOrderItems(o35.no, [{ sku: 'SKU-141', qty: 10, price: 90 }], 'AEY', 'ck-35-2',
+  { reviseDocs: true });
+var note35b = String(doc35.cell(row35, DOC_NOTE).v);
+truthy2('ร่องรอยครั้งแรกยังอยู่', note35b.indexOf('แก้ไขครั้งที่ 1') > -1);
+truthy2('และมีครั้งที่สามต่อท้าย', note35b.indexOf('แก้ไขครั้งที่ 3') > -1);
+eq('ยอดตามออเดอร์ล่าสุด', doc35.cell(row35, DOC_TOTAL).v, 963);
+
+console.log('\n   กดปุ่ม "ส่งแล้ว" เมื่อไร แก้ไม่ได้อีก');
+var ms35 = api35.markSent(d35.no, 'AEY');
+truthy2('บันทึกเวลาที่ส่งไว้', !!ms35.at);
+eq('ช่องในชีทมีค่าแล้ว', doc35.cell(row35, 23).v, ms35.at);
+throws('แก้ใบที่ส่งไปแล้ว',
+  function () { api35.reviseDoc({ no: d35.no, why: 'ขอแก้อีกนิด', clientKey: 'rk-35-9' }) },
+  'ส่งให้ลูกค้าแล้ว');
+throws('แก้ออเดอร์แล้วให้ใบตามก็ไม่ได้',
+  function () {
+    api35.editOrderItems(o35.no, [{ sku: 'SKU-141', qty: 9, price: 90 }], 'AEY', 'ck-35-3',
+      { reviseDocs: true });
+  }, 'ส่งให้ลูกค้าแล้ว');
+eq('ใบยังเป็นยอดเดิมทุกบาท', doc35.cell(row35, DOC_TOTAL).v, 963);
+
+console.log('\n   ปลดเครื่องหมายส่งแล้วในชีท กลับมาแก้ได้เหมือนเดิม');
+doc35.cell(row35, 23).v = '';
+var r35c = api35.reviseDoc({ no: d35.no, why: 'ปลดแล้วแก้ต่อได้', by: 'AEY',
+  vatMode: 'excl', clientKey: 'rk-35-10' });
+eq('แก้ได้แล้ว นับเป็นครั้งที่ 4', r35c.times, 4);
+
+console.log('\n   กดซ้ำเพราะเน็ตหลุด ต้องไม่แก้สองรอบ');
+var dup35 = api35.reviseDoc({ no: d35.no, why: 'ปลดแล้วแก้ต่อได้', by: 'AEY',
+  vatMode: 'excl', clientKey: 'rk-35-10' });
+truthy2('ตอบว่าเป็นการกดซ้ำ', !!dup35.repeat);
+eq('ยังนับเป็นครั้งที่ 4 อยู่',
+  (String(doc35.cell(row35, DOC_NOTE).v).match(/แก้ไขครั้งที่ /g) || []).length, 4);
+
+console.log('\n   สิ่งที่ต้องปฏิเสธ');
+throws('ไม่บอกเหตุผล',
+  function () { api35.reviseDoc({ no: d35.no, why: '', by: 'AEY', clientKey: 'rk-35-3' }) },
+  'อย่างน้อย 5 ตัวอักษร');
+throws('ใบที่ไม่มีจริง',
+  function () { api35.reviseDoc({ no: 'ONIV26-99999', why: 'ยอดผิดต้องแก้', clientKey: 'rk-35-4' }) },
+  'ไม่พบใบเลขที่');
+
+console.log('\n   ใบที่ยกเลิกไปแล้วต้องแก้ไม่ได้ — ต้องออกใบใหม่แทน');
+api35.voidDoc(d35.no, 'ยกเลิกเพื่อทดสอบ', 'AEY');
+throws('ใบที่ยกเลิกแล้ว',
+  function () { api35.reviseDoc({ no: d35.no, why: 'ขอแก้ยอดอีกที', clientKey: 'rk-35-5' }) },
+  'ถูกยกเลิกไปแล้ว');
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over35 = [];
+for (var nm35 in fx35.sheets) over35 = over35.concat(fx35.sheets[nm35].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over35, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

@@ -447,6 +447,229 @@ function issueDoc(payload) {
   }
 }
 
+/** แถวของเอกสารในทะเบียน — 0 ถ้าไม่มี */
+function docRow_(no) {
+  var s = sheet_('doc');
+  var last = formulaLimit_('doc');
+  if (last < DATA_ROW) return 0;
+  var want = String(no || '').trim();
+  var v = s.getRange(DATA_ROW, SH.doc.IN.no, last - DATA_ROW + 1, 1).getValues();
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][0] || '').trim() === want) return DATA_ROW + i;
+  }
+  return 0;
+}
+
+function docTypeByTh_(th) {
+  var want = String(th || '').trim();
+  for (var i = 0; i < DOC_TYPES.length; i++) if (DOC_TYPES[i].th === want) return DOC_TYPES[i];
+  return null;
+}
+
+/** ค่าทุกช่องกรอกของแถวเอกสารหนึ่งแถว — อ่านรวดเดียว */
+function docRowValues_(row) {
+  var sh = sheet_('doc'), C = SH.doc.IN;
+  /* ต้องอ่านให้ถึงคอลัมน์สุดท้ายจริง ๆ ไม่งั้นช่อง "ส่งให้ลูกค้าแล้วเมื่อ" จะอ่านได้เป็นว่าง
+     แล้วด่านที่ห้ามแก้ใบที่ส่งไปแล้วจะไม่ทำงานเลย โดยไม่มีอะไรฟ้อง */
+  var lo = C.no, hi = C.sentAt;
+  var v = sh.getRange(row, lo, 1, hi - lo + 1).getValues()[0];
+  var out = {};
+  for (var f in C) out[f] = v[C[f] - lo];
+  return out;
+}
+
+/**
+ * เขียนเนื้อใบเดิมใหม่ทั้งใบ โดยใช้เลขเดิม — แกนกลางของการ "แก้ใบ"
+ *
+ * ประกอบใหม่จากออเดอร์ตอนนี้ เหมือนตอนออกใบครั้งแรกทุกอย่าง
+ *
+ * ช่องที่หน้าจอไม่ได้ส่งมา ให้คงของเดิมไว้ ห้ามเขียนทับด้วยค่าว่าง
+ * ไม่งั้นการแก้แค่ยอด จะล้างชื่อผู้เสียภาษีกับที่อยู่ของใบทิ้งไปโดยไม่มีใครรู้
+ */
+function reviseRow_(row, why, p, email) {
+  var cur = docRowValues_(row);
+  var no = String(cur.no || '').trim();
+
+  var voided = String(cur.voidWhy || '').trim();
+  if (voided) {
+    throw new Error('ใบ ' + no + ' ถูกยกเลิกไปแล้ว (' + voided + ') — ' +
+      'แก้ใบที่ยกเลิกแล้วไม่ได้ ให้ออกใบใหม่แทน');
+  }
+
+  /* เส้นแบ่งเดียวที่ตัดสินได้จริงว่าแก้ใบเดิมได้ไหม คือใบออกจากร้านไปหรือยัง
+     ระบบเดาเองไม่ได้ จึงให้คนกดบอก แล้วยึดตามนั้นอย่างเคร่งครัด */
+  var sent = String(cur.sentAt || '').trim();
+  if (sent) {
+    throw new Error('ใบ ' + no + ' ถูกทำเครื่องหมายว่าส่งให้ลูกค้าแล้ว (' + sent + ') — ' +
+      'แก้ไม่ได้ เพราะใบที่ลูกค้าถืออยู่จะไม่ตรงกับในระบบ ' +
+      'ให้ยกเลิกใบนี้แล้วออกใบใหม่แทน');
+  }
+
+  var t = docTypeByTh_(cur.type);
+  if (!t) throw new Error('ใบ ' + no + ' มีชนิดเอกสารเป็น "' + cur.type + '" ซึ่งระบบไม่รู้จัก');
+
+  var orderNo = String(cur.orderNo || '').trim();
+  var oldTotal = Number(cur.total || 0);
+  var oldNote = String(cur.note || '');
+  var oldSnap = null;
+  try { oldSnap = JSON.parse(String(cur.snap || '')); } catch (e) { oldSnap = null; }
+
+  var src;
+  if (t.quote) {
+    src = { items: p.items || (oldSnap && oldSnap.lines) || [], ship: p.ship, discount: p.discount };
+  } else {
+    if (!orderNo) throw new Error('ใบ ' + no + ' ไม่ได้อ้างออเดอร์ไว้ จึงประกอบใหม่ให้ไม่ได้');
+    var ord = findOrder_(orderNo);
+    if (!ord) throw new Error('ไม่พบออเดอร์ ' + orderNo + ' ในชีท');
+    src = { items: ord.items, ship: ord.ship, discount: ord.discount };
+  }
+
+  /* วิธีคิดภาษีต้องเป็นแบบเดิมของใบนั้น ถ้าหน้าจอไม่ได้สั่งมาเป็นอย่างอื่น */
+  var novat = (p.novat !== undefined) ? !!p.novat : !!(oldSnap && oldSnap.novat);
+  var vatMode = p.vatMode || (oldSnap && oldSnap.vatMode) || appCfg_().vatMode;
+  var d = buildDoc_(t.key, src, { vatRate: novat ? 0 : cfgGet_().vatRate, vatMode: vatMode });
+
+  var has = function (k) { return p[k] !== undefined && p[k] !== null; };
+  var cu = p.cust || {
+    name: cur.custName, taxId: cur.custTaxId, branch: cur.custBranch,
+    addr: cur.custAddr, tel: cur.custTel, email: cur.custEmail
+  };
+  var po = has('po') ? p.po : cur.po;
+  var terms = has('terms') ? p.terms : cur.terms;
+  var form = has('form') ? p.form : ((oldSnap && oldSnap.form) || []);
+  var date = (cur.date instanceof Date) ? isoDate_(cur.date) : String(cur.date || '');
+
+  /* นับว่าแก้เป็นครั้งที่เท่าไร จากร่องรอยที่เคยเขียนไว้ในหมายเหตุ */
+  var times = (oldNote.match(/\[แก้ไขครั้งที่ /g) || []).length + 1;
+  var who = String(p.by || '').trim() || email;
+  var stamp = '[แก้ไขครั้งที่ ' + times + ': ' + why + ' · ยอดเดิม ' + oldTotal +
+    ' โดย ' + who + ' ' + stampTime_() + ']';
+  var note = String(has('note') ? p.note : oldNote).trim();
+  /* ร่องรอยการแก้ต้องไม่หาย แม้หน้าจอจะส่งหมายเหตุใหม่มาทั้งก้อน */
+  if (note.indexOf('[แก้ไขครั้งที่ ') < 0) {
+    var keep = oldNote.match(/\[แก้ไขครั้งที่ [^\]]*\]/g);
+    if (keep) note = (note ? note + ' ' : '') + keep.join(' ');
+  }
+  note = ((note ? note + ' ' : '') + stamp).slice(0, 900);
+
+  writeRow_('doc', row, {
+    custName: String(cu.name || ''), custTaxId: String(cu.taxId || ''),
+    custBranch: String(cu.branch || ''), custAddr: String(cu.addr || ''),
+    custTel: String(cu.tel || ''), custEmail: String(cu.email || ''),
+    custCode: String((p.cust && p.cust.code) || cur.custCode || ''),
+    po: String(po || ''), terms: String(terms || ''),
+    base: d.base, vat: d.vat, total: d.total,
+    staff: who.slice(0, 40),
+    note: note,
+    snap: docSnap_(d, {
+      cust: cu, po: po, terms: terms, date: date, note: note, form: form,
+      validTo: (oldSnap && oldSnap.validTo) || '', vatMode: vatMode, novat: novat
+    }, no, t)
+  });
+
+  writeLog_(email, 'แก้ไขเอกสาร', SH.doc.name, no, t.th, oldTotal, d.total,
+    why + ' · แก้ครั้งที่ ' + times + ' โดย ' + who + ' (บัญชี ' + email + ')' +
+    (orderNo ? ' · ออเดอร์ ' + orderNo : ''));
+
+  return { no: no, doc: d, row: row, times: times, before: oldTotal, type: t.th };
+}
+
+/**
+ * แก้เนื้อใบที่ออกผิด "โดยยังไม่ได้ส่งให้ลูกค้า" — เลขใบเดิม ไม่กินเลขใหม่
+ *
+ * ของเดิมมีทางเดียวคือยกเลิกใบเก่าแล้วออกใบใหม่ ซึ่งถูกต้องเมื่อใบไปถึงมือลูกค้าแล้ว
+ * แต่ถ้าใบยังไม่ออกจากร้าน การเผาเลขทิ้งใบหนึ่งทุกครั้งที่พิมพ์ผิดทำให้เล่มเต็มไปด้วย
+ * ใบยกเลิก และเลขที่ใช้จริงกระโดดจนตามยาก ซึ่งเป็นเรื่องที่เจ้าของร้านเจอจริงทุกวัน
+ *
+ * สิ่งที่ไม่ถูกแตะเด็ดขาด
+ *   เลขที่เอกสาร — ทั้งเล่มจึงยังเรียงครบ ไม่มีเลขข้ามและไม่มีเลขซ้ำ
+ *   วันที่บนใบ   — วันที่คือจุดตั้งต้นทางภาษี ขยับไม่ได้ ถ้าจะเปลี่ยนวันต้องออกใบใหม่
+ *   ชนิดเอกสาร   — ใบเสร็จแก้เป็นใบแจ้งหนี้ไม่ได้ คนละเล่มคนละชุดเลข
+ *
+ * ทุกครั้งที่แก้ ยอดเดิมถูกจดไว้ในช่องหมายเหตุของใบและใน Log
+ * ใบที่แก้ไปแล้วกี่ครั้งจึงตรวจย้อนได้เสมอ ไม่ใช่เงียบหายไปกับการเขียนทับ
+ */
+function reviseDoc(payload) {
+  var email = requireStaff_();
+  var p = payload || {};
+  var want = String(p.no || '').trim();
+  if (!want) throw new Error('ไม่ได้บอกว่าจะแก้ใบไหน');
+
+  var why = String(p.why || '').trim();
+  if (why.length < 5) {
+    throw new Error('ต้องบอกเหตุผลที่แก้อย่างน้อย 5 ตัวอักษร — ' +
+      'ใบเดียวกันที่ยอดเปลี่ยนต้องอธิบายได้ว่าเปลี่ยนเพราะอะไร');
+  }
+
+  var ck = String(p.clientKey || '').trim();
+  var props = PropertiesService.getScriptProperties();
+  if (ck && props.getProperty('rk_' + ck)) return { ok: true, no: want, repeat: true };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    if (ck && props.getProperty('rk_' + ck)) return { ok: true, no: want, repeat: true };
+
+    var row = docRow_(want);
+    if (!row) throw new Error('ไม่พบใบเลขที่ ' + want + ' ในชีท ' + SH.doc.name);
+
+    var r = reviseRow_(row, why, p, email);
+    SpreadsheetApp.flush();
+    if (ck) props.setProperty('rk_' + ck, want);
+    r.ok = true;
+    return r;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ทำเครื่องหมายว่าใบนี้ส่งให้ลูกค้าไปแล้ว — ปิดประตูการแก้ใบเดิมถาวร
+ *
+ * ตราบใดที่ใบยังอยู่ในร้าน แก้กี่ครั้งก็ได้ด้วยเลขเดิม (ระบบเพิ่งเริ่มใช้ ยังต้องลองผิดลองถูก)
+ * แต่วินาทีที่ใบออกจากร้าน กติกาเปลี่ยนทันที เพราะลูกค้าถือกระดาษอยู่ในมือแล้ว
+ * ตั้งแต่นั้นต้องยกเลิกแล้วออกใบใหม่เท่านั้น
+ *
+ * กดพลาดแล้วปลดได้ ด้วยการล้างช่อง "ส่งให้ลูกค้าแล้วเมื่อ" ในชีท เอกสาร
+ * แต่ต้องทำในชีทโดยตั้งใจ ไม่ใช่เผลอกดปุ่มในแอป
+ */
+function markSent(no, by) {
+  var email = requireStaff_();
+  var want = String(no || '').trim();
+  if (!want) throw new Error('ไม่ได้บอกว่าจะทำเครื่องหมายใบไหน');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var row = docRow_(want);
+    if (!row) throw new Error('ไม่พบใบเลขที่ ' + want + ' ในชีท ' + SH.doc.name);
+
+    var sh = sheet_('doc');
+    var C = SH.doc.IN;
+    var had = String(sh.getRange(row, C.sentAt).getValue() || '').trim();
+    if (had) return { ok: true, no: want, at: had, already: true };
+
+    var who = String(by || '').trim() || email;
+    var at = stampTime_() + ' โดย ' + who;
+    writeRow_('doc', row, { sentAt: at });
+    SpreadsheetApp.flush();
+    writeLog_(email, 'ส่งเอกสาร', SH.doc.name, want, 'ส่งให้ลูกค้าแล้ว', '', at,
+      'กดจากแอปโดย ' + who + ' (บัญชี ' + email + ') — ตั้งแต่นี้แก้ใบนี้ไม่ได้แล้ว');
+    return { ok: true, no: want, at: at };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** แก้ใบที่ยังใช้อยู่ทุกใบของออเดอร์หนึ่ง ให้ตรงกับออเดอร์ที่เพิ่งแก้ */
+function reviseOrderDocs_(orderNo, why, by, email) {
+  var rows = liveDocRowsOf_(orderNo), out = [];
+  for (var i = 0; i < rows.length; i++) {
+    out.push(reviseRow_(rows[i].row, why, { by: by }, email));
+  }
+  return out;
+}
+
 /** เลขเอกสารที่เคยออกไปแล้วทั้งหมด + ดัชนีว่าออเดอร์ไหนออกใบชนิดไหนไปแล้ว */
 function readDocNos_() {
   var out = { nos: [], byOrder: {} };
@@ -499,6 +722,9 @@ function docSnap_(d, p, no, t) {
       },
       po: String(p.po || ''), terms: String(p.terms || ''),
       note: String(p.note || ''), validTo: String(p.validTo || ''),
+      /* วิธีคิดภาษีของใบนี้ ต้องเก็บไว้ ไม่งั้นตอนแก้ใบทีหลังจะเดาไม่ถูก
+         แล้วใบเดิมที่ไม่คิด VAT อาจกลายเป็นคิด VAT ขึ้นมาเงียบ ๆ */
+      vatMode: String(p.vatMode || ''), novat: !!p.novat,
       /* ชื่อที่คนออกใบเลือกให้ขึ้นเข้มบนหัวใบ ต้องเก็บไว้ด้วย
          ไม่งั้นพิมพ์ซ้ำแล้วได้หัวใบคนละแบบกับใบที่ลูกค้าถืออยู่ */
       form: (p.form || []).map(Number).filter(function (n) { return n >= 0 && n <= 3; })
@@ -523,7 +749,7 @@ function listDocs(orderNo) {
   if (last < DATA_ROW) return [];
   var n = last - DATA_ROW + 1;
   var C = SH.doc.IN;
-  var v = s.getRange(DATA_ROW, C.no, n, C.snap - C.no + 1).getValues();
+  var v = s.getRange(DATA_ROW, C.no, n, C.sentAt - C.no + 1).getValues();
   var at = function (col) { return col - C.no; };
   var out = [];
   for (var i = 0; i < v.length; i++) {
@@ -538,6 +764,8 @@ function listDocs(orderNo) {
       custName: String(v[i][at(C.custName)] || ''),
       total: Number(v[i][at(C.total)] || 0),
       voidWhy: String(v[i][at(C.voidWhy)] || '').trim(),
+      /* ส่งไปแล้วหรือยัง เป็นตัวตัดสินว่าหน้าจอจะโชว์ปุ่มแก้ใบให้ไหม */
+      sentAt: String(v[i][at(C.sentAt)] || '').trim(),
       hasSnap: !!String(v[i][at(C.snap)] || '').trim()
     });
   }
@@ -1018,7 +1246,7 @@ function restoreRows_(key, snaps) {
 }
 
 /** ใบที่ออกให้ออเดอร์นี้และยังไม่ถูกยกเลิก — แก้ของในออเดอร์ทั้งที่ใบออกไปแล้วไม่ได้ */
-function liveDocsOf_(no) {
+function liveDocRowsOf_(no) {
   var want = String(no).trim(), out = [];
   var s = sheetIfAny_('doc');
   if (!s) return out;
@@ -1030,9 +1258,14 @@ function liveDocsOf_(no) {
   for (var i = 0; i < v.length; i++) {
     if (String(v[i][C.orderNo - C.no] || '').trim() !== want) continue;
     if (String(v[i][C.voidWhy - C.no] || '').trim()) continue;   /* ยกเลิกแล้วไม่นับ */
-    out.push(String(v[i][0] || '').trim() + ' (' + String(v[i][C.type - C.no] || '').trim() + ')');
+    out.push({ row: DATA_ROW + i, no: String(v[i][0] || '').trim(),
+               type: String(v[i][C.type - C.no] || '').trim() });
   }
   return out;
+}
+
+function liveDocsOf_(no) {
+  return liveDocRowsOf_(no).map(function (d) { return d.no + ' (' + d.type + ')'; });
 }
 
 /**
@@ -1052,7 +1285,7 @@ function liveDocsOf_(no) {
  *   ออเดอร์ที่ออกใบกำกับภาษี/ใบเสร็จไปแล้วและยังไม่ยกเลิกใบนั้น —
  *   ใบที่ลูกค้าถืออยู่จะไม่ตรงกับของที่ส่งจริง ต้องยกเลิกใบเดิมก่อนแล้วออกใบใหม่
  */
-function editOrderItems(no, items, by, clientKey) {
+function editOrderItems(no, items, by, clientKey, opts) {
   var email = requireStaff_();
   var want = String(no || '').trim();
   if (!want) throw new Error('ไม่ได้บอกว่าจะแก้ออเดอร์ไหน');
@@ -1081,11 +1314,17 @@ function editOrderItems(no, items, by, clientKey) {
       throw new Error('ออเดอร์ ' + want + ' ถูกยกเลิกไปแล้ว แก้รายการไม่ได้');
     }
 
+    /* ใบที่ออกไปแล้วมีสองกรณี และตัดสินใจแทนเจ้าของร้านไม่ได้
+         ใบถึงมือลูกค้าแล้ว  → ห้ามแก้ ต้องยกเลิกใบเดิมแล้วออกใบใหม่
+         ใบยังไม่ได้ส่ง      → แก้ใบตามให้ได้เลย ใช้เลขเดิม ไม่ต้องเผาเลขทิ้ง
+       หน้าจอจึงถามก่อน แล้วส่ง fixDocs มาบอกว่าเลือกทางไหน */
+    var fixDocs = !!(opts && opts.reviseDocs);
     var docs = liveDocsOf_(want);
-    if (docs.length) {
+    if (docs.length && !fixDocs) {
       throw new Error('ออเดอร์ ' + want + ' ออกเอกสารไปแล้ว: ' + docs.join(', ') +
-        ' — แก้รายการตอนนี้จะทำให้ใบที่ลูกค้าถืออยู่ไม่ตรงกับของที่ส่งจริง ' +
-        'ให้ยกเลิกใบเดิมก่อน แล้วแก้รายการ แล้วค่อยออกใบใหม่');
+        ' — ถ้าใบยังไม่ได้ส่งให้ลูกค้า ให้ติ๊ก "แก้ใบที่ออกไปแล้วตามด้วย" ' +
+        'ระบบจะแก้ใบให้โดยใช้เลขเดิม · ถ้าลูกค้าถือใบอยู่แล้ว ต้องยกเลิกใบเดิมก่อน ' +
+        'แล้วแก้รายการ แล้วค่อยออกใบใหม่');
     }
 
     var rows = orderRows_(want);
@@ -1125,8 +1364,17 @@ function editOrderItems(no, items, by, clientKey) {
       String(rows.item.length) + ' รายการ', String(plan.items.length) + ' รายการ',
       'แก้จากแอป โดย ' + plan.staff + ' (บัญชี ' + email + ') · ยอดสินค้าใหม่ ' + plan.subtotal);
 
+    /* แก้ใบตามหลังจากยอดในชีทถูกต้องแล้วเท่านั้น ใบจะได้ไม่ไปยึดยอดกลางคัน */
+    var fixed = [];
+    if (fixDocs && docs.length) {
+      fixed = reviseOrderDocs_(want, 'แก้รายการสินค้าในออเดอร์ ' + want +
+        ' (ใบยังไม่ได้ส่งให้ลูกค้า)', by, email);
+      SpreadsheetApp.flush();
+    }
+
     return { ok: true, no: want, subtotal: plan.subtotal, lots: plan.lotNote,
-             before: rows.item.length, after: plan.items.length };
+             before: rows.item.length, after: plan.items.length,
+             docs: fixed.map(function (f) { return f.no + ' → ' + f.doc.total; }) };
   } catch (err) {
     rollback_(written);
     /* ของเดิมถูกรื้อไปแล้วต้องเขียนคืน ไม่งั้นออเดอร์จะเหลือหัวบิลเปล่า ๆ ไม่มีของ

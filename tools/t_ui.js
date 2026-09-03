@@ -1121,6 +1121,79 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal() });
   await page.waitForTimeout(200);
 
+  /* ---------- 25. แก้ใบที่ยังไม่ได้ส่ง + ปุ่มส่งแล้ว ---------- */
+  console.log('\n25. แก้ใบที่ยังไม่ได้ส่งลูกค้า และปุ่ม "ส่งแล้ว"');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { MOCK_DOCS.length = 0; loadOrders(true) });
+  await page.waitForTimeout(500);
+
+  /* ออกใบให้ออเดอร์ใบแรกก่อน แล้วค่อยแก้ */
+  await page.locator('#list [data-dc]').first().click();
+  await page.waitForTimeout(400);
+  await page.click('#dc-make');
+  await page.waitForTimeout(900);
+  var docNo = await page.evaluate(function () { return MOCK_DOCS[0].no });
+  truthy('ออกใบได้', !!docNo);
+  var totalBefore = await page.evaluate(function () { return MOCK_DOCS[0].doc.total });
+
+  await page.evaluate(function () { drawOldDocs(ORDERS[0].no) });
+  await page.waitForTimeout(500);
+  truthy('ใบที่ยังไม่ส่งมีปุ่มแก้ไขใบ', await page.locator('#dc-old [data-rv]').count() > 0);
+  truthy('และมีปุ่มบอกว่าส่งแล้ว', await page.locator('#dc-old [data-sd]').count() > 0);
+  truthy('ขึ้นป้ายว่ายังไม่ได้ส่ง', /ยังไม่ได้ส่ง/.test(await page.textContent('#dc-old')));
+
+  console.log('\n   กดแก้ไขใบ ต้องบังคับให้บอกเหตุผลก่อน');
+  await page.locator('#dc-old [data-rv]').first().click();
+  await page.waitForTimeout(250);
+  await page.click('#dc-old .rv-go');
+  await page.waitForTimeout(250);
+  truthy('เตือนว่าต้องมีเหตุผล 5 ตัวอักษร',
+    /5 ตัวอักษร/.test(await page.textContent('#dc-old .rv-msg')));
+
+  console.log('\n   แก้จริงแล้วเลขใบต้องไม่เปลี่ยน');
+  await page.evaluate(function () {
+    window.confirm = function () { return true };
+    /* ลูกค้าขอลดราคา — ยอดใหม่ต้องไปโผล่บนใบเดิม */
+    MOCK_ORDERS[0].items[0].price = 500;
+    MOCK_ORDERS[0].items[0].total = 500;
+  });
+  await page.fill('#dc-old .rv-why', 'ยอดผิด ใบยังไม่ได้ส่ง');
+  await page.click('#dc-old .rv-go');
+  await page.waitForTimeout(800);
+  var after = await page.evaluate(function () {
+    return { n: MOCK_DOCS.length, no: MOCK_DOCS[0].no, total: MOCK_DOCS[0].doc.total,
+             note: MOCK_DOCS[0].note || '' };
+  });
+  eq('ไม่มีใบใหม่งอกขึ้นมา', after.n, 1);
+  eq('ยังเป็นเลขใบเดิม', after.no, docNo);
+  truthy('ยอดบนใบเปลี่ยนตามออเดอร์', after.total !== totalBefore);
+  truthy('จดร่องรอยว่าแก้ครั้งที่ 1', /แก้ไขครั้งที่ 1/.test(after.note));
+  truthy('จดยอดเดิมไว้ด้วย', after.note.indexOf(String(totalBefore)) > -1);
+
+  console.log('\n   กดว่าส่งแล้ว ปุ่มแก้ต้องหายไป');
+  await page.evaluate(function () { drawOldDocs(ORDERS[0].no) });
+  await page.waitForTimeout(400);
+  await page.locator('#dc-old [data-sd]').first().click();
+  await page.waitForTimeout(800);
+  truthy('บันทึกว่าส่งแล้ว', await page.evaluate(function () { return !!MOCK_DOCS[0].sentAt }));
+  eq('ปุ่มแก้ไขใบหายไปแล้ว', await page.locator('#dc-old [data-rv]').count(), 0);
+  eq('ปุ่มส่งแล้วก็หายไปด้วย', await page.locator('#dc-old [data-sd]').count(), 0);
+  truthy('ขึ้นป้ายว่าส่งแล้ว', /ส่งแล้ว/.test(await page.textContent('#dc-old')));
+  truthy('ยังยกเลิกได้อยู่', await page.locator('#dc-old [data-vd]').count() > 0);
+
+  console.log('\n   ใบที่ส่งแล้ว ถ้าฝืนแก้ต้องโดนปฏิเสธพร้อมบอกทางออก');
+  var refused = await page.evaluate(async function (no) {
+    try {
+      await api('reviseDoc', { no: no, why: 'ขอแก้อีกที', clientKey: 'x1' });
+      return 'ไม่ได้ปฏิเสธ';
+    } catch (e) { return e.message }
+  }, docNo);
+  truthy('บอกว่าส่งไปแล้วจึงแก้ไม่ได้', /ส่งให้ลูกค้าแล้ว/.test(refused));
+
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

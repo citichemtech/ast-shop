@@ -1074,21 +1074,47 @@ function drawOldDocs(orderNo, boxSel){
     box.innerHTML = '<div class="subhd">ใบที่ออกไปแล้ว — กดพิมพ์ซ้ำได้เลย</div>'
       + list.map(function(d){
           var dead = !!d.voidWhy;
+          /* ใบที่ยังไม่ได้ส่ง = ยังอยู่ในร้าน แก้ด้วยเลขเดิมได้ไม่จำกัด
+             ใบที่กดส่งแล้ว = ลูกค้าถือกระดาษอยู่ ห้ามแก้ ต้องยกเลิกแล้วออกใหม่ */
+          var sent = String(d.sentAt || "");
           return '<div class="row"><div class="i">'
             +'<b>'+esc(d.no)+'</b>'
             +'<span>'+esc(d.type)+' · '+esc(d.date||"")+' · '+baht(d.total)
             + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
+            + (!dead && sent ? ' · <span style="color:var(--green)">ส่งแล้ว</span>' : '')
+            + (!dead && !sent ? ' · <span style="color:var(--amber)">ยังไม่ได้ส่ง</span>' : '')
             +'</span>'
             + (dead ? '<span style="color:var(--red)">'+esc(d.voidWhy)+'</span>' : '')
+            + (!dead && sent ? '<span style="color:var(--gray)">ส่งเมื่อ '+esc(sent)+'</span>' : '')
             +'</div><div class="acts">'
             +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
             /* ใบที่ยกเลิกไปแล้วไม่มีปุ่มให้กดซ้ำ เหตุผลครั้งแรกจะได้ไม่ถูกทับหาย */
+            + (dead || sent ? '' : '<button class="mini" data-rv="'+esc(d.no)+'">แก้ไขใบ</button>')
+            + (dead || sent ? '' : '<button class="mini" data-sd="'+esc(d.no)+'">ส่งแล้ว</button>')
             + (dead ? '' : '<button class="mini red" data-vd="'+esc(d.no)+'">ยกเลิก</button>')
             +'</div></div>';
         }).join("")
       + '<div id="'+outId+'" style="margin-top:10px"></div>';
     box.querySelectorAll("[data-rp]").forEach(function(b){
       b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
+    });
+    box.querySelectorAll("[data-rv]").forEach(function(b){
+      b.onclick = function(){ askRevise(b.getAttribute("data-rv"), b, orderNo, sel) };
+    });
+    box.querySelectorAll("[data-sd]").forEach(function(b){
+      b.onclick = function(){
+        var no = b.getAttribute("data-sd");
+        if(!confirm("ทำเครื่องหมายว่าส่งใบ "+no+" ให้ลูกค้าแล้ว?\n\n"
+                  + "หลังจากนี้จะแก้ใบนี้ไม่ได้อีก ต้องยกเลิกแล้วออกใบใหม่แทน")) return;
+        b.disabled = true; b.textContent = "กำลังบันทึก…";
+        api("markSent", no, byName()).then(function(){
+          toast("บันทึกว่าส่งใบ "+no+" แล้ว");
+          drawOldDocs(orderNo, sel);
+        }, function(e){
+          b.disabled = false; b.textContent = "ส่งแล้ว";
+          toast("ไม่สำเร็จ: " + (e && e.message ? e.message : e));
+        });
+      };
     });
     box.querySelectorAll("[data-vd]").forEach(function(b){
       b.onclick = function(){ askVoid(b.getAttribute("data-vd"), b, orderNo, sel) };
@@ -1103,6 +1129,81 @@ function drawOldDocs(orderNo, boxSel){
    ไม่ทำเป็น "แก้ไข" ที่เขียนทับใบเดิม เพราะใบที่ออกไปแล้วลูกค้าถืออยู่ในมือ
    แก้ในระบบเงียบ ๆ แล้วใบสองใบไม่ตรงกันคือปัญหาตอนสรรพากรตรวจ
    วิธีที่ถูกคือติดป้ายว่ายกเลิกพร้อมเหตุผล แล้วออกใบใหม่แทน */
+/* แก้เนื้อใบที่ออกผิดแต่ยังไม่ได้ส่งให้ลูกค้า — เลขใบเดิม ไม่กินเลขใหม่
+
+   เจ้าของร้านเจอทุกวัน: กดออกใบแล้วเพิ่งเห็นว่ายอดหรือชื่อผิด ทั้งที่ใบยังอยู่ในจอ
+   ทางเดิมมีแค่ยกเลิกแล้วออกใหม่ ซึ่งถูกเมื่อใบถึงมือลูกค้าแล้ว
+   แต่ถ้าใบยังไม่ออกจากร้าน มันแค่เผาเลขทิ้งใบหนึ่งทุกครั้งที่พิมพ์ผิด
+
+   ปุ่มนี้จึงถามยืนยันเรื่องเดียวที่ตัดสินว่าทำได้ไหม: ใบถึงมือลูกค้าหรือยัง */
+function askRevise(no, btn, orderNo, boxSel){
+  var row = btn.closest(".row");
+  if (row.querySelector(".rvbox")) { row.querySelector(".rv-why").focus(); return }
+
+  var box = document.createElement("div");
+  box.className = "rvbox";
+  box.innerHTML =
+    '<div class="hint" style="margin-bottom:6px">แก้ใบ <b>'+esc(no)+'</b> โดยใช้เลขเดิม — '
+      +'ระบบจะประกอบใบใหม่จากออเดอร์ตอนนี้ทั้งใบ (ยอด ข้อมูลผู้ซื้อ และตัวกระดาษ)<br>'
+      +'<b>วันที่กับชนิดเอกสารไม่เปลี่ยน</b> · ยอดเดิมถูกจดไว้ในหมายเหตุของใบทุกครั้ง<br>'
+      +'<b style="color:var(--red)">แก้ได้จนกว่าจะกดปุ่ม "ส่งแล้ว"</b> — '
+      +'พอกดส่งแล้ว ใบนี้จะแก้ไม่ได้อีก ต้องยกเลิกแล้วออกใบใหม่แทน</div>'
+    +'<input class="rv-why" placeholder="เหตุผล เช่น ยอดผิด แก้ราคาแล้วออกใหม่">'
+    +'<div style="display:flex;gap:8px;margin-top:8px">'
+    +'<button class="mini rv-go">ยืนยันแก้ใบนี้</button>'
+    +'<button class="mini rv-no">ไม่แก้</button></div>'
+    +'<div class="rv-msg hint" style="margin-top:6px"></div>';
+  row.appendChild(box);
+
+  var why = box.querySelector(".rv-why");
+  var msg = box.querySelector(".rv-msg");
+  why.focus();
+  box.querySelector(".rv-no").onclick = function(){ box.remove() };
+  why.onkeydown = function(e){ if (e.key === "Enter") box.querySelector(".rv-go").click() };
+
+  /* กุญแจกันซ้ำต่อการกดหนึ่งครั้ง เน็ตหลุดแล้วกดใหม่ต้องไม่แก้สองรอบ */
+  var rvKey = newKey();
+
+  box.querySelector(".rv-go").onclick = function(){
+    var r = why.value.trim();
+    if (r.length < 5) {
+      msg.style.color = "var(--red)";
+      msg.textContent = "ต้องบอกเหตุผลอย่างน้อย 5 ตัวอักษร — ใบเดียวกันที่ยอดเปลี่ยนต้องอธิบายได้";
+      why.focus();
+      return;
+    }
+    if (!confirm("แก้ใบ " + no + " โดยใช้เลขเดิม?\n\n"
+               + "ยืนยันว่าใบนี้ยังไม่ได้ส่งให้ลูกค้า")) return;
+
+    var go = box.querySelector(".rv-go");
+    go.disabled = true; go.textContent = "กำลังแก้…";
+    msg.style.color = ""; msg.textContent = "";
+    /* ข้อมูลผู้ซื้อใช้ของที่กรอกไว้บนหน้าจอตอนนี้ ถ้ายังเปิดหน้าออกเอกสารค้างอยู่
+       ไม่งั้นการแก้ยอดจะล้างชื่อผู้เสียภาษีของใบเดิมทิ้งไปโดยไม่ตั้งใจ */
+    var cust = $("#dc-name") ? {
+      name: $("#dc-name").value.trim(), taxId: $("#dc-tax").value.replace(/[^\d]/g,""),
+      branch: $("#dc-branch").value, addr: $("#dc-addr").value.trim(),
+      tel: $("#dc-tel").value.trim(), email: $("#dc-email").value.trim()
+    } : null;
+    var vatSel = $("#dc-vat") ? $("#dc-vat").value : "excl";
+
+    api("reviseDoc", {
+      no: no, why: r, by: byName(), cust: cust,
+      po: $("#dc-po") ? $("#dc-po").value.trim() : "",
+      terms: $("#dc-terms") ? $("#dc-terms").value : "",
+      vatMode: vatSel === "incl" ? "incl" : "excl", novat: vatSel === "none",
+      clientKey: "rv-" + no + "-" + rvKey
+    }).then(function(res){
+      toast("แก้ใบ " + no + " แล้ว · ยอดใหม่ " + baht(res.doc ? res.doc.total : 0));
+      drawOldDocs(orderNo, boxSel);
+    }, function(e){
+      go.disabled = false; go.textContent = "ยืนยันแก้ใบนี้";
+      msg.style.color = "var(--red)";
+      msg.textContent = "แก้ไม่สำเร็จ: " + (e && e.message ? e.message : e);
+    });
+  };
+}
+
 function askVoid(no, btn, orderNo, boxSel){
   var row = btn.closest(".row");
   if (row.querySelector(".vdbox")) { row.querySelector(".vd-why").focus(); return }
@@ -1442,6 +1543,8 @@ function openEditItems(o){
     +'เลขออเดอร์ ลูกค้า ค่าส่ง ส่วนลด ยังเป็นของเดิม<br>'
     +'ใบที่ออกเอกสารไปแล้ว ต้องยกเลิกใบเดิมก่อนจึงแก้ได้</div>'
     +'<div id="ed-rows"></div>'
+    +'<label class="giftck" style="margin-top:8px"><input type="checkbox" id="ed-fixdoc">'
+    +' แก้ใบที่ออกไปแล้วตามด้วย (ใช้เลขเดิม) — เฉพาะใบที่ยังไม่ได้กด “ส่งแล้ว”</label>'
     +'<button class="btn ghost" id="ed-add" style="margin-top:8px">+ เพิ่มสินค้า</button>'
     +'<div class="sum" id="ed-sum" style="margin-top:12px"></div>'
     +'<button class="btn" id="ed-save" style="margin-top:12px">บันทึกรายการใหม่</button>'
@@ -1554,13 +1657,16 @@ function edSave(o, btn){
   $("#ed-msg").innerHTML = "";
   /* กุญแจกันบันทึกซ้ำ — กดสองทีเพราะเน็ตช้า ต้องไม่ได้ผลสองรอบ */
   if(!ED_KEY) ED_KEY = newKey();
-  api("editOrderItems", o.no, items, byName(), "ed-" + o.no + "-" + ED_KEY).then(function(r){
+  var fixDoc = $("#ed-fixdoc") && $("#ed-fixdoc").checked;
+  api("editOrderItems", o.no, items, byName(), "ed-" + o.no + "-" + ED_KEY,
+      { reviseDocs: !!fixDoc }).then(function(r){
     /* สำเร็จแล้วเปลี่ยนกุญแจ ไม่งั้นถ้าแก้รายการต่ออีกรอบในหน้าต่างเดิม
        เซิร์ฟเวอร์จะเห็นเป็นการกดซ้ำของงานเดิม แล้วไม่ทำอะไรให้เงียบ ๆ */
     ED_KEY = newKey();
     $("#ed-msg").innerHTML = '<div class="msg ok" style="display:block">แก้รายการของ <b>'
       + esc(o.no) + '</b> แล้ว จาก ' + r.before + ' เป็น ' + r.after + ' รายการ · ยอดสินค้า '
       + baht(r.subtotal) + (r.lots && r.lots.length ? '<br>ล็อตที่ตัด: ' + esc(r.lots.join(" · ")) : '')
+      + (r.docs && r.docs.length ? '<br>แก้ใบตามให้แล้ว: ' + esc(r.docs.join(" · ")) : '')
       + '</div>';
     btn.disabled = false; btn.textContent = "บันทึกรายการใหม่";
     SUM_CACHE = null;          /* ยอดสรุปเปลี่ยนแล้ว ต้องโหลดใหม่ ไม่ใช้ของที่จำไว้ */

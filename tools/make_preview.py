@@ -167,21 +167,27 @@ window.google = { script: { run: (function(){
         }).map(function(d){
           return { no:d.no, type:d.type, date:d.date, orderNo:d.orderNo,
                    custName:d.cust.name, total:d.doc.total, voidWhy:d.voidWhy||"",
-                   hasSnap:true };
+                   sentAt:d.sentAt||"", hasSnap:true };
         }).reverse();
       });
     },
-    editOrderItems: function(no, items, by, ck){
+    editOrderItems: function(no, items, by, ck, opts){
       reply(function(){
         var o = MOCK_ORDERS.filter(function(x){ return x.no === String(no) })[0];
         if(!o) throw new Error("ไม่พบออเดอร์ " + no);
         if(!items || !items.length)
           throw new Error("ออเดอร์ต้องมีสินค้าอย่างน้อยหนึ่งบรรทัด");
-        var live = MOCK_DOCS.filter(function(d){
+        var fix = !!(opts && opts.reviseDocs);
+        var liveDocs = MOCK_DOCS.filter(function(d){
           return d.orderNo === String(no) && !d.voidWhy;
-        }).map(function(d){ return d.no + " (" + d.type + ")" });
-        if(live.length) throw new Error("ออเดอร์ " + no + " ออกเอกสารไปแล้ว: "
-          + live.join(", ") + " — ให้ยกเลิกใบเดิมก่อน");
+        });
+        var live = liveDocs.map(function(d){ return d.no + " (" + d.type + ")" });
+        if(live.length && !fix) throw new Error("ออเดอร์ " + no + " ออกเอกสารไปแล้ว: "
+          + live.join(", ") + " — ถ้าใบยังไม่ได้ส่งให้ลูกค้า ให้ติ๊ก "
+          + "“แก้ใบที่ออกไปแล้วตามด้วย” · ถ้าลูกค้าถือใบอยู่แล้ว ต้องยกเลิกใบเดิมก่อน");
+        if(fix) liveDocs.forEach(function(d){
+          if(d.sentAt) throw new Error("ใบ " + d.no + " ถูกทำเครื่องหมายว่าส่งให้ลูกค้าแล้ว");
+        });
         var before = (o.items||[]).length, sub = 0;
         o.items = items.map(function(it, i){
           var qty = Number(it.qty)||0;
@@ -193,7 +199,53 @@ window.google = { script: { run: (function(){
         });
         o.subtotal = sub;
         o.net = sub + Number(o.ship||0) - Number(o.discount||0);
-        return { ok:true, no:o.no, subtotal:sub, lots:[], before:before, after:o.items.length };
+        var fixed = [];
+        if(fix) liveDocs.forEach(function(d){
+          var b = DOC_SRV.buildDoc_(
+            { "ใบเสร็จรับเงิน":"rec", "ใบแจ้งหนี้":"inv" }[d.type] || "rec",
+            { items:o.items, ship:o.ship, discount:o.discount },
+            { vatRate: 0.07, vatMode: "excl" });
+          d.doc = JSON.parse(JSON.stringify(b));
+          fixed.push(d.no + " → " + b.total);
+        });
+        return { ok:true, no:o.no, subtotal:sub, lots:[], before:before,
+                 after:o.items.length, docs:fixed };
+      });
+    },
+    /* แก้เนื้อใบเดิมโดยใช้เลขเดิม — ใช้ได้จนกว่าจะกดว่าส่งแล้ว */
+    reviseDoc: function(p){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(p.no) })[0];
+        if(!f) throw new Error("ไม่พบใบเลขที่ " + p.no + " ในชีท เอกสาร");
+        if(f.voidWhy) throw new Error("ใบ " + p.no + " ถูกยกเลิกไปแล้ว");
+        if(f.sentAt) throw new Error("ใบ " + p.no + " ถูกทำเครื่องหมายว่าส่งให้ลูกค้าแล้ว ("
+          + f.sentAt + ") — แก้ไม่ได้ ให้ยกเลิกแล้วออกใบใหม่แทน");
+        if(String(p.why||"").trim().length < 5)
+          throw new Error("ต้องบอกเหตุผลที่แก้อย่างน้อย 5 ตัวอักษร");
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === f.orderNo })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + f.orderNo);
+        var d = DOC_SRV.buildDoc_(
+          { "ใบเสร็จรับเงิน":"rec", "ใบแจ้งหนี้":"inv", "ใบเสนอราคา":"quote",
+            "ใบรับเงินมัดจำ":"dep" }[f.type] || "rec",
+          { items:o.items, ship:o.ship, discount:o.discount },
+          { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
+        f.times = (f.times || 0) + 1;
+        f.before = f.doc.total;
+        f.doc = JSON.parse(JSON.stringify(d));
+        if(p.cust) f.cust = p.cust;
+        f.note = (f.note ? f.note + " " : "")
+          + "[แก้ไขครั้งที่ " + f.times + ": " + p.why + " · ยอดเดิม " + f.before + "]";
+        return { ok:true, no:f.no, doc:d, times:f.times, before:f.before };
+      });
+    },
+    /* ทำเครื่องหมายว่าส่งให้ลูกค้าแล้ว — ปิดประตูการแก้ใบเดิม */
+    markSent: function(no, by){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+        if(!f) throw new Error("ไม่พบใบเลขที่ " + no + " ในชีท เอกสาร");
+        if(f.sentAt) return { ok:true, no:f.no, at:f.sentAt, already:true };
+        f.sentAt = "03/09/2026 21:30 โดย " + (by||"");
+        return { ok:true, no:f.no, at:f.sentAt };
       });
     },
     /* ยกเลิกทั้งออเดอร์ — ของคืนเข้าสต๊อก ยอดกลายเป็นศูนย์ สถานะเป็นยกเลิก */
