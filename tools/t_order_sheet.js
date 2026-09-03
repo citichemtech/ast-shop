@@ -1439,5 +1439,55 @@ var over33 = [];
 for (var nm33 in fx33.sheets) over33 = over33.concat(fx33.sheets[nm33].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over33, []);
 
+/* ====== 34. ออเดอร์เก่ากว่า 40 ใบล่าสุด ต้องยังออกเอกสารและแก้รายการได้
+
+   ที่ร้านคีย์วันละ 8-10 ใบ ใบที่ 41 มาถึงในไม่กี่วัน
+   ถ้าตัวหาออเดอร์มองเห็นแค่ 40 ใบล่าสุด ใบเก่ากว่านั้นจะขึ้นว่า "ไม่พบออเดอร์"
+   ทั้งที่อยู่ในชีทครบ — ออกใบกำกับภาษีย้อนหลังไม่ได้ ซึ่งเป็นงานที่ต้องทำได้เสมอ */
+console.log('\n34. ออเดอร์เก่ากว่า 40 ใบล่าสุด');
+
+var fx34 = FS.build();
+var api34 = FS.load(fx34, {});
+api34.setup();
+var hd34 = fx34.sheets['ออเดอร์_หัวบิล'];
+
+var old34 = api34.createOrder(order({
+  cust: 'ลูกค้าใบเก่า', date: '2026-08-01',
+  items: [{ sku: 'SKU-141', qty: 1, price: 100 }]
+}));
+
+/* ดันใบนั้นให้ตกอันดับ ด้วยหัวบิลอีก 44 ใบที่วันที่ใหม่กว่า */
+var pad34 = rowsWith(hd34, 1).length;
+for (var i34 = 0; i34 < 44; i34++) {
+  var r34 = DATA_ROW + pad34 + i34;
+  hd34.cell(r34, 1).v = 'AST-26-9' + (100 + i34);
+  hd34.cell(r34, 2).v = new Date('2026-09-10T12:00:00');
+  hd34.cell(r34, 4).v = 'ลูกค้าใบใหม่ ' + i34;
+  hd34.cell(r34, 17).v = 'รอชำระ';
+}
+fx34.recalc();
+
+eq('ในชีทมีออเดอร์ทั้งหมด 45 ใบ', rowsWith(hd34, 1).length, 45);
+eq('หน้าจอยังโหลดมาแค่ 40 ใบล่าสุดตามที่ขอ', api34.getOrders(40).length, 40);
+eq('ขอ 0 = เอาทั้งชีท ไม่ใช่ตกกลับไปเป็น 40', api34.getOrders(0).length, 45);
+
+console.log('\n   ใบเก่าที่ตกอันดับไปแล้ว ต้องยังทำงานได้ทุกอย่าง');
+var r34 = api34.editOrderItems(old34.no,
+  [{ sku: 'SKU-141', qty: 3, price: 100 }], 'บี', 'ck-old-1');
+eq('แก้รายการใบเก่าได้', r34.subtotal, 300);
+
+var d34 = api34.issueDoc({
+  type: 'rec', orderNo: old34.no, cust: { name: 'ลูกค้าใบเก่า' },
+  date: '2026-08-01', by: 'บี', vatMode: 'excl', clientKey: 'dk-old-1'
+});
+truthy2('ออกใบเสร็จย้อนหลังให้ใบเก่าได้', !!d34.no);
+/* 300 + ค่าส่ง 50 = 350 แล้วบวก VAT 7% ตามที่สั่งออกใบแบบ excl */
+eq('ยอดบนใบตรงกับที่แก้ไว้', d34.doc.total, 374.5);
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over34 = [];
+for (var nm34 in fx34.sheets) over34 = over34.concat(fx34.sheets[nm34].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over34, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
