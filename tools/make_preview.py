@@ -101,6 +101,16 @@ MOCK = """
 var MOCK_BOOT = __BOOT__;
 var MOCK_ORDERS = __ORDERS__;
 var MOCK_DOCS = [];       /* ทะเบียนเอกสารที่ออกไปแล้วในรอบนี้ */
+/* สภาพชีทฝั่งสต๊อกแบบจำลอง — จับคู่ SKU ไว้แค่บางตัว เพื่อให้เห็นเคส "ยังจับคู่ไม่ได้" จริง ๆ */
+var MOCK_MAP = [
+  { row:6, code:"SP-141", name:"", variant:"", sku:"SKU-141", mult:1,
+    prodName:"End Mill Corn cut 2F  3.0*15*3.175*38L (1pcs)", check:"ใช้ได้", note:"" },
+  { row:7, code:"SP-PACK10", name:"", variant:"", sku:"SKU-161", mult:10,
+    prodName:"End Mill Corn cut 2F 1.8*8.5*3.175*38L (1pcs)", check:"ใช้ได้", note:"" }
+];
+var MOCK_IMPORTED = {};
+var MOCK_CAP = { head:120, item:640, cut:2800, imp:9800, recv:300,
+                 headLimit:500, itemLimit:1200 };
 window.SENT = [];
 window.google = { script: { run: (function(){
   var ok=null, bad=null;
@@ -164,6 +174,161 @@ window.google = { script: { run: (function(){
                  doc: JSON.parse(JSON.stringify(f.doc)) };
       });
     },
+    /* ---- สต๊อก · นำเข้า Shopee · จับคู่ SKU · ประวัติ ---- */
+    getStockBoard: function(){
+      reply(function(){
+        var low = MOCK_BOOT.products.filter(function(p){ return p.remain <= 40 })
+          .map(function(p){
+            var o = JSON.parse(JSON.stringify(p));
+            o.reorder = 50; o.level = p.remain <= 0 ? "out" : "low"; o.lot = null;
+            return o;
+          });
+        return { products: MOCK_BOOT.products.map(function(p){
+                   var o = JSON.parse(JSON.stringify(p));
+                   o.reorder = 50;
+                   o.level = p.remain <= 0 ? "out" : (p.remain <= 50 ? "low" : "ok");
+                   o.lot = MOCK_BOOT.lots[p.sku] || null;
+                   return o;
+                 }),
+                 low: low,
+                 expiring: [{ sku:"CHEM-001", name:"น้ำยาหล่อเย็น 20L", lotNo:"L-2610",
+                              exp: 1793404800000, remain: 4, days: 21 }],
+                 capacity: MOCK_CAP };
+      });
+    },
+    getSkuMap: function(){
+      reply(function(){
+        return { rows: JSON.parse(JSON.stringify(MOCK_MAP)),
+                 products: MOCK_BOOT.products, free: 480 };
+      });
+    },
+    saveSkuMap: function(rows){
+      window.SENT.push({ fn:"saveSkuMap", rows:rows });
+      reply(function(){
+        rows.forEach(function(r){
+          var hit = r.row ? MOCK_MAP.filter(function(m){ return m.row === r.row })[0] : null;
+          if (hit) { for (var k in r) hit[k] = r[k]; }
+          else MOCK_MAP.push({ row: 6 + MOCK_MAP.length, code:r.code, name:r.name,
+                               variant:r.variant, sku:r.sku, mult:r.mult,
+                               prodName:"", check:"ใช้ได้", note:"" });
+        });
+        return { ok:true, saved: rows.length, rows: JSON.parse(JSON.stringify(MOCK_MAP)) };
+      });
+    },
+    shopeeRead: function(table, cols, headerRow){
+      reply(function(){
+        var hr = (headerRow === undefined || headerRow === null || headerRow < 0)
+          ? SHOPEE_SRV.shopeeHeaderRow(table) : Number(headerRow);
+        var unsure = false;
+        if (hr < 0) { hr = 0; unsure = true }
+        var use = {}, any = false;
+        for (var k in (cols||{})) { use[k] = cols[k]; any = true }
+        if (!any) use = SHOPEE_SRV.shopeeMatchCols(table[hr] || []);
+        var r = SHOPEE_SRV.shopeeParse(table, use, hr);
+        return { headerRow:hr, cols:use, unsure:unsure,
+                 header: (table[hr]||[]).map(String),
+                 fields: SHOPEE_SRV.SHOPEE_COLS.map(function(f){
+                   return { key:f.key, label:f.label, req:!!f.req };
+                 }),
+                 orders: r.orders, skipped: r.skipped };
+      });
+    },
+    previewShopee: function(orders, opts){
+      reply(function(){
+        var idx = {};
+        MOCK_MAP.forEach(function(m){
+          if (!m.sku) return;
+          if (m.code) idx[String(m.code).toLowerCase()] = m;
+          if (m.name && !m.variant) idx[String(m.name).toLowerCase()] = m;
+        });
+        var ready=[], blocked=[], skipped=[], unmapped={};
+        var needItem = 0;
+        orders.forEach(function(o){
+          if (MOCK_IMPORTED[o.sn]) {
+            skipped.push({ sn:o.sn, why:"นำเข้าไปแล้วเป็นออเดอร์ "+MOCK_IMPORTED[o.sn] });
+            return;
+          }
+          if ((opts.cutKinds||[]).indexOf(o.kind) < 0) {
+            skipped.push({ sn:o.sn, why:'สถานะ "'+o.status+'" ไม่อยู่ในกลุ่มที่ตั้งไว้ให้ตัดสต๊อก' });
+            return;
+          }
+          var lines=[], miss=[], sub=0;
+          o.items.forEach(function(it){
+            var m = idx[String(it.code||"").toLowerCase()] || idx[String(it.name||"").toLowerCase()];
+            if (!m) { miss.push(it); return }
+            var qty = it.qty * (m.mult||1);
+            var total = it.amount;
+            sub += total;
+            lines.push({ sku:m.sku, name:(MOCK_BOOT.products.filter(function(p){
+                           return p.sku===m.sku })[0]||{}).name || m.sku,
+                         qty:qty, price: qty ? Math.round(total/qty*100)/100 : 0,
+                         total: total, lots:"" });
+          });
+          miss.forEach(function(u){
+            var key = (u.code||"")+"|"+(u.name||"");
+            if (!unmapped[key]) unmapped[key] = { code:u.code, name:u.name, variant:u.variant, n:0 };
+            unmapped[key].n++;
+          });
+          if (miss.length) {
+            blocked.push({ sn:o.sn, date:o.date, status:o.status,
+                           why:"ยังจับคู่ SKU ไม่ครบ "+miss.length+" รายการ", unmapped:miss });
+            return;
+          }
+          needItem += lines.length;
+          ready.push({ sn:o.sn, date:o.date, status:o.status, kind:o.kind,
+                       cust:o.recip||o.buyer||("ลูกค้า Shopee "+o.sn), items:lines,
+                       subtotal:Math.round(sub*100)/100, fee:o.fee||0,
+                       discount: opts.feeMode==="discount" ? (o.fee||0) : 0,
+                       ship: opts.keepShip ? (o.ship||0) : 0 });
+        });
+        var need = { head: ready.length, item: needItem, cut: needItem };
+        var fit = need.head <= MOCK_CAP.head && need.item <= MOCK_CAP.item;
+        return { ready:ready, blocked:blocked, skipped:skipped,
+                 unmapped: Object.keys(unmapped).map(function(k){ return unmapped[k] }),
+                 need:need, capacity:MOCK_CAP, fit:{}, enough:fit, maxPerRun:30, opts:opts };
+      });
+    },
+    commitShopee: function(orders, opts){
+      window.SENT.push({ fn:"commitShopee", n: orders.length, opts: opts });
+      reply(function(){
+        var saved = orders.map(function(o, i){
+          var no = "AST-26-" + ("0000" + (10 + i)).slice(-4);
+          MOCK_IMPORTED[o.sn] = no;
+          var sub = 0;
+          o.items.forEach(function(it){ sub += it.amount });
+          return { sn:o.sn, orderNo:no, net:sub, subtotal:sub };
+        });
+        MOCK_CAP = { head: MOCK_CAP.head - saved.length, item: MOCK_CAP.item - saved.length,
+                     cut: MOCK_CAP.cut, imp: MOCK_CAP.imp, recv: MOCK_CAP.recv,
+                     headLimit: MOCK_CAP.headLimit, itemLimit: MOCK_CAP.itemLimit };
+        return { ok:true, saved:saved, failed:[], skipped:[], capacity:MOCK_CAP };
+      });
+    },
+    getMoves: function(){
+      reply(function(){
+        return { total:3, moves:[
+          { date:"2026-08-28", kind:"out", type:"Shopee", sku:"SKU-141",
+            name:MOCK_BOOT.products[0].name, qty:-10, ref:"AST-26-0005", by:"", note:"ส่งแล้ว" },
+          { date:"2026-08-20", kind:"ret", type:"คืนจากลูกค้า", sku:"SKU-143",
+            name:MOCK_BOOT.products[1].name, qty:2, ref:"RET-AST-26-0004", by:"น้องเอ",
+            note:"ลูกค้าตีกลับ" },
+          { date:"2026-08-01", kind:"in", type:"ซื้อเข้า", sku:"SKU-141",
+            name:MOCK_BOOT.products[0].name, qty:500, ref:"PO-26-004", by:"พี่หนึ่ง", note:"" }
+        ] };
+      });
+    },
+    recordReturn: function(p){
+      window.SENT.push({ fn:"recordReturn", p:p });
+      reply(function(){ return { ok:true, orderNo:p.orderNo, back:p.items, lots:[] } });
+    },
+    shopeeApiStatus: function(){
+      reply(function(){
+        return { ready:false,
+                 missing:["SHOPEE_PARTNER_ID","SHOPEE_PARTNER_KEY","SHOPEE_SHOP_ID","SHOPEE_ACCESS_TOKEN"],
+                 host:"https://partner.shopeemobile.com", shopId:"",
+                 needScope:"https://www.googleapis.com/auth/script.external_request" };
+      });
+    },
     createOrder: function(p){
       window.SENT.push(p);
       reply(function(){
@@ -205,8 +370,8 @@ def main():
         return (GS / (name + ".html")).read_text(encoding="utf-8")
 
     page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
-    if n not in (0, 5):
-        sys.exit("คาดว่าจะมี include 5 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
+    if n not in (0, 6):
+        sys.exit("คาดว่าจะมี include 6 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
 
     page = page.replace('"<?= staffEmail ?>"', json.dumps(BOOT["staff"]))
     if "<?" in page:
@@ -222,6 +387,15 @@ def main():
     srv = ("<script>var DOC_SRV=(function(){" + m_r2.group(0) + "\n" + doc_src +
            "\nreturn {buildDoc_:buildDoc_,bahtText_:bahtText_,vatSplit_:vatSplit_,"
            "taxIdValid_:taxIdValid_,nextDocNo_:nextDocNo_};})();</script>")
+
+    # ตัวอ่านไฟล์ Shopee ตัวจริง — หน้าจอจำลองจึงอ่านไฟล์ด้วยโค้ดชุดเดียวกับบนชีท
+    # ไม่ใช่ตัวปลอมที่เขียนขึ้นมาให้ผ่านข้อสอบตัวเอง
+    shopee_src = (GS / "Shopee.gs").read_text(encoding="utf-8")
+    shopee_src = shopee_src.split("if (typeof module !==")[0]
+    srv += ("<script>var SHOPEE_SRV=(function(){" + shopee_src +
+            "\nreturn {shopeeParse:shopeeParse,shopeeMatchCols:shopeeMatchCols,"
+            "shopeeHeaderRow:shopeeHeaderRow,shopeeKeys:shopeeKeys,"
+            "SHOPEE_COLS:SHOPEE_COLS};})();</script>")
 
     mock = (srv + MOCK.replace("__BOOT__", json.dumps(BOOT, ensure_ascii=False))
                       .replace("__ORDERS__", json.dumps(ORDERS, ensure_ascii=False)))

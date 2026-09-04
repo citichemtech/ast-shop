@@ -537,6 +537,7 @@ function renderOrders(){
       +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
       +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
       +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">📄</button>'
+      +'<button class="sq" data-rt="'+i+'" title="คืนสินค้าเข้าสต๊อก">↩</button>'
       +'</div></div>';
   }).join("");
 }
@@ -1412,10 +1413,46 @@ function drawSummary(all){
   if (byStaff.length > 1)
     h += section_("ผู้คีย์ออเดอร์", rows_(byStaff, function(g){ return g.n + " ใบ" }));
 
+  h += '<div id="sum-low"></div>';
+
   h += '<div class="hint" style="padding:0 2px">ตัวเลขทั้งหมดมาจากชีทโดยตรง '
     + 'ไม่ได้คิดซ้ำในแอป · ไม่รวมออเดอร์ที่ยกเลิก</div>';
 
   $("#summary").innerHTML = h;
+  drawLowStock();
+}
+
+/**
+ * เตือนของใกล้หมดไว้ท้ายหน้าสรุป
+ *
+ * วางไว้ที่นี่เพราะคนเปิดหน้าสรุปเพื่อดูว่าขายอะไรดี — คำถามถัดไปในหัวเสมอคือ
+ * "แล้วของยังพอไหม" ถ้าคำตอบอยู่คนละแท็บ จะไม่มีใครกดไปดูจนกว่าจะขายของที่หมดไปแล้ว
+ * ใช้ข้อมูลที่หน้าสต๊อกโหลดไว้ ถ้ายังไม่เคยเปิดค่อยยิงขอ
+ */
+function drawLowStock(){
+  var box = $("#sum-low");
+  if (!box) return;
+  function paint(d){
+    var low = (d.low || []).slice(0, 8);
+    if (!low.length) return;
+    box.innerHTML = '<div class="card"><div class="subhd" style="margin-top:0">'
+      + 'ของใกล้หมด ' + d.low.length + ' รายการ</div>'
+      + low.map(function(p){
+          return '<div class="row"><div class="i"><b>' + esc(p.name || p.sku) + '</b>'
+            + '<span>' + esc(p.sku) + ' · เหลือ ' + (p.remain===null?"—":p.remain) + ' ' + esc(p.unit)
+            + (p.reorder ? ' · จุดสั่งซื้อ ' + p.reorder : '') + '</span></div>'
+            + '<div class="acts"><span class="tag ' + (p.level==="out"?"bad":"wait") + '">'
+            + (p.level==="out" ? "ของหมด" : "ต่ำ") + '</span></div></div>';
+        }).join("")
+      + (d.low.length > low.length
+          ? '<div class="hint">และอีก ' + (d.low.length - low.length) + ' รายการ ดูทั้งหมดที่แท็บสต๊อก</div>' : "")
+      + '</div>';
+  }
+  if (typeof STOCK_DATA !== "undefined" && STOCK_DATA) { paint(STOCK_DATA); return }
+  call("getStockBoard", [], function(d){
+    if (typeof STOCK_DATA !== "undefined") STOCK_DATA = d;
+    paint(d);
+  }, function(){ /* เตือนสต๊อกโหลดไม่ได้ ไม่ใช่เหตุให้หน้าสรุปทั้งหน้าพัง */ });
 }
 
 /* -------------------------------------------------------------------- modal */
@@ -1433,13 +1470,14 @@ document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModa
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
 
 function go(page){
-  ["new","list","quote","sum"].forEach(function(p){
+  ["new","list","quote","stock","sum"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===page) });
   if(page==="list") loadOrders();
   if(page==="sum")  loadSummary();
   if(page==="quote") quoteInit();
+  if(page==="stock") stockInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){
@@ -1459,12 +1497,13 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
 
   $("#list").addEventListener("click", function(e){
-    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc]");
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc],[data-rt]");
     if(!b) return;
     if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
     else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
     else if(b.dataset.sm!==undefined) openMsg(ORDERS[+b.dataset.sm]);
     else if(b.dataset.dc!==undefined) openDoc(ORDERS[+b.dataset.dc]);
+    else if(b.dataset.rt!==undefined) openReturn(ORDERS[+b.dataset.rt]);
   });
 
   boot();
