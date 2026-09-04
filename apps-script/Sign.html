@@ -1,0 +1,451 @@
+<script>
+/* ลายเซ็น — เซ็นบนจอแล้วติดลงบนเอกสารจริง
+
+   เก็บเป็น "เส้น" ไม่ใช่รูป
+     รูป PNG ของลายเซ็นหนึ่งอันราว 10-20 KB ต่อใบ ช่องในชีทรับได้ 50,000 ตัวอักษร
+     สามลายเซ็นก็เกือบเต็มช่องแล้ว และพอเอาไปวาดบนกระดาษ 300 dpi ก็แตก
+     เก็บพิกัดเส้นแทน ได้ราว 1-2 KB ต่อลายเซ็น และวาดคมที่ความละเอียดเท่าไรก็ได้
+
+   รูปทรงที่เก็บ  {w,h,s:[[x,y,x,y,...],...]}
+     w,h = กรอบที่เซ็นตอนนั้น · s = เส้นแต่ละเส้น พิกัดเรียงคู่ x,y เป็นจำนวนเต็ม
+     เรียงคู่แบนแบบนี้เพราะ JSON สั้นกว่าเก็บเป็น {x:..,y:..} ราวสามเท่า            */
+
+var SIGN_W = 600, SIGN_H = 200;   /* กรอบมาตรฐานที่เก็บ ไม่ใช่ขนาดที่วาดบนกระดาษ */
+
+/** จุดที่ขยับน้อยกว่านี้ไม่เก็บ — นิ้วสั่นตอนวางบนจอทำให้จุดเยอะขึ้นเท่าตัวโดยเปล่าประโยชน์ */
+var SIGN_MIN_MOVE = 2;
+
+/** ลายเซ็นที่เก็บเป็นรูป (data URI) แทนที่จะเป็นเส้น
+    ใครที่มีลายเซ็นสแกนไว้อยู่แล้ว หรือเซ็นมาจากแอปอื่น จะได้ไม่ต้องเซ็นใหม่
+    รับเฉพาะ data: ของตัวเอง ไม่รับ http เพราะรูปจากเน็ตทำให้ใบพังตอนเน็ตล่ม
+    และรูปนอกยังทำให้ใบที่พิมพ์ซ้ำวันหน้าไม่เหมือนใบที่ลูกค้าถืออยู่ */
+function signIsImg(v) {
+  return typeof v === "string" && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(v.trim());
+}
+
+/** อ่านค่าที่เก็บไว้ให้เป็นรูปทรงที่วาดได้ คืน null ถ้าว่างหรือพัง — ไม่โยน error
+    เพราะค่านี้มาจากช่องในชีทที่คนเปิดแก้เองได้ ใบต้องออกได้ต่อแม้ค่าจะเพี้ยน */
+function signParse(v) {
+  if (!v) return null;
+  var o = v;
+  if (typeof v === "string") {
+    var t = v.trim();
+    if (!t || t.charAt(0) !== "{") return null;
+    try { o = JSON.parse(t); } catch (e) { return null; }
+  }
+  if (!o || !o.s || !o.s.length) return null;
+  var w = Number(o.w) || SIGN_W, h = Number(o.h) || SIGN_H;
+  var s = [];
+  for (var i = 0; i < o.s.length; i++) {
+    var a = o.s[i];
+    if (a && a.length >= 2) s.push(a);
+  }
+  return s.length ? { w: w, h: h, s: s } : null;
+}
+
+/** กรอบสี่เหลี่ยมที่หมึกกินจริง — ใช้จัดให้อยู่กลางช่องเซ็น ไม่ใช่อิงกรอบตอนเซ็น
+    คนเซ็นชิดซ้ายบ้างชิดขวาบ้าง ถ้าอิงกรอบตอนเซ็น ลายเซ็นจะเยื้องไปคนละที่ทุกใบ */
+function signBox(sig) {
+  var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (var i = 0; i < sig.s.length; i++) {
+    var a = sig.s[i];
+    for (var j = 0; j + 1 < a.length; j += 2) {
+      if (a[j] < x0) x0 = a[j];
+      if (a[j] > x1) x1 = a[j];
+      if (a[j + 1] < y0) y0 = a[j + 1];
+      if (a[j + 1] > y1) y1 = a[j + 1];
+    }
+  }
+  if (x1 < x0) return null;
+  return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
+}
+
+/**
+ * วาดลายเซ็นลงในช่อง (X,Y,W,H) — ย่อให้พอดีโดยไม่บิดสัดส่วน และอยู่กึ่งกลางช่อง
+ * ไม่ขยายเกินขนาดจริง เพราะลายเซ็นที่ถูกยืดจะดูปลอมทันที
+ */
+function signDraw(ctx, sig, X, Y, W, H, color) {
+  /* ลายเซ็นที่เป็นรูป — ต้องโหลดมาก่อนแล้ว (ดู signLoad) เพราะ canvas วาดรูปแบบรอไม่ได้
+     ย่อให้พอดีช่องโดยไม่บิดสัดส่วน เหมือนกันกับแบบเส้น */
+  if (sig && sig.naturalWidth) {
+    var iw = sig.naturalWidth, ih = sig.naturalHeight;
+    if (!iw || !ih) return false;
+    var ki = Math.min(W / iw, H / ih);
+    ctx.drawImage(sig, X + (W - iw * ki) / 2, Y + (H - ih * ki) / 2, iw * ki, ih * ki);
+    return true;
+  }
+
+  sig = signParse(sig);
+  if (!sig) return false;
+  var b = signBox(sig);
+  if (!b) return false;
+
+  var k = Math.min(W / b.w, H / b.h);
+  if (k > 1.6) k = 1.6;                       /* ลายเซ็นเล็ก ๆ ไม่ต้องเป่าให้เต็มช่อง */
+  var ox = X + (W - b.w * k) / 2 - b.x * k;
+  var oy = Y + (H - b.h * k) / 2 - b.y * k;
+
+  ctx.save();
+  ctx.strokeStyle = color || "#12233d";       /* น้ำเงินเข้มแบบปากกาหมึกซึม ไม่ใช่ดำสนิท */
+  ctx.lineWidth = Math.max(1.2, 2.4 * k);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.setLineDash([]);
+  for (var i = 0; i < sig.s.length; i++) {
+    var a = sig.s[i];
+    ctx.beginPath();
+    ctx.moveTo(ox + a[0] * k, oy + a[1] * k);
+    if (a.length === 2) ctx.lineTo(ox + a[0] * k + 0.4, oy + a[1] * k + 0.4);  /* จุดเดียวก็ต้องเห็น */
+    for (var j = 2; j + 1 < a.length; j += 2) ctx.lineTo(ox + a[j] * k, oy + a[j + 1] * k);
+    ctx.stroke();
+  }
+  ctx.restore();
+  return true;
+}
+
+/**
+ * เตรียมลายเซ็นให้พร้อมวาด — คืน Promise
+ *   เป็นเส้น  คืนค่าเดิม วาดได้เลย
+ *   เป็นรูป   โหลดรูปให้เสร็จก่อน แล้วคืนตัวรูป
+ *   โหลดไม่ได้ คืน null แล้วช่องนั้นเว้นว่างไว้ให้เซ็นมือ — ไม่ทำให้ทั้งใบออกไม่ได้
+ */
+function signLoad(v) {
+  if (!signIsImg(v)) return Promise.resolve(v || null);
+  return new Promise(function (resolve) {
+    var im = new Image();
+    im.onload = function () { resolve(im); };
+    im.onerror = function () { resolve(null); };
+    im.src = String(v).trim();
+  });
+}
+
+/**
+ * แปลงรูปลายเซ็นที่ถ่าย/สแกนมา ให้พร้อมติดบนใบ — คืน Promise ของ data URI
+ *
+ * ทำสามอย่างที่ถ้าไม่ทำแล้วใบจะออกมาไม่สวย
+ *   1. ตัดขอบขาวรอบ ๆ ทิ้ง ไม่งั้นลายเซ็นจะลอยเล็ก ๆ อยู่กลางช่อง
+ *   2. ทำพื้นขาวให้โปร่งใส ไม่งั้นได้กล่องขาวทับเส้นประในช่องเซ็น
+ *   3. ย่อลงให้ไฟล์พอใส่ช่องในชีทได้ (ช่องรับ 50,000 ตัวอักษร)
+ *      ย่อจากใหญ่ไปเล็กจนพอ ดีกว่าย่อทีเดียวเล็กจัดแล้วลายเซ็นแตก
+ */
+function signFromImage(file, maxChars) {
+  var cap = maxChars || 30000;
+  return new Promise(function (resolve, reject) {
+    if (!file) { reject(new Error("ยังไม่ได้เลือกรูป")); return; }
+    if (!/^image\//.test(file.type)) { reject(new Error("ไฟล์นี้ไม่ใช่รูป")); return; }
+    var fr = new FileReader();
+    fr.onerror = function () { reject(new Error("อ่านไฟล์ไม่ได้")); };
+    fr.onload = function () {
+      var im = new Image();
+      im.onerror = function () { reject(new Error("เปิดรูปนี้ไม่ได้")); };
+      im.onload = function () {
+        try { resolve(signCleanImg(im, cap)); }
+        catch (e) { reject(e); }
+      };
+      im.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+function signCleanImg(im, cap) {
+  var w = im.naturalWidth, h = im.naturalHeight;
+  if (!w || !h) throw new Error("รูปเสียหาย");
+
+  /* อ่านที่ความละเอียดพอประมาณก่อน หารูปที่ถ่ายจากมือถือความละเอียดสูงมาก
+     จะได้ไม่ต้องไล่ทีละจุดเป็นสิบล้านจุด ซึ่งค้างบนมือถือ */
+  var k0 = Math.min(1, 1400 / Math.max(w, h));
+  var cw = Math.max(1, Math.round(w * k0)), ch = Math.max(1, Math.round(h * k0));
+  var c0 = document.createElement("canvas");
+  c0.width = cw; c0.height = ch;
+  var g0 = c0.getContext("2d");
+  g0.drawImage(im, 0, 0, cw, ch);
+  var d = g0.getImageData(0, 0, cw, ch), p = d.data;
+
+  /* หากรอบที่หมึกกินจริง และทำพื้นให้โปร่งไปพร้อมกันในรอบเดียว */
+  var x0 = cw, y0 = ch, x1 = -1, y1 = -1;
+  for (var y = 0; y < ch; y++) {
+    for (var xx = 0; xx < cw; xx++) {
+      var i = (y * cw + xx) * 4;
+      var ink = 255 - Math.min(p[i], p[i + 1], p[i + 2]);
+      if (p[i + 3] < 30) ink = 0;
+      if (ink <= 45) { p[i + 3] = 0; continue; }   /* พื้นกระดาษ → โปร่ง */
+      /* เข้มขึ้นตามความเข้มของหมึกเดิม สีเดียวกับปากกาที่เซ็นในแอป */
+      p[i] = 18; p[i + 1] = 35; p[i + 2] = 90;
+      p[i + 3] = Math.min(255, Math.round((ink - 45) * 1.9));
+      if (xx < x0) x0 = xx;
+      if (xx > x1) x1 = xx;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < x0) throw new Error("ไม่เจอลายเซ็นในรูปนี้ — รูปสว่างเกินไปหรือเป็นหน้าขาวล้วน");
+  g0.putImageData(d, 0, 0);
+
+  var bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  /* ลองจากคมสุดลงมา หยุดทันทีที่พอใส่ช่องในชีทได้ */
+  var tries = [760, 640, 520, 420, 320];
+  for (var t = 0; t < tries.length; t++) {
+    var W = Math.min(tries[t], bw), H = Math.max(1, Math.round(bh * W / bw));
+    var c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    c.getContext("2d").drawImage(c0, x0, y0, bw, bh, 0, 0, W, H);
+    var url = c.toDataURL("image/png");
+    if (url.length <= cap) return url;
+  }
+  throw new Error("รูปลายเซ็นซับซ้อนเกินไป ลองถ่ายบนกระดาษขาวสะอาดแล้วครอบเฉพาะลายเซ็น");
+}
+
+/* ------------------------------------------------------------ กระดานให้เซ็น */
+
+/**
+ * เปิดกระดานเซ็น คืน Promise
+ *   ได้ {w,h,s}  = เซ็นแล้วกดใช้
+ *   ได้ null     = กดลบลายเซ็นเดิมทิ้ง
+ *   ไม่ resolve  = ปิดหน้าต่างไปเฉย ๆ (ถือว่าไม่แตะของเดิม)
+ *
+ * เปิดทับ modal เดิมไม่ได้ เพราะบางจอเรียกจากในหน้าที่เป็น modal อยู่แล้ว
+ * จึงสร้างชั้นของตัวเองซ้อนขึ้นไป
+ */
+function signPad(title, hint) {
+  return new Promise(function (resolve) {
+    var wrap = document.createElement("div");
+    wrap.className = "signwrap";
+    wrap.innerHTML =
+       '<div class="signbox">'
+      +  '<div class="signhd">' + esc(title || "เซ็นลายเซ็น") + '</div>'
+      +  (hint ? '<div class="signhint">' + esc(hint) + '</div>' : '')
+      +  '<canvas class="signcv"></canvas>'
+      +  '<div class="signrow">'
+      +    '<button class="btn ghost" data-a="clear">ล้าง</button>'
+      +    '<button class="btn ghost" data-a="cancel">ปิด</button>'
+      +    '<button class="btn" data-a="ok">ใช้ลายเซ็นนี้</button>'
+      +  '</div>'
+      +'</div>';
+    document.body.appendChild(wrap);
+
+    var cv = wrap.querySelector(".signcv");
+    var strokes = [], cur = null, dirty = false;
+
+    /* วาดที่ความละเอียดจริงของจอ ไม่งั้นเส้นหยักบนมือถือความละเอียดสูง */
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    var cssW = cv.clientWidth || 320;
+    var cssH = Math.round(cssW * SIGN_H / SIGN_W);
+    cv.style.height = cssH + "px";
+    cv.width = Math.round(cssW * dpr);
+    cv.height = Math.round(cssH * dpr);
+    var g = cv.getContext("2d");
+    g.scale(dpr, dpr);
+
+    function paint() {
+      g.clearRect(0, 0, cssW, cssH);
+      /* เส้นบรรทัดจาง ๆ ให้เซ็นตรง — เหมือนเส้นประในช่องเซ็นบนกระดาษ */
+      g.save();
+      g.strokeStyle = "#c8cfd8"; g.lineWidth = 1; g.setLineDash([4, 5]);
+      g.beginPath(); g.moveTo(cssW * 0.06, cssH * 0.78);
+      g.lineTo(cssW * 0.94, cssH * 0.78); g.stroke();
+      g.restore();
+
+      g.strokeStyle = "#12233d";
+      g.lineWidth = Math.max(1.6, 2.4 * cssW / SIGN_W);
+      g.lineCap = "round"; g.lineJoin = "round";
+      var k = cssW / SIGN_W;
+      strokes.concat(cur ? [cur] : []).forEach(function (a) {
+        if (a.length < 2) return;
+        g.beginPath();
+        g.moveTo(a[0] * k, a[1] * k);
+        if (a.length === 2) g.lineTo(a[0] * k + 0.4, a[1] * k + 0.4);
+        for (var j = 2; j + 1 < a.length; j += 2) g.lineTo(a[j] * k, a[j + 1] * k);
+        g.stroke();
+      });
+    }
+    paint();
+
+    /* พิกัดในกรอบมาตรฐาน 600x200 ไม่ใช่พิกัดบนจอ ลายเซ็นจึงเหมือนกัน
+       ไม่ว่าจะเซ็นบนมือถือจอแคบหรือบนแท็บเล็ตจอกว้าง */
+    function at(e) {
+      var r = cv.getBoundingClientRect();
+      var p = (e.touches && e.touches[0]) || e;
+      return [Math.round((p.clientX - r.left) / r.width * SIGN_W),
+              Math.round((p.clientY - r.top) / r.height * SIGN_H)];
+    }
+    function down(e) {
+      e.preventDefault();
+      cur = at(e); dirty = true; paint();
+    }
+    function move(e) {
+      if (!cur) return;
+      e.preventDefault();
+      var p = at(e);
+      var dx = p[0] - cur[cur.length - 2], dy = p[1] - cur[cur.length - 1];
+      if (dx * dx + dy * dy < SIGN_MIN_MOVE * SIGN_MIN_MOVE) return;
+      cur.push(p[0], p[1]); paint();
+    }
+    function up() { if (cur) { strokes.push(cur); cur = null; paint(); } }
+
+    cv.addEventListener("mousedown", down);
+    cv.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    cv.addEventListener("touchstart", down, { passive: false });
+    cv.addEventListener("touchmove", move, { passive: false });
+    cv.addEventListener("touchend", up);
+
+    function close() {
+      window.removeEventListener("mouseup", up);
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    }
+
+    wrap.addEventListener("click", function (e) {
+      var a = e.target.getAttribute && e.target.getAttribute("data-a");
+      if (!a) { if (e.target === wrap) close(); return; }
+      if (a === "clear") { strokes = []; cur = null; dirty = true; paint(); return; }
+      if (a === "cancel") { close(); return; }
+
+      /* กดใช้ทั้งที่ยังไม่ได้เซ็น = ตั้งใจลบของเดิมทิ้ง แต่ต้องเคยแตะกระดานมาก่อน
+         ไม่งั้นคนเปิดดูเฉย ๆ แล้วกดใช้ จะลบลายเซ็นเดิมโดยไม่ตั้งใจ */
+      if (!strokes.length) {
+        if (!dirty) { alert("ยังไม่ได้เซ็น — เซ็นในกรอบก่อน หรือกดปิดถ้าไม่แก้"); return; }
+        close(); resolve(null); return;
+      }
+      close();
+      resolve({ w: SIGN_W, h: SIGN_H, s: strokes });
+    });
+  });
+}
+</script>
+<script>
+/* PDF — เขียนไฟล์เอง ไม่ดึงไลบรารีจากเน็ต
+
+   ดึงไลบรารีจาก CDN แล้ววันไหนเน็ตร้านช้า หรือ CDN โดนบล็อก ปุ่มก็ตายเงียบ
+   ทั้งที่ทั้งไฟล์ต้องการแค่ "PDF หนึ่งหน้า มีรูปหนึ่งรูปเต็มหน้า" ซึ่งเขียนเองสั้นกว่า
+
+   ใช้ JPEG ฝังตรง ๆ (DCTDecode) เพราะ PDF อ่าน JPEG ได้โดยไม่ต้องแปลงอะไรเลย
+   ส่วน PNG ต้องแกะ zlib ออกมาประกอบใหม่ ซึ่งยาวกว่าและไฟล์ใหญ่กว่าสำหรับกระดาษที่มีรูป */
+
+var PDF_MM_PT = 72 / 25.4;        /* 1 มม. = 2.8346 pt */
+
+/** เลขทศนิยมสองตำแหน่งแบบไม่มีศูนย์ท้าย — PDF ไม่รับ NaN และไม่ชอบเลขยาวเกินจำเป็น */
+function pdfNum(n) { return String(Math.round(Number(n) * 100) / 100); }
+
+/**
+ * สร้าง PDF หนึ่งหน้าจาก canvas
+ *   cv     canvas ที่วาดเสร็จแล้ว
+ *   wmm    กว้างกี่มิลลิเมตร (A4 = 210)
+ *   hmm    สูงกี่มิลลิเมตร  (A4 = 297)
+ *   title  ชื่อที่โผล่ในโปรแกรมอ่าน PDF
+ * คืน Blob พร้อมเซฟหรือแชร์
+ */
+function pdfFromCanvas(cv, wmm, hmm, title) {
+  var jpg = cv.toDataURL("image/jpeg", 0.92).split(",")[1];
+  var bin = atob(jpg);
+  var img = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) img[i] = bin.charCodeAt(i);
+
+  var pw = pdfNum(wmm * PDF_MM_PT), ph = pdfNum(hmm * PDF_MM_PT);
+
+  /* ชื่อไฟล์ในข้อมูลกำกับต้องเป็น ASCII ล้วน ไม่งั้นโปรแกรมอ่านบางตัวขึ้นเป็นอักขระเพี้ยน
+     เลขที่เอกสารเป็น ASCII อยู่แล้ว ตัดตัวที่ไม่ใช่ทิ้งไปเลย ดีกว่าโชว์ขยะ */
+  var ttl = String(title || "document").replace(/[^\x20-\x7e]/g, "").replace(/[()\\]/g, "");
+
+  var objs = [];
+  objs[1] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objs[2] = "<< /Type /Pages /Kids [3 0 R] /Count 1 >>";
+  objs[3] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pw + " " + ph + "] "
+          + "/Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>";
+  var content = "q " + pw + " 0 0 " + ph + " 0 0 cm /Im0 Do Q";
+  objs[4] = "<< /Length " + content.length + " >>\nstream\n" + content + "\nendstream";
+  objs[5] = "<< /Type /XObject /Subtype /Image /Width " + cv.width + " /Height " + cv.height
+          + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length "
+          + img.length + " >>\nstream\n";      /* ตัวรูปต่อท้ายทีหลังเพราะเป็นไบต์ดิบ */
+  objs[6] = "<< /Title (" + ttl + ") /Producer (AST order app) >>";
+
+  /* ประกอบเป็นไบต์ พร้อมจำตำแหน่งเริ่มของแต่ละ object ไว้ทำตาราง xref
+     ตำแหน่งต้องนับเป็น "ไบต์" ไม่ใช่ "ตัวอักษร" เพราะหัวข้อมีอักขระ ASCII ล้วนก็จริง
+     แต่ตัวรูปเป็นไบต์ดิบ ถ้านับผิดไฟล์จะเปิดไม่ได้ */
+  var parts = [], len = 0, off = [];
+  function put(v) {
+    if (typeof v === "string") {
+      var a = new Uint8Array(v.length);
+      for (var k = 0; k < v.length; k++) a[k] = v.charCodeAt(k) & 0xff;
+      v = a;
+    }
+    parts.push(v); len += v.length;
+  }
+
+  put("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n");
+  for (var n = 1; n <= 6; n++) {
+    off[n] = len;
+    /* object 5 คือตัวรูป ต้องไม่มีตัวขึ้นบรรทัดคั่นระหว่าง "stream" กับไบต์แรกของรูป
+       เกินมาไบต์เดียว ตัวอ่าน PDF จะนับตาม /Length แล้วได้รูปเลื่อนไปหนึ่งไบต์
+       ผลคือไฟล์เปิดได้แต่รูปเสีย ซึ่งไปโผล่ตอนบัญชีลูกค้าเปิดดู ไม่ใช่ตอนเราทดสอบ */
+    if (n === 5) {
+      put(n + " 0 obj\n" + objs[n]);
+      put(img);
+      put("\nendstream\n");
+    } else {
+      put(n + " 0 obj\n" + objs[n] + "\n");
+    }
+    put("endobj\n");
+  }
+
+  var xref = len;
+  var t = "xref\n0 7\n0000000000 65535 f \n";
+  for (var j = 1; j <= 6; j++) {
+    var o = String(off[j]);
+    while (o.length < 10) o = "0" + o;
+    t += o + " 00000 n \n";
+  }
+  t += "trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n" + xref + "\n%%EOF\n";
+  put(t);
+
+  return new Blob(parts, { type: "application/pdf" });
+}
+
+/**
+ * แปลงรูปที่วาดเสร็จแล้วให้เป็น JPEG — คืน data URL ใหม่
+ *
+ * กระดาษ A4 ที่ 300 dpi เป็น PNG ได้ไฟล์ราวหนึ่งเมกะไบต์ ส่งในไลน์ทีนึงหนัก
+ * JPEG ที่คุณภาพ 0.85 เล็กลงราวหนึ่งในสาม โดยความละเอียดเท่าเดิม ไม่ได้ย่อรูป
+ * ถ้าแปลงไม่ได้ด้วยเหตุใดก็ตาม คืนของเดิมไป ดีกว่าปุ่มเซฟตายทั้งปุ่ม
+ */
+function toJpegUrl(url, quality) {
+  return new Promise(function (resolve) {
+    var im = new Image();
+    im.onload = function () {
+      try {
+        var c = document.createElement("canvas");
+        c.width = im.naturalWidth; c.height = im.naturalHeight;
+        var g = c.getContext("2d");
+        /* JPEG ไม่มีช่องโปร่งใส ต้องทาพื้นขาวก่อน ไม่งั้นส่วนโปร่งกลายเป็นดำ */
+        g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+        g.drawImage(im, 0, 0);
+        resolve(c.toDataURL("image/jpeg", quality || 0.85));
+      } catch (e) { resolve(url); }
+    };
+    im.onerror = function () { resolve(url); };
+    im.src = url;
+  });
+}
+
+/**
+ * เดียวกับ pdfFromCanvas แต่รับรูปที่วาดเสร็จแล้วเป็น data URL
+ * เพราะหน้าจอเก็บใบไว้เป็น data URL อยู่แล้ว ไม่ได้ถือ canvas ไว้
+ */
+function pdfFromDataURL(url, wmm, hmm, title) {
+  return new Promise(function (resolve, reject) {
+    var im = new Image();
+    im.onload = function () {
+      var cv = document.createElement("canvas");
+      cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+      var g = cv.getContext("2d");
+      /* พื้นขาวก่อน — JPEG ไม่มีช่องโปร่งใส ถ้าไม่ทาไว้ ส่วนโปร่งจะกลายเป็นดำ */
+      g.fillStyle = "#fff"; g.fillRect(0, 0, cv.width, cv.height);
+      g.drawImage(im, 0, 0);
+      try { resolve(pdfFromCanvas(cv, wmm, hmm, title)); }
+      catch (e) { reject(e); }
+    };
+    im.onerror = function () { reject(new Error("อ่านรูปเอกสารไม่ได้")); };
+    im.src = url;
+  });
+}
+</script>

@@ -302,6 +302,11 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   var ord = await page.inputValue('#mg-ord');
   /* รูปแบบต้องตรงกับที่ร้านพิมพ์เองในเพจทุกวัน ไม่ใช่รูปแบบที่เราคิดเอง */
   truthy('ขึ้นต้นแบบเดียวกับที่ร้านส่งจริง', ord.indexOf('📦 สรุปออเดอร์ลูกค้า') === 0);
+  /* ชื่อกับเบอร์เคยหายไปจากข้อความนี้ ทั้งที่เป็นสองอย่างที่ลูกค้าต้องตรวจว่าถูก */
+  truthy('มีชื่อลูกค้า', /👤 ลูกค้าตัวอย่าง ก\n/.test(ord));
+  truthy('มีเบอร์โทร ศูนย์หน้าครบ', /📞 0800000000\n/.test(ord));
+  truthy('ชื่อกับเบอร์อยู่ก่อนรายการสินค้า',
+    ord.indexOf('📞 0800000000') < ord.indexOf('💰'));
   truthy('แยกรุ่นกับขนาดคนละบรรทัด', /🛠 [^\n]+\n🔷 [^\n]+\n/.test(ord));
   truthy('บรรทัดราคาเป็น ราคา×จำนวน = รวม', /💰 750×1 = 750/.test(ord));
   truthy('รวมค่าสินค้า', /💵 รวมค่าสินค้า : 750 บาท/.test(ord));
@@ -339,8 +344,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.click('#sum-range button[data-r="all"]');
   await page.waitForTimeout(300);
   var sum = await page.textContent('#summary');
-  truthy('นับจำนวนออเดอร์', /1 ใบ/.test(sum));
-  truthy('มียอดชำระสุทธิ', /฿800.00/.test(sum));
+  truthy('นับจำนวนออเดอร์', /2 ใบ/.test(sum));
+  truthy('มียอดชำระสุทธิ', /฿1,103.59/.test(sum));
   truthy('มีกำไรขั้นต้น', /กำไรขั้นต้น/.test(sum));
   truthy('แยกตามค่ายขนส่ง', /Flash Express/.test(sum));
   truthy('แยกตามช่องทางขาย', /เพจ Facebook/.test(sum));
@@ -417,8 +422,1004 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal(); });
   await page.waitForTimeout(200);
 
-  /* ---------- 15. ไม่มี error หลุดใน console ---------- */
-  console.log('\n15. ความสะอาดของหน้าเว็บ');
+  /* ---------- 15. สินค้าซื้อมาขายไป: พิมพ์ชื่อเอง ไม่ต้องมีรหัส ----------
+     ของที่รับมาขายทีเดียวแล้วจบ ไม่คุ้มที่จะตั้งรหัสไว้ในฐานสินค้าล่วงหน้า
+     แต่ยอดขายต้องเข้าบิลถูก และถ้าใส่ต้นทุนมาด้วยก็ต้องได้กำไรจริง ไม่ใช่เดา */
+  console.log('\n15. สินค้าซื้อมาขายไป (พิมพ์ชื่อเอง)');
+  await page.evaluate(function () { go('new'); resetForm(); window.SENT = []; });
+  await page.waitForTimeout(200);
+  await page.fill('#f-cust', 'ลูกค้าซื้อมาขายไป');
+
+  var R1 = '#items .it:first-child ';
+  eq('ตั้งต้นยังเป็นแบบเลือกจากฐานสินค้า',
+    await page.locator(R1 + '.i-free').isChecked(), false);
+  eq('ช่องพิมพ์ชื่อเองยังซ่อนอยู่', await page.locator(R1 + '.i-name').isVisible(), false);
+
+  await page.check(R1 + '.i-free');
+  await page.waitForTimeout(150);
+  eq('ติ๊กแล้วซ่อนช่องเลือกรหัสสินค้า', await page.locator(R1 + '.i-sku').isVisible(), false);
+  eq('ติ๊กแล้วขึ้นช่องพิมพ์ชื่อ', await page.locator(R1 + '.i-name').isVisible(), true);
+  eq('ติ๊กแล้วขึ้นช่องต้นทุน', await page.locator(R1 + '.i-cost').isVisible(), true);
+  eq('ราคามาตรฐานหายไป เพราะของแบบนี้ไม่มีราคาป้าย',
+    await page.locator(R1 + '.i-std').isVisible(), false);
+
+  await page.fill(R1 + '.i-name', 'สายลมร้อน 2000W');
+  await page.fill(R1 + '.i-qty', '3');
+  await page.fill(R1 + '.i-price', '1200');
+  await page.waitForTimeout(200);
+  eq('ยอดสินค้าคิดจากราคาที่พิมพ์เอง', await page.textContent('#s-sub'), '฿3,600.00');
+  truthy('ไม่ใส่ต้นทุน ต้องเตือนว่ากำไรจะเกินจริง',
+    /กำไร.*สูงเกินจริง/.test(await page.textContent(R1 + '.lotline')));
+  eq('คำเตือนเป็นสีเหลือง ไม่ใช่สีแดงห้ามบันทึก',
+    await page.getAttribute('#items .it:first-child .lotline', 'class'), 'lotline warn');
+
+  console.log('\n   ไม่ใส่ราคาขาย ต้องไม่ยอมให้บันทึก');
+  await page.fill(R1 + '.i-price', '');
+  await page.click('#btn-save');
+  await page.waitForTimeout(300);
+  truthy('บอกว่าต้องใส่ราคาขายจริง',
+    /ต้องใส่ราคาขายจริง/.test(await page.textContent('#err')));
+  eq('ยังไม่ยิงขึ้นชีท', await page.evaluate(function () { return window.SENT.length }), 0);
+  await page.fill(R1 + '.i-price', '1200');
+
+  console.log('\n   ใส่ต้นทุน แล้วต้องบอกว่าจะเพิ่มเข้าฐานสินค้าให้');
+  await page.fill(R1 + '.i-cost', '820');
+  await page.waitForTimeout(200);
+  var fl = await page.textContent(R1 + '.lotline');
+  truthy('บอกว่าจะเพิ่มเข้าฐานสินค้า', /เพิ่ม.*เข้าฐานสินค้า/.test(fl));
+  truthy('บอกว่าจะลงรับเข้าเท่าที่ขาย สต๊อกจึงไม่ติดลบ', /รับเข้า 3 ชิ้น/.test(fl));
+  eq('ข้อความนี้เป็นสีเขียว', await page.getAttribute(R1 + '.lotline', 'class'), 'lotline ok');
+
+  console.log('\n   ปนกับสินค้าที่มีรหัสในใบเดียวกันได้');
+  await page.click('#btn-add');
+  await page.waitForTimeout(150);
+  await page.selectOption('#items .it:nth-child(2) .i-sku', 'SKU-141');
+  await page.fill('#items .it:nth-child(2) .i-qty', '2');
+  await page.waitForTimeout(250);
+  await page.click('#btn-save');
+  await page.waitForTimeout(600);
+  var sf = await page.evaluate(function () { return window.SENT[0]; });
+  eq('ส่งไปสองบรรทัด', sf.items.length, 2);
+  eq('บรรทัดพิมพ์ชื่อเองไม่มีรหัสสินค้าติดไป',
+    [sf.items[0].free, sf.items[0].sku, sf.items[0].name, sf.items[0].qty,
+     sf.items[0].price, sf.items[0].cost],
+    [true, '', 'สายลมร้อน 2000W', '3', '1200', '820']);
+  eq('บรรทัดสินค้าปกติยังส่งรหัสไปเหมือนเดิม',
+    [sf.items[1].free, sf.items[1].sku, sf.items[1].name, sf.items[1].qty],
+    [false, 'SKU-141', '', '2']);
+
+  console.log('\n   ติ๊กออกแล้วต้องกลับไปเลือกจากฐานสินค้าได้เหมือนเดิม');
+  await page.check(R1 + '.i-free');
+  await page.waitForTimeout(120);
+  await page.uncheck(R1 + '.i-free');
+  await page.waitForTimeout(150);
+  eq('ช่องเลือกรหัสกลับมา', await page.locator(R1 + '.i-sku').isVisible(), true);
+  eq('ช่องพิมพ์ชื่อหายไป', await page.locator(R1 + '.i-name').isVisible(), false);
+  eq('ราคามาตรฐานกลับมา', await page.locator(R1 + '.i-std').isVisible(), true);
+  await page.screenshot({ path: 'out/ui-free-item.png' });
+
+  /* ---------- 16. เอกสารออกผิด: ยกเลิกใบเดิม แล้วออกใบใหม่ ----------
+     ใบที่ออกไปแล้วแก้ทับไม่ได้ เพราะลูกค้าถือใบเดิมอยู่ในมือ
+     ข้อสอบนี้จึงตรวจว่ากดยกเลิกได้จริง ต้องบอกเหตุผล และใบเดิมยังพิมพ์ย้อนหลังได้ */
+  console.log('\n16. ยกเลิกเอกสารที่ออกผิด');
+  await page.evaluate(function () { go('list'); });
+  await page.waitForTimeout(500);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec'); });
+  await page.waitForSelector('#dc-old .row', { timeout: 8000 });
+
+  /* ใบที่ออกไว้ในหมวด 14 ยังอยู่ในทะเบียน จึงใช้ใบนั้นเป็นตัวทดสอบได้เลย */
+  var VD = '#dc-old .row ';
+  eq('เห็นใบที่ออกไปแล้วหนึ่งใบ', await page.locator('#dc-old .row').count(), 1);
+  eq('ใบที่ยังใช้ได้ต้องมีปุ่มยกเลิก', await page.locator(VD + '[data-vd]').count(), 1);
+
+  await page.click(VD + '[data-vd]');
+  await page.waitForTimeout(200);
+  truthy('กดแล้วขึ้นช่องให้กรอกเหตุผล', await page.locator(VD + '.vd-why').isVisible());
+
+  console.log('\n   ไม่บอกเหตุผล ต้องยกเลิกให้ไม่ได้');
+  await page.fill(VD + '.vd-why', 'ผิด');
+  await page.click(VD + '.vd-go');
+  await page.waitForTimeout(300);
+  truthy('บอกว่าต้องใส่เหตุผลยาวกว่านี้',
+    /อย่างน้อย 5 ตัวอักษร/.test(await page.textContent(VD + '.vd-msg')));
+  eq('ยังไม่ถูกยกเลิก ปุ่มยกเลิกยังอยู่', await page.locator('#dc-old [data-vd]').count(), 1);
+
+  console.log('\n   กดไม่ยกเลิก ต้องปิดกล่องแล้วไม่มีอะไรเปลี่ยน');
+  await page.click(VD + '.vd-no');
+  await page.waitForTimeout(200);
+  eq('กล่องหายไป', await page.locator('#dc-old .vdbox').count(), 0);
+  eq('ใบยังใช้ได้อยู่', await page.locator('#dc-old [data-vd]').count(), 1);
+
+  console.log('\n   ยกเลิกจริง');
+  await page.click(VD + '[data-vd]');
+  await page.waitForTimeout(200);
+  await page.fill(VD + '.vd-why', 'ออกผิดชนิดเอกสาร ที่ถูกต้องเป็นใบเสนอราคา');
+  await page.click(VD + '.vd-go');
+  await page.waitForTimeout(700);
+  var oldTxt = await page.textContent('#dc-old');
+  truthy('ขึ้นป้ายว่ายกเลิกแล้ว', /ยกเลิกแล้ว/.test(oldTxt));
+  truthy('เห็นเหตุผลที่ยกเลิกในรายการ', /ออกผิดชนิดเอกสาร/.test(oldTxt));
+  eq('ใบที่ยกเลิกแล้วไม่มีปุ่มให้กดยกเลิกซ้ำ', await page.locator('#dc-old [data-vd]').count(), 0);
+  eq('แต่ยังกดพิมพ์ซ้ำได้อยู่', await page.locator('#dc-old [data-rp]').count(), 1);
+
+  console.log('\n   พิมพ์ซ้ำใบที่ยกเลิกแล้ว ต้องดูออกว่าใช้ไม่ได้');
+  await page.click('#dc-old [data-rp]');
+  await page.waitForSelector('#dc-old img.docimg', { timeout: 20000 });
+  await page.waitForTimeout(300);
+  truthy('เตือนว่าใบนี้ยกเลิกไปแล้ว',
+    /ถูกยกเลิกไปแล้ว/.test(await page.textContent('#dc-old')));
+
+  /* ตรา "ยกเลิก" ต้องถูกวาดลงบนกระดาษจริง ไม่ใช่ขึ้นแค่ข้อความบนหน้าจอ
+     เพราะรูปนี้คือสิ่งที่ถูกพิมพ์หรือส่งต่อ ข้อความบนหน้าจอไม่ติดไปด้วย */
+  var stamped = await page.evaluate(async function () {
+    var d = { lines: [{ name: 'x', qty: 1, price: 100, amount: 100 }],
+              base: 100, vat: 7, total: 107, sub: 100, disc: 0, ship: 0 };
+    var m = { no: 'X-1', date: '2026-09-01', cust: { name: 'ก' } };
+    var clean = await buildDocPage(d, m, CFG.doc || {}, 'ต้นฉบับ');
+    m.voidWhy = 'ออกผิดชนิดเอกสาร';
+    var dead = await buildDocPage(d, m, CFG.doc || {}, 'ต้นฉบับ');
+    return { same: clean === dead, len: dead.length };
+  });
+  eq('ใบที่ยกเลิกวาดออกมาไม่เหมือนใบปกติ', stamped.same, false);
+  truthy('และยังเป็นรูปที่มีเนื้อหาจริง', stamped.len > 30000);
+  await page.screenshot({ path: 'out/ui-void.png' });
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+
+  /* ---------- 17. ไม่ได้กรอกที่อยู่ผู้ส่ง ต้องบอกก่อนพิมพ์ ----------
+     ที่อยู่ผู้ส่งมาจากชีท ตั้งค่าแอป และตั้งต้นเป็นช่องว่าง ถ้าไม่บอกอะไรเลย
+     จะรู้ตัวอีกทีตอนแปะใบปะหน้าบนกล่องไปแล้ว */
+  console.log('\n17. เตือนเมื่อยังไม่ได้กรอกที่อยู่ผู้ส่ง');
+  await page.evaluate(function () { go('list'); });
+  await page.waitForTimeout(400);
+  await page.evaluate(function () { openLabel((ORDERS || [])[0]); });
+  await page.waitForTimeout(300);
+  eq('กรอกที่อยู่ไว้แล้ว ต้องไม่ขึ้นคำเตือน',
+    /ยังไม่ได้กรอก/.test(await page.textContent('#m-body')), false);
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+
+  await page.evaluate(function () { CFG.sender = { name: '', addr: '   ', tel: '096' }; });
+  await page.evaluate(function () { openLabel((ORDERS || [])[0]); });
+  await page.waitForTimeout(300);
+  var lbTxt = await page.textContent('#m-body');
+  truthy('ไม่ได้กรอก ต้องขึ้นคำเตือน', /ยังไม่ได้กรอก/.test(lbTxt));
+  truthy('บอกด้วยว่าไปกรอกที่ชีทไหน', /ตั้งค่าแอป/.test(lbTxt));
+  truthy('แต่ยังกดสร้างใบปะหน้าได้อยู่ ไม่ได้ห้าม',
+    await page.locator('#lb-make').count() > 0);
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(200);
+
+  /* ---------- 18. ค้นตำบล/อำเภอ/จังหวัด แล้วได้รหัสไปรษณีย์ ----------
+     ของเดิมต้องเปิดกูเกิลหารหัสไปรษณีย์ทีละใบแล้วพิมพ์ตามมือ
+     พิมพ์ผิดทีคือพัสดุไปผิดจังหวัด */
+  console.log('\n18. ค้นที่อยู่ไทย');
+  await page.evaluate(function () { go('new'); resetForm(); });
+  await page.waitForTimeout(200);
+
+  eq('ข้อมูลครบทั้งประเทศ', await page.evaluate(function () { return thRows().length }), 7438);
+
+  console.log('\n   พิมพ์สั้นเกินไป ต้องยังไม่ขึ้นอะไร');
+  await page.fill('#f-addr-find', 'ท');
+  await page.waitForTimeout(150);
+  eq('ตัวเดียวยังไม่ค้น', await page.locator('#f-addr-hit [data-th]').count(), 0);
+
+  console.log('\n   พิมพ์ชื่อตำบล');
+  await page.fill('#f-addr-find', 'ท่าคล้อ');
+  await page.waitForTimeout(200);
+  var hitTxt = await page.textContent('#f-addr-hit');
+  truthy('เจอตำบลท่าคล้อของสระบุรี พร้อมรหัสไปรษณีย์',
+    /ต\.ท่าคล้อ อ\.แก่งคอย จ\.สระบุรี 18110/.test(hitTxt));
+  truthy('ชื่อซ้ำกันคนละจังหวัดก็ขึ้นให้เลือกทั้งคู่',
+    /ศรีสะเกษ/.test(hitTxt) && /สระบุรี/.test(hitTxt));
+
+  console.log('\n   กดเลือกแล้วต้องเติมต่อท้ายที่อยู่ ไม่เขียนทับ');
+  await page.fill('#f-addr', '32 ม.6');
+  await page.fill('#f-addr-find', 'ท่าคล้อ');
+  await page.waitForTimeout(200);
+  await page.click('#f-addr-hit [data-th]:nth-of-type(2)');
+  await page.waitForTimeout(200);
+  var addrNow = await page.inputValue('#f-addr');
+  truthy('บ้านเลขที่ที่ลูกค้าพิมพ์มายังอยู่', /^32 ม\.6/.test(addrNow));
+  truthy('ต่อท้ายด้วยตำบล อำเภอ จังหวัด รหัส',
+    /\n?ต\.ท่าคล้อ อ\.แก่งคอย จ\.สระบุรี 18110$/.test(addrNow));
+  eq('ล้างช่องค้นหาให้พร้อมพิมพ์ใหม่', await page.inputValue('#f-addr-find'), '');
+  eq('เก็บรายการที่ค้นไว้ออกให้', await page.locator('#f-addr-hit [data-th]').count(), 0);
+
+  console.log('\n   ค้นด้วยรหัสไปรษณีย์ก็ได้');
+  await page.fill('#f-addr-find', '18110');
+  await page.waitForTimeout(200);
+  truthy('พิมพ์รหัสแล้วขึ้นตำบลในรหัสนั้น',
+    /จ\.สระบุรี 18110/.test(await page.textContent('#f-addr-hit')));
+
+  console.log('\n   กรุงเทพฯ ต้องใช้ แขวง/เขต ไม่ใช่ ตำบล/อำเภอ');
+  await page.fill('#f-addr-find', 'บางรัก');
+  await page.waitForTimeout(200);
+  truthy('ขึ้นเป็นแขวง/เขต',
+    /แขวงบางรัก เขตบางรัก กรุงเทพมหานคร 10500/.test(await page.textContent('#f-addr-hit')));
+
+  console.log('\n   พิมพ์ชื่อที่ไม่มีจริง ต้องบอกตรง ๆ ไม่ใช่เงียบ');
+  await page.fill('#f-addr-find', 'ตำบลที่ไม่มีอยู่จริงเลย');
+  await page.waitForTimeout(200);
+  truthy('บอกว่าไม่พบ', /ไม่พบ/.test(await page.textContent('#f-addr-hit')));
+  await page.evaluate(function () { resetForm(); });
+  await page.waitForTimeout(150);
+  eq('ล้างฟอร์มแล้วช่องค้นหาว่างด้วย', await page.inputValue('#f-addr-find'), '');
+
+  /* ---------- 18.5 แก้รายการสินค้าของออเดอร์ที่คีย์แล้ว ---------- */
+  console.log('\n18.5 แก้รายการสินค้าของออเดอร์ที่คีย์แล้ว');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(600);
+  truthy('ทุกออเดอร์มีปุ่มแก้รายการ',
+    await page.locator('#list [data-ed]').count() > 0);
+
+  await page.locator('#list [data-ed]').first().click();
+  await page.waitForTimeout(350);
+  var edStart = await page.locator('#ed-rows .edrow').count();
+  truthy('เปิดมาแล้วเห็นรายการเดิมของใบนั้น', edStart > 0);
+
+  console.log('\n   กดเพิ่มสินค้าแล้วต้องมีบรรทัดใหม่ให้กรอก');
+  await page.click('#ed-add');
+  await page.waitForTimeout(200);
+  eq('ได้บรรทัดเพิ่มมาหนึ่ง', await page.locator('#ed-rows .edrow').count(), edStart + 1);
+
+  /* เลือกสินค้าและใส่จำนวนในบรรทัดใหม่ แล้วยอดที่คิดให้ดูต้องขยับตาม */
+  var lastRow = page.locator('#ed-rows .edrow').last();
+  var sku2 = await page.evaluate(function () { return CFG.products[1].sku });
+  await lastRow.locator('.i-sku').selectOption(sku2);
+  await lastRow.locator('.i-qty').fill('2');
+  await lastRow.locator('.i-price').fill('150');
+  await page.waitForTimeout(200);
+  truthy('ยอดที่คิดให้ดูรวมของใหม่เข้าไปด้วย',
+    /300|฿/.test(await page.textContent('#ed-sum')));
+
+  console.log('\n   ลบบรรทัดได้ แต่ห้ามลบจนไม่เหลือเลย');
+  var n1 = await page.locator('#ed-rows .edrow').count();
+  await page.locator('#ed-rows .edrow .rm').last().click();
+  await page.waitForTimeout(150);
+  eq('ลบแล้วเหลือน้อยลงหนึ่ง', await page.locator('#ed-rows .edrow').count(), n1 - 1);
+
+  while (await page.locator('#ed-rows .edrow').count() > 1) {
+    await page.locator('#ed-rows .edrow .rm').last().click();
+    await page.waitForTimeout(80);
+  }
+  await page.locator('#ed-rows .edrow .rm').last().click();
+  await page.waitForTimeout(150);
+  eq('บรรทัดสุดท้ายลบไม่ได้', await page.locator('#ed-rows .edrow').count(), 1);
+
+  console.log('\n   บันทึกจริงแล้วรายการในใบต้องเปลี่ยนตาม');
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.locator('#ed-rows .edrow').first().locator('.i-qty').fill('7');
+  await page.click('#ed-save');
+  await page.waitForTimeout(700);
+  truthy('ขึ้นว่าแก้รายการแล้ว',
+    /แก้รายการของ/.test(await page.textContent('#ed-msg')));
+  eq('ส่งจำนวนใหม่ขึ้นชีทจริง',
+    await page.evaluate(function () {
+      return MOCK_ORDERS[0].items[0].qty;
+    }), 7);
+
+  console.log('\n   ใบที่ออกเอกสารไปแล้วต้องแก้ไม่ได้ และบอกเหตุผลตรง ๆ');
+  await page.evaluate(function () {
+    MOCK_DOCS.push({ no: 'ONIV26-09999', type: 'ใบเสร็จรับเงิน',
+                     orderNo: MOCK_ORDERS[0].no, voidWhy: '' });
+  });
+  await page.click('#ed-save');
+  await page.waitForTimeout(600);
+  truthy('บอกว่าออกเอกสารไปแล้ว',
+    /ออกเอกสารไปแล้ว/.test(await page.textContent('#ed-msg')));
+  truthy('บอกด้วยว่าต้องยกเลิกใบเดิมก่อน',
+    /ยกเลิกใบเดิมก่อน/.test(await page.textContent('#ed-msg')));
+  await page.evaluate(function () { MOCK_DOCS.pop(); closeModal(); });
+  await page.waitForTimeout(200);
+
+  /* ---------- 19. ลายเซ็น ---------- */
+  console.log('\n19. ลายเซ็น');
+
+  /* วาดลายเซ็นแบบเส้น แล้วดูว่ามีหมึกลงบนกระดาษจริงตรงช่องที่ควรลง
+     ไม่ใช่แค่ "ฟังก์ชันไม่ throw" — ช่องเซ็นที่ยังว่างคือบั๊กที่เงียบที่สุด */
+  var sigInk = await page.evaluate(async function () {
+    var sig = { w: 600, h: 200, s: [[40, 150, 180, 40, 320, 160, 470, 45, 560, 120]] };
+    var cv = document.createElement('canvas');
+    cv.width = 400; cv.height = 140;
+    var g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 400, 140);
+    var drew = signDraw(g, sig, 10, 10, 380, 120);
+    var d = g.getImageData(0, 0, 400, 140).data, ink = 0;
+    for (var i = 0; i < d.length; i += 4) if (d[i] < 200 || d[i + 1] < 200) ink++;
+    return { drew: drew, ink: ink };
+  });
+  eq('signDraw บอกว่าวาดแล้ว', sigInk.drew, true);
+  truthy('มีหมึกลงบนผืนผ้าใบจริง ไม่ใช่ช่องว่าง', sigInk.ink > 200);
+
+  console.log('\n   ค่าที่พังต้องไม่ทำให้ใบออกไม่ได้ แค่เว้นช่องไว้เซ็นมือ');
+  var bad = await page.evaluate(function () {
+    var g = document.createElement('canvas').getContext('2d');
+    return ['', null, 'ไม่ใช่ json', '{}', '{"s":[]}', 12345].map(function (v) {
+      try { return signDraw(g, v, 0, 0, 100, 50); } catch (e) { return 'THREW:' + e.message; }
+    });
+  });
+  eq('ค่าพังทุกแบบคืน false เฉย ๆ ไม่โยน error', bad, [false, false, false, false, false, false]);
+
+  console.log('\n   เก็บลายเซ็นของร้าน แล้วต้องขึ้นบนใบที่ออกหลังจากนั้น');
+  var stamped = await page.evaluate(async function () {
+    var sig = JSON.stringify({ w: 600, h: 200, s: [[40, 150, 300, 40, 560, 150]] });
+    await api('saveSignature', 'auth', sig);
+    CFG.doc = CFG.doc || {}; CFG.doc.sign = CFG.doc.sign || {};
+    CFG.doc.sign.auth = sig;
+
+    /* วาดใบสองรอบ — ไม่มีลายเซ็น กับมีลายเซ็น แล้วนับหมึกเฉพาะช่องขวาสุด
+       (ผู้มีอำนาจลงนาม) ถ้าตัวเลขไม่ต่างกัน แปลว่าลายเซ็นไม่ได้ลงบนกระดาษจริง */
+    var d = { no: 'TEST-1', type: 'ใบเสร็จรับเงิน', vatRate: 0.07,
+              lines: [{ name: 'ของทดสอบ', po: '', qty: 1, unit: 'ชิ้น', price: 100, amount: 100 }],
+              base: 100, vat: 7, total: 107, totalText: 'หนึ่งร้อยเจ็ดบาทถ้วน' };
+    var m = { no: 'TEST-1', date: '2026-09-02', cust: { name: 'ลูกค้าทดสอบ' }, form: [0] };
+
+    function ink(url) {
+      return new Promise(function (res) {
+        var im = new Image();
+        im.onload = function () {
+          var c = document.createElement('canvas');
+          c.width = im.naturalWidth; c.height = im.naturalHeight;
+          var g = c.getContext('2d');
+          g.drawImage(im, 0, 0);
+          /* ช่องขวาสุดของแถวลายเซ็น อยู่ท้ายกระดาษ */
+          var x = Math.round(c.width * 0.70), y = Math.round(c.height * 0.855);
+          var w = Math.round(c.width * 0.25), h = Math.round(c.height * 0.05);
+          var p = g.getImageData(x, y, w, h).data, n = 0;
+          for (var i = 0; i < p.length; i += 4) if (p[i] < 200 || p[i + 2] < 200) n++;
+          res(n);
+        };
+        im.onerror = function () { res(-1); };
+        im.src = url;
+      });
+    }
+    var off = await ink(await buildDocPage(d, m, { co: {} }, 'ต้นฉบับ'));
+    var on  = await ink(await buildDocPage(d, m, { co: {}, sign: { auth: sig } }, 'ต้นฉบับ'));
+    return { off: off, on: on };
+  });
+  truthy('ใบที่ยังไม่ได้เซ็น ช่องนั้นแทบไม่มีหมึก', stamped.off >= 0);
+  truthy('เซ็นแล้วหมึกในช่องนั้นเพิ่มขึ้นจริง', stamped.on > stamped.off + 100);
+
+  console.log('\n   ที่ตั้งลายเซ็นต้องหาเจอเสมอ แม้ช่วงที่เลือกไม่มีออเดอร์');
+  await page.click('.tabs button[data-go="sum"]');
+  await page.waitForTimeout(700);
+  eq('เข้าหน้าสรุปยอดแล้วเจอปุ่มตั้งลายเซ็นสองช่อง',
+    await page.locator('#sig-box button[data-signbtn]').count(), 2);
+  eq('มีปุ่มใช้รูปลายเซ็นที่มีอยู่แล้วด้วย',
+    await page.locator('#sig-box button[data-sigimg]').count(), 2);
+
+  /* เลือกช่วงเวลาที่ไม่มีออเดอร์ กล่องสรุปยอดจะถูกแทนที่ด้วยข้อความว่าง
+     ที่ตั้งลายเซ็นต้องยังอยู่ ไม่หายไปพร้อมกัน (ของเดิมหายทั้งอันโดยไม่มีอะไรบอก) */
+  await page.evaluate(function () {
+    SUM_RANGE = 'today';
+    drawSummary([{ no: 'X', date: '2000-01-01', status: 'รอชำระ', items: [] }]);
+  });
+  await page.waitForTimeout(200);
+  truthy('กล่องสรุปยอดขึ้นว่าไม่มีออเดอร์',
+    /ยังไม่มีออเดอร์ในช่วงนี้/.test(await page.textContent('#summary')));
+  eq('แต่ที่ตั้งลายเซ็นยังอยู่ครบ',
+    await page.locator('#sig-box button[data-signbtn]').count(), 2);
+
+  /* ---------- 19.5 ข้อความส่งลูกค้าต้องบวกลงตัว + ไฟล์ต้องไม่ใหญ่เกินส่ง ---------- */
+  console.log('\n19.5 ข้อความส่งลูกค้า: ตัวเลขต้องบวกลงตัว');
+
+  /* ของจริง: 237 + ค่าส่ง 50 = 287 แต่ยอดชำระขึ้น 303.59 ลูกค้าทักมาว่าบวกผิด
+     เพราะบรรทัด VAT ไม่ได้ถูกพิมพ์ลงในข้อความ */
+  var msg = await page.evaluate(function () {
+    var o = ORDERS.filter(function (x) { return x.no === 'AST-26-0006' })[0];
+    return orderMsg(o);
+  });
+  truthy('มีบรรทัดภาษีมูลค่าเพิ่ม', /ภาษีมูลค่าเพิ่ม : 16\.59 บาท/.test(msg));
+
+  /* ข้อสอบที่สำคัญกว่าการมีบรรทัด: ตัวเลขที่พิมพ์ต้องบวกได้เท่ายอดชำระเสมอ */
+  var lines = msg.split('\n');
+  function pick(re) {
+    for (var i = 0; i < lines.length; i++) {
+      var m = re.exec(lines[i]);
+      if (m) return Number(m[1].replace(/,/g, ''));
+    }
+    return null;
+  }
+  var mSub  = pick(/รวมค่าสินค้า : ([\d,.]+)/);
+  var mVat  = pick(/ภาษีมูลค่าเพิ่ม : ([\d,.]+)/);
+  var mShip = pick(/ค่าจัดส่ง : ([\d,.]+)/);
+  var mNet  = pick(/ยอดชำระทั้งหมด : ([\d,.]+)/);
+  eq('บรรทัดที่พิมพ์บวกกันได้เท่ายอดชำระพอดี',
+    Math.round((mSub + mVat + mShip) * 100) / 100, mNet);
+
+  console.log('\n   ใบที่ไม่รับ VAT ต้องไม่มีบรรทัดนั้นโผล่มาเปล่า ๆ');
+  var msg2 = await page.evaluate(function () {
+    var o = ORDERS.filter(function (x) { return x.no === 'AST-26-0005' })[0];
+    return orderMsg(o);
+  });
+  eq('ไม่มีบรรทัดภาษี', /ภาษีมูลค่าเพิ่ม/.test(msg2), false);
+  var s2 = /รวมค่าสินค้า : ([\d,.]+)/.exec(msg2), n2 = /ยอดชำระทั้งหมด : ([\d,.]+)/.exec(msg2),
+      p2 = /ค่าจัดส่ง : ([\d,.]+)/.exec(msg2);
+  eq('ยังบวกลงตัวเหมือนเดิม',
+    Number(s2[1].replace(/,/g,'')) + Number(p2[1].replace(/,/g,'')),
+    Number(n2[1].replace(/,/g,'')));
+
+  console.log('\n   ไฟล์เอกสารต้องเล็กพอส่งในไลน์ได้ ไม่ต้องเอาไปบีบเอง');
+  var fsz = await page.evaluate(async function () {
+    var d = { no:'X', type:'ใบเสร็จรับเงิน', vatRate:0.07,
+      lines:[{name:'End Mill Corn cut 2F 1.0*7.0*3.175*38L (1pcs)',po:'',qty:3,unit:'ชิ้น',price:79,amount:237}],
+      base:237, vat:16.59, total:303.59, totalText:'สามร้อยสามบาท' };
+    var url = await buildDocPage(d, { no:'X', date:'2026-09-03', cust:{name:'ก'} },
+                                 { co:{} }, 'ต้นฉบับ');
+    var jpg = await toJpegUrl(url, 0.85);
+    var b64 = function(u){ return Math.round(u.split(',')[1].length * 0.75 / 1024) };
+    return { png: b64(url), jpg: b64(jpg), isJpeg: jpg.indexOf('data:image/jpeg') === 0 };
+  });
+  eq('แปลงเป็น JPEG จริง', fsz.isJpeg, true);
+  truthy('เล็กลงจริงเมื่อเทียบกับ PNG (' + fsz.png + ' KB → ' + fsz.jpg + ' KB)',
+    fsz.jpg < fsz.png * 0.8);
+  truthy('ไฟล์ไม่เกินครึ่งเมกะไบต์', fsz.jpg < 512);
+
+  /* ---------- 20. ไฟล์ PDF ---------- */
+  console.log('\n20. ไฟล์ PDF');
+
+  var pdf = await page.evaluate(async function () {
+    var cv = document.createElement('canvas');
+    cv.width = 300; cv.height = 424;
+    var g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 300, 424);
+    g.fillStyle = '#000'; g.fillRect(30, 30, 240, 60);
+    var blob = pdfFromCanvas(cv, 210, 297, 'ONIV26-00243');
+    var buf = new Uint8Array(await blob.arrayBuffer());
+    var head = '', tail = '';
+    for (var i = 0; i < 8; i++) head += String.fromCharCode(buf[i]);
+    for (var j = buf.length - 8; j < buf.length; j++) tail += String.fromCharCode(buf[j]);
+
+    /* ตำแหน่งใน xref ต้องชี้ไปที่หัว object จริง ถ้าคลาดไปไบต์เดียวไฟล์เปิดไม่ได้
+       และ "เปิดไม่ได้" คือสิ่งที่จะไปโผล่ตอนส่งให้บัญชีลูกค้า ไม่ใช่ตอนทดสอบ */
+    var all = '';
+    for (var k = 0; k < buf.length; k++) all += String.fromCharCode(buf[k]);
+    var sx = all.lastIndexOf('startxref');
+    var off = parseInt(all.slice(sx + 9).trim(), 10);
+    var lines = all.slice(off).split('\n');
+    var okOff = true;
+    for (var n = 1; n <= 6; n++) {
+      var o = parseInt(lines[2 + n], 10);
+      if (all.slice(o, o + String(n).length + 6) !== n + ' 0 obj') okOff = false;
+    }
+    /* ไบต์แรกของรูปต้องอยู่ติดหลัง "stream\n" พอดี และยาวเท่า /Length เป๊ะ
+       เกินมาตัวเดียว ตัวอ่าน PDF จะอ่านรูปเลื่อนไปหนึ่งไบต์ ไฟล์เปิดได้แต่รูปเสีย
+       ซึ่งจะไปโผล่ตอนบัญชีลูกค้าเปิดดู ไม่ใช่ตอนเราทดสอบ */
+    var im = /\/Length (\d+) >>\nstream\n/.exec(all.slice(all.indexOf('/DCTDecode')));
+    var st = all.indexOf('/DCTDecode') + im.index + im[0].length;
+    var jpg = all.slice(st, st + Number(im[1]));
+
+    return { type: blob.type, size: blob.size, head: head, tail: tail.trim(),
+             xrefHead: lines[0], okOff: okOff,
+             jpgHead: jpg.charCodeAt(0) + ',' + jpg.charCodeAt(1),
+             jpgTail: jpg.charCodeAt(jpg.length-2) + ',' + jpg.charCodeAt(jpg.length-1) };
+  });
+  eq('ชนิดไฟล์เป็น PDF', pdf.type, 'application/pdf');
+  eq('ขึ้นต้นด้วยหัว PDF', pdf.head, '%PDF-1.4');
+  truthy('ปิดท้ายด้วย %%EOF', /%%EOF$/.test(pdf.tail));
+  eq('มีตาราง xref', pdf.xrefHead, 'xref');
+  eq('ทุกตำแหน่งใน xref ชี้ไปที่หัว object จริง', pdf.okOff, true);
+  truthy('ไฟล์มีเนื้อจริง ไม่ใช่ไฟล์เปล่า', pdf.size > 1000);
+  eq('รูปข้างในเริ่มที่หัว JPEG พอดี ไม่มีไบต์แปลกปลอมนำหน้า', pdf.jpgHead, '255,216');
+  eq('และจบที่ท้าย JPEG พอดีตามความยาวที่ประกาศไว้', pdf.jpgTail, '255,217');
+
+  /* ---------- 22. ยกเลิกทั้งออเดอร์ ---------- */
+  console.log('\n22. ยกเลิกทั้งออเดอร์ — ลูกค้าเปลี่ยนใจไม่รับของ');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { loadOrders(true) });
+  await page.waitForTimeout(600);
+  truthy('ใบที่ยังไม่ยกเลิกมีปุ่มยกเลิกให้กด',
+    await page.locator('#list [data-cx]').count() > 0);
+
+  /* เลือกใบสุดท้ายในรายการ ไม่ใช่ใบที่หมวดก่อนหน้าเพิ่งแก้รายการไป */
+  var cxLast = await page.locator('#list [data-cx]').count() - 1;
+  var cxNo = await page.evaluate(function (i) {
+    var b = document.querySelectorAll('#list [data-cx]')[i];
+    return ORDERS[Number(b.dataset.cx)].no;
+  }, cxLast);
+  var cxWas = await page.evaluate(function (no) {
+    return MOCK_ORDERS.filter(function (o) { return o.no === no })[0].status;
+  }, cxNo);
+
+  await page.locator('#list [data-cx]').nth(cxLast).click();
+  await page.waitForTimeout(350);
+  truthy('เปิดหน้าต่างยกเลิกของใบที่กด',
+    (await page.textContent('#m-title')).indexOf(cxNo) > -1);
+  truthy('บอกก่อนว่าของจะคืนเข้าสต๊อก',
+    /คืนเข้าสต๊อก/.test(await page.textContent('#m-body')));
+  truthy('บอกว่ายกเลิกแล้วย้อนกลับไม่ได้',
+    /ย้อนกลับไม่ได้/.test(await page.textContent('#m-body')));
+
+  console.log('\n   ไม่ใส่เหตุผล ต้องไม่ยอมให้ยกเลิก');
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.click('#cx-go');
+  await page.waitForTimeout(250);
+  truthy('บอกว่าต้องมีเหตุผลอย่างน้อย 5 ตัวอักษร',
+    /5 ตัวอักษร/.test(await page.textContent('#cx-msg')));
+  eq('ออเดอร์ยังไม่ถูกแตะเลย', await page.evaluate(function (no) {
+    return MOCK_ORDERS.filter(function (o) { return o.no === no })[0].status;
+  }, cxNo), cxWas);
+
+  console.log('\n   กดเหตุผลสำเร็จรูปได้ ไม่ต้องพิมพ์เองทุกครั้ง');
+  await page.locator('#cx-quick button').first().click();
+  await page.waitForTimeout(150);
+  eq('เหตุผลลงช่องให้แล้ว', await page.inputValue('#cx-why'), 'ลูกค้าเปลี่ยนใจไม่รับของ');
+
+  console.log('\n   ใบที่ออกเอกสารไปแล้ว ต้องยกเลิกใบเอกสารก่อน');
+  await page.evaluate(function (no) {
+    MOCK_DOCS.push({ no: 'ONIV26-08888', type: 'ใบเสร็จรับเงิน', orderNo: no, voidWhy: '' });
+  }, cxNo);
+  await page.click('#cx-go');
+  await page.waitForTimeout(600);
+  truthy('บอกว่าออกเอกสารไปแล้ว',
+    /ออกเอกสารไปแล้ว/.test(await page.textContent('#cx-msg')));
+  eq('ยังไม่ยกเลิกให้', await page.evaluate(function (no) {
+    return MOCK_ORDERS.filter(function (o) { return o.no === no })[0].status;
+  }, cxNo), cxWas);
+  await page.evaluate(function () { MOCK_DOCS.pop() });
+
+  console.log('\n   ยกเลิกจริง');
+  await page.click('#cx-go');
+  await page.waitForTimeout(700);
+  truthy('ขึ้นว่ายกเลิกแล้ว', /ยกเลิก/.test(await page.textContent('#cx-msg')));
+  var cxAfter = await page.evaluate(function (no) {
+    var o = MOCK_ORDERS.filter(function (x) { return x.no === no })[0];
+    return { status: o.status, net: o.net, items: (o.items || []).length, note: o.note };
+  }, cxNo);
+  eq('สถานะเป็นยกเลิก', cxAfter.status, 'ยกเลิก');
+  eq('ยอดของใบนี้เป็นศูนย์', cxAfter.net, 0);
+  eq('รายการสินค้าถูกรื้อออก ของจึงคืนเข้าสต๊อก', cxAfter.items, 0);
+  truthy('เหตุผลถูกส่งขึ้นชีทด้วย', /ลูกค้าเปลี่ยนใจไม่รับของ/.test(cxAfter.note));
+
+  console.log('\n   ใบที่ยกเลิกแล้วต้องไม่มีปุ่มให้กดต่อ');
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(500);
+  var deadRow = await page.evaluate(function (no) {
+    var rows = document.querySelectorAll('#list .row');
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].textContent.indexOf(no) > -1) {
+        return { txt: rows[i].querySelector('.acts').textContent,
+                 btns: rows[i].querySelectorAll('.acts button').length };
+      }
+    }
+    return null;
+  }, cxNo);
+  truthy('แถวนั้นบอกว่ายกเลิกแล้ว', deadRow && /ยกเลิกแล้ว/.test(deadRow.txt));
+  eq('ไม่มีปุ่มพิมพ์ใบปะหน้าหรือออกเอกสารเหลืออยู่เลย', deadRow && deadRow.btns, 0);
+
+  /* ---------- 23. พิมพ์ชื่อลูกค้าเก่าแล้วเติมเบอร์กับที่อยู่ให้ ---------- */
+  console.log('\n23. ลูกค้าเก่า — พิมพ์ชื่อแล้วขึ้นข้อมูลเดิมให้เลือก');
+
+  await page.click('.tabs button[data-go="new"]');
+  await page.evaluate(function () { resetForm() });
+  await page.waitForTimeout(200);
+
+  await page.fill('#f-cust', 'ล');
+  await page.waitForTimeout(400);
+  eq('พิมพ์ตัวเดียวยังไม่ขึ้นรายชื่อ กันเด้งใส่ทุกตัวอักษร',
+    await page.locator('#f-cust-hit button').count(), 0);
+
+  await page.fill('#f-cust', 'ลูกค้า');
+  await page.waitForTimeout(600);
+  truthy('ขึ้นรายชื่อลูกค้าเก่าให้เลือก',
+    await page.locator('#f-cust-hit button').count() > 0);
+  truthy('ในรายการบอกเบอร์ให้ดูก่อนกด ไม่ใช่มีแต่ชื่อ',
+    /08\d{8}/.test(await page.textContent('#f-cust-hit')));
+
+  await page.locator('#f-cust-hit button').first().click();
+  await page.waitForTimeout(300);
+  var picked = await page.evaluate(function () {
+    return { cust: document.querySelector('#f-cust').value,
+             tel: document.querySelector('#f-tel').value,
+             addr: document.querySelector('#f-addr').value };
+  });
+  truthy('ใส่ชื่อลงช่องให้', picked.cust.length > 0);
+  truthy('เติมเบอร์ของครั้งล่าสุดให้', /^0\d{8,9}$/.test(picked.tel));
+  truthy('เติมที่อยู่ของครั้งล่าสุดให้', picked.addr.length > 10);
+  eq('เลือกแล้วกล่องรายชื่อปิดเอง', await page.locator('#f-cust-hit button').count(), 0);
+
+  console.log('\n   ที่อยู่ที่พิมพ์ไว้เองแล้ว ต้องไม่ถูกที่อยู่เก่าทับ');
+  await page.evaluate(function () { resetForm() });
+  await page.fill('#f-addr', 'ส่งที่หน้างานโครงการใหม่ 99 ถ.สมมติ');
+  await page.fill('#f-cust', 'ลูกค้า');
+  await page.waitForTimeout(600);
+  await page.locator('#f-cust-hit button').first().click();
+  await page.waitForTimeout(300);
+  eq('ที่อยู่ที่คีย์ไว้ยังอยู่ครบ', await page.inputValue('#f-addr'),
+    'ส่งที่หน้างานโครงการใหม่ 99 ถ.สมมติ');
+  truthy('แต่เบอร์ที่ยังว่างอยู่ยังเติมให้',
+    /^0\d{8,9}$/.test(await page.inputValue('#f-tel')));
+
+  console.log('\n   ใบเสนอราคาก็ดึงลูกค้าเก่าได้เหมือนกัน');
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(300);
+  await page.fill('#q-name', 'ลูกค้า');
+  await page.waitForTimeout(600);
+  truthy('ขึ้นรายชื่อในหน้าใบเสนอราคาด้วย',
+    await page.locator('#q-name-hit button').count() > 0);
+  await page.locator('#q-name-hit button').first().click();
+  await page.waitForTimeout(300);
+  truthy('เติมที่อยู่ให้ในใบเสนอราคา', (await page.inputValue('#q-addr')).length > 10);
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(200);
+
+  /* ---------- 24. เน็ตหลุดกลางทาง ---------- */
+  console.log('\n24. เน็ตหลุดกลางทาง (HTTP 0) — ของจริงเจอตอนกดแก้รายการใบ AST-26-0018');
+
+  var nm = await page.evaluate(function () {
+    return {
+      http0: netMsg_('NetworkError: การเชื่อมต่อล้มเหลวเนื่องจาก HTTP 0'),
+      fetch: netMsg_('Failed to fetch'),
+      other: netMsg_('ออเดอร์ AST-26-0018 ถูกยกเลิกไปแล้ว แก้รายการไม่ได้')
+    };
+  });
+  truthy('บอกว่ายังไม่รู้ว่าบันทึกลงไปแล้วหรือยัง', /ยังไม่รู้ว่าบันทึกลงไปแล้วหรือยัง/.test(nm.http0));
+  truthy('บอกว่ากดซ้ำได้ ระบบกันงานซ้ำไว้ให้', /กดปุ่มเดิมซ้ำได้เลย/.test(nm.http0));
+  truthy('บอกทางออกว่าให้เปิดแอปใหม่', /เปิดลิงก์ใหม่/.test(nm.http0));
+  truthy('ไม่มีคำว่า HTTP 0 ดิบ ๆ เหลืออยู่ให้คนอ่านงง', nm.http0.indexOf('HTTP 0') < 0);
+  truthy('ข้อความแบบอื่นก็แปลด้วย', /ยังไม่รู้ว่าบันทึก/.test(nm.fetch));
+  eq('ข้อความปกติของระบบต้องไม่ถูกแปลทับ', nm.other,
+    'ออเดอร์ AST-26-0018 ถูกยกเลิกไปแล้ว แก้รายการไม่ได้');
+
+  console.log('\n   กดซ้ำหลังเน็ตหลุด ต้องใช้กุญแจกันซ้ำตัวเดิม ไม่ใช่ตัวใหม่');
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { loadOrders(true) });
+  await page.waitForTimeout(600);
+  await page.locator('#list [data-ed]').first().click();
+  await page.waitForTimeout(350);
+
+  /* ตัดสายจริง ๆ ที่ชั้น google.script.run — ทางเดียวกับที่ของจริงล้ม
+     จะได้ทดสอบทั้งการแปลข้อความและกุญแจกันซ้ำพร้อมกันในทางเดินเดียว */
+  await page.evaluate(function () {
+    window.CAPKEYS = [];
+    window.__realRun = google.script.run;
+    var stub = {
+      withSuccessHandler: function () { return stub },
+      withFailureHandler: function (f) { stub.__fail = f; return stub },
+      editOrderItems: function (no, items, by, ck) {
+        window.CAPKEYS.push(ck);
+        setTimeout(function () {
+          stub.__fail({ message: 'NetworkError: การเชื่อมต่อล้มเหลวเนื่องจาก HTTP 0' });
+        }, 5);
+      }
+    };
+    google.script.run = stub;
+  });
+
+  await page.click('#ed-save');
+  await page.waitForTimeout(400);
+  truthy('ขึ้นข้อความเน็ตหลุดที่อ่านรู้เรื่อง',
+    /ยังไม่รู้ว่าบันทึกลงไปแล้วหรือยัง/.test(await page.textContent('#ed-msg')));
+  truthy('ปุ่มกลับมากดได้อีก ไม่ค้างเป็นกำลังบันทึก',
+    !(await page.locator('#ed-save').isDisabled()));
+
+  await page.click('#ed-save');
+  await page.waitForTimeout(400);
+  var keys = await page.evaluate(function () { return window.CAPKEYS });
+  eq('ยิงไปสองรอบ', keys.length, 2);
+  eq('กุญแจเป็นตัวเดิมทั้งสองรอบ เซิร์ฟเวอร์จึงกันซ้ำได้จริง', keys[0], keys[1]);
+
+  await page.evaluate(function () {
+    google.script.run = window.__realRun;
+    closeModal();
+  });
+  await page.waitForTimeout(200);
+
+  console.log('\n   บันทึกสำเร็จแล้ว กุญแจต้องเปลี่ยน ไม่งั้นแก้รอบสองจะเงียบหาย');
+  await page.locator('#list [data-ed]').first().click();
+  await page.waitForTimeout(350);
+  var k1 = await page.evaluate(function () { return ED_KEY });
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.locator('#ed-rows .edrow').first().locator('.i-qty').fill('4');
+  await page.click('#ed-save');
+  await page.waitForTimeout(700);
+  var k2 = await page.evaluate(function () { return ED_KEY });
+  truthy('กุญแจเปลี่ยนหลังบันทึกสำเร็จ', !!k1 && !!k2 && k1 !== k2);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
+  /* ---------- 24.5 ค่าส่ง/ส่วนลด แก้ได้ในหน้าต่างแก้รายการ ---------- */
+  console.log('\n24.5 แก้ค่าส่งกับส่วนลดพร้อมรายการสินค้า');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { MOCK_DOCS.length = 0; loadOrders(true) });
+  await page.waitForTimeout(500);
+  await page.locator('#list [data-ed]').first().click();
+  await page.waitForTimeout(400);
+
+  truthy('มีช่องค่าจัดส่งให้แก้', await page.locator('#ed-ship').count() > 0);
+  truthy('มีช่องส่วนลดให้แก้', await page.locator('#ed-disc').count() > 0);
+  eq('ค่าส่งขึ้นค่าเดิมของใบนั้น', await page.inputValue('#ed-ship'),
+     String(await page.evaluate(function () { return Number(ORDERS[0].ship) || 0 })));
+
+  console.log('\n   กล่องสรุปต้องโชว์ยอดสุทธิ ไม่ใช่แค่ยอดก่อน VAT');
+  truthy('มีบรรทัดยอดสุทธิ', /ยอดสุทธิ/.test(await page.textContent('#ed-sum')));
+
+  console.log('\n   ลบค่าส่งแล้วยอดสุทธิต้องลดลงทันทีบนหน้าจอ');
+  var netBefore = await page.textContent('#ed-sum');
+  await page.fill('#ed-ship', '0');
+  await page.waitForTimeout(250);
+  var netAfter = await page.textContent('#ed-sum');
+  truthy('ตัวเลขบนกล่องสรุปเปลี่ยนตาม', netBefore !== netAfter);
+  truthy('ไม่มีบรรทัดค่าจัดส่งเหลือแล้ว', !/ค่าจัดส่ง/.test(netAfter));
+
+  console.log('\n   บันทึกแล้วค่าส่งต้องขึ้นชีทจริง');
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.click('#ed-save');
+  await page.waitForTimeout(800);
+  eq('ค่าส่งในชีทเป็นศูนย์แล้ว',
+     await page.evaluate(function () { return Number(MOCK_ORDERS[0].ship) }), 0);
+  truthy('ข้อความยืนยันบอกยอดสุทธิด้วย',
+    /ยอดสุทธิ/.test(await page.textContent('#ed-msg')));
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
+  /* ---------- 25. แก้ใบที่ยังไม่ได้ส่ง + ปุ่มส่งแล้ว ---------- */
+  console.log('\n25. แก้ใบที่ยังไม่ได้ส่งลูกค้า และปุ่ม "ส่งแล้ว"');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { MOCK_DOCS.length = 0; loadOrders(true) });
+  await page.waitForTimeout(500);
+
+  /* ออกใบให้ออเดอร์ใบแรกก่อน แล้วค่อยแก้ */
+  await page.locator('#list [data-dc]').first().click();
+  await page.waitForTimeout(400);
+  await page.click('#dc-make');
+  await page.waitForTimeout(900);
+  var docNo = await page.evaluate(function () { return MOCK_DOCS[0].no });
+  truthy('ออกใบได้', !!docNo);
+  var totalBefore = await page.evaluate(function () { return MOCK_DOCS[0].doc.total });
+
+  await page.evaluate(function () { drawOldDocs(ORDERS[0].no) });
+  await page.waitForTimeout(500);
+  truthy('ใบที่ยังไม่ส่งมีปุ่มแก้ไขใบ', await page.locator('#dc-old [data-rv]').count() > 0);
+  truthy('และมีปุ่มบอกว่าส่งแล้ว', await page.locator('#dc-old [data-sd]').count() > 0);
+  truthy('ขึ้นป้ายว่ายังไม่ได้ส่ง', /ยังไม่ได้ส่ง/.test(await page.textContent('#dc-old')));
+
+  console.log('\n   กดแก้ไขใบ ต้องบังคับให้บอกเหตุผลก่อน');
+  await page.locator('#dc-old [data-rv]').first().click();
+  await page.waitForTimeout(250);
+  await page.click('#dc-old .rv-go');
+  await page.waitForTimeout(250);
+  truthy('เตือนว่าต้องมีเหตุผล 5 ตัวอักษร',
+    /5 ตัวอักษร/.test(await page.textContent('#dc-old .rv-msg')));
+
+  console.log('\n   แก้จริงแล้วเลขใบต้องไม่เปลี่ยน');
+  await page.evaluate(function () {
+    window.confirm = function () { return true };
+    /* ลูกค้าขอลดราคา — ยอดใหม่ต้องไปโผล่บนใบเดิม */
+    MOCK_ORDERS[0].items[0].price = 500;
+    MOCK_ORDERS[0].items[0].total = 500;
+  });
+  await page.fill('#dc-old .rv-why', 'ยอดผิด ใบยังไม่ได้ส่ง');
+  await page.click('#dc-old .rv-go');
+  await page.waitForTimeout(800);
+  var after = await page.evaluate(function () {
+    return { n: MOCK_DOCS.length, no: MOCK_DOCS[0].no, total: MOCK_DOCS[0].doc.total,
+             note: MOCK_DOCS[0].note || '' };
+  });
+  eq('ไม่มีใบใหม่งอกขึ้นมา', after.n, 1);
+  eq('ยังเป็นเลขใบเดิม', after.no, docNo);
+  truthy('ยอดบนใบเปลี่ยนตามออเดอร์', after.total !== totalBefore);
+  truthy('จดร่องรอยว่าแก้ครั้งที่ 1', /แก้ไขครั้งที่ 1/.test(after.note));
+  truthy('จดยอดเดิมไว้ด้วย', after.note.indexOf(String(totalBefore)) > -1);
+
+  console.log('\n   กดว่าส่งแล้ว ปุ่มแก้ต้องหายไป');
+  await page.evaluate(function () { drawOldDocs(ORDERS[0].no) });
+  await page.waitForTimeout(400);
+  await page.locator('#dc-old [data-sd]').first().click();
+  await page.waitForTimeout(800);
+  truthy('บันทึกว่าส่งแล้ว', await page.evaluate(function () { return !!MOCK_DOCS[0].sentAt }));
+  eq('ปุ่มแก้ไขใบหายไปแล้ว', await page.locator('#dc-old [data-rv]').count(), 0);
+  eq('ปุ่มส่งแล้วก็หายไปด้วย', await page.locator('#dc-old [data-sd]').count(), 0);
+  truthy('ขึ้นป้ายว่าส่งแล้ว', /ส่งแล้ว/.test(await page.textContent('#dc-old')));
+  truthy('ยังยกเลิกได้อยู่', await page.locator('#dc-old [data-vd]').count() > 0);
+
+  console.log('\n   ใบที่ส่งแล้ว ถ้าฝืนแก้ต้องโดนปฏิเสธพร้อมบอกทางออก');
+  var refused = await page.evaluate(async function (no) {
+    try {
+      await api('reviseDoc', { no: no, why: 'ขอแก้อีกที', clientKey: 'x1' });
+      return 'ไม่ได้ปฏิเสธ';
+    } catch (e) { return e.message }
+  }, docNo);
+  truthy('บอกว่าส่งไปแล้วจึงแก้ไม่ได้', /ส่งให้ลูกค้าแล้ว/.test(refused));
+
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
+  /* ---------- 26. ค้นหาออเดอร์ทั้งชีท ---------- */
+  console.log('\n26. ค้นหาออเดอร์ — ลูกค้าโทรมาถามใบเก่าที่ไม่ได้อยู่ใน 40 ใบล่าสุด');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { ORD_Q = ''; ORDERS = []; loadOrders(true) });
+  await page.waitForTimeout(500);
+  truthy('มีช่องค้นหาอยู่เหนือรายการ', await page.locator('#ord-q').count() > 0);
+  eq('ยังไม่ได้ค้น เห็นใบล่าสุดทั้งหมด', await page.locator('#list .row').count(), 2);
+
+  await page.fill('#ord-q', 'ตัวอย่าง ข');
+  await page.waitForTimeout(900);
+  eq('ค้นชื่อลูกค้าแล้วเหลือใบเดียว', await page.locator('#list .row').count(), 1);
+  truthy('บอกว่าเจอกี่ใบ', /เจอ 1 ใบ/.test(await page.textContent('#ord-q-hint')));
+
+  console.log('\n   ค้นด้วยเบอร์โทรก็ต้องเจอ — ลูกค้าโทรมามักบอกเบอร์ ไม่บอกเลขออเดอร์');
+  await page.fill('#ord-q', '0800000001');
+  await page.waitForTimeout(900);
+  eq('ค้นเบอร์โทรเจอใบเดียวกัน', await page.locator('#list .row').count(), 1);
+
+  console.log('\n   คำที่ไม่มีในชีท ต้องบอกว่าไม่เจอ ไม่ใช่โชว์ใบล่าสุดหลอกตา');
+  await page.fill('#ord-q', 'ไม่มีลูกค้าคนนี้');
+  await page.waitForTimeout(900);
+  eq('ไม่มีแถวไหนขึ้นมา', await page.locator('#list .row').count(), 0);
+  truthy('บอกว่าไม่เจอ', /ไม่เจอ/.test(await page.textContent('#list')));
+
+  console.log('\n   ล้างคำค้นแล้วต้องกลับมาเป็นใบล่าสุดเอง');
+  await page.fill('#ord-q', '');
+  await page.waitForTimeout(900);
+  eq('กลับมาครบทุกใบ', await page.locator('#list .row').count(), 2);
+  eq('เลิกโหมดค้นหาแล้ว', await page.evaluate(function () { return ORD_Q }), '');
+
+  /* ---------- 27. ค้างชำระ + เตือนของใกล้หมด ---------- */
+  console.log('\n27. หน้าสรุปยอด — ใครยังไม่จ่าย และของอะไรใกล้หมด');
+
+  await page.evaluate(function () {
+    /* ตั้งสถานะให้แน่นอน ไม่ให้ข้อสอบข้อก่อนหน้ามีผลกับข้อนี้ */
+    MOCK_ORDERS[0].status = 'ส่งแล้ว';   MOCK_ORDERS[0].net = 800;
+    MOCK_ORDERS[1].status = 'รอชำระ';    MOCK_ORDERS[1].net = 303.59;
+    SUM_CACHE = null; ORDERS = [];
+  });
+  await page.click('.tabs button[data-go="sum"]');
+  await page.waitForTimeout(900);
+
+  var dueTxt = await page.textContent('#sum-due');
+  truthy('บอกว่าค้างชำระกี่ใบ', /ค้างชำระ 2 ใบ/.test(dueTxt));
+  truthy('บอกยอดรวมที่ยังไม่ได้เก็บ', /1,103\.59/.test(dueTxt));
+  eq('ขึ้นครบทั้งสองใบ', await page.locator('#due-list .row').count(), 2);
+  truthy('ใบเก่าสุดขึ้นก่อน (ใบที่ต้องโทรตามก่อน)',
+    (await page.textContent('#due-list .row:first-child')).indexOf('AST-26-0005') > -1);
+
+  var alertTxt = await page.textContent('#sum-alert');
+  truthy('เตือนล็อตที่ใกล้หมดอายุ', /ล็อตที่ต้องรีบระบาย/.test(alertTxt));
+  truthy('บอกว่าเหลืออีกกี่วัน', /อีก \d+ วันหมดอายุ/.test(alertTxt));
+  truthy('เตือนของที่ถึงจุดสั่งซื้อ', /ถึงจุดสั่งซื้อแล้ว/.test(alertTxt));
+  truthy('น้ำยาหล่อเย็นเหลือ 14 ต่ำกว่าจุดสั่งซื้อ 20 ของตัวเอง',
+    /น้ำยาหล่อเย็น 20L/.test(alertTxt));
+  truthy('สินค้าที่ไม่ได้ตั้งจุดสั่งซื้อ ใช้จุดสั่งซื้อกลาง 50',
+    /\(จุดสั่งซื้อ 50\)/.test(alertTxt));
+
+  console.log('\n   เก็บเงินได้แล้วกด ✓ ต้องปิดยอดในชีทจริง');
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.locator('#due-list [data-due-pd]').first().click();
+  await page.waitForTimeout(900);
+  eq('สถานะในชีทเปลี่ยนเป็นชำระแล้ว',
+     await page.evaluate(function () { return MOCK_ORDERS[0].status }), 'ชำระแล้ว');
+  eq('เหลือค้างใบเดียว', await page.locator('#due-list .row').count(), 1);
+  truthy('ยอดค้างลดลงตาม', /303\.59/.test(await page.textContent('#sum-due')));
+
+  /* ---------- 28. ใบเสนอราคา → ออเดอร์ ---------- */
+  console.log('\n28. ลูกค้าตกลงตามใบเสนอราคา — ดึงใบมาเป็นออเดอร์ ไม่ต้องคีย์ใหม่');
+
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(500);
+  await page.fill('#q-name', 'ลูกค้าตัวอย่าง ค');
+  await page.fill('#q-tel', '0800000002');
+  await page.fill('#q-addr', '9/9 ถ.สมมติ อ.เมือง ชลบุรี 20000');
+  /* บรรทัดแรกเลือกจากฐานสินค้า บรรทัดที่สองพิมพ์ชื่อเอง (ของที่ไม่มีในสต๊อก) */
+  await page.selectOption('#q-items .it:nth-child(1) .q-sku', 'SKU-141');
+  await page.fill('#q-items .it:nth-child(1) .q-qty', '4');
+  await page.fill('#q-items .it:nth-child(1) .q-price', '120');
+  await page.click('#q-add');
+  await page.waitForTimeout(200);
+  await page.fill('#q-items .it:nth-child(2) .q-desc', 'ด้ามจับพิเศษสั่งทำ');
+  await page.fill('#q-items .it:nth-child(2) .q-qty', '1');
+  await page.fill('#q-items .it:nth-child(2) .q-price', '500');
+  await page.fill('#q-ship', '50');
+  await page.fill('#q-disc', '30');
+  await page.click('#q-make');
+  await page.waitForTimeout(1200);
+
+  var qNo = await page.evaluate(function () {
+    var q = MOCK_DOCS.filter(function (d) { return d.type === 'ใบเสนอราคา' })[0];
+    return q ? q.no : '';
+  });
+  truthy('ออกใบเสนอราคาได้', !!qNo);
+
+  await page.evaluate(function () { drawOldDocs('', '#q-old') });
+  await page.waitForTimeout(600);
+  truthy('ใบเสนอราคามีปุ่มทำเป็นออเดอร์', await page.locator('#q-old [data-q2o]').count() > 0);
+
+  await page.locator('#q-old [data-q2o]').first().click();
+  await page.waitForTimeout(900);
+
+  eq('เด้งมาหน้าคีย์ออเดอร์ให้เลย',
+     await page.evaluate(function () { return $('#pg-new').style.display !== 'none' }), true);
+  var f = await page.evaluate(function () {
+    return { cust: $('#f-cust').value, tel: $('#f-tel').value, addr: $('#f-addr').value,
+             ship: $('#f-ship').value, disc: $('#f-disc').value,
+             note: $('#f-note').value, vat: $('#f-vat').value,
+             rows: $$('#items .it').length,
+             sku1: $$('#items .it')[0].querySelector('.i-sku').value,
+             qty1: $$('#items .it')[0].querySelector('.i-qty').value,
+             price1: $$('#items .it')[0].querySelector('.i-price').value,
+             free2: $$('#items .it')[1].querySelector('.i-free').checked,
+             name2: $$('#items .it')[1].querySelector('.i-name').value,
+             price2: $$('#items .it')[1].querySelector('.i-price').value };
+  });
+  eq('ยกชื่อลูกค้ามาให้', f.cust, 'ลูกค้าตัวอย่าง ค');
+  eq('ยกเบอร์โทรมาให้', f.tel, '0800000002');
+  truthy('ยกที่อยู่มาให้', f.addr.indexOf('ชลบุรี') > -1);
+  eq('ได้สองบรรทัดเท่าใบเสนอราคา (ค่าส่งกับส่วนลดไม่นับเป็นสินค้า)', f.rows, 2);
+  eq('บรรทัดที่จับคู่ชื่อได้ กลายเป็นรหัสสินค้าจริง', f.sku1, 'SKU-141');
+  eq('จำนวนตามใบ', f.qty1, '4');
+  eq('ราคาที่เสนอไปตามมาด้วย ไม่ใช่ราคาป้าย', f.price1, '120');
+  eq('บรรทัดที่ไม่มีในฐานสินค้า ตั้งเป็นซื้อมาขายไป', f.free2, true);
+  eq('พร้อมชื่อที่พิมพ์ไว้บนใบ', f.name2, 'ด้ามจับพิเศษสั่งทำ');
+  eq('และราคาเดิม', f.price2, '500');
+  eq('ค่าส่งไปอยู่ในช่องค่าส่ง ไม่ใช่บรรทัดสินค้า', Number(f.ship), 50);
+  eq('ส่วนลดไปอยู่ในช่องส่วนลด', Number(f.disc), 30);
+  truthy('จดเลขใบเสนอราคาไว้ในหมายเหตุ', f.note.indexOf(qNo) > -1);
+
+  console.log('\n   ยอดไม่ตรงกับใบที่เสนอไป ต้องบอกตรงนั้น ไม่ใช่ปล่อยให้รู้ตอนลูกค้าโอนมา');
+  /* ใบเสนอราคาคิด VAT รวมค่าจัดส่ง แต่สูตรในชีทคิด VAT เฉพาะค่าสินค้า
+     ใบนี้จึงต่างกันเท่ากับ VAT ของค่าส่ง 50 บาท = 3.50 */
+  var warn = await page.textContent('#err');
+  truthy('ขึ้นคำเตือนว่ายอดไม่เท่ากัน', /ยอดไม่เท่ากัน/.test(warn));
+  truthy('บอกยอดที่ออเดอร์คิดได้', /1,066\.50/.test(warn));
+  truthy('บอกยอดที่เสนอไป', /1,070\.00/.test(warn));
+  truthy('บอกด้วยว่าต่างกันเท่าไร', /3\.50/.test(warn));
+  truthy('และบอกว่าต้องทำอะไรต่อ', /ก่อนกดบันทึก/.test(warn));
+
+  console.log('\n   ใบที่ไม่มีค่าส่ง ยอดต้องตรงกันเป๊ะ');
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(400);
+  await page.fill('#q-ship', '0');
+  await page.fill('#q-disc', '0');
+  await page.click('#q-make');
+  await page.waitForTimeout(1200);
+  var qNo2 = await page.evaluate(function () {
+    var q = MOCK_DOCS.filter(function (d) { return d.type === 'ใบเสนอราคา' });
+    return q[q.length - 1].no;
+  });
+  await page.evaluate(function (no) { quoteToOrder(no) }, qNo2);
+  await page.waitForTimeout(900);
+  var net2 = await page.evaluate(function () {
+    return Number(String($('#s-net').textContent).replace(/[^\d.]/g, ''));
+  });
+  var qTotal2 = await page.evaluate(function (no) {
+    return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
+  }, qNo2);
+  eq('ยอดสุทธิตรงกับใบที่เสนอไป', net2, qTotal2);
+  eq('ไม่มีคำเตือนค้างอยู่',
+     await page.evaluate(function () { return $('#err').classList.contains('on') }), false);
+  truthy('ขึ้นข้อความว่าดึงใบมาแล้ว', /ดึงใบ/.test(await page.textContent('#ok')));
+
+  console.log('\n   ใบที่เสนอราคารวม VAT ต้องถอด VAT ออกก่อน ไม่ใช่บวกซ้ำ');
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(400);
+  await page.selectOption('#q-vat', 'incl');
+  await page.click('#q-make');
+  await page.waitForTimeout(1200);
+  var qNo3 = await page.evaluate(function () {
+    var q = MOCK_DOCS.filter(function (d) { return d.type === 'ใบเสนอราคา' });
+    return q[q.length - 1].no;
+  });
+  var qTotal3 = await page.evaluate(function (no) {
+    return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
+  }, qNo3);
+  eq('ใบราคารวม VAT ยอดรวมเท่าราคาที่กรอก', qTotal3, 980);
+  await page.evaluate(function (no) { quoteToOrder(no) }, qNo3);
+  await page.waitForTimeout(900);
+  var f3 = await page.evaluate(function () {
+    return { price1: $$('#items .it')[0].querySelector('.i-price').value,
+             net: Number(String($('#s-net').textContent).replace(/[^\d.]/g, '')) };
+  });
+  eq('ราคาต่อหน่วยถูกถอด VAT ออกแล้ว (120 ÷ 1.07)', f3.price1, '112.15');
+  eq('ยอดสุทธิยังเท่ายอดบนใบ ไม่ได้บวก VAT ซ้ำ', f3.net, qTotal3);
+
+  /* ---------- 21. ไม่มี error หลุดใน console ---------- */
+  console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
   await browser.close();

@@ -104,7 +104,20 @@ textarea{resize:vertical}
 .row .i b{display:block}
 .row .i span{font-size:0.82rem;color:var(--gray)}
 .row .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+/* จอแคบ: ปุ่มห้าอันเบียดจนชื่อลูกค้ากับเลขออเดอร์ตกบรรทัดทีละคำ อ่านยาก
+   ให้ปุ่มลงไปอยู่แถวของตัวเองเต็มความกว้างแทน ข้อความจะได้เต็มบรรทัด */
+@media (max-width:430px){
+  .row .i{flex:0 0 100%}
+  .row .acts{flex:0 0 100%;justify-content:flex-start;margin-top:8px}
+}
+/* กล่องถามเหตุผลตอนยกเลิกเอกสาร กินเต็มความกว้างของแถว ไม่เบียดปุ่ม */
+.row{flex-wrap:wrap}
+.vdbox{flex:0 0 100%;margin-top:10px;padding:11px;border:1px solid #f0c9c9;
+  border-radius:10px;background:#fff7f7}
+.vdbox input{margin:0}
+.row .i span+span{display:block;margin-top:2px}
 .sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
+.sq.red{color:var(--red);border-color:#f0c9c9}
 .tag{display:inline-block;font-size:0.8rem;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
 .tag.ok{background:#e6f5ec;color:var(--green)}
 .tag.wait{background:#fdf1e0;color:var(--amber)}
@@ -173,6 +186,27 @@ textarea{resize:vertical}
 .btrack{height:8px;background:var(--bg);border-radius:4px;margin-top:6px;overflow:hidden}
 .btrack i{display:block;height:100%;background:var(--blue);border-radius:0 4px 4px 0;min-width:3px}
 .bsub{font-size:0.8rem;color:var(--gray);margin-top:4px}
+/* รายการตำบล/อำเภอที่ค้นเจอ กดได้ทั้งแถว นิ้วโป้งกดง่ายบนมือถือ */
+.thhit{margin-top:6px}
+.thhit button{display:block;width:100%;text-align:left;padding:11px 12px;margin-top:6px;
+  border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.9rem;line-height:1.45}
+.thhit button b{color:var(--ink)}
+.thhit .none{font-size:0.82rem;color:var(--gray);padding:6px 2px}
+/* กระดานเซ็นลายเซ็น — ซ้อนเหนือ modal ได้ เพราะบางจอเรียกจากในหน้าต่างที่เป็น modal อยู่แล้ว */
+.signwrap{position:fixed;inset:0;z-index:120;background:rgba(15,23,42,.55);
+  display:flex;align-items:center;justify-content:center;padding:14px}
+.signbox{background:#fff;border-radius:16px;padding:15px;width:100%;max-width:520px;
+  box-shadow:0 18px 50px rgba(0,0,0,.28)}
+.signhd{font-weight:700;font-size:1rem;margin-bottom:3px}
+.signhint{font-size:0.8rem;color:var(--gray);margin-bottom:9px;line-height:1.5}
+/* touch-action:none ไม่งั้นลากนิ้วบนกระดานแล้วหน้าจอเลื่อนตามแทนที่จะเขียนเส้น */
+.signcv{width:100%;display:block;border:1.5px dashed var(--line);border-radius:11px;
+  background:#fcfcfd;touch-action:none;cursor:crosshair}
+.signrow{display:flex;gap:8px;margin-top:11px}
+.signrow .btn{margin:0;flex:1}
+/* ลายเซ็นที่เก็บไว้แล้ว โชว์ตัวอย่างในหน้าตั้งค่า */
+.signprev{border:1px solid var(--line);border-radius:10px;background:#fff;padding:6px;margin-top:8px}
+.signprev canvas{width:100%;display:block}
 .giftck{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:0.85rem;color:var(--gray)}
 .giftck input{width:auto;transform:scale(1.3)}
 /* ปุ่มทำงานต่อหลังบันทึก — พิมพ์ใบปะหน้า / ส่งข้อความ อยู่ในกล่องเขียวเลย
@@ -237,9 +271,13 @@ textarea{resize:vertical}
           <div class="fld"><label>วันที่</label><input id="f-date" type="date"></div>
           <div class="fld"><label>ช่องทางขาย</label><select id="f-channel"></select></div>
         </div>
-        <div class="fld"><label>ชื่อลูกค้า</label><input id="f-cust" placeholder="ชื่อผู้รับ"></div>
+        <div class="fld"><label>ชื่อลูกค้า</label><input id="f-cust" placeholder="ชื่อผู้รับ" autocomplete="off">
+          <div id="f-cust-hit" class="thhit"></div>
+          <div class="hint">พิมพ์ชื่อลูกค้าเก่า แล้วกดเลือก ระบบจะเติมเบอร์กับที่อยู่ครั้งล่าสุดให้</div></div>
         <div class="fld"><label>เบอร์โทร</label><input id="f-tel" inputmode="tel"></div>
-        <div class="fld"><label>ที่อยู่จัดส่ง</label><textarea id="f-addr" rows="3"></textarea></div>
+        <div class="fld"><label>ที่อยู่จัดส่ง</label><textarea id="f-addr" rows="3"></textarea>
+          <input id="f-addr-find" placeholder="พิมพ์ตำบล อำเภอ จังหวัด หรือรหัสไปรษณีย์ แล้วเลือก">
+          <div id="f-addr-hit" class="thhit"></div></div>
         <div class="two">
           <div class="fld"><label>ช่องทางจัดส่ง</label><select id="f-carrier"></select></div>
           <div class="fld"><label>เลขพัสดุ (ใส่ทีหลังได้)</label><input id="f-track"></div>
@@ -277,6 +315,13 @@ textarea{resize:vertical}
 
   <!-- ------------------------------------------------------ ออเดอร์ -->
   <section id="pg-list" style="display:none">
+    <!-- จอโชว์ใบล่าสุดแค่ 40 ใบ ที่ร้านคีย์วันละ 8-10 ใบ
+         ใบเมื่อสองสัปดาห์ก่อนจึงหลุดจอไปแล้วตอนลูกค้าโทรมาถาม -->
+    <div class="card" style="padding-bottom:10px">
+      <input id="ord-q" placeholder="ค้นหา — เลขออเดอร์ ชื่อลูกค้า เบอร์โทร เลขพัสดุ"
+             autocomplete="off">
+      <div class="hint" id="ord-q-hint">ปล่อยว่างไว้ = ใบล่าสุด 40 ใบ · พิมพ์ 2 ตัวอักษรขึ้นไปเพื่อค้นทั้งชีท</div>
+    </div>
     <div class="card" id="list"><div class="load">กำลังโหลด…</div></div>
   </section>
 
@@ -292,7 +337,9 @@ textarea{resize:vertical}
         <div class="fld"><label>วันที่</label><input id="q-date" type="date"></div>
         <div class="fld"><label>ยืนราคาถึง</label><input id="q-valid" type="date"></div>
       </div>
-      <div class="fld"><label>ชื่อลูกค้า / ชื่อบริษัท</label><input id="q-name" placeholder="บริษัท ... จำกัด"></div>
+      <div class="fld"><label>ชื่อลูกค้า / ชื่อบริษัท</label>
+        <input id="q-name" placeholder="บริษัท ... จำกัด" autocomplete="off">
+        <div id="q-name-hit" class="thhit"></div></div>
       <div class="two">
         <div class="fld"><label>เลขประจำตัวผู้เสียภาษี</label>
           <input id="q-tax" inputmode="numeric" maxlength="17"></div>
@@ -337,8 +384,21 @@ textarea{resize:vertical}
 
   <!-- --------------------------------------------------------- สรุป -->
   <section id="pg-sum" style="display:none">
+    <!-- สองกล่องนี้อยู่บนสุดโดยตั้งใจ เป็นเรื่องที่ต้องรู้ก่อนดูยอดขาย
+         เงินที่ยังไม่ได้เก็บ และของที่กำลังจะหมด -->
+    <div id="sum-due"></div>
+    <div id="sum-alert"></div>
     <div class="chips" id="sum-range"></div>
     <div id="summary"><div class="load">กำลังโหลด…</div></div>
+    <!-- ลายเซ็นของร้านอยู่นอกกล่องสรุปยอด เพราะกล่องนั้นจะถูกแทนที่ด้วยข้อความ
+         "ยังไม่มีออเดอร์ในช่วงนี้" เมื่อช่วงเวลาที่เลือกไม่มีออเดอร์
+         ถ้าวางไว้ข้างใน ที่ตั้งลายเซ็นจะหายไปทั้งอันโดยไม่มีอะไรบอก -->
+    <div class="sec-hd" style="margin-top:22px"><h2>ลายเซ็นของร้าน</h2></div>
+    <div class="hint" style="padding:0 2px 4px">เซ็นเก็บไว้ครั้งเดียว
+      แล้วเอกสารทุกใบจะมีลายเซ็นขึ้นเอง ไม่ต้องพิมพ์ออกมาเซ็นแล้วสแกนกลับ<br>
+      ใบที่ออกไปแล้วก็ได้ด้วย เพราะระบบวาดใบใหม่ทุกครั้งที่กดพิมพ์ซ้ำ<br>
+      ช่อง “ลายเซ็นของผู้รับของ” ไม่ได้อยู่ตรงนี้ — ให้ลูกค้าเซ็นตอนส่งของ จากหน้าเอกสารของใบนั้น</div>
+    <div id="sig-box"></div>
   </section>
 </div>
 
@@ -370,9 +430,11 @@ var CFG = { products:[], sender:{name:"",addr:"",tel:""}, codFee:0, logo:"", bra
 var STAFF_EMAIL = "<?= staffEmail ?>";
 </script>
 
+<?!= include_('ThaiAddr'); ?>
 <?!= include_('Assets'); ?>
 <?!= include_('Parse'); ?>
 <?!= include_('Label'); ?>
+<?!= include_('Sign'); ?>
 <?!= include_('Doc'); ?>
 <?!= include_('App'); ?>
 

@@ -381,10 +381,31 @@ async function buildDocPage(d, m, cfg, copy) {
     ["ผู้รับเงิน/พนักงานขาย", "(Authorized Signature)"],
     ["ลายเซ็นของผู้มีอำนาจลงนาม", co.shortName || co.name || ""]
   ];
+  /* ลายเซ็นที่มีจริงของแต่ละช่อง — เรียงตรงกับ SIGN ข้างบน
+       recv    ลูกค้าเซ็นบนจอตอนรับของ เก็บรายใบในชีท เอกสาร
+       cashier ผู้รับเงิน/พนักงานขาย   เซ็นครั้งเดียว เก็บในชีท ตั้งค่าแอป
+       auth    ผู้มีอำนาจลงนาม         เซ็นครั้งเดียว เก็บในชีท ตั้งค่าแอป */
+  var sg = (m && m.sign) || {};
+  var cs = (cfg && cfg.sign) || {};
+  /* ลายเซ็นฝั่งร้านมาจากชีท ตั้งค่าแอป ส่วนของผู้รับของมากับใบนั้นเอง
+     ลายเซ็นที่เป็นรูปต้องโหลดให้เสร็จก่อนวาด เพราะ canvas วาดรูปที่ยังโหลดไม่เสร็จไม่ได้
+     (ใบจะออกมาช่องว่างเงียบ ๆ โดยไม่มีอะไรฟ้อง ซึ่งแย่กว่าออกใบไม่ได้) */
+  var SIGV = [sg.recv,
+              sg.cashier !== undefined ? sg.cashier : cs.cashier,
+              sg.auth    !== undefined ? sg.auth    : cs.auth];
+  if (typeof signLoad === "function") SIGV = await Promise.all(SIGV.map(signLoad));
+  var sgDate = [m && m.signDate, m && m.date, m && m.date];
+
   SIGN.forEach(function (s3, i) {
     var X = pad + (sgW + sgGap) * i;
     x.strokeStyle = "#000"; x.lineWidth = 1.4;
     roundRect(x, X, gy, sgW, sgH, 10); x.stroke(); x.lineWidth = 1.3;
+
+    /* เซ็นก่อน แล้วค่อยขีดเส้นประทับ — เส้นประจึงอยู่บนลายเซ็นเหมือนเซ็นคร่อมเส้นจริง
+       เว้นขอบล่างไว้ 6 px ให้หางตัวอักษรพาดผ่านเส้นได้ ไม่ลอยอยู่เหนือเส้นเป๊ะ */
+    if (typeof signDraw === "function")
+      signDraw(x, SIGV[i], X + 26, gy + 16, sgW - 52, 96);
+
     x.strokeStyle = "#000"; x.setLineDash([3, 4]);
     x.beginPath(); x.moveTo(X + 26, gy + 106); x.lineTo(X + sgW - 26, gy + 106); x.stroke();
     x.beginPath(); x.moveTo(X + 98, gy + 182); x.lineTo(X + sgW - 26, gy + 182); x.stroke();
@@ -393,8 +414,50 @@ async function buildDocPage(d, m, cfg, copy) {
     fitCenter(x, s3[0], X + sgW / 2, gy + 116, sgW - 18, F_BODY, 400);
     fitCenter(x, s3[1], X + sgW / 2, gy + 146, sgW - 18, pt(9), 400);
     fitLeft(x, "ลงวันที่", X + 24, gy + 168, 74, pt(9), 400);
+
+    /* วันที่เขียนให้เฉพาะช่องที่เซ็นแล้ว ช่องที่ยังว่างต้องเว้นให้เซ็นมือ
+       ใส่วันที่ทิ้งไว้ในช่องที่ไม่มีลายเซ็น = ใบดูเหมือนเซ็นแล้วทั้งที่ยังไม่มีใครเซ็น */
+    if (SIGV[i] && sgDate[i]) {
+      x.fillStyle = "#12233d";
+      fitCenter(x, docDate(sgDate[i]), X + 98 + (sgW - 124) / 2, gy + 164, sgW - 130, pt(9.5), 500);
+      x.fillStyle = "#000";
+    }
   });
 
+  /* ใบที่ยกเลิกแล้วต้องดูออกตั้งแต่แวบแรกว่าใช้ไม่ได้
+     ถ้าพิมพ์ออกมาแล้วหน้าตาเหมือนใบที่ยังใช้ได้เป๊ะ วันหนึ่งจะมีใครหยิบผิดไปให้ลูกค้า
+     ทับทั้งใบด้วยตัวอักษรโปร่ง จึงอ่านรายการข้างใต้ได้อยู่ แต่ปฏิเสธไม่ได้ว่าถูกยกเลิก */
+  if (m && m.voidWhy) stampVoid(x, W, H, m.voidWhy);
+
   return c.toDataURL("image/png");
+}
+
+function stampVoid(x, W, H, why) {
+  x.save();
+  x.translate(W / 2, H / 2);
+  x.rotate(-Math.PI / 7);
+  x.textAlign = "center";
+  x.textBaseline = "middle";
+
+  x.globalAlpha = 0.17;
+  x.fillStyle = "#c00";
+  x.font = docWeight(800) + ' 210px ' + DOC_FF;
+  x.fillText("ยกเลิก", 0, -40);
+  x.font = docWeight(700) + ' 74px ' + DOC_FF;
+  x.fillText("CANCELLED", 0, 96);
+
+  /* เหตุผลพิมพ์ทึบกว่าและตัวเล็ก อ่านออกจริงว่าใบนี้ยกเลิกเพราะอะไร
+     ตัดให้พอดีหน้ากระดาษ ไม่ปล่อยให้ล้นออกไปนอกขอบจนอ่านไม่จบประโยค */
+  x.globalAlpha = 0.62;
+  x.font = docWeight(600) + ' 26px ' + DOC_FF;
+  var line = String(why);
+  while (line.length > 8 && x.measureText(line).width > W - 150) line = line.slice(0, -1);
+  if (line.length < String(why).length) line = line.slice(0, -1) + "…";
+  x.fillText(line, 0, 214);
+
+  x.restore();
+  x.textAlign = "left";
+  x.textBaseline = "top";
+  x.globalAlpha = 1;
 }
 </script>

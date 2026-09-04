@@ -28,13 +28,15 @@ PRODUCTS = [
     {"sku": "SKU-161", "group": "TOOLING", "unit": "ชิ้น", "perPack": 1, "price": 95, "remain": 300,
      "name": "End Mill Corn cut 2F 1.8*8.5*3.175*38L (1pcs)"},
     {"sku": "CHEM-001", "group": "CHEMICAL", "unit": "แกลลอน", "perPack": 1, "price": 1200, "remain": 14,
-     "name": "น้ำยาหล่อเย็น 20L"},
+     "name": "น้ำยาหล่อเย็น 20L", "reorder": 20},
 ]
 
 BOOT = {
     "staff": "somchai@chem-inno-tech.com",
     "shop": "AST Chem-Tooling",
     "vatRate": 0.07,
+    # จุดสั่งซื้อกลาง ใช้กับสินค้าที่ไม่ได้ตั้งจุดสั่งซื้อของตัวเอง
+    "reorderDefault": 50,
     "lists": {
         "channel": ["หน้าร้าน", "Shopee", "เพจ Facebook"],
         "carrier": ["Flash Express", "Kerry Express", "ไปรษณีย์ไทย", "ส่งด่วน (ไรเดอร์)", "รับเองที่ร้าน"],
@@ -42,6 +44,8 @@ BOOT = {
         "status": ["รอชำระ", "ชำระแล้ว", "จัดของแล้ว", "ส่งแล้ว", "ยกเลิก"],
         "recvType": ["ซื้อเข้า", "ตรวจนับ", "คืนจากลูกค้า", "ปรับเพิ่ม", "ปรับลด"],
     },
+    "file": {"name": "AST_Stock List Tooling chemical newapp",
+             "url": "https://docs.google.com/spreadsheets/d/FAKEID/edit"},
     "app": {
         "sender": {"name": "",
                    "addr": "2/1 ซ.พัฒนาชนบท 3 แยก 9 แขวงคลองสองต้นนุ่น "
@@ -93,6 +97,21 @@ ORDERS = [{
     "note": "", "subtotal": 750, "net": 800, "cost": 400, "profit": 350, "check": "OK",
     "items": [{"sku": "SKU-160", "name": PRODUCTS[2]["name"], "unit": "ชุด",
                "qty": 1, "price": 750, "total": 750, "lot": ""}],
+    "vatAmt": 0,
+}, {
+    # ใบที่รับ VAT — ตัวเลขชุดนี้มาจากของจริงที่ลูกค้าทักมาว่า "บวกผิด"
+    # 237 + ค่าส่ง 50 = 287 แต่ยอดชำระ 303.59 เพราะ VAT 16.59 ไม่ได้ถูกพิมพ์ในข้อความ
+    # วันที่เดียวกับใบแรกโดยตั้งใจ — ถ้าตั้งเป็น "วันนี้" ข้อสอบหน้าสรุปยอด
+    # จะได้ผลต่างกันตามวันที่รันทดสอบ ซึ่งเป็นข้อสอบที่เชื่อไม่ได้
+    "no": "AST-26-0006", "date": "2026-08-28", "channel": "เพจ Facebook",
+    "cust": "ลูกค้าตัวอย่าง ข", "tel": "0800000001",
+    "addr": "37/4 หมู่17 ต.ลำลูกกา อ.ลำลูกกา ปทุมธานี 12150",
+    "carrier": "Flash Express", "track": "", "vat": "รับ VAT",
+    "discount": 0, "ship": 50, "status": "รอชำระ", "staff": "somchai@chem-inno-tech.com",
+    "note": "", "subtotal": 237, "vatAmt": 16.59, "net": 303.59,
+    "cost": 105, "profit": 132, "check": "OK",
+    "items": [{"sku": "SKU-141", "name": PRODUCTS[0]["name"], "unit": "ชิ้น",
+               "qty": 3, "price": 79, "total": 237, "lot": ""}],
 }]
 
 MOCK = """
@@ -101,6 +120,7 @@ MOCK = """
 var MOCK_BOOT = __BOOT__;
 var MOCK_ORDERS = __ORDERS__;
 var MOCK_DOCS = [];       /* ทะเบียนเอกสารที่ออกไปแล้วในรอบนี้ */
+var MOCK_SIGN = {};       /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ (ของจริงอยู่ในชีท ตั้งค่าแอป) */
 window.SENT = [];
 window.google = { script: { run: (function(){
   var ok=null, bad=null;
@@ -109,6 +129,23 @@ window.google = { script: { run: (function(){
     withFailureHandler: function(f){ bad=f; return api },
     getBootstrap: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_BOOT)) }) },
     getOrders: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_ORDERS)) }) },
+    /* ค้นออเดอร์ทั้งชีท — ของจริงค้นในชีท ที่นี่ค้นในรายการจำลอง */
+    searchOrders: function(q, limit){
+      reply(function(){
+        var want = String(q||"").trim().toLowerCase();
+        if(want.length < 2) return [];
+        var digits = want.replace(/\D/g,"");
+        return JSON.parse(JSON.stringify(MOCK_ORDERS.filter(function(o){
+          if(String(o.no||"").toLowerCase().indexOf(want) > -1) return true;
+          if(String(o.cust||"").toLowerCase().indexOf(want) > -1) return true;
+          if(String(o.track||"").toLowerCase().indexOf(want) > -1) return true;
+          if(String(o.channel||"").toLowerCase().indexOf(want) > -1) return true;
+          if(digits.length >= 3 &&
+             String(o.tel||"").replace(/\D/g,"").indexOf(digits) > -1) return true;
+          return false;
+        }))).slice(0, Number(limit)||30);
+      });
+    },
     setTracking: function(no,track,status){
       reply(function(){
         MOCK_ORDERS.forEach(function(o){ if(o.no===no){ o.track=track; o.status=status } });
@@ -129,13 +166,16 @@ window.google = { script: { run: (function(){
         var d = DOC_SRV.buildDoc_(p.type, src,
           { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
         var pre = { rec:"ONIV26-", inv:"IV26-", quote:"QO26-", dep:"DR26-" }[p.type] || "DOC-";
-        var seq = { rec:231, inv:1, quote:114, dep:1 }[p.type] || 1;
-        var no = pre + ("0000"+seq).slice(-5);
         var th = { rec:"ใบเสร็จรับเงิน", inv:"ใบแจ้งหนี้", quote:"ใบเสนอราคา", dep:"ใบรับเงินมัดจำ" }[p.type];
+        /* เลขวิ่งต่อทีละใบเหมือนของจริง (nextDocNo_ = เลขสูงสุดในเล่ม + 1)
+           ถ้าตรึงเลขไว้ตัวเดียว ใบที่สองจะทับเลขใบแรกและข้อสอบจะหลอกตัวเอง */
+        var seq = ({ rec:231, inv:1, quote:114, dep:1 }[p.type] || 1)
+          + MOCK_DOCS.filter(function(x){ return x.type === th }).length;
+        var no = pre + ("0000"+seq).slice(-5);
         /* เก็บใบที่ออกไว้ในทะเบียน เพื่อให้กดพิมพ์ซ้ำได้เหมือนของจริง */
         MOCK_DOCS.push({ no:no, type:th, date:p.date||"", orderNo:p.orderNo||"",
                          cust:p.cust||{}, po:p.po||"", terms:p.terms||"", note:p.note||"",
-                         form:p.form||[],
+                         form:p.form||[], vatMode:p.vatMode||"", novat:!!p.novat,
                          doc:JSON.parse(JSON.stringify(d)) });
         return { ok:true, no: no, doc:d, row:7 };
       });
@@ -149,8 +189,177 @@ window.google = { script: { run: (function(){
         }).map(function(d){
           return { no:d.no, type:d.type, date:d.date, orderNo:d.orderNo,
                    custName:d.cust.name, total:d.doc.total, voidWhy:d.voidWhy||"",
-                   hasSnap:true };
+                   sentAt:d.sentAt||"", hasSnap:true };
         }).reverse();
+      });
+    },
+    editOrderItems: function(no, items, by, ck, opts){
+      reply(function(){
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === String(no) })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + no);
+        if(!items || !items.length)
+          throw new Error("ออเดอร์ต้องมีสินค้าอย่างน้อยหนึ่งบรรทัด");
+        var fix = !!(opts && opts.reviseDocs);
+        var liveDocs = MOCK_DOCS.filter(function(d){
+          return d.orderNo === String(no) && !d.voidWhy;
+        });
+        var live = liveDocs.map(function(d){ return d.no + " (" + d.type + ")" });
+        if(live.length && !fix) throw new Error("ออเดอร์ " + no + " ออกเอกสารไปแล้ว: "
+          + live.join(", ") + " — ถ้าใบยังไม่ได้ส่งให้ลูกค้า ให้ติ๊ก "
+          + "“แก้ใบที่ออกไปแล้วตามด้วย” · ถ้าลูกค้าถือใบอยู่แล้ว ต้องยกเลิกใบเดิมก่อน");
+        if(fix) liveDocs.forEach(function(d){
+          if(d.sentAt) throw new Error("ใบ " + d.no + " ถูกทำเครื่องหมายว่าส่งให้ลูกค้าแล้ว");
+        });
+        /* ค่าส่งกับส่วนลดแก้พร้อมรายการได้ */
+        if(opts && opts.ship !== undefined && opts.ship !== null && opts.ship !== "")
+          o.ship = Number(opts.ship) || 0;
+        if(opts && opts.discount !== undefined && opts.discount !== null && opts.discount !== "")
+          o.discount = Number(opts.discount) || 0;
+        var before = (o.items||[]).length, sub = 0;
+        o.items = items.map(function(it, i){
+          var qty = Number(it.qty)||0;
+          var pr = it.price === "" ? 100 : Number(it.price);
+          sub += qty * pr;
+          return { sku: it.free ? ("SKU-X00"+(i+1)) : it.sku,
+                   name: it.free ? it.name : ("สินค้า " + it.sku),
+                   qty: qty, price: pr, total: qty*pr };
+        });
+        o.subtotal = sub;
+        var vat35 = String(o.vat||"").indexOf("ไม่") !== 0
+          ? Math.round((sub - Number(o.discount||0)) * 0.07 * 100) / 100 : 0;
+        o.vatAmt = vat35;
+        o.net = Math.round((sub - Number(o.discount||0) + Number(o.ship||0) + vat35) * 100) / 100;
+        var fixed = [];
+        if(fix) liveDocs.forEach(function(d){
+          var b = DOC_SRV.buildDoc_(
+            { "ใบเสร็จรับเงิน":"rec", "ใบแจ้งหนี้":"inv" }[d.type] || "rec",
+            { items:o.items, ship:o.ship, discount:o.discount },
+            { vatRate: 0.07, vatMode: "excl" });
+          d.doc = JSON.parse(JSON.stringify(b));
+          fixed.push(d.no + " → " + b.total);
+        });
+        return { ok:true, no:o.no, subtotal:sub, net:o.net, lots:[], before:before,
+                 after:o.items.length, ship:o.ship, discount:o.discount, docs:fixed };
+      });
+    },
+    /* แก้เนื้อใบเดิมโดยใช้เลขเดิม — ใช้ได้จนกว่าจะกดว่าส่งแล้ว */
+    reviseDoc: function(p){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(p.no) })[0];
+        if(!f) throw new Error("ไม่พบใบเลขที่ " + p.no + " ในชีท เอกสาร");
+        if(f.voidWhy) throw new Error("ใบ " + p.no + " ถูกยกเลิกไปแล้ว");
+        if(f.sentAt) throw new Error("ใบ " + p.no + " ถูกทำเครื่องหมายว่าส่งให้ลูกค้าแล้ว ("
+          + f.sentAt + ") — แก้ไม่ได้ ให้ยกเลิกแล้วออกใบใหม่แทน");
+        if(String(p.why||"").trim().length < 5)
+          throw new Error("ต้องบอกเหตุผลที่แก้อย่างน้อย 5 ตัวอักษร");
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === f.orderNo })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + f.orderNo);
+        var d = DOC_SRV.buildDoc_(
+          { "ใบเสร็จรับเงิน":"rec", "ใบแจ้งหนี้":"inv", "ใบเสนอราคา":"quote",
+            "ใบรับเงินมัดจำ":"dep" }[f.type] || "rec",
+          { items:o.items, ship:o.ship, discount:o.discount },
+          { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
+        f.times = (f.times || 0) + 1;
+        f.before = f.doc.total;
+        f.doc = JSON.parse(JSON.stringify(d));
+        if(p.cust) f.cust = p.cust;
+        f.note = (f.note ? f.note + " " : "")
+          + "[แก้ไขครั้งที่ " + f.times + ": " + p.why + " · ยอดเดิม " + f.before + "]";
+        return { ok:true, no:f.no, doc:d, times:f.times, before:f.before };
+      });
+    },
+    /* ทำเครื่องหมายว่าส่งให้ลูกค้าแล้ว — ปิดประตูการแก้ใบเดิม */
+    markSent: function(no, by){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+        if(!f) throw new Error("ไม่พบใบเลขที่ " + no + " ในชีท เอกสาร");
+        if(f.sentAt) return { ok:true, no:f.no, at:f.sentAt, already:true };
+        f.sentAt = "03/09/2026 21:30 โดย " + (by||"");
+        return { ok:true, no:f.no, at:f.sentAt };
+      });
+    },
+    /* ยกเลิกทั้งออเดอร์ — ของคืนเข้าสต๊อก ยอดกลายเป็นศูนย์ สถานะเป็นยกเลิก */
+    cancelOrder: function(no, why, by, ck){
+      reply(function(){
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === String(no) })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + no + " ในชีท");
+        if(String(o.status||"").trim() === "ยกเลิก")
+          throw new Error("ออเดอร์ " + no + " ถูกยกเลิกไปแล้ว");
+        if(String(why||"").trim().length < 5)
+          throw new Error("ต้องบอกเหตุผลที่ยกเลิกอย่างน้อย 5 ตัวอักษร");
+        var live = MOCK_DOCS.filter(function(d){
+          return d.orderNo === String(no) && !d.voidWhy;
+        }).map(function(d){ return d.no + " (" + d.type + ")" });
+        if(live.length) throw new Error("ออเดอร์ " + no + " ออกเอกสารไปแล้ว: "
+          + live.join(", ") + " — ให้กดยกเลิกใบเดิมในหน้าเอกสารก่อน");
+        var n = (o.items||[]).length;
+        o.items = []; o.subtotal = 0; o.vatAmt = 0; o.discount = 0; o.ship = 0;
+        o.net = 0; o.cost = 0; o.profit = 0;
+        o.status = "ยกเลิก";
+        o.note = (o.note ? o.note + " " : "") + "[ยกเลิก: " + why + " โดย " + (by||"") + "]";
+        return { ok:true, no:o.no, cust:o.cust, netBefore:0, items:n, cuts:n, recv:0, lots:[] };
+      });
+    },
+    /* รายชื่อลูกค้าเก่า — ของจริงอ่านจากชีทหัวบิลกับชีทเอกสาร แล้วรวมชื่อซ้ำเป็นคนเดียว */
+    getCustomers: function(limit){
+      reply(function(){
+        var by = {};
+        MOCK_ORDERS.forEach(function(o){
+          var k = String(o.cust||"").trim();
+          if(!k) return;
+          var c = by[k] || (by[k] = { name:k, tel:"", addr:"", taxAddr:"", taxId:"",
+                                      branch:"", email:"", last:"", n:0 });
+          c.n++;
+          if(String(o.date||"") >= c.last){
+            c.last = String(o.date||"");
+            if(o.tel) c.tel = o.tel;
+            if(o.addr) c.addr = o.addr;
+          }
+        });
+        MOCK_DOCS.forEach(function(d){
+          var k = String((d.cust||{}).name||"").trim();
+          if(!k) return;
+          var c = by[k] || (by[k] = { name:k, tel:"", addr:"", taxAddr:"", taxId:"",
+                                      branch:"", email:"", last:"", n:0 });
+          if(d.cust.taxId) c.taxId = d.cust.taxId;
+          if(d.cust.addr)  c.taxAddr = d.cust.addr;
+          if(d.cust.tel)   c.tel = d.cust.tel;
+          if(d.cust.email) c.email = d.cust.email;
+          if(d.cust.branch) c.branch = d.cust.branch;
+        });
+        var out = [];
+        for(var k in by) out.push(by[k]);
+        out.sort(function(a,b){ return a.last < b.last ? 1 : (a.last > b.last ? -1 : 0) });
+        return out.slice(0, Number(limit) || 400);
+      });
+    },
+    saveSignature: function(which, sig){
+      reply(function(){
+        if(["cashier","auth"].indexOf(String(which)) < 0)
+          throw new Error("ไม่รู้ว่าจะเก็บลายเซ็นของใคร");
+        MOCK_SIGN[which] = String(sig||"");
+        return { ok:true, which:which, has: !!MOCK_SIGN[which] };
+      });
+    },
+    signDoc: function(no, sig, by){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+        if(!f) throw new Error("ไม่พบเอกสารเลขที่ " + no + " ในชีท เอกสาร");
+        if(f.voidWhy) throw new Error("ใบ " + no + " ถูกยกเลิกไปแล้ว (" + f.voidWhy + ")");
+        if(!sig) throw new Error("ยังไม่ได้เซ็น");
+        f.sign = String(sig);
+        return { ok:true, no:f.no, at:"02/09/2026 13:20" };
+      });
+    },
+    voidDoc: function(no, why, by){
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+        if(!f) throw new Error("ไม่พบเอกสารเลขที่ " + no + " ในชีท เอกสาร");
+        if(f.voidWhy) throw new Error("ใบ " + no + " ถูกยกเลิกไปแล้ว (" + f.voidWhy + ")");
+        var r = String(why||"").trim();
+        if(r.length < 5) throw new Error("ต้องบอกเหตุผลที่ยกเลิกอย่างน้อย 5 ตัวอักษร");
+        f.voidWhy = r + " [ยกเลิกโดย " + (by||"") + " 01/09/2026 19:45]";
+        return { ok:true, no:f.no, type:f.type, orderNo:f.orderNo, voidWhy:f.voidWhy };
       });
     },
     getDoc: function(no){
@@ -159,7 +368,8 @@ window.google = { script: { run: (function(){
         if(!f) throw new Error("ไม่พบใบ " + no + " ในชีท เอกสาร");
         return { ok:true, exact:true,
                  meta:{ no:f.no, date:f.date, orderNo:f.orderNo, po:f.po||"", terms:f.terms||"",
-                        note:f.note||"", voidWhy:f.voidWhy||"", cust:f.cust, form:f.form||[] },
+                        note:f.note||"", voidWhy:f.voidWhy||"", cust:f.cust, form:f.form||[],
+                        vatMode:f.vatMode||"", novat:!!f.novat },
                  saved:{ base:f.doc.base, vat:f.doc.vat, total:f.doc.total },
                  doc: JSON.parse(JSON.stringify(f.doc)) };
       });
@@ -170,6 +380,10 @@ window.google = { script: { run: (function(){
         if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
         var sub=0;
         p.items.forEach(function(it){
+          if(it.free){
+            sub+=Math.round(Number(it.qty)*(Number(it.price)||0)*100)/100;
+            return;
+          }
           var pr=MOCK_BOOT.products.filter(function(x){return x.sku===it.sku})[0];
           var unit=(it.price===""||it.price==null)?(pr?pr.price:0):Number(it.price);
           sub+=Math.round(Number(it.qty)*unit*100)/100;
@@ -205,8 +419,8 @@ def main():
         return (GS / (name + ".html")).read_text(encoding="utf-8")
 
     page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
-    if n not in (0, 5):
-        sys.exit("คาดว่าจะมี include 5 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
+    if n not in (0, 7):
+        sys.exit("คาดว่าจะมี include 7 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
 
     page = page.replace('"<?= staffEmail ?>"', json.dumps(BOOT["staff"]))
     if "<?" in page:

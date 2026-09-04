@@ -129,8 +129,14 @@ Range.prototype.copyTo = function (dst) {
   for (var i = 0; i < dst.nr; i++) for (var j = 0; j < dst.nc; j++) dst.s.cell(dst.r + i, dst.c + j).f = f;
   return this;
 };
+/* จำรูปแบบช่องไว้ตรวจได้ เบอร์โทรกับเลขภาษีต้องถูกตั้งเป็นข้อความก่อนเขียนเสมอ */
+Range.prototype.setNumberFormat = function (f) {
+  for (var i = 0; i < this.nr; i++) for (var j = 0; j < this.nc; j++)
+    this.s.cell(this.r + i, this.c + j).fmt = f;
+  return this;
+};
 ['setBackground', 'setFontColor', 'setFontWeight', 'setFontSize', 'setVerticalAlignment',
-  'setHorizontalAlignment', 'setWrap', 'setNumberFormat', 'setDataValidation'
+  'setHorizontalAlignment', 'setWrap', 'setDataValidation'
 ].forEach(function (m) { Range.prototype[m] = function () { return this; }; });
 
 /* ------------------------------------------------------------ สร้างชีทตัวอย่าง */
@@ -216,10 +222,24 @@ function build(opts) {
     lot.cell(r, 7).v = l.qty;
   });
 
+  /* เอกสาร — ทะเบียนใบที่ออกให้ลูกค้าไปแล้ว
+     ใบพวกนี้อยู่ต่อแม้ออเดอร์จะถูกล้าง เลขออเดอร์จึงต้องเดินต่อจากที่นี่ด้วย */
+  var doc = mk('เอกสาร', 21, 501);
+  doc.setFormulaDown(1, DATA_ROW, 500, '=doccalc');
+
   /* ---- คิดสูตรที่ทดสอบต้องใช้จริง ---- */
   function recalc() {
-    var std = {};
-    demo.forEach(function (p) { std[p.sku] = p.price; });
+    /* ราคามาตรฐานอ่านจากชีท ฐานสินค้า ไม่ใช่จากรายการตั้งต้น
+       เพราะแอปเพิ่มสินค้าเข้าฐานเองได้ (ของซื้อมาขายไปที่พิมพ์ชื่อเอง)
+       ถ้าอ่านจากรายการตั้งต้น สินค้าที่เพิ่งเพิ่มจะหายไปจากสูตรของชีทจำลอง */
+    var std = {}, pname = {};
+    for (var pr = DATA_ROW; pr <= 150; pr++) {
+      var psku = prod.cell(pr, 2).v;
+      if (psku) {
+        std[psku] = Number(prod.cell(pr, 8).v || 0);
+        pname[psku] = String(prod.cell(pr, 4).v || '');
+      }
+    }
 
     var seen = {};
     for (var r = DATA_ROW; r <= itemLimit; r++) {
@@ -229,6 +249,10 @@ function build(opts) {
       var qty = Number(item.cell(r, 7).v || 0);
       var pv = item.cell(r, 9).v;
       var unit = (pv === '' || pv === null || pv === undefined) ? Number(std[sku] || 0) : Number(pv);
+      /* ช่องชื่อสินค้าเป็นสูตร VLOOKUP หารหัสในฐานสินค้า หาไม่เจอได้ "ไม่พบ SKU"
+         ของจริงเป็นแบบนี้ และคำนั้นเคยไปพิมพ์บนใบกำกับภาษีที่ส่งลูกค้าจริง
+         ชีทจำลองไม่เคยคิดช่องนี้เลย ข้อสอบจึงไม่มีทางจับได้ */
+      item.cell(r, 5).v = (pname[sku] === undefined) ? 'ไม่พบ SKU' : pname[sku];
       item.cell(r, 8).v = Number(std[sku] || 0);
       item.cell(r, 10).v = Math.round(qty * unit * 100) / 100;
       seen[no] = (seen[no] || 0) + 1;
@@ -291,11 +315,16 @@ function load(fixture, opts) {
     console: console, Date: Date, Math: Math, JSON: JSON, String: String, Number: Number,
     Object: Object, Array: Array, isNaN: isNaN, parseInt: parseInt, parseFloat: parseFloat,
     SpreadsheetApp: {
+      /* วางแบบเฉพาะสูตร ใช้ตอนซ่อมชีทที่มีคอลัมน์กรอกปนกับคอลัมน์สูตร */
+      CopyPasteType: { PASTE_FORMULA: 'PASTE_FORMULA', PASTE_NORMAL: 'PASTE_NORMAL' },
       openById: function () {
         // opts.canOpen === false = บัญชีนี้ไม่มีสิทธิ์เปิดชีท Google โยน error แบบนี้
         if (opts.canOpen === false) throw new Error('You do not have permission to access the requested document.');
         return {
           getName: function () { return 'AST_ระบบออเดอร์และสต๊อก3008'; },
+          getSpreadsheetTimeZone: function () { return fixture.tz || opts.tz || 'Asia/Bangkok'; },
+          setSpreadsheetTimeZone: function (t) { fixture.tz = t; },
+          getUrl: function () { return 'https://docs.google.com/spreadsheets/d/FAKEID/edit'; },
           getSheetByName: function (n) { return fixture.sheets[n] || null; },
           insertSheet: function (n) { return (fixture.sheets[n] = new Sheet(n, 13, 1006)); }
         };
@@ -306,13 +335,29 @@ function load(fixture, opts) {
         return b;
       }
     },
-    Session: { getActiveUser: function () { return { getEmail: function () { return opts.email === undefined ? 'somchai@chem-inno-tech.com' : opts.email; } }; } },
+    Session: {
+      getActiveUser: function () { return { getEmail: function () { return opts.email === undefined ? 'somchai@chem-inno-tech.com' : opts.email; } }; },
+      /* บัญชีที่รันสคริปต์ ใช้บอกว่าต้องเอาไฟล์ไปแชร์ให้อีเมลไหนตอนเปิดชีทไม่ได้ */
+      getEffectiveUser: function () { return { getEmail: function () { return opts.owner === undefined ? 'citisales01@chem-inno-tech.com' : opts.owner; } }; },
+      /* เขตเวลาของสคริปต์ ตั้งไว้ใน appsscript.json เป็น Asia/Bangkok */
+      getScriptTimeZone: function () { return 'Asia/Bangkok'; }
+    },
     PropertiesService: {
       getScriptProperties: function () {
         return {
           getProperty: function (k) { return Object.prototype.hasOwnProperty.call(props, k) ? props[k] : null; },
-          setProperty: function (k, v) { props[k] = String(v); }
+          setProperty: function (k, v) { props[k] = String(v); },
+          deleteProperty: function (k) { delete props[k]; }
         };
+      }
+    },
+    /* พอสร้างวันที่ตามเขตเวลาของสเปรดชีต ต้องมีตัวแปลงให้เรียกเหมือนของจริง */
+    Utilities: {
+      parseDate: function (txt, tz, fmt) {
+        var m = String(txt).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+        if (!m) throw new Error('parseDate: รูปแบบไม่ตรง ' + txt);
+        return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+          Number(m[4]), Number(m[5]), Number(m[6]));
       }
     },
     LockService: {
@@ -337,7 +382,17 @@ function load(fixture, opts) {
   ctx.global = ctx;
   vm.createContext(ctx);
   var dir = path.join(__dirname, '..', 'apps-script');
-  ['Sheets.gs', 'Fefo.gs', 'Setup.gs', 'Api.gs'].forEach(function (f) {
+  /* Doc.gs ต้องโหลดด้วย ไม่งั้น issueDoc/voidDoc เรียก docType_ ไม่เจอ
+     ทะเบียนเอกสารเป็นของที่แก้ทีหลังไม่ได้ จึงต้องมีข้อสอบคุมเหมือนส่วนอื่น */
+  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs'];
+  /* BUNDLE=1 = สอบไฟล์ที่รวมแล้วแทนไฟล์ต้นฉบับ
+     ไฟล์ที่เอาไปวางใน Apps Script จริงคือไฟล์ที่รวมแล้ว ถ้าตัวรวมทำอะไรพัง
+     ข้อสอบที่อ่านแต่ต้นฉบับจะผ่านหมดโดยที่ของจริงใช้ไม่ได้ */
+  if (process.env.BUNDLE) {
+    dir = path.join(__dirname, '..', 'out', 'bundle');
+    files = ['Code.gs'];
+  }
+  files.forEach(function (f) {
     vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f });
   });
   ctx.__props = props;
