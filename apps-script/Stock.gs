@@ -40,6 +40,24 @@ function capacity_() {
   };
 }
 
+/**
+ * ต้นทุนต่อชิ้นของทุก SKU
+ *
+ * อ่านแยกจาก readProducts_() จงใจ — readProducts_ ถูกส่งไปหน้าคีย์ออเดอร์ทุกครั้งที่เปิดแอป
+ * ตัวเลขต้นทุนไม่มีเหตุต้องไปนั่งอยู่บนจอที่พนักงานเปิดให้ลูกค้าดูหน้าร้าน
+ */
+function readCosts_() {
+  var rows = readAll_('prod');
+  var out = {};
+  for (var i = 0; i < rows.length; i++) {
+    var sku = String(rows[i][SH.prod.IN.sku - 1] || '').trim();
+    if (!sku) continue;
+    var c = rows[i][SH.prod.IN.cost - 1];
+    out[sku] = (c === '' || c === null || c === undefined) ? null : Number(c);
+  }
+  return out;
+}
+
 /* --------------------------------------------------------------- หน้าสต๊อก */
 
 /**
@@ -350,10 +368,12 @@ function previewShopee(orders, opts) {
   var plist = readProducts_();
   for (var i = 0; i < plist.length; i++) prods[plist[i].sku] = plist[i];
   var lotsBySku = readLots_();
+  var costs = readCosts_();
   var used = {};
 
   var ready = [], blocked = [], skipped = [];
   var unmappedAll = {};
+  var noCost = {};
   var needHead = 0, needItem = 0, needCut = 0;
 
   for (var n = 0; n < orders.length; n++) {
@@ -414,6 +434,14 @@ function previewShopee(orders, opts) {
       }
       cutRows += pick.picks.length;
       sub += round2_(it.qty * it.price);
+
+      /* ต้นทุนว่างหรือศูนย์ = ชีทจะคิดกำไรของบรรทัดนี้เท่ากับราคาขายทั้งก้อน
+         ตัดสต๊อกยังถูกต้องทุกอย่าง แต่ตัวเลขกำไรจะสูงเกินจริงแบบไม่มีอะไรฟ้อง
+         จึงเตือน ไม่ใช่ห้ามตัด — เรื่องบัญชีไม่ควรไปหยุดงานคลัง */
+      if (!(Number(costs[it.sku]) > 0)) {
+        if (!noCost[it.sku]) noCost[it.sku] = { sku: it.sku, name: prod.name, orders: 0 };
+        noCost[it.sku].orders++;
+      }
       lines.push({
         sku: it.sku, name: prod.name, qty: it.qty, price: it.price,
         total: round2_(it.qty * it.price), remain: prod.remain,
@@ -438,9 +466,12 @@ function previewShopee(orders, opts) {
               cut: needCut <= cap.cut, imp: needHead <= cap.imp };
   var unmapList = Object.keys(unmappedAll).map(function (k) { return unmappedAll[k]; })
     .sort(function (a, b) { return b.n - a.n; });
+  var noCostList = Object.keys(noCost).map(function (k) { return noCost[k]; })
+    .sort(function (a, b) { return b.orders - a.orders; });
 
   return {
     ready: ready, blocked: blocked, skipped: skipped, unmapped: unmapList,
+    noCost: noCostList,
     need: { head: needHead, item: needItem, cut: needCut },
     capacity: cap, fit: fit,
     enough: fit.head && fit.item && fit.cut && fit.imp,

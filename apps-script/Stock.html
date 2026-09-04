@@ -510,6 +510,21 @@ function drawPreview(pv){
       + 'ระบบไม่ตัดสต๊อกให้จนกว่าที่ว่างจะพอ</div>';
   }
 
+  /* เตือนเรื่องกำไรก่อนเรื่องอื่น — คนที่เปิดหน้านี้เพื่อดูกำไร ต้องรู้ตั้งแต่ก่อนกดตัด
+     ว่าตัวเลขกำไรที่จะได้เชื่อไม่ได้ ไม่ใช่ไปรู้ตอนเอาไปตัดสินใจสั่งของแล้ว */
+  if (pv.noCost && pv.noCost.length){
+    h += '<div class="card"><div class="subhd" style="margin-top:0">'
+      + 'ยังไม่ได้ใส่ต้นทุน '+pv.noCost.length+' รายการ</div>'
+      + '<div class="hint" style="color:var(--red)">ตัดสต๊อกได้ตามปกติ แต่<b>กำไรของใบที่มี'
+      + 'สินค้าเหล่านี้จะสูงเกินจริง</b> เพราะชีทคิดต้นทุนเป็นศูนย์ '
+      + '· ใส่ต้นทุนที่ชีท ฐานสินค้า คอลัมน์ G แล้วยอดกำไรย้อนหลังจะคำนวณใหม่ให้เองทั้งหมด</div>'
+      + pv.noCost.map(function(c){
+          return '<div class="row"><div class="i"><b>'+esc(c.name||c.sku)+'</b>'
+            + '<span>'+esc(c.sku)+' · อยู่ใน '+c.orders+' ใบที่จะตัด</span></div></div>';
+        }).join("")
+      + '</div>';
+  }
+
   if (pv.unmapped.length){
     h += '<div class="card"><div class="subhd" style="margin-top:0">'
       + 'ยังจับคู่ SKU ไม่ได้ '+pv.unmapped.length+' รายการ</div>'

@@ -241,7 +241,7 @@ window.google = { script: { run: (function(){
           if (m.code) idx[String(m.code).toLowerCase()] = m;
           if (m.name && !m.variant) idx[String(m.name).toLowerCase()] = m;
         });
-        var ready=[], blocked=[], skipped=[], unmapped={};
+        var ready=[], blocked=[], skipped=[], unmapped={}, noCost={};
         var needItem = 0;
         orders.forEach(function(o){
           if (MOCK_IMPORTED[o.sn]) {
@@ -259,10 +259,15 @@ window.google = { script: { run: (function(){
             var qty = it.qty * (m.mult||1);
             var total = it.amount;
             sub += total;
-            lines.push({ sku:m.sku, name:(MOCK_BOOT.products.filter(function(p){
-                           return p.sku===m.sku })[0]||{}).name || m.sku,
+            var prod = MOCK_BOOT.products.filter(function(p){ return p.sku===m.sku })[0] || {};
+            lines.push({ sku:m.sku, name: prod.name || m.sku,
                          qty:qty, price: qty ? Math.round(total/qty*100)/100 : 0,
                          total: total, lots:"" });
+            /* SKU-161 ในชุดจำลองยังไม่ได้ใส่ต้นทุน ไว้ทดสอบคำเตือนเรื่องกำไร */
+            if (m.sku === "SKU-161") {
+              if (!noCost[m.sku]) noCost[m.sku] = { sku:m.sku, name:prod.name, orders:0 };
+              noCost[m.sku].orders++;
+            }
           });
           miss.forEach(function(u){
             var key = (u.code||"")+"|"+(u.name||"");
@@ -285,6 +290,7 @@ window.google = { script: { run: (function(){
         var fit = need.head <= MOCK_CAP.head && need.item <= MOCK_CAP.item;
         return { ready:ready, blocked:blocked, skipped:skipped,
                  unmapped: Object.keys(unmapped).map(function(k){ return unmapped[k] }),
+                 noCost: Object.keys(noCost).map(function(k){ return noCost[k] }),
                  need:need, capacity:MOCK_CAP, fit:{}, enough:fit, maxPerRun:30, opts:opts };
       });
     },
