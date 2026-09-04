@@ -1,0 +1,711 @@
+<script>
+/* ============================================================================
+ * สต๊อก · นำเข้าออเดอร์ Shopee · จับคู่ SKU · ประวัติการเคลื่อนไหว
+ *
+ * ทั้งหมดอยู่ใต้แท็บเดียวแล้วสลับด้วยแถบชิปด้านบน ไม่ใช่แท็บล่างแท็บละหน้า
+ * เพราะแถบล่างบนมือถือรับได้จริงราว 5 ปุ่ม เกินกว่านั้นตัวหนังสือเล็กจนอ่านไม่ออก
+ * และลำดับงานจริงคือ "นำเข้า → ตรวจ → ตัด" ซึ่งเป็นเรื่องเดียวกัน ไม่ใช่คนละหน้า
+ * ========================================================================== */
+
+var STOCK_SUB = "board";
+var STOCK_DATA = null;      /* ผลจาก getStockBoard ครั้งล่าสุด */
+var MAP_DATA = null;        /* ตารางจับคู่ SKU ครั้งล่าสุด */
+
+var STOCK_TABS = [
+  { key: "board", label: "สต๊อกสินค้า" },
+  { key: "imp",   label: "นำเข้า Shopee" },
+  { key: "map",   label: "จับคู่ SKU" },
+  { key: "moves", label: "ประวัติ" }
+];
+
+function stockInit(){
+  if (!$("#stock-nav").innerHTML){
+    $("#stock-nav").innerHTML = STOCK_TABS.map(function(t){
+      return '<button data-s="'+t.key+'"'+(t.key===STOCK_SUB?' class="on"':'')+'>'+esc(t.label)+'</button>';
+    }).join("");
+    $("#stock-nav").addEventListener("click", function(e){
+      var b = e.target.closest("button[data-s]"); if(!b) return;
+      stockGo(b.dataset.s);
+    });
+    impInit();
+  }
+  stockGo(STOCK_SUB);
+}
+
+function stockGo(sub){
+  STOCK_SUB = sub;
+  $$("#stock-nav button").forEach(function(b){ b.classList.toggle("on", b.dataset.s===sub) });
+  ["board","imp","map","moves"].forEach(function(k){
+    $("#sub-"+k).style.display = (k===sub) ? "" : "none";
+  });
+  if (sub==="board") loadStock();
+  if (sub==="map")   loadMap();
+  if (sub==="moves") loadMoves();
+}
+
+/* ------------------------------------------------------------- หน้าสต๊อก */
+
+function loadStock(force){
+  if (STOCK_DATA && !force) { drawStock(STOCK_DATA); return }
+  $("#stock-body").innerHTML = '<div class="load">กำลังโหลดสต๊อกจากชีท…</div>';
+  call("getStockBoard", [], function(d){
+    STOCK_DATA = d;
+    drawStock(d);
+  }, function(m){
+    $("#stock-body").innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'+esc(m)+'</div>';
+  });
+}
+
+/** แถบความจุของชีท — ตัวเลขที่ต้องเห็นก่อนนำเข้าเสมอ ไม่ใช่รู้ตอนชีทเต็มแล้ว */
+function capBox(cap){
+  var pct = cap.headLimit > 5 ? cap.head/(cap.headLimit-5) : 0;
+  var cls = cap.head <= 30 ? "bad" : (cap.head <= 100 ? "wait" : "ok");
+  return '<div class="card"><div class="btop"><span class="bname">ที่ว่างในชีทออเดอร์</span>'
+    + '<b class="bval"><span class="tag '+cls+'">'+cap.head+' ใบ</span></b></div>'
+    + '<div class="btrack"><i style="width:'+Math.max(2,Math.round(pct*100))+'%"></i></div>'
+    + '<div class="bsub">รายการสินค้าเหลือ '+cap.item+' บรรทัด · สูตรในชีทมีถึงแถว '
+    + cap.headLimit+' / '+cap.itemLimit+'</div>'
+    + (cap.head <= 100 ? '<div class="hint" style="color:var(--red)">ใกล้เต็มแล้ว — '
+      + 'ต้องลากสูตรในชีท ออเดอร์_หัวบิล และ ออเดอร์_รายการ ลงเพิ่ม '
+      + 'ไม่งั้นระบบจะปฏิเสธการบันทึกออเดอร์ใหม่</div>' : '')
+    + '</div>';
+}
+
+function levelTag(p){
+  if (p.level==="out")     return '<span class="tag bad">ของหมด</span>';
+  if (p.level==="low")     return '<span class="tag wait">ต่ำกว่าจุดสั่งซื้อ</span>';
+  if (p.level==="unknown") return '<span class="tag">ไม่มีในชีทสต๊อก</span>';
+  return '';
+}
+
+function drawStock(d){
+  var h = "";
+
+  if (d.low.length){
+    h += '<div class="card"><div class="subhd" style="margin-top:0">'
+      + 'ต้องสั่งเพิ่ม '+d.low.length+' รายการ</div>'
+      + d.low.map(function(p){
+          return '<div class="row"><div class="i"><b>'+esc(p.name||p.sku)+'</b>'
+            + '<span>'+esc(p.sku)+' · เหลือ '+(p.remain===null?"—":p.remain)+' '+esc(p.unit)
+            + (p.reorder?' · จุดสั่งซื้อ '+p.reorder:'')+'</span></div>'
+            + '<div class="acts">'+levelTag(p)+'</div></div>';
+        }).join("")
+      + '</div>';
+  } else {
+    h += '<div class="card"><div class="sum"><span>สินค้าที่ต่ำกว่าจุดสั่งซื้อ</span>'
+      + '<b style="color:var(--green)">ไม่มี</b></div></div>';
+  }
+
+  if (d.expiring.length){
+    h += '<div class="card"><div class="subhd" style="margin-top:0">ล็อตที่ต้องรีบระบาย</div>'
+      + d.expiring.map(function(x){
+          var cls = x.days < 0 ? "bad" : (x.days <= 30 ? "wait" : "");
+          var txt = x.days < 0 ? "หมดอายุแล้ว "+(-x.days)+" วัน" : "เหลืออีก "+x.days+" วัน";
+          return '<div class="row"><div class="i"><b>'+esc(x.name||x.sku)+'</b>'
+            + '<span>ล็อต '+esc(x.lotNo)+' · คงเหลือ '+x.remain+' · '+thaiDate(isoOf(x.exp))+'</span></div>'
+            + '<div class="acts"><span class="tag '+cls+'">'+txt+'</span></div></div>';
+        }).join("")
+      + '</div>';
+  }
+
+  h += capBox(d.capacity);
+
+  h += '<div class="card"><div class="subhd" style="margin-top:0">สินค้าทั้งหมด</div>'
+    + '<div class="fld"><input id="stk-q" placeholder="พิมพ์ชื่อหรือ SKU เพื่อค้นหา"></div>'
+    + '<div id="stk-list"></div></div>';
+
+  $("#stock-body").innerHTML = h;
+  $("#stk-q").oninput = function(){ drawStockList(this.value) };
+  drawStockList("");
+}
+
+function drawStockList(q){
+  q = String(q||"").trim().toLowerCase();
+  var list = STOCK_DATA.products.filter(function(p){
+    return !q || (p.sku+" "+p.name+" "+p.group).toLowerCase().indexOf(q) > -1;
+  }).slice(0, 200);
+  if (!list.length){ $("#stk-list").innerHTML = '<div class="empty">ไม่พบสินค้าที่ค้นหา</div>'; return }
+  $("#stk-list").innerHTML = list.map(function(p){
+    var lot = p.lot && p.lot.count
+      ? ' · ล็อต '+p.lot.count+' ล็อต'+(p.lot.next?' (ตัดต่อไป '+esc(p.lot.next.lotNo)+')':'')
+      : '';
+    return '<div class="row"><div class="i"><b>'+esc(p.name||p.sku)+'</b>'
+      + '<span>'+esc(p.sku)+' · '+baht(p.price)+lot+'</span></div>'
+      + '<div class="acts" style="align-items:center">'
+      + '<b style="font-variant-numeric:tabular-nums">'+(p.remain===null?"—":p.remain)+'</b> '
+      + levelTag(p)
+      + '<button class="sq" data-mv="'+esc(p.sku)+'" title="ดูประวัติ">▤</button></div></div>';
+  }).join("");
+  $("#stk-list").onclick = function(e){
+    var b = e.target.closest("[data-mv]"); if(!b) return;
+    $("#mv-sku").value = b.dataset.mv;
+    stockGo("moves");
+    loadMoves(true);
+  };
+}
+
+/* --------------------------------------------------------- จับคู่ SKU */
+
+function loadMap(force){
+  if (MAP_DATA && !force){ drawMap(); return }
+  $("#map-body").innerHTML = '<div class="load">กำลังโหลดตารางจับคู่…</div>';
+  call("getSkuMap", [], function(d){ MAP_DATA = d; drawMap() }, function(m){
+    $("#map-body").innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'+esc(m)+'</div>';
+  });
+}
+
+/* แถวที่ยังไม่ถูกบันทึก เก็บไว้ต่างหากจนกว่าจะกดบันทึก — ไม่แตะชีทระหว่างพิมพ์ */
+var MAP_NEW = [];
+
+function mapAddRow(code, name, variant){
+  MAP_NEW.push({ code: code||"", name: name||"", variant: variant||"", sku: "", mult: 1 });
+}
+
+function drawMap(){
+  var prods = MAP_DATA.products;
+  var opts = '<option value="">— เลือก SKU ในระบบ —</option>' + prods.map(function(p){
+    return '<option value="'+esc(p.sku)+'">'+esc(p.sku)+' — '+esc(p.name)+'</option>';
+  }).join("");
+
+  function rowHtml(r, i, isNew){
+    return '<div class="it" data-i="'+i+'" data-new="'+(isNew?1:0)+'">'
+      + '<div class="hd"><b>'+(isNew?'แถวใหม่':'แถวที่ '+r.row)+'</b>'
+      + (isNew?'<button class="mini red rm" data-rm="'+i+'" style="margin-left:auto">ลบ</button>':'')
+      + '</div>'
+      + '<div class="two">'
+      + '<div class="fld"><label>รหัสบน Shopee</label><input class="m-code" value="'+esc(r.code)+'"></div>'
+      + '<div class="fld"><label>ตัวคูณจำนวน</label><input class="m-mult" type="number" min="1" step="1" value="'+(r.mult||1)+'"></div>'
+      + '</div>'
+      + '<div class="fld"><label>ชื่อสินค้าบน Shopee (ใช้เมื่อไม่มีรหัส)</label>'
+      + '<input class="m-name" value="'+esc(r.name)+'"></div>'
+      + '<div class="fld"><label>ชื่อตัวเลือกสินค้า</label><input class="m-var" value="'+esc(r.variant||"")+'"></div>'
+      + '<div class="fld"><label>SKU ในระบบ</label><select class="m-sku">'+opts+'</select></div>'
+      + (r.check && r.check!=="ใช้ได้"
+          ? '<div class="lotline bad">'+esc(r.check)+'</div>'
+          : (r.prodName?'<div class="lotline ok">'+esc(r.prodName)+'</div>':''))
+      + '</div>';
+  }
+
+  var h = '<div class="card">'
+    + '<div class="msg" style="display:block;background:#eef4fc;color:#1b3a5c">'
+    + 'ไฟล์ที่ Shopee ส่งออกมาไม่มี SKU ของร้านอยู่เลย ตารางนี้คือที่ที่บอกระบบว่าอะไรคืออะไร '
+    + '· ใส่<b>รหัส</b>ไว้ก่อนเสมอ ชื่อสินค้าบน Shopee เปลี่ยนเมื่อไรการจับคู่ด้วยชื่อจะหลุดทันที</div>'
+    + '<div class="fld"><input id="map-q" placeholder="ค้นหาในตารางจับคู่"></div>'
+    + '<div id="map-list"></div>'
+    + '<button class="mini" id="map-add" style="margin-top:8px">+ เพิ่มการจับคู่</button>'
+    + '<button class="btn" id="map-save" style="margin-top:10px">บันทึกลงชีท</button>'
+    + '<div class="hint">ที่ว่างในชีทจับคู่: '+MAP_DATA.free+' แถว</div>'
+    + '</div>';
+  $("#map-body").innerHTML = h;
+
+  function paint(){
+    var q = String($("#map-q").value||"").trim().toLowerCase();
+    var old = MAP_DATA.rows.filter(function(r){
+      return !q || (r.code+" "+r.name+" "+r.sku).toLowerCase().indexOf(q) > -1;
+    });
+    $("#map-list").innerHTML =
+      MAP_NEW.map(function(r,i){ return rowHtml(r,i,true) }).join("")
+      + old.map(function(r){ return rowHtml(r, MAP_DATA.rows.indexOf(r), false) }).join("");
+    $$("#map-list .it").forEach(function(el){
+      var isNew = el.dataset.new==="1";
+      var r = isNew ? MAP_NEW[+el.dataset.i] : MAP_DATA.rows[+el.dataset.i];
+      el.querySelector(".m-sku").value = r.sku || "";
+    });
+  }
+  $("#map-q").oninput = paint;
+  $("#map-add").onclick = function(){ mapAddRow(); paint() };
+  $("#map-list").onclick = function(e){
+    var b = e.target.closest("[data-rm]"); if(!b) return;
+    MAP_NEW.splice(+b.dataset.rm, 1); paint();
+  };
+  $("#map-save").onclick = mapSave;
+  paint();
+}
+
+function mapSave(){
+  var out = [];
+  $$("#map-list .it").forEach(function(el){
+    var isNew = el.dataset.new==="1";
+    var base = isNew ? MAP_NEW[+el.dataset.i] : MAP_DATA.rows[+el.dataset.i];
+    var row = {
+      row: isNew ? 0 : base.row,
+      code: el.querySelector(".m-code").value.trim(),
+      name: el.querySelector(".m-name").value.trim(),
+      variant: el.querySelector(".m-var").value.trim(),
+      sku: el.querySelector(".m-sku").value,
+      mult: Number(el.querySelector(".m-mult").value||1)
+    };
+    if (!row.code && !row.name) return;          /* แถวเปล่าที่กดเพิ่มแล้วไม่ได้กรอก */
+    if (!isNew && row.code===base.code && row.name===base.name &&
+        row.variant===(base.variant||"") && row.sku===base.sku &&
+        Number(row.mult)===Number(base.mult)) return;   /* ไม่มีอะไรเปลี่ยน ไม่ต้องเขียนซ้ำ */
+    out.push(row);
+  });
+  if (!out.length){ toast("ยังไม่มีอะไรเปลี่ยน"); return }
+
+  var b = $("#map-save"); b.disabled = true; b.textContent = "กำลังบันทึก…";
+  call("saveSkuMap", [out], function(r){
+    MAP_NEW = [];
+    MAP_DATA.rows = r.rows;
+    b.disabled = false; b.textContent = "บันทึกลงชีท";
+    toast("บันทึกการจับคู่ "+r.saved+" แถวแล้ว");
+    drawMap();
+  }, function(m){
+    b.disabled = false; b.textContent = "บันทึกลงชีท";
+    showErr("บันทึกไม่สำเร็จ: "+m);
+  });
+}
+
+/* ------------------------------------------------------- นำเข้า Shopee */
+
+var IMP = { table: null, headerRow: -1, cols: {}, fields: [], header: [],
+            orders: [], preview: null, fileName: "" };
+
+var KIND_LABEL = {
+  unpaid:"ยังไม่ชำระเงิน", toship:"ที่ต้องจัดส่ง", shipped:"จัดส่งแล้ว",
+  done:"สำเร็จ", cancelled:"ยกเลิก", returned:"คืนสินค้า/คืนเงิน", other:"อื่น ๆ"
+};
+var CUT_DEFAULT = ["toship","shipped","done"];
+
+function impInit(){
+  /* ขนส่งของ Shopee (SPX, J&T ฯลฯ) ไม่ตรงกับตัวเลือกในชีทของร้าน จึงให้เลือกเองว่าจะลงเป็นอะไร
+     ถ้าเดาให้ ค่ายที่ไม่มีในชีทจะทำให้บันทึกไม่ผ่านทั้งใบ */
+  fillSelect("#imp-carrier", BOOT.lists.carrier);
+
+  $("#imp-paste-open").onclick = function(){
+    var b = $("#imp-paste-box");
+    b.style.display = b.style.display === "none" ? "" : "none";
+  };
+  $("#imp-cols-open").onclick = function(){
+    var b = $("#imp-cols");
+    b.style.display = b.style.display === "none" ? "" : "none";
+  };
+  $("#mv-go").onclick = function(){ loadMoves(true) };
+
+  $("#imp-file").onchange = function(){
+    var f = this.files && this.files[0];
+    if (f) readImportFile(f);
+  };
+  $("#imp-paste-go").onclick = function(){
+    var t = $("#imp-paste").value;
+    if (!t.trim()){ toast("ยังไม่ได้วางข้อมูล"); return }
+    IMP.fileName = "ข้อความที่วาง";
+    useTable(csvTable(t));
+  };
+  $("#imp-preview").onclick = impPreview;
+  $("#imp-commit").onclick  = impCommit;
+  $("#imp-api").onclick = function(){
+    call("shopeeApiStatus", [], function(st){
+      openModal("ช่องเชื่อม Shopee API", st.ready
+        ? '<p>ตั้งค่าครบแล้ว (ร้าน '+esc(st.shopId)+') — ดึงออเดอร์อัตโนมัติได้</p>'
+        : '<p>ยังไม่ได้เชื่อม API ระบบจึงใช้วิธีนำเข้าจากไฟล์อยู่</p>'
+          + '<p class="hint">ต้องใส่ค่าเหล่านี้ที่ <b>การตั้งค่าโปรเจกต์ › คุณสมบัติของสคริปต์</b>:<br>'
+          + esc(st.missing.join(", "))+'</p>'
+          + '<p class="hint">และเพิ่ม scope <code>'+esc(st.needScope)+'</code> ใน appsscript.json<br>'
+          + '(ยังไม่ใส่ไว้ เพราะจะทำให้พนักงานทุกคนต้องกดอนุญาตสิทธิ์ใหม่ทั้งที่ยังไม่ได้ใช้)</p>');
+    }, function(m){ toast(m) });
+  };
+
+  $("#imp-kinds").innerHTML = ["toship","shipped","done","unpaid","cancelled","returned"].map(function(k){
+    return '<label><input type="checkbox" value="'+k+'"'
+      + (CUT_DEFAULT.indexOf(k)>-1?" checked":"")+'> '+esc(KIND_LABEL[k])+'</label>';
+  }).join("");
+}
+
+/* ------------------------------------------------------- อ่านไฟล์เข้ามา */
+
+function csvTable(text){
+  /* เลือกตัวคั่นจากบรรทัดแรก — ไฟล์ที่ก๊อปจาก Excel มาเป็น tab ไม่ใช่จุลภาค */
+  var first = text.split(/\r?\n/)[0] || "";
+  var d = (first.split("\t").length > first.split(",").length) ? "\t" : ",";
+  var rows=[], row=[], cur="", q=false;
+  for (var i=0;i<text.length;i++){
+    var c = text[i];
+    if (q){
+      if (c === '"'){ if (text[i+1] === '"'){ cur+='"'; i++ } else q=false }
+      else cur += c;
+    }
+    else if (c === '"') q = true;
+    else if (c === d){ row.push(cur); cur="" }
+    else if (c === "\n"){ row.push(cur); cur=""; rows.push(row); row=[] }
+    else if (c === "\r"){ /* ข้าม */ }
+    else cur += c;
+  }
+  row.push(cur);
+  if (row.length > 1 || row[0] !== "") rows.push(row);
+  return rows;
+}
+
+/* SheetJS โหลดตอนเลือกไฟล์ .xlsx เท่านั้น ไม่โหลดตอนเปิดแอป
+   คนที่นำเข้าด้วย CSV จะได้ไม่ต้องรอไฟล์ที่ไม่ได้ใช้ */
+function needXlsx(){
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (needXlsx._p) return needXlsx._p;
+  needXlsx._p = new Promise(function(ok, no){
+    var s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload = function(){ window.XLSX ? ok(window.XLSX) : no(new Error("โหลดตัวอ่าน .xlsx ไม่สำเร็จ")) };
+    s.onerror = function(){ no(new Error("โหลดตัวอ่าน .xlsx ไม่ได้ — เน็ตของเครื่องนี้อาจบล็อกอยู่ "
+      + "ให้ save as เป็น .csv จาก Excel แล้วนำเข้าใหม่")) };
+    document.head.appendChild(s);
+  });
+  return needXlsx._p;
+}
+
+function readImportFile(f){
+  IMP.fileName = f.name;
+  clearMsg();
+  $("#imp-state").innerHTML = '<div class="load">กำลังอ่านไฟล์ '+esc(f.name)+'…</div>';
+  if (/\.(xlsx|xls)$/i.test(f.name)){
+    needXlsx().then(function(X){
+      var fr = new FileReader();
+      fr.onload = function(){
+        try{
+          var wb = X.read(new Uint8Array(fr.result), { type:"array", cellDates:true });
+          var sh = wb.Sheets[wb.SheetNames[0]];
+          useTable(X.utils.sheet_to_json(sh, { header:1, raw:true, defval:"" }));
+        }catch(e){ impFail("อ่านไฟล์ไม่สำเร็จ: "+e.message) }
+      };
+      fr.onerror = function(){ impFail("อ่านไฟล์ไม่สำเร็จ") };
+      fr.readAsArrayBuffer(f);
+    }, function(e){ impFail(e.message) });
+  } else {
+    var fr = new FileReader();
+    fr.onload = function(){ useTable(csvTable(String(fr.result||""))) };
+    fr.onerror = function(){ impFail("อ่านไฟล์ไม่สำเร็จ") };
+    fr.readAsText(f, "utf-8");
+  }
+}
+
+function impFail(msg){
+  $("#imp-state").innerHTML = "";
+  showErr(msg);
+}
+
+function useTable(table){
+  IMP.table = table || [];
+  IMP.headerRow = -1;
+  IMP.cols = {};
+  reparse();
+}
+
+/**
+ * ให้คนตรวจและแก้การจับคอลัมน์ได้เสมอ
+ * Shopee เปลี่ยนชื่อคอลัมน์ในไฟล์ export มาแล้วหลายรอบ ถ้าไม่มีทางแก้ด้วยมือ
+ * วันที่เขาเปลี่ยนคือวันที่ระบบใช้ไม่ได้ทั้งวันโดยที่ร้านทำอะไรไม่ได้เลย
+ */
+function drawColPicker(){
+  var opts = '<option value="">— ไม่มี —</option>' + IMP.header.map(function(h,i){
+    return '<option value="'+i+'">'+esc(String(h||"(คอลัมน์ "+(i+1)+")").slice(0,50))+'</option>';
+  }).join("");
+  $("#imp-cols").innerHTML = IMP.fields.map(function(f){
+    var missing = f.req && (IMP.cols[f.key]===undefined);
+    return '<div class="fld"><label'+(missing?' style="color:var(--red)"':'')+'>'+esc(f.label)
+      + (f.req?' *':'')+'</label><select data-f="'+f.key+'">'+opts+'</select></div>';
+  }).join("");
+  IMP.fields.forEach(function(f){
+    var sel = $('#imp-cols select[data-f="'+f.key+'"]');
+    sel.value = IMP.cols[f.key]===undefined ? "" : String(IMP.cols[f.key]);
+    sel.onchange = function(){
+      if (this.value==="") delete IMP.cols[f.key];
+      else IMP.cols[f.key] = Number(this.value);
+      reparse();
+    };
+  });
+}
+
+/**
+ * ส่งตารางให้หลังบ้านอ่าน แล้วเอาผลมาวาด
+ *
+ * หน้าจอไม่อ่านไฟล์เอง จงใจ — ตรรกะการรวมแถวเป็นใบมีชุดเดียวอยู่ที่ Shopee.gs
+ * ซึ่งเป็นชุดเดียวกับที่ตอนตัดสต๊อกใช้ และเป็นชุดเดียวที่ทดสอบด้วย node ได้
+ */
+function reparse(){
+  IMP.preview = null;
+  $("#imp-result").innerHTML = "";
+  $("#imp-done").innerHTML = "";
+  $("#imp-commit").style.display = "none";
+  $("#imp-state").innerHTML = '<div class="load">กำลังอ่านตาราง…</div>';
+
+  call("shopeeRead", [IMP.table, IMP.cols, IMP.headerRow], function(r){
+    IMP.headerRow = r.headerRow;
+    IMP.cols = r.cols;
+    IMP.fields = r.fields;
+    IMP.header = r.header;
+    IMP.orders = r.orders;
+    drawColPicker();
+
+    var byKind = {};
+    IMP.orders.forEach(function(o){ byKind[o.kind] = (byKind[o.kind]||0)+1 });
+    var lines = Object.keys(byKind).map(function(k){
+      return (KIND_LABEL[k]||k)+" "+byKind[k]+" ใบ";
+    }).join(" · ");
+
+    $("#imp-state").innerHTML = IMP.orders.length
+      ? '<div class="msg ok on">อ่าน '+esc(IMP.fileName)+' ได้ <b>'+IMP.orders.length+' ใบ</b>'
+        + (lines?'<br>'+esc(lines):'')
+        + (r.skipped?'<br><span class="hint">ข้ามแถวที่ไม่มีเลขที่คำสั่งซื้อ '+r.skipped+' แถว</span>':'')
+        + (r.unsure?'<br><span class="hint" style="color:var(--red)">หาแถวหัวตารางไม่เจอ '
+            + 'ใช้แถวแรกไปก่อน — ตรวจการจับคอลัมน์ด้านล่างให้ครบก่อนกดตรวจ</span>':'')
+        + '</div>'
+      : '<div class="msg err on">อ่านไฟล์นี้แล้วไม่ได้ออเดอร์เลย — ลองเลือกคอลัมน์เองด้านล่าง</div>';
+    $("#imp-setup").style.display = "";
+  }, function(m){
+    $("#imp-state").innerHTML = "";
+    showErr("อ่านตารางไม่สำเร็จ: "+m);
+  });
+}
+
+/* ---------------------------------------------------- ตรวจก่อนตัดสต๊อก */
+
+function impOpts(){
+  var kinds = $$('#imp-kinds input:checked').map(function(c){ return c.value });
+  return {
+    cutKinds: kinds.length ? kinds : CUT_DEFAULT,
+    channel: "Shopee",
+    carrier: $("#imp-carrier").value,
+    feeMode: $("#imp-fee").value,
+    keepShip: $("#imp-keepship").checked,
+    by: byName()
+  };
+}
+
+/* silent = เรียกต่อจากการตัดสต๊อก ไม่ต้องล้างข้อความ "ตัดสต๊อกแล้วกี่ใบ" ที่เพิ่งขึ้น
+   ถ้าล้าง คนจะไม่ทันเห็นว่าผลเป็นยังไง เพราะการตรวจซ้ำใช้เวลาไม่ถึงวินาที */
+function impPreview(silent){
+  if (!IMP.orders.length){ toast("ยังไม่มีออเดอร์ให้ตรวจ"); return }
+  if (!silent) clearMsg();
+  var b = $("#imp-preview"); b.disabled = true; b.textContent = "กำลังตรวจ…";
+  $("#imp-result").innerHTML = '<div class="load">กำลังตรวจกับสต๊อกและล็อตในชีท…</div>';
+  call("previewShopee", [IMP.orders, impOpts()], function(pv){
+    IMP.preview = pv;
+    b.disabled = false; b.textContent = "ตรวจก่อนตัดสต๊อก";
+    drawPreview(pv);
+  }, function(m){
+    b.disabled = false; b.textContent = "ตรวจก่อนตัดสต๊อก";
+    $("#imp-result").innerHTML = "";
+    showErr("ตรวจไม่สำเร็จ: "+m);
+  });
+}
+
+function drawPreview(pv){
+  var h = "";
+  var money = 0, pieces = 0, fee = 0;
+  pv.ready.forEach(function(o){
+    money += o.subtotal; fee += o.fee;
+    o.items.forEach(function(it){ pieces += it.qty });
+  });
+
+  h += '<div class="kpis">'
+    + '<div class="kpi"><span>พร้อมตัดสต๊อก</span><b>'+pv.ready.length+' ใบ</b></div>'
+    + '<div class="kpi"><span>จำนวนชิ้น</span><b>'+pieces+'</b></div>'
+    + '<div class="kpi wide"><span>ยอดขายรวม</span><b>'+baht(money)+'</b></div>'
+    + (fee?'<div class="kpi wide"><span>ค่าธรรมเนียม Shopee</span><b>'+baht(fee)+'</b></div>':'')
+    + '</div>';
+
+  if (!pv.enough){
+    h += '<div class="msg err on">ที่ว่างในชีทไม่พอ — ต้องใช้ '+pv.need.head+' ใบ / '
+      + pv.need.item+' บรรทัด แต่เหลือ '+pv.capacity.head+' ใบ / '+pv.capacity.item+' บรรทัด<br>'
+      + 'ต้องลากสูตรในชีท ออเดอร์_หัวบิล และ ออเดอร์_รายการ ลงเพิ่มก่อน '
+      + 'ระบบไม่ตัดสต๊อกให้จนกว่าที่ว่างจะพอ</div>';
+  }
+
+  /* เตือนเรื่องกำไรก่อนเรื่องอื่น — คนที่เปิดหน้านี้เพื่อดูกำไร ต้องรู้ตั้งแต่ก่อนกดตัด
+     ว่าตัวเลขกำไรที่จะได้เชื่อไม่ได้ ไม่ใช่ไปรู้ตอนเอาไปตัดสินใจสั่งของแล้ว */
+  if (pv.noCost && pv.noCost.length){
+    h += '<div class="card"><div class="subhd" style="margin-top:0">'
+      + 'ยังไม่ได้ใส่ต้นทุน '+pv.noCost.length+' รายการ</div>'
+      + '<div class="hint" style="color:var(--red)">ตัดสต๊อกได้ตามปกติ แต่<b>กำไรของใบที่มี'
+      + 'สินค้าเหล่านี้จะสูงเกินจริง</b> เพราะชีทคิดต้นทุนเป็นศูนย์ '
+      + '· ใส่ต้นทุนที่ชีท ฐานสินค้า คอลัมน์ G แล้วยอดกำไรย้อนหลังจะคำนวณใหม่ให้เองทั้งหมด</div>'
+      + pv.noCost.map(function(c){
+          return '<div class="row"><div class="i"><b>'+esc(c.name||c.sku)+'</b>'
+            + '<span>'+esc(c.sku)+' · อยู่ใน '+c.orders+' ใบที่จะตัด</span></div></div>';
+        }).join("")
+      + '</div>';
+  }
+
+  if (pv.unmapped.length){
+    h += '<div class="card"><div class="subhd" style="margin-top:0">'
+      + 'ยังจับคู่ SKU ไม่ได้ '+pv.unmapped.length+' รายการ</div>'
+      + '<div class="hint">ใบที่มีรายการเหล่านี้จะถูกกันไว้ ไม่ตัดสต๊อกให้ '
+      + 'เพราะเดา SKU ผิดคือตัดของผิดตัว</div>'
+      + pv.unmapped.map(function(u){
+          return '<div class="row"><div class="i"><b>'+esc(u.name||u.code)+'</b>'
+            + '<span>'+esc(u.code||"ไม่มีรหัส")+(u.variant?" · "+esc(u.variant):"")
+            + ' · พบใน '+u.n+' ใบ</span></div></div>';
+        }).join("")
+      + '<button class="mini" id="pv-tomap" style="margin-top:8px">ไปจับคู่รายการเหล่านี้</button>'
+      + '</div>';
+  }
+
+  if (pv.ready.length){
+    h += '<div class="card"><div class="subhd" style="margin-top:0">รายละเอียดที่จะตัด</div>'
+      + pv.ready.slice(0,50).map(function(o){
+          return '<div class="it"><div class="hd"><b>'+esc(o.sn)+'</b>'
+            + '<span class="tag ok" style="margin-left:auto">'+esc(o.status||KIND_LABEL[o.kind])+'</span></div>'
+            + '<div class="hint" style="margin-top:0">'+esc(o.date||"ไม่ระบุวันที่")+' · '+esc(o.cust)+'</div>'
+            + o.items.map(function(it){
+                return '<div class="sum"><span>'+esc(it.name||it.sku)+' × '+it.qty+'</span>'
+                  + '<b>'+baht(it.total)+'</b></div>'
+                  + (it.lots?'<div class="lotline ok">ตัดล็อต '+esc(it.lots)+'</div>':'');
+              }).join("")
+            + (o.discount?'<div class="sum"><span>ค่าธรรมเนียม Shopee (ลงเป็นส่วนลด)</span><b>-'
+                + baht(o.discount)+'</b></div>':"")
+            + '</div>';
+        }).join("")
+      + (pv.ready.length>50?'<div class="hint">แสดง 50 ใบแรกจาก '+pv.ready.length+' ใบ</div>':"")
+      + '</div>';
+  }
+
+  if (pv.blocked.length){
+    h += '<div class="card"><div class="subhd" style="margin-top:0">'
+      + 'กันไว้ ไม่ตัด '+pv.blocked.length+' ใบ</div>'
+      + pv.blocked.map(function(o){
+          return '<div class="row"><div class="i"><b>'+esc(o.sn)+'</b>'
+            + '<span style="color:var(--red)">'+esc(o.why)+'</span></div></div>';
+        }).join("")
+      + '</div>';
+  }
+
+  if (pv.skipped.length){
+    h += '<div class="card"><div class="subhd" style="margin-top:0">'
+      + 'ข้าม '+pv.skipped.length+' ใบ</div>'
+      + '<div id="pv-skip">'+pv.skipped.slice(0,20).map(function(o){
+          return '<div class="row"><div class="i"><b>'+esc(o.sn)+'</b>'
+            + '<span>'+esc(o.why)+'</span></div></div>';
+        }).join("")+'</div>'
+      + (pv.skipped.length>20?'<div class="hint">และอีก '+(pv.skipped.length-20)+' ใบ</div>':"")
+      + '</div>';
+  }
+
+  $("#imp-result").innerHTML = h;
+  var tomap = $("#pv-tomap");
+  if (tomap) tomap.onclick = function(){
+    MAP_NEW = pv.unmapped.map(function(u){
+      return { code:u.code||"", name:u.name||"", variant:u.variant||"", sku:"", mult:1 };
+    });
+    stockGo("map");
+    loadMap(true);
+  };
+
+  var can = pv.ready.length && pv.enough;
+  $("#imp-commit").style.display = can ? "" : "none";
+  $("#imp-commit").textContent = "ตัดสต๊อก " + Math.min(pv.ready.length, pv.maxPerRun) + " ใบ"
+    + (pv.ready.length > pv.maxPerRun ? " (จาก "+pv.ready.length+" ใบ)" : "");
+}
+
+/* ------------------------------------------------------------ ตัดจริง */
+
+function impCommit(){
+  var pv = IMP.preview;
+  if (!pv || !pv.ready.length) return;
+  var take = pv.ready.slice(0, pv.maxPerRun).map(function(x){ return x.sn });
+  var want = {};
+  take.forEach(function(sn){ want[sn]=1 });
+  var batch = IMP.orders.filter(function(o){ return want[o.sn] });
+
+  if (!confirm("ยืนยันตัดสต๊อก "+batch.length+" ใบ\n\n"
+      + "ระบบจะบันทึกเป็นออเดอร์ในชีทและตัดล็อตตามจริง "
+      + "ถ้าตัดผิดต้องใช้ปุ่มคืนสินค้าแก้ ไม่ใช่ลบแถวในชีท")) return;
+
+  var b = $("#imp-commit"); b.disabled = true; b.textContent = "กำลังตัดสต๊อก…";
+  clearMsg();
+  call("commitShopee", [batch, impOpts()], function(r){
+    b.disabled = false;
+    STOCK_DATA = null;
+    SUM_CACHE = null;
+    ORDERS = [];
+    var msg = "ตัดสต๊อกแล้ว "+r.saved.length+" ใบ";
+    if (r.skipped.length) msg += " · ข้าม "+r.skipped.length+" ใบ";
+    if (r.failed.length)  msg += " · ล้มเหลว "+r.failed.length+" ใบ";
+    showOk(msg);
+    var h = '<div class="card"><div class="subhd" style="margin-top:0">ผลการตัดสต๊อก</div>'
+      + r.saved.map(function(x){
+          return '<div class="row"><div class="i"><b>'+esc(x.sn)+'</b>'
+            + '<span>บันทึกเป็นออเดอร์ '+esc(x.orderNo)+' · '+baht(x.net)+'</span></div></div>';
+        }).join("")
+      + r.failed.map(function(x){
+          return '<div class="row"><div class="i"><b>'+esc(x.sn)+'</b>'
+            + '<span style="color:var(--red)">'+esc(x.why)+'</span></div></div>';
+        }).join("")
+      + '</div>';
+    $("#imp-done").innerHTML = h;
+    /* ตรวจซ้ำอัตโนมัติ เพื่อให้เห็นทันทีว่ายังเหลืออีกกี่ใบต้องกดต่อ
+       ผลการตัดอยู่คนละกล่อง จึงไม่ถูกทับด้วยผลตรวจรอบใหม่ */
+    impPreview(true);
+  }, function(m){
+    b.disabled = false; b.textContent = "ตัดสต๊อก";
+    showErr("ตัดสต๊อกไม่สำเร็จ: "+m);
+  });
+}
+
+/* ------------------------------------------------------------- ประวัติ */
+
+function loadMoves(force){
+  var box = $("#mv-list");
+  if (box.innerHTML && !force) return;
+  box.innerHTML = '<div class="load">กำลังโหลดประวัติ…</div>';
+  call("getMoves", [{ sku: $("#mv-sku").value.trim(), from: $("#mv-from").value,
+                      to: $("#mv-to").value, limit: 300 }], function(d){
+    if (!d.moves.length){ box.innerHTML = '<div class="empty"><b>ไม่มีการเคลื่อนไหวในช่วงนี้</b></div>'; return }
+    var tag = { in:'<span class="tag ok">รับเข้า</span>',
+                out:'<span class="tag">ขายออก</span>',
+                ret:'<span class="tag wait">คืนสินค้า</span>' };
+    box.innerHTML = d.moves.map(function(m){
+      return '<div class="row"><div class="i"><b>'+esc(m.name||m.sku)+'</b>'
+        + '<span>'+esc(m.date||"ไม่ระบุวัน")+' · '+esc(m.ref||"")+(m.note?" · "+esc(m.note):"")+'</span></div>'
+        + '<div class="acts" style="align-items:center">'+ (tag[m.kind]||"")
+        + '<b style="font-variant-numeric:tabular-nums;color:'
+        + (m.qty<0?"var(--red)":"var(--green)")+'">'+(m.qty>0?"+":"")+m.qty+'</b></div></div>';
+    }).join("")
+      + (d.total > d.moves.length
+          ? '<div class="hint">แสดง '+d.moves.length+' รายการล่าสุด จากทั้งหมด '+d.total+' รายการ</div>' : "");
+  }, function(m){
+    box.innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'+esc(m)+'</div>';
+  });
+}
+
+/* --------------------------------------------------------- คืนสินค้า */
+
+/**
+ * เปิดจากรายการออเดอร์ — คืนของเข้าสต๊อกโดยไม่ลบการขายทิ้ง
+ * การขายเกิดขึ้นจริงและอาจออกเอกสารไปแล้ว ที่เปลี่ยนคือของกลับเข้าคลัง
+ */
+function openReturn(o){
+  openModal("คืนสินค้า — "+o.no,
+     '<div class="hint" style="margin-bottom:10px">ของจะกลับเข้าล็อตเดิมที่ตัดไป '
+    +'และลงชีท รับเข้า เป็นรายการของคืน · แถวออเดอร์เดิมยังอยู่</div>'
+    + (o.items||[]).map(function(it,i){
+        return '<div class="two" style="align-items:end">'
+          + '<div class="fld"><label>'+esc(it.name||it.sku)+'</label>'
+          + '<input value="'+esc(it.sku)+'" readonly></div>'
+          + '<div class="fld"><label>คืน (ขายไป '+it.qty+')</label>'
+          + '<input class="rt-q" data-sku="'+esc(it.sku)+'" type="number" min="0" max="'+it.qty
+          + '" step="1" value="'+it.qty+'"></div></div>';
+      }).join("")
+    + '<div class="fld"><label>เหตุผลที่คืน</label>'
+    + '<input id="rt-why" placeholder="เช่น ลูกค้าตีกลับ ของไม่ตรงรุ่น"></div>'
+    + '<button class="btn" id="rt-go">คืนของเข้าสต๊อก</button>');
+
+  $("#rt-go").onclick = function(){
+    var items = $$(".rt-q").map(function(el){
+      return { sku: el.dataset.sku, qty: Number(el.value||0) };
+    }).filter(function(x){ return x.qty > 0 });
+    if (!items.length){ toast("ยังไม่ได้ใส่จำนวนที่คืน"); return }
+    var why = $("#rt-why").value.trim();
+    if (!why){ toast("ต้องใส่เหตุผลที่คืน"); return }
+
+    var b = $("#rt-go"); b.disabled = true; b.textContent = "กำลังบันทึก…";
+    call("recordReturn", [{ orderNo:o.no, items:items, why:why, by:byName() }], function(){
+      closeModal();
+      STOCK_DATA = null; SUM_CACHE = null;
+      toast("คืนของเข้าสต๊อกแล้ว");
+      loadOrders(true);
+    }, function(m){
+      b.disabled = false; b.textContent = "คืนของเข้าสต๊อก";
+      toast("คืนไม่สำเร็จ: "+m);
+    });
+  };
+}
+</script>
