@@ -384,7 +384,15 @@ function load(fixture, opts) {
   var dir = path.join(__dirname, '..', 'apps-script');
   /* Doc.gs ต้องโหลดด้วย ไม่งั้น issueDoc/voidDoc เรียก docType_ ไม่เจอ
      ทะเบียนเอกสารเป็นของที่แก้ทีหลังไม่ได้ จึงต้องมีข้อสอบคุมเหมือนส่วนอื่น */
-  ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs'].forEach(function (f) {
+  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs'];
+  /* BUNDLE=1 = สอบไฟล์ที่รวมแล้วแทนไฟล์ต้นฉบับ
+     ไฟล์ที่เอาไปวางใน Apps Script จริงคือไฟล์ที่รวมแล้ว ถ้าตัวรวมทำอะไรพัง
+     ข้อสอบที่อ่านแต่ต้นฉบับจะผ่านหมดโดยที่ของจริงใช้ไม่ได้ */
+  if (process.env.BUNDLE) {
+    dir = path.join(__dirname, '..', 'out', 'bundle');
+    files = ['Code.gs'];
+  }
+  files.forEach(function (f) {
     vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f });
   });
   ctx.__props = props;

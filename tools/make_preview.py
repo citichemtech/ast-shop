@@ -28,13 +28,15 @@ PRODUCTS = [
     {"sku": "SKU-161", "group": "TOOLING", "unit": "ชิ้น", "perPack": 1, "price": 95, "remain": 300,
      "name": "End Mill Corn cut 2F 1.8*8.5*3.175*38L (1pcs)"},
     {"sku": "CHEM-001", "group": "CHEMICAL", "unit": "แกลลอน", "perPack": 1, "price": 1200, "remain": 14,
-     "name": "น้ำยาหล่อเย็น 20L"},
+     "name": "น้ำยาหล่อเย็น 20L", "reorder": 20},
 ]
 
 BOOT = {
     "staff": "somchai@chem-inno-tech.com",
     "shop": "AST Chem-Tooling",
     "vatRate": 0.07,
+    # จุดสั่งซื้อกลาง ใช้กับสินค้าที่ไม่ได้ตั้งจุดสั่งซื้อของตัวเอง
+    "reorderDefault": 50,
     "lists": {
         "channel": ["หน้าร้าน", "Shopee", "เพจ Facebook"],
         "carrier": ["Flash Express", "Kerry Express", "ไปรษณีย์ไทย", "ส่งด่วน (ไรเดอร์)", "รับเองที่ร้าน"],
@@ -127,6 +129,23 @@ window.google = { script: { run: (function(){
     withFailureHandler: function(f){ bad=f; return api },
     getBootstrap: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_BOOT)) }) },
     getOrders: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_ORDERS)) }) },
+    /* ค้นออเดอร์ทั้งชีท — ของจริงค้นในชีท ที่นี่ค้นในรายการจำลอง */
+    searchOrders: function(q, limit){
+      reply(function(){
+        var want = String(q||"").trim().toLowerCase();
+        if(want.length < 2) return [];
+        var digits = want.replace(/\D/g,"");
+        return JSON.parse(JSON.stringify(MOCK_ORDERS.filter(function(o){
+          if(String(o.no||"").toLowerCase().indexOf(want) > -1) return true;
+          if(String(o.cust||"").toLowerCase().indexOf(want) > -1) return true;
+          if(String(o.track||"").toLowerCase().indexOf(want) > -1) return true;
+          if(String(o.channel||"").toLowerCase().indexOf(want) > -1) return true;
+          if(digits.length >= 3 &&
+             String(o.tel||"").replace(/\D/g,"").indexOf(digits) > -1) return true;
+          return false;
+        }))).slice(0, Number(limit)||30);
+      });
+    },
     setTracking: function(no,track,status){
       reply(function(){
         MOCK_ORDERS.forEach(function(o){ if(o.no===no){ o.track=track; o.status=status } });
@@ -147,13 +166,16 @@ window.google = { script: { run: (function(){
         var d = DOC_SRV.buildDoc_(p.type, src,
           { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
         var pre = { rec:"ONIV26-", inv:"IV26-", quote:"QO26-", dep:"DR26-" }[p.type] || "DOC-";
-        var seq = { rec:231, inv:1, quote:114, dep:1 }[p.type] || 1;
-        var no = pre + ("0000"+seq).slice(-5);
         var th = { rec:"ใบเสร็จรับเงิน", inv:"ใบแจ้งหนี้", quote:"ใบเสนอราคา", dep:"ใบรับเงินมัดจำ" }[p.type];
+        /* เลขวิ่งต่อทีละใบเหมือนของจริง (nextDocNo_ = เลขสูงสุดในเล่ม + 1)
+           ถ้าตรึงเลขไว้ตัวเดียว ใบที่สองจะทับเลขใบแรกและข้อสอบจะหลอกตัวเอง */
+        var seq = ({ rec:231, inv:1, quote:114, dep:1 }[p.type] || 1)
+          + MOCK_DOCS.filter(function(x){ return x.type === th }).length;
+        var no = pre + ("0000"+seq).slice(-5);
         /* เก็บใบที่ออกไว้ในทะเบียน เพื่อให้กดพิมพ์ซ้ำได้เหมือนของจริง */
         MOCK_DOCS.push({ no:no, type:th, date:p.date||"", orderNo:p.orderNo||"",
                          cust:p.cust||{}, po:p.po||"", terms:p.terms||"", note:p.note||"",
-                         form:p.form||[],
+                         form:p.form||[], vatMode:p.vatMode||"", novat:!!p.novat,
                          doc:JSON.parse(JSON.stringify(d)) });
         return { ok:true, no: no, doc:d, row:7 };
       });
@@ -346,7 +368,8 @@ window.google = { script: { run: (function(){
         if(!f) throw new Error("ไม่พบใบ " + no + " ในชีท เอกสาร");
         return { ok:true, exact:true,
                  meta:{ no:f.no, date:f.date, orderNo:f.orderNo, po:f.po||"", terms:f.terms||"",
-                        note:f.note||"", voidWhy:f.voidWhy||"", cust:f.cust, form:f.form||[] },
+                        note:f.note||"", voidWhy:f.voidWhy||"", cust:f.cust, form:f.form||[],
+                        vatMode:f.vatMode||"", novat:!!f.novat },
                  saved:{ base:f.doc.base, vat:f.doc.vat, total:f.doc.total },
                  doc: JSON.parse(JSON.stringify(f.doc)) };
       });

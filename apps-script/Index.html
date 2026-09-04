@@ -315,6 +315,13 @@ textarea{resize:vertical}
 
   <!-- ------------------------------------------------------ ออเดอร์ -->
   <section id="pg-list" style="display:none">
+    <!-- จอโชว์ใบล่าสุดแค่ 40 ใบ ที่ร้านคีย์วันละ 8-10 ใบ
+         ใบเมื่อสองสัปดาห์ก่อนจึงหลุดจอไปแล้วตอนลูกค้าโทรมาถาม -->
+    <div class="card" style="padding-bottom:10px">
+      <input id="ord-q" placeholder="ค้นหา — เลขออเดอร์ ชื่อลูกค้า เบอร์โทร เลขพัสดุ"
+             autocomplete="off">
+      <div class="hint" id="ord-q-hint">ปล่อยว่างไว้ = ใบล่าสุด 40 ใบ · พิมพ์ 2 ตัวอักษรขึ้นไปเพื่อค้นทั้งชีท</div>
+    </div>
     <div class="card" id="list"><div class="load">กำลังโหลด…</div></div>
   </section>
 
@@ -377,6 +384,10 @@ textarea{resize:vertical}
 
   <!-- --------------------------------------------------------- สรุป -->
   <section id="pg-sum" style="display:none">
+    <!-- สองกล่องนี้อยู่บนสุดโดยตั้งใจ เป็นเรื่องที่ต้องรู้ก่อนดูยอดขาย
+         เงินที่ยังไม่ได้เก็บ และของที่กำลังจะหมด -->
+    <div id="sum-due"></div>
+    <div id="sum-alert"></div>
     <div class="chips" id="sum-range"></div>
     <div id="summary"><div class="load">กำลังโหลด…</div></div>
     <!-- ลายเซ็นของร้านอยู่นอกกล่องสรุปยอด เพราะกล่องนั้นจะถูกแทนที่ด้วยข้อความ

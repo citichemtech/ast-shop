@@ -123,6 +123,8 @@ function getBootstrap() {
        โชว์ไว้ในแอปให้กดเปิดได้เลย จะได้ไม่ต้องเดากันอีก */
     file: { name: ss.getName(), url: ss.getUrl() },
     vatRate: cfg.vatRate,
+    /* จุดสั่งซื้อกลาง ใช้กับสินค้าที่ไม่ได้ตั้งจุดสั่งซื้อของตัวเองไว้ */
+    reorderDefault: cfg.reorder,
     lists: cfgLists_(),
     app: appCfg_(),
     products: readProducts_(),
@@ -153,6 +155,12 @@ function readProducts_() {
              rows[i][SH.prod.IN.cost - 1] === undefined)
               ? '' : Number(rows[i][SH.prod.IN.cost - 1] || 0),
       price: Number(rows[i][SH.prod.IN.price - 1] || 0),
+      /* จุดสั่งซื้อ — ว่างไว้ = ใช้ค่ากลางจากชีท ตั้งค่า
+         หน้าจอเอาไปเทียบกับยอดคงเหลือ แล้วเตือนว่าตัวไหนต้องสั่งเพิ่ม */
+      reorder: (rows[i][SH.prod.IN.reorder - 1] === '' ||
+                rows[i][SH.prod.IN.reorder - 1] === null ||
+                rows[i][SH.prod.IN.reorder - 1] === undefined)
+                 ? null : Number(rows[i][SH.prod.IN.reorder - 1] || 0),
       remain: stock[sku] === undefined ? null : stock[sku]
     });
   }
@@ -229,8 +237,51 @@ function readLotSummary_() {
  * ที่ร้านคีย์วันละ 8-10 ใบ แปลว่าอีกไม่กี่วันก็ชนแล้ว
  */
 function getOrders(limit) {
+  return readOrders_({ limit: limit });
+}
+
+/**
+ * ค้นออเดอร์จากทั้งชีท ไม่ใช่แค่ใบล่าสุดที่หน้าจอโหลดไว้
+ *
+ * ลูกค้าโทรมาถามใบเมื่อสองสัปดาห์ก่อน ซึ่งหลุดจากจอไปแล้ว
+ * ค้นได้ด้วยเลขออเดอร์ ชื่อลูกค้า เบอร์โทร เลขพัสดุ หรือช่องทางขาย
+ * เบอร์โทรเทียบเฉพาะตัวเลข พิมพ์มีขีดหรือไม่มีขีดก็เจอเหมือนกัน
+ */
+function searchOrders(q, limit) {
+  var want = String(q || '').trim().toLowerCase();
+  if (want.length < 2) return [];
+  var digits = want.replace(/\D/g, '');
+  return readOrders_({
+    limit: Number(limit) || 30,
+    match: function (o) {
+      if (String(o.no || '').toLowerCase().indexOf(want) > -1) return true;
+      if (String(o.cust || '').toLowerCase().indexOf(want) > -1) return true;
+      if (String(o.track || '').toLowerCase().indexOf(want) > -1) return true;
+      if (String(o.channel || '').toLowerCase().indexOf(want) > -1) return true;
+      if (String(o.note || '').toLowerCase().indexOf(want) > -1) return true;
+      /* เบอร์สั้นเกินไปจะจับมั่วไปหมด เช่นพิมพ์ "08" แล้วเจอทุกใบ */
+      if (digits.length >= 3 &&
+          String(o.tel || '').replace(/\D/g, '').indexOf(digits) > -1) return true;
+      return false;
+    }
+  });
+}
+
+/**
+ * ตัวอ่านออเดอร์ตัวเดียวของทั้งระบบ
+ *
+ * opts.limit  จำนวนใบที่เอา (0 = ทั้งชีท)
+ * opts.match  ฟังก์ชันคัดใบ ถ้าไม่ส่งมาคือเอาทุกใบ
+ *
+ * แยกออกมาเพื่อให้หน้ารายการกับหน้าค้นหาอ่านคอลัมน์ชุดเดียวกันเสมอ
+ * ถ้าเขียนสองที่ วันหนึ่งคอลัมน์ขยับแล้วจะแก้ไม่ครบ
+ */
+function readOrders_(opts) {
   requireStaff_();
-  limit = (limit === 0 || limit === '0') ? Infinity : (Number(limit) || 40);
+  opts = opts || {};
+  var limit = (opts.limit === 0 || opts.limit === '0')
+    ? Infinity : (Number(opts.limit) || 40);
+  var match = typeof opts.match === 'function' ? opts.match : null;
 
   var hs = sheet_('head');
   var hLast = formulaLimit_('head');
@@ -273,6 +324,8 @@ function getOrders(limit) {
       });
     }
   }
+
+  if (match) heads = heads.filter(match);
 
   heads.sort(function (a, b) {
     if (a.date !== b.date) return a.date < b.date ? 1 : -1;
@@ -882,6 +935,10 @@ function getDoc(no) {
       if (snap && snap.lines) {
         if (snap.validTo) m.validTo = snap.validTo;
         if (snap.form) m.form = snap.form;
+        /* วิธีคิดภาษีของใบนี้ ต้องส่งกลับไปด้วย ไม่งั้นตอนดึงใบเสนอราคามาเป็นออเดอร์
+           ใบที่ราคารวม VAT ไว้แล้วจะถูกบวก VAT ซ้ำอีกรอบโดยไม่มีใครรู้ */
+        m.vatMode = String(snap.vatMode || '');
+        m.novat = !!snap.novat;
         return { ok: true, exact: true, meta: m, saved: saved, doc: {
           type: key || snap.type, lines: snap.lines, base: snap.base, vat: snap.vat,
           vatRate: snap.vatRate, total: snap.total, totalText: snap.totalText

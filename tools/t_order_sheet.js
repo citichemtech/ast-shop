@@ -1723,5 +1723,95 @@ var over36 = [];
 for (var nm36 in fx36.sheets) over36 = over36.concat(fx36.sheets[nm36].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over36, []);
 
+/* ====== 37. ค้นหาออเดอร์ทั้งชีท + จุดสั่งซื้อรายสินค้า
+
+   หน้าจอโหลดใบล่าสุด 40 ใบ ซึ่งพอสำหรับงานประจำวัน
+   แต่ตอนลูกค้าโทรมาถามใบเมื่อเดือนก่อน ต้องค้นเจอทั้งที่ไม่ได้อยู่ใน 40 ใบนั้น
+   และการค้นต้องยิงไปที่ชีท ไม่ใช่กรองเฉพาะที่โหลดมาแล้ว ไม่งั้นก็ยังหาไม่เจอเหมือนเดิม */
+console.log('\n37. ค้นหาออเดอร์ทั้งชีท');
+
+var fx37 = FS.build();
+var api37 = FS.load(fx37, {});
+api37.setup();
+var hd37 = fx37.sheets['ออเดอร์_หัวบิล'];
+
+var old37 = api37.createOrder(order({
+  cust: 'คุณสมหญิง ใบเก่า', tel: '081-999-8877', date: '2026-07-02',
+  track: 'TH99001122', note: 'ลูกค้าเก่าโทรตามใบนี้',
+  items: [{ sku: 'SKU-141', qty: 1, price: 100 }]
+}));
+
+/* ดันใบนั้นให้ตกอันดับด้วยใบใหม่อีก 44 ใบ เหมือนของจริงที่คีย์วันละ 8-10 ใบ */
+var pad37 = rowsWith(hd37, 1).length;
+for (var i37 = 0; i37 < 44; i37++) {
+  var r37 = DATA_ROW + pad37 + i37;
+  hd37.cell(r37, 1).v = 'AST-26-8' + (100 + i37);
+  hd37.cell(r37, 2).v = new Date('2026-09-10T12:00:00');
+  hd37.cell(r37, 4).v = 'ลูกค้าใบใหม่ ' + i37;
+  hd37.cell(r37, 17).v = 'รอชำระ';
+}
+fx37.recalc();
+
+eq('ใบเก่าตกอันดับไปแล้วจริง',
+  api37.getOrders(40).filter(function (o) { return o.no === old37.no }).length, 0);
+
+console.log('\n   ค้นด้วยชื่อลูกค้า');
+var byName37 = api37.searchOrders('สมหญิง', 30);
+eq('เจอใบเดียว', byName37.length, 1);
+eq('และเป็นใบที่ตกอันดับไปแล้ว', byName37[0].no, old37.no);
+truthy2('ได้รายการสินค้ามาด้วย พร้อมกดดูต่อได้ทันที', byName37[0].items.length > 0);
+
+console.log('\n   ค้นด้วยเบอร์โทร — ลูกค้าโทรมามักบอกเบอร์ ไม่บอกเลขออเดอร์');
+eq('พิมพ์เบอร์ติดกันก็เจอ ทั้งที่ในชีทมีขีดคั่น',
+  api37.searchOrders('0819998877', 30).length, 1);
+eq('พิมพ์เฉพาะท้ายเบอร์ก็เจอ', api37.searchOrders('98877', 30).length, 1);
+
+console.log('\n   ค้นด้วยเลขพัสดุ เลขออเดอร์ และข้อความในหมายเหตุ');
+eq('เลขพัสดุ', api37.searchOrders('TH99001122', 30).length, 1);
+eq('เลขออเดอร์', api37.searchOrders(old37.no, 30).length, 1);
+eq('ข้อความในหมายเหตุ', api37.searchOrders('โทรตามใบนี้', 30).length, 1);
+
+console.log('\n   คำที่ไม่มีจริง ต้องได้ศูนย์ใบ ไม่ใช่คืนใบล่าสุดมาหลอกตา');
+eq('ไม่เจอก็คือไม่เจอ', api37.searchOrders('ไม่มีลูกค้าคนนี้', 30).length, 0);
+
+console.log('\n   คำสั้นเกินไปต้องไม่ยิงทั้งชีทกลับมา');
+eq('ตัวอักษรเดียว = ไม่ค้น', api37.searchOrders('ส', 30).length, 0);
+eq('ค่าว่าง = ไม่ค้น', api37.searchOrders('', 30).length, 0);
+
+console.log('\n   จำนวนที่ขอต้องถูกจำกัดจริง');
+truthy2('ค้นคำที่ตรงหลายใบแล้วยังจำกัดจำนวนได้',
+  api37.searchOrders('ลูกค้าใบใหม่', 5).length === 5);
+
+console.log('\n   จุดสั่งซื้อรายสินค้า — หน้าจอเอาไปเตือนของใกล้หมด');
+var boot37 = api37.getBootstrap();
+eq('ส่งจุดสั่งซื้อกลางไปให้หน้าจอด้วย', typeof boot37.reorderDefault, 'number');
+var p37 = boot37.products.filter(function (p) { return p.sku === 'SKU-141' })[0];
+truthy2('สินค้าแต่ละตัวมีช่องจุดสั่งซื้อของตัวเอง', 'reorder' in p37);
+
+/* สินค้าที่เว้นจุดสั่งซื้อไว้ต้องได้ null ไม่ใช่ 0
+   เพราะ 0 แปลว่า "ไม่ต้องเตือนเลย" ซึ่งคนละความหมายกับ "ยังไม่ได้ตั้ง" */
+var prod37 = fx37.sheets['ฐานสินค้า'];
+var row37 = rowsWith(prod37, 2).filter(function (r) {
+  return prod37.cell(r, 2).v === 'SKU-141';
+})[0];
+prod37.cell(row37, 10).v = '';
+fx37.recalc();
+var blank37 = api37.getBootstrap().products.filter(function (p) {
+  return p.sku === 'SKU-141';
+})[0];
+eq('เว้นว่างไว้ = null ไม่ใช่ 0', blank37.reorder, null);
+
+prod37.cell(row37, 10).v = 25;
+fx37.recalc();
+eq('ตั้งไว้เท่าไรก็ส่งไปเท่านั้น',
+  api37.getBootstrap().products.filter(function (p) {
+    return p.sku === 'SKU-141';
+  })[0].reorder, 25);
+
+console.log('\n   ค้นหาแล้วต้องไม่มีอะไรถูกเขียนลงชีทเลย');
+var over37 = [];
+for (var nm37 in fx37.sheets) over37 = over37.concat(fx37.sheets[nm37].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over37, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

@@ -1230,6 +1230,194 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal() });
   await page.waitForTimeout(200);
 
+  /* ---------- 26. ค้นหาออเดอร์ทั้งชีท ---------- */
+  console.log('\n26. ค้นหาออเดอร์ — ลูกค้าโทรมาถามใบเก่าที่ไม่ได้อยู่ใน 40 ใบล่าสุด');
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.evaluate(function () { ORD_Q = ''; ORDERS = []; loadOrders(true) });
+  await page.waitForTimeout(500);
+  truthy('มีช่องค้นหาอยู่เหนือรายการ', await page.locator('#ord-q').count() > 0);
+  eq('ยังไม่ได้ค้น เห็นใบล่าสุดทั้งหมด', await page.locator('#list .row').count(), 2);
+
+  await page.fill('#ord-q', 'ตัวอย่าง ข');
+  await page.waitForTimeout(900);
+  eq('ค้นชื่อลูกค้าแล้วเหลือใบเดียว', await page.locator('#list .row').count(), 1);
+  truthy('บอกว่าเจอกี่ใบ', /เจอ 1 ใบ/.test(await page.textContent('#ord-q-hint')));
+
+  console.log('\n   ค้นด้วยเบอร์โทรก็ต้องเจอ — ลูกค้าโทรมามักบอกเบอร์ ไม่บอกเลขออเดอร์');
+  await page.fill('#ord-q', '0800000001');
+  await page.waitForTimeout(900);
+  eq('ค้นเบอร์โทรเจอใบเดียวกัน', await page.locator('#list .row').count(), 1);
+
+  console.log('\n   คำที่ไม่มีในชีท ต้องบอกว่าไม่เจอ ไม่ใช่โชว์ใบล่าสุดหลอกตา');
+  await page.fill('#ord-q', 'ไม่มีลูกค้าคนนี้');
+  await page.waitForTimeout(900);
+  eq('ไม่มีแถวไหนขึ้นมา', await page.locator('#list .row').count(), 0);
+  truthy('บอกว่าไม่เจอ', /ไม่เจอ/.test(await page.textContent('#list')));
+
+  console.log('\n   ล้างคำค้นแล้วต้องกลับมาเป็นใบล่าสุดเอง');
+  await page.fill('#ord-q', '');
+  await page.waitForTimeout(900);
+  eq('กลับมาครบทุกใบ', await page.locator('#list .row').count(), 2);
+  eq('เลิกโหมดค้นหาแล้ว', await page.evaluate(function () { return ORD_Q }), '');
+
+  /* ---------- 27. ค้างชำระ + เตือนของใกล้หมด ---------- */
+  console.log('\n27. หน้าสรุปยอด — ใครยังไม่จ่าย และของอะไรใกล้หมด');
+
+  await page.evaluate(function () {
+    /* ตั้งสถานะให้แน่นอน ไม่ให้ข้อสอบข้อก่อนหน้ามีผลกับข้อนี้ */
+    MOCK_ORDERS[0].status = 'ส่งแล้ว';   MOCK_ORDERS[0].net = 800;
+    MOCK_ORDERS[1].status = 'รอชำระ';    MOCK_ORDERS[1].net = 303.59;
+    SUM_CACHE = null; ORDERS = [];
+  });
+  await page.click('.tabs button[data-go="sum"]');
+  await page.waitForTimeout(900);
+
+  var dueTxt = await page.textContent('#sum-due');
+  truthy('บอกว่าค้างชำระกี่ใบ', /ค้างชำระ 2 ใบ/.test(dueTxt));
+  truthy('บอกยอดรวมที่ยังไม่ได้เก็บ', /1,103\.59/.test(dueTxt));
+  eq('ขึ้นครบทั้งสองใบ', await page.locator('#due-list .row').count(), 2);
+  truthy('ใบเก่าสุดขึ้นก่อน (ใบที่ต้องโทรตามก่อน)',
+    (await page.textContent('#due-list .row:first-child')).indexOf('AST-26-0005') > -1);
+
+  var alertTxt = await page.textContent('#sum-alert');
+  truthy('เตือนล็อตที่ใกล้หมดอายุ', /ล็อตที่ต้องรีบระบาย/.test(alertTxt));
+  truthy('บอกว่าเหลืออีกกี่วัน', /อีก \d+ วันหมดอายุ/.test(alertTxt));
+  truthy('เตือนของที่ถึงจุดสั่งซื้อ', /ถึงจุดสั่งซื้อแล้ว/.test(alertTxt));
+  truthy('น้ำยาหล่อเย็นเหลือ 14 ต่ำกว่าจุดสั่งซื้อ 20 ของตัวเอง',
+    /น้ำยาหล่อเย็น 20L/.test(alertTxt));
+  truthy('สินค้าที่ไม่ได้ตั้งจุดสั่งซื้อ ใช้จุดสั่งซื้อกลาง 50',
+    /\(จุดสั่งซื้อ 50\)/.test(alertTxt));
+
+  console.log('\n   เก็บเงินได้แล้วกด ✓ ต้องปิดยอดในชีทจริง');
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  await page.locator('#due-list [data-due-pd]').first().click();
+  await page.waitForTimeout(900);
+  eq('สถานะในชีทเปลี่ยนเป็นชำระแล้ว',
+     await page.evaluate(function () { return MOCK_ORDERS[0].status }), 'ชำระแล้ว');
+  eq('เหลือค้างใบเดียว', await page.locator('#due-list .row').count(), 1);
+  truthy('ยอดค้างลดลงตาม', /303\.59/.test(await page.textContent('#sum-due')));
+
+  /* ---------- 28. ใบเสนอราคา → ออเดอร์ ---------- */
+  console.log('\n28. ลูกค้าตกลงตามใบเสนอราคา — ดึงใบมาเป็นออเดอร์ ไม่ต้องคีย์ใหม่');
+
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(500);
+  await page.fill('#q-name', 'ลูกค้าตัวอย่าง ค');
+  await page.fill('#q-tel', '0800000002');
+  await page.fill('#q-addr', '9/9 ถ.สมมติ อ.เมือง ชลบุรี 20000');
+  /* บรรทัดแรกเลือกจากฐานสินค้า บรรทัดที่สองพิมพ์ชื่อเอง (ของที่ไม่มีในสต๊อก) */
+  await page.selectOption('#q-items .it:nth-child(1) .q-sku', 'SKU-141');
+  await page.fill('#q-items .it:nth-child(1) .q-qty', '4');
+  await page.fill('#q-items .it:nth-child(1) .q-price', '120');
+  await page.click('#q-add');
+  await page.waitForTimeout(200);
+  await page.fill('#q-items .it:nth-child(2) .q-desc', 'ด้ามจับพิเศษสั่งทำ');
+  await page.fill('#q-items .it:nth-child(2) .q-qty', '1');
+  await page.fill('#q-items .it:nth-child(2) .q-price', '500');
+  await page.fill('#q-ship', '50');
+  await page.fill('#q-disc', '30');
+  await page.click('#q-make');
+  await page.waitForTimeout(1200);
+
+  var qNo = await page.evaluate(function () {
+    var q = MOCK_DOCS.filter(function (d) { return d.type === 'ใบเสนอราคา' })[0];
+    return q ? q.no : '';
+  });
+  truthy('ออกใบเสนอราคาได้', !!qNo);
+
+  await page.evaluate(function () { drawOldDocs('', '#q-old') });
+  await page.waitForTimeout(600);
+  truthy('ใบเสนอราคามีปุ่มทำเป็นออเดอร์', await page.locator('#q-old [data-q2o]').count() > 0);
+
+  await page.locator('#q-old [data-q2o]').first().click();
+  await page.waitForTimeout(900);
+
+  eq('เด้งมาหน้าคีย์ออเดอร์ให้เลย',
+     await page.evaluate(function () { return $('#pg-new').style.display !== 'none' }), true);
+  var f = await page.evaluate(function () {
+    return { cust: $('#f-cust').value, tel: $('#f-tel').value, addr: $('#f-addr').value,
+             ship: $('#f-ship').value, disc: $('#f-disc').value,
+             note: $('#f-note').value, vat: $('#f-vat').value,
+             rows: $$('#items .it').length,
+             sku1: $$('#items .it')[0].querySelector('.i-sku').value,
+             qty1: $$('#items .it')[0].querySelector('.i-qty').value,
+             price1: $$('#items .it')[0].querySelector('.i-price').value,
+             free2: $$('#items .it')[1].querySelector('.i-free').checked,
+             name2: $$('#items .it')[1].querySelector('.i-name').value,
+             price2: $$('#items .it')[1].querySelector('.i-price').value };
+  });
+  eq('ยกชื่อลูกค้ามาให้', f.cust, 'ลูกค้าตัวอย่าง ค');
+  eq('ยกเบอร์โทรมาให้', f.tel, '0800000002');
+  truthy('ยกที่อยู่มาให้', f.addr.indexOf('ชลบุรี') > -1);
+  eq('ได้สองบรรทัดเท่าใบเสนอราคา (ค่าส่งกับส่วนลดไม่นับเป็นสินค้า)', f.rows, 2);
+  eq('บรรทัดที่จับคู่ชื่อได้ กลายเป็นรหัสสินค้าจริง', f.sku1, 'SKU-141');
+  eq('จำนวนตามใบ', f.qty1, '4');
+  eq('ราคาที่เสนอไปตามมาด้วย ไม่ใช่ราคาป้าย', f.price1, '120');
+  eq('บรรทัดที่ไม่มีในฐานสินค้า ตั้งเป็นซื้อมาขายไป', f.free2, true);
+  eq('พร้อมชื่อที่พิมพ์ไว้บนใบ', f.name2, 'ด้ามจับพิเศษสั่งทำ');
+  eq('และราคาเดิม', f.price2, '500');
+  eq('ค่าส่งไปอยู่ในช่องค่าส่ง ไม่ใช่บรรทัดสินค้า', Number(f.ship), 50);
+  eq('ส่วนลดไปอยู่ในช่องส่วนลด', Number(f.disc), 30);
+  truthy('จดเลขใบเสนอราคาไว้ในหมายเหตุ', f.note.indexOf(qNo) > -1);
+
+  console.log('\n   ยอดไม่ตรงกับใบที่เสนอไป ต้องบอกตรงนั้น ไม่ใช่ปล่อยให้รู้ตอนลูกค้าโอนมา');
+  /* ใบเสนอราคาคิด VAT รวมค่าจัดส่ง แต่สูตรในชีทคิด VAT เฉพาะค่าสินค้า
+     ใบนี้จึงต่างกันเท่ากับ VAT ของค่าส่ง 50 บาท = 3.50 */
+  var warn = await page.textContent('#err');
+  truthy('ขึ้นคำเตือนว่ายอดไม่เท่ากัน', /ยอดไม่เท่ากัน/.test(warn));
+  truthy('บอกยอดที่ออเดอร์คิดได้', /1,066\.50/.test(warn));
+  truthy('บอกยอดที่เสนอไป', /1,070\.00/.test(warn));
+  truthy('บอกด้วยว่าต่างกันเท่าไร', /3\.50/.test(warn));
+  truthy('และบอกว่าต้องทำอะไรต่อ', /ก่อนกดบันทึก/.test(warn));
+
+  console.log('\n   ใบที่ไม่มีค่าส่ง ยอดต้องตรงกันเป๊ะ');
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(400);
+  await page.fill('#q-ship', '0');
+  await page.fill('#q-disc', '0');
+  await page.click('#q-make');
+  await page.waitForTimeout(1200);
+  var qNo2 = await page.evaluate(function () {
+    var q = MOCK_DOCS.filter(function (d) { return d.type === 'ใบเสนอราคา' });
+    return q[q.length - 1].no;
+  });
+  await page.evaluate(function (no) { quoteToOrder(no) }, qNo2);
+  await page.waitForTimeout(900);
+  var net2 = await page.evaluate(function () {
+    return Number(String($('#s-net').textContent).replace(/[^\d.]/g, ''));
+  });
+  var qTotal2 = await page.evaluate(function (no) {
+    return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
+  }, qNo2);
+  eq('ยอดสุทธิตรงกับใบที่เสนอไป', net2, qTotal2);
+  eq('ไม่มีคำเตือนค้างอยู่',
+     await page.evaluate(function () { return $('#err').classList.contains('on') }), false);
+  truthy('ขึ้นข้อความว่าดึงใบมาแล้ว', /ดึงใบ/.test(await page.textContent('#ok')));
+
+  console.log('\n   ใบที่เสนอราคารวม VAT ต้องถอด VAT ออกก่อน ไม่ใช่บวกซ้ำ');
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(400);
+  await page.selectOption('#q-vat', 'incl');
+  await page.click('#q-make');
+  await page.waitForTimeout(1200);
+  var qNo3 = await page.evaluate(function () {
+    var q = MOCK_DOCS.filter(function (d) { return d.type === 'ใบเสนอราคา' });
+    return q[q.length - 1].no;
+  });
+  var qTotal3 = await page.evaluate(function (no) {
+    return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
+  }, qNo3);
+  eq('ใบราคารวม VAT ยอดรวมเท่าราคาที่กรอก', qTotal3, 980);
+  await page.evaluate(function (no) { quoteToOrder(no) }, qNo3);
+  await page.waitForTimeout(900);
+  var f3 = await page.evaluate(function () {
+    return { price1: $$('#items .it')[0].querySelector('.i-price').value,
+             net: Number(String($('#s-net').textContent).replace(/[^\d.]/g, '')) };
+  });
+  eq('ราคาต่อหน่วยถูกถอด VAT ออกแล้ว (120 ÷ 1.07)', f3.price1, '112.15');
+  eq('ยอดสุทธิยังเท่ายอดบนใบ ไม่ได้บวก VAT ซ้ำ', f3.net, qTotal3);
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

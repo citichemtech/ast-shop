@@ -95,7 +95,14 @@
 ```bash
 node tools/t_fefo_unit.js                          # ตรรกะ FEFO
 node tools/t_order_sheet.js                        # บันทึกออเดอร์บนชีทจำลอง
+node tools/t_doc.js                                # เอกสารสี่ชนิดและตัวสะกดเงิน
 python3 tools/make_preview.py && node tools/t_ui.js # หน้าจอจริงในเบราว์เซอร์
+
+# สอบไฟล์ที่รวมแล้ว (ตัวที่เอาไปวางใน Apps Script จริง) ด้วยข้อสอบชุดเดียวกัน
+python3 tools/bundle.py
+BUNDLE=1 node tools/t_order_sheet.js
+python3 tools/make_preview.py out/preview_bundle.html out/bundle/Index.html
+PV=preview_bundle.html node tools/t_ui.js
 ```
 
 `tools/fakesheet.js` จำลอง SpreadsheetApp มากพอที่จะรัน `Sheets.gs` กับ `Api.gs`

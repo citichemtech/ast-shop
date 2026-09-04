@@ -85,7 +85,8 @@ function boot(){
     CFG.products = b.products.map(function(p){
       /* รูปทรงเดียวกับสินค้าในแอปเดิม ตัวอ่านข้อความจากไลน์จะได้ใช้ได้โดยไม่ต้องแก้ */
       return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
-               unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group };
+               unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
+               reorder:p.reorder };
     });
     CFG.sender = APP.sender || CFG.sender;
     CFG.codFee = Number(APP.codFee||0);
@@ -469,7 +470,8 @@ function save(){
       BOOT=b; $("#next-no").textContent=b.nextNo;
       CFG.products = b.products.map(function(p){
         return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
-                 unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group };
+                 unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
+                 reorder:p.reorder };
       });
     }, function(){ /* ตัวเลขคงเหลือไม่สดก็ไม่เป็นไร ออเดอร์บันทึกไปแล้ว */ });
   }, function(m){
@@ -606,10 +608,66 @@ function pickOption(sel, want){
 /* ------------------------------------------------------------ รายการออเดอร์ */
 
 function loadOrders(force){
+  /* กำลังค้นอยู่ ให้ค้นใหม่แทนการโหลดใบล่าสุดทับ
+     ไม่งั้นบันทึกอะไรสักอย่างเสร็จ ผลค้นหาที่ดูอยู่จะหายไปเฉย ๆ */
+  if(ORD_Q){ runSearch(ORD_Q, true); return }
   if(ORDERS.length && !force){ renderOrders(); return }
   $("#list").innerHTML='<div class="load">กำลังโหลดออเดอร์จากชีท…</div>';
   call("getOrders",[40],function(list){ ORDERS=list; renderOrders() },
     function(m){ $("#list").innerHTML='<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'+esc(m)+'</div>' });
+}
+
+/* ------------------------------------------------------------ ค้นหาออเดอร์
+
+   หน้าจอโหลดใบล่าสุด 40 ใบ ซึ่งพอสำหรับงานประจำวัน แต่ไม่พอตอนลูกค้าโทรมา
+   ถามใบเก่า การค้นจึงยิงไปหาทั้งชีท ไม่ใช่กรองเฉพาะที่โหลดมาแล้ว   */
+
+var ORD_Q = "";        /* คำค้นที่กำลังแสดงผลอยู่ "" = โหมดใบล่าสุด */
+var ORD_TIMER = null;
+
+function ordSearchInit(){
+  var el = $("#ord-q");
+  if(!el) return;
+  el.oninput = function(){
+    var q = el.value.trim();
+    clearTimeout(ORD_TIMER);
+    /* หน่วงไว้ครึ่งวินาที ไม่งั้นพิมพ์ชื่อยาว ๆ ทีเดียวยิงเซิร์ฟเวอร์สิบรอบ */
+    ORD_TIMER = setTimeout(function(){ runSearch(q) }, 450);
+  };
+  el.onkeydown = function(e){
+    if(e.key !== "Enter") return;
+    e.preventDefault();
+    clearTimeout(ORD_TIMER);
+    runSearch(el.value.trim());
+  };
+}
+
+function runSearch(q, quiet){
+  q = String(q||"").trim();
+  if(q.length < 2){
+    ORD_Q = "";
+    $("#ord-q-hint").textContent =
+      "ปล่อยว่างไว้ = ใบล่าสุด 40 ใบ · พิมพ์ 2 ตัวอักษรขึ้นไปเพื่อค้นทั้งชีท";
+    loadOrders(true);
+    return;
+  }
+  ORD_Q = q;
+  if(!quiet) $("#list").innerHTML = '<div class="load">กำลังค้น “'+esc(q)+'” ทั้งชีท…</div>';
+  call("searchOrders",[q,30],function(list){
+    /* พิมพ์ต่อไปแล้วระหว่างรอ ผลของคำเก่าต้องไม่เด้งขึ้นมาทับ */
+    if(ORD_Q !== q) return;
+    ORDERS = list || [];
+    $("#ord-q-hint").textContent = ORDERS.length
+      ? "เจอ " + ORDERS.length + " ใบ ที่ตรงกับ “" + q + "”"
+      : "ไม่เจอใบไหนที่ตรงกับ “" + q + "”";
+    renderOrders();
+    if(!ORDERS.length){
+      $("#list").innerHTML = '<div class="empty"><b>ไม่เจอออเดอร์</b>'
+        + 'ลองค้นด้วยเลขออเดอร์ ชื่อลูกค้า เบอร์โทร หรือเลขพัสดุ</div>';
+    }
+  }, function(m){
+    $("#list").innerHTML = '<div class="empty" style="color:var(--red)">ค้นไม่สำเร็จ<br>'+esc(m)+'</div>';
+  });
 }
 
 function statusTag(s){
@@ -1088,6 +1146,10 @@ function drawOldDocs(orderNo, boxSel){
             + (!dead && sent ? '<span style="color:var(--gray)">ส่งเมื่อ '+esc(sent)+'</span>' : '')
             +'</div><div class="acts">'
             +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
+            /* ใบเสนอราคาที่ลูกค้าตอบตกลงแล้ว ของเดิมต้องคีย์รายการใหม่ทั้งชุด
+               ทั้งที่ข้อมูลอยู่ในใบครบแล้ว — พิมพ์ใหม่ทีคือพิมพ์ผิดได้ที */
+            + (!dead && !d.orderNo && d.type === "ใบเสนอราคา"
+               ? '<button class="mini" data-q2o="'+esc(d.no)+'">ทำเป็นออเดอร์</button>' : '')
             /* ใบที่ยกเลิกไปแล้วไม่มีปุ่มให้กดซ้ำ เหตุผลครั้งแรกจะได้ไม่ถูกทับหาย */
             + (dead || sent ? '' : '<button class="mini" data-rv="'+esc(d.no)+'">แก้ไขใบ</button>')
             + (dead || sent ? '' : '<button class="mini" data-sd="'+esc(d.no)+'">ส่งแล้ว</button>')
@@ -1097,6 +1159,9 @@ function drawOldDocs(orderNo, boxSel){
       + '<div id="'+outId+'" style="margin-top:10px"></div>';
     box.querySelectorAll("[data-rp]").forEach(function(b){
       b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
+    });
+    box.querySelectorAll("[data-q2o]").forEach(function(b){
+      b.onclick = function(){ quoteToOrder(b.getAttribute("data-q2o"), b) };
     });
     box.querySelectorAll("[data-rv]").forEach(function(b){
       b.onclick = function(){ askRevise(b.getAttribute("data-rv"), b, orderNo, sel) };
@@ -1714,6 +1779,116 @@ function edSave(o, btn){
   });
 }
 
+/* ------------------------------------------- ใบเสนอราคา → ฟอร์มคีย์ออเดอร์
+
+   ลูกค้าตอบตกลงแล้ว ของเดิมต้องคีย์ชื่อ ที่อยู่ และรายการสินค้าใหม่ทั้งชุด
+   ทั้งที่ทุกอย่างอยู่ในใบเสนอราคาครบแล้ว พิมพ์ใหม่ทีคือพิมพ์ผิดได้ที
+   และราคาที่เสนอไปกับราคาที่คีย์จริงอาจไม่ตรงกันโดยไม่มีใครรู้
+
+   ตัวนี้แค่ "เติมฟอร์มให้" ยังไม่บันทึกอะไร — คนคีย์ตรวจแล้วกดบันทึกเอง
+   เพราะบันทึกแล้วสต๊อกถูกตัดจริง ถอยกลับไม่ได้ง่าย ๆ                      */
+
+/** ชื่อสินค้าบนใบ → รหัสในฐานสินค้า จับแบบตรงตัวก่อน แล้วค่อยจับแบบหลวม */
+function skuByName(name){
+  var want = String(name||"").trim().toLowerCase();
+  if(!want) return null;
+  var list = CFG.products || [];
+  for(var i=0;i<list.length;i++){
+    if(String(list[i].name||"").trim().toLowerCase() === want) return list[i];
+  }
+  /* ชื่อบนใบมักมีคำต่อท้ายเพิ่ม เช่นหน่วยนับหรือหมายเหตุ จับแบบ "ขึ้นต้นตรงกัน" ต่อ */
+  for(var j=0;j<list.length;j++){
+    var n = String(list[j].name||"").trim().toLowerCase();
+    if(n && (want.indexOf(n) === 0 || n.indexOf(want) === 0)) return list[j];
+  }
+  return null;
+}
+
+function quoteToOrder(no, btn){
+  if(btn){ btn.disabled = true; btn.textContent = "กำลังดึง…" }
+  api("getDoc", no).then(function(r){
+    var d = r.doc || {}, m = r.meta || {}, cu = m.cust || {};
+
+    /* ใบที่ออกแบบ "ราคารวม VAT แล้ว" ราคาต่อหน่วยบนใบคือราคาที่รวมภาษีไปแล้ว
+       แต่ช่องราคาในออเดอร์เก็บราคาก่อน VAT เสมอ แล้วชีทค่อยบวก 7% ทับทีหลัง
+       ยกราคามาตรง ๆ คือบวกภาษีซ้ำ ยอดที่เสนอไปกับยอดที่เก็บจะไม่เท่ากัน */
+    var incl = (m.vatMode === "incl") && !m.novat && Number(d.vatRate || 0) > 0;
+    var rate = Number(d.vatRate || 0.07) || 0.07;
+    var un = function(v){
+      var n = Number(v) || 0;
+      return incl ? Math.round(n / (1 + rate) * 100) / 100 : n;
+    };
+
+    var lines = (d.lines || []).filter(function(l){
+      /* ค่าส่งกับส่วนลดถูกใส่เป็นบรรทัดบนใบ แต่ในออเดอร์เป็นช่องของมันเอง */
+      return !/^ค่าจัดส่ง|^ค่าส่ง|^ส่วนลด/.test(String(l.name||"").trim());
+    });
+
+    /* ค่าส่งกับส่วนลดที่เคยเป็นบรรทัดบนใบ ดึงกลับมาใส่ช่องให้ถูกที่ */
+    var ship = 0, disc = 0;
+    (d.lines || []).forEach(function(l){
+      var nm = String(l.name||"").trim();
+      var amt = Number(l.amount || 0);
+      if(/^ค่าจัดส่ง|^ค่าส่ง/.test(nm)) ship += amt;
+      else if(/^ส่วนลด/.test(nm)) disc += Math.abs(amt);
+    });
+
+    go("new");
+    resetForm();
+    var set = function(sel, v){ if($(sel) && v) $(sel).value = v };
+    set("#f-cust", cu.name || m.custName || "");
+    set("#f-tel",  cu.tel  || "");
+    set("#f-addr", cu.addr || "");
+    if($("#f-disc")) $("#f-disc").value = un(disc) || 0;
+    if($("#f-ship")){ $("#f-ship").value = un(ship) || 0; $("#f-ship").dataset.touched = "1" }
+    /* ใบที่เสนอไปว่าไม่คิด VAT ออเดอร์ก็ต้องไม่คิด ไม่งั้นยอดที่เก็บจริงจะไม่ตรงกับที่เสนอ */
+    if($("#f-vat")) $("#f-vat").value = m.novat ? "ไม่รับ VAT" : "รับ VAT";
+    /* จดเลขใบเสนอราคาไว้ เวลาลูกค้าทักมาถามจะได้ตามกลับไปถึงใบที่เสนอจริง */
+    if($("#f-note")) $("#f-note").value = "จากใบเสนอราคา " + no;
+
+    $("#items").innerHTML = "";
+    var miss = 0;
+    lines.forEach(function(l){
+      var p = skuByName(l.name);
+      if(p){
+        addItem({ sku: p.sku, qty: l.qty, price: un(l.price) });
+      } else {
+        /* จับคู่ไม่ได้ = ของซื้อมาขายไป ให้ติ๊กช่องนั้นไว้พร้อมชื่อกับราคาเดิม
+           ดีกว่าปล่อยช่องเลือกสินค้าว่างแล้วให้คนคีย์เดาเอง */
+        miss++;
+        addItem({ free: true, name: l.name, qty: l.qty, price: un(l.price) });
+      }
+    });
+    if(!lines.length) addItem();
+    recalc();
+
+    var msg = "ดึงใบ " + no + " มาแล้ว ตรวจอีกครั้งก่อนกดบันทึก";
+    if(miss) msg += " · มี " + miss
+      + " รายการที่ไม่มีในฐานสินค้า ตั้งเป็นซื้อมาขายไปให้";
+    if(incl) msg += " · ใบนี้เสนอราคารวม VAT ถอด VAT ออกให้แล้ว ยอดสุทธิเท่าเดิม";
+    toast(msg);
+
+    /* ยอดที่ออเดอร์คิดได้ต้องเท่ากับยอดที่เสนอลูกค้าไป ถ้าไม่เท่าต้องบอกตรงนี้
+       ไม่ใช่ปล่อยให้รู้ตอนลูกค้าโอนมาไม่ตรงบิล — ที่ต่างกันได้จริงคือ VAT ค่าส่ง
+       ใบเสนอราคาคิด VAT รวมค่าจัดส่งด้วย แต่สูตรในชีทคิด VAT เฉพาะค่าสินค้า */
+    var net = Number(String($("#s-net").textContent).replace(/[^\d.]/g, "")) || 0;
+    var quoted = Math.round(Number(d.total || 0) * 100) / 100;
+    var gap = Math.round((net - quoted) * 100) / 100;
+    if(Math.abs(gap) >= 0.01){
+      showErr("ดึงใบ " + no + " มาแล้ว แต่ยอดไม่เท่ากัน — ออเดอร์คิดได้ " + baht(net)
+        + " ส่วนใบที่เสนอไปคือ " + baht(quoted) + " ต่างกัน " + baht(Math.abs(gap))
+        + " (ใบเสนอราคาคิด VAT รวมค่าจัดส่งด้วย แต่สูตรในชีทคิด VAT เฉพาะค่าสินค้า) — "
+        + "ถ้าต้องเก็บเท่าที่เสนอไป ให้ปรับค่าจัดส่งหรือส่วนลดก่อนกดบันทึก");
+    } else {
+      showOk(msg);
+    }
+    if(btn){ btn.disabled = false; btn.textContent = "ทำเป็นออเดอร์" }
+  }, function(e){
+    if(btn){ btn.disabled = false; btn.textContent = "ทำเป็นออเดอร์" }
+    toast("ดึงใบไม่สำเร็จ: " + (e && e.message ? e.message : e));
+  });
+}
+
 /* -------------------------------------------------------------- ใบปะหน้าพัสดุ */
 
 function openLabel(o){
@@ -2161,15 +2336,167 @@ function loadSummary(){
   }
   /* วาดที่ตั้งลายเซ็นทุกครั้งที่เข้าหน้านี้ ไม่ผูกกับว่ามีออเดอร์ในช่วงที่เลือกหรือไม่ */
   drawSigSettings();
-  if (SUM_CACHE) { drawSummary(SUM_CACHE); return; }
+  drawAlerts();
+  if (SUM_CACHE) { drawSummary(SUM_CACHE); drawDue(SUM_CACHE); return; }
   $("#summary").innerHTML = '<div class="load">กำลังโหลด…</div>';
   call("getOrders", [500], function(list){
     SUM_CACHE = list;
     if (!ORDERS.length) ORDERS = list;
     drawSummary(list);
+    drawDue(list);
   }, function(m){
     $("#summary").innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>' + esc(m) + '</div>';
   });
+}
+
+/* ------------------------------------------------------------ ค้างชำระ
+
+   ชีทมีช่องสถานะอยู่แล้ว แต่ไม่มีที่ไหนรวมให้ดูว่าใครยังไม่จ่าย รวมเท่าไร
+   ของที่เก็บเงินปลายทางกับลูกค้าเครดิต ถ้าไม่มีที่รวมก็ตกหล่นได้ทั้งใบ
+   เรียงใบเก่าสุดขึ้นก่อน เพราะใบที่ค้างนานที่สุดคือใบที่ต้องโทรก่อน   */
+
+function drawDue(all){
+  var box = $("#sum-due");
+  if(!box) return;
+
+  var due = (all||[]).filter(function(o){
+    var st = String(o.status||"").trim();
+    return st !== "ชำระแล้ว" && st !== "ยกเลิก" && Number(o.net||0) > 0;
+  });
+  if(!due.length){
+    box.innerHTML = '<div class="card"><div class="sum big" style="border:0;margin:0;padding:2px 0">'
+      + '<span>ค้างชำระ</span><b style="color:var(--green)">ไม่มี ✓</b></div></div>';
+    return;
+  }
+
+  /* เก่าสุดขึ้นก่อน — ใบที่ค้างนานที่สุดคือใบที่ต้องตามก่อน */
+  due.sort(function(a,b){ return String(a.date) < String(b.date) ? -1 : 1 });
+  var total = 0;
+  due.forEach(function(o){ total += Number(o.net)||0 });
+
+  var today = todayISO();
+  function daysAgo(d){
+    var a = new Date(String(d)+"T00:00:00"), b = new Date(today+"T00:00:00");
+    var n = Math.round((b-a)/86400000);
+    return isNaN(n) ? 0 : n;
+  }
+
+  box.innerHTML = '<div class="card">'
+    + '<div class="sum big" style="border:0;margin:0;padding:2px 0">'
+    +   '<span>ค้างชำระ ' + due.length + ' ใบ</span>'
+    +   '<b style="color:var(--amber)">' + baht(total) + '</b></div>'
+    + '<div id="due-list" style="margin-top:6px">'
+    + due.slice(0,8).map(function(o,i){
+        var d = daysAgo(o.date);
+        return '<div class="row"><div class="i">'
+          + '<b>' + esc(o.cust||"ไม่ระบุชื่อ") + '</b>'
+          + '<span>' + esc(o.no) + ' · ' + esc(thaiDate(o.date))
+          + (d > 0 ? ' · <span style="color:' + (d>=7?'var(--red)':'var(--amber)') + '">ค้าง '
+                     + d + ' วัน</span>' : '')
+          + '</span><br>'
+          + '<span style="color:var(--ink);font-weight:700">' + baht(o.net) + '</span> '
+          + '<span class="tag ' + statusTag(o.status) + '">' + esc(o.status||"-") + '</span>'
+          + '</div><div class="acts">'
+          + '<button class="sq" data-due-sm="' + esc(o.no) + '" title="ทวงถาม / ส่งข้อความ">💬</button>'
+          + '<button class="sq" data-due-pd="' + esc(o.no) + '" title="ทำเครื่องหมายว่าชำระแล้ว">✓</button>'
+          + '</div></div>';
+      }).join("")
+    + '</div>'
+    + (due.length > 8 ? '<div class="hint">แสดง 8 ใบแรกจากทั้งหมด ' + due.length + ' ใบ</div>' : '')
+    /* ชีทมีช่องสถานะช่องเดียว บอกทั้ง "จ่ายหรือยัง" และ "ส่งหรือยัง" พร้อมกันไม่ได้
+       ระบบจึงนับเฉพาะ "ชำระแล้ว" ว่าเก็บเงินได้แล้ว อย่างอื่นถือว่ายังค้าง
+       ใบที่เก็บเงินแล้วแต่ยังไม่ได้เปลี่ยนสถานะจะโผล่ตรงนี้ กด ✓ ปิดได้เลย */
+    + '<div class="hint">นับเฉพาะใบที่สถานะยังไม่ใช่ “ชำระแล้ว” · '
+    + 'เก็บเงินแล้วกด ✓ เพื่อปิดยอด</div>'
+    + '</div>';
+
+  function find(no){ return (all||[]).filter(function(o){ return o.no === no })[0] }
+  $$("#due-list [data-due-sm]").forEach(function(b){
+    b.onclick = function(){ var o = find(b.getAttribute("data-due-sm")); if(o) openMsg(o) };
+  });
+  $$("#due-list [data-due-pd]").forEach(function(b){
+    b.onclick = function(){
+      var no = b.getAttribute("data-due-pd");
+      if(!confirm("ทำเครื่องหมายว่าออเดอร์ " + no + " ชำระแล้ว?")) return;
+      b.disabled = true;
+      api("setTracking", no, undefined, "ชำระแล้ว").then(function(){
+        toast("บันทึกว่า " + no + " ชำระแล้ว");
+        SUM_CACHE = null; ORDERS = [];
+        loadSummary();
+      }, function(e){
+        b.disabled = false;
+        toast("ไม่สำเร็จ: " + (e && e.message ? e.message : e));
+      });
+    };
+  });
+}
+
+/* --------------------------------------------- ของใกล้หมด + ล็อตใกล้หมดอายุ
+
+   ทำระบบล็อตมาทั้งชุดเพื่อคุมวันหมดอายุของเคมี แต่ไม่มีอะไรเตือนเลย
+   ของที่หมดอายุคือของที่ขายไม่ได้ และรู้ตอนลูกค้าสั่งแล้วคือสายไป
+   คิดจากข้อมูลที่โหลดมาตอนเปิดแอปอยู่แล้ว ไม่ต้องยิงชีทเพิ่ม        */
+
+var EXP_SOON_DAYS = 60;
+
+function drawAlerts(){
+  var box = $("#sum-alert");
+  if(!box) return;
+
+  var lots = (BOOT && BOOT.lots) || {};
+  var def = Number(BOOT && BOOT.reorderDefault) || 0;
+  var low = [], exp = [];
+  var now = Date.now();
+
+  (CFG.products||[]).forEach(function(p){
+    var remain = p.remain;
+    var point = (p.reorder === null || p.reorder === undefined || p.reorder === "")
+      ? def : Number(p.reorder);
+    if(remain !== null && remain !== undefined && point > 0 && Number(remain) <= point){
+      low.push({ sku:p.sku, name:p.name, remain:Number(remain), point:point, unit:p.unit });
+    }
+    var l = lots[p.sku];
+    if(l && l.next && l.next.exp){
+      var days = Math.round((l.next.exp - now) / 86400000);
+      if(days <= EXP_SOON_DAYS){
+        exp.push({ sku:p.sku, name:p.name, lotNo:l.next.lotNo,
+                   remain:l.next.remain, days:days, unit:p.unit });
+      }
+    }
+  });
+
+  if(!low.length && !exp.length){
+    box.innerHTML = '<div class="card"><div class="sum big" style="border:0;margin:0;padding:2px 0">'
+      + '<span>สต๊อกและวันหมดอายุ</span><b style="color:var(--green)">ปกติ ✓</b></div></div>';
+    return;
+  }
+
+  /* เหลือน้อยที่สุดขึ้นก่อน และของที่หมดอายุแล้วขึ้นก่อนของที่ใกล้หมดอายุ */
+  low.sort(function(a,b){ return a.remain - b.remain });
+  exp.sort(function(a,b){ return a.days - b.days });
+
+  box.innerHTML = '<div class="card">'
+    + (exp.length ? '<div class="subhd" style="margin-top:0">ล็อตที่ต้องรีบระบาย ('
+        + exp.length + ')</div>'
+        + exp.slice(0,6).map(function(e){
+            var bad = e.days < 0;
+            return '<div class="lotline ' + (bad ? 'bad' : 'warn') + '">'
+              + (bad ? '⛔ หมดอายุแล้ว ' + (-e.days) + ' วัน' : '⚠️ อีก ' + e.days + ' วันหมดอายุ')
+              + ' — ' + esc(e.name) + ' · ล็อต ' + esc(e.lotNo)
+              + ' · เหลือ ' + e.remain + ' ' + esc(e.unit||"ชิ้น") + '</div>';
+          }).join("")
+        + (exp.length > 6 ? '<div class="hint">และอีก ' + (exp.length-6) + ' ล็อต</div>' : '')
+      : '')
+    + (low.length ? '<div class="subhd">ถึงจุดสั่งซื้อแล้ว (' + low.length + ')</div>'
+        + low.slice(0,8).map(function(p){
+            return '<div class="lotline ' + (p.remain <= 0 ? 'bad' : 'warn') + '">'
+              + (p.remain <= 0 ? '⛔ หมดแล้ว' : '📦 เหลือ ' + p.remain + ' ' + esc(p.unit||"ชิ้น"))
+              + ' — ' + esc(p.name)
+              + ' <span style="color:var(--gray)">(จุดสั่งซื้อ ' + p.point + ')</span></div>';
+          }).join("")
+        + (low.length > 8 ? '<div class="hint">และอีก ' + (low.length-8) + ' รายการ</div>' : '')
+      : '')
+    + '</div>';
 }
 
 function drawSummary(all){
@@ -2371,6 +2698,7 @@ document.addEventListener("DOMContentLoaded", function(){
   fsInit();
   $$(".tabs button").forEach(function(b){ b.onclick=function(){ go(b.dataset.go) } });
   bindAddrFind("#f-addr-find", "#f-addr-hit", "#f-addr");
+  ordSearchInit();
   bindCustFind("#f-cust", "#f-cust-hit", function(c){
     $("#f-cust").value = c.name;
     custToast(custFill([["#f-tel", c.tel, "เบอร์โทร"], ["#f-addr", c.addr || c.taxAddr, "ที่อยู่"]]));
