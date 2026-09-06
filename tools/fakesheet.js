@@ -302,7 +302,10 @@ function build(opts) {
 
 function load(fixture, opts) {
   opts = opts || {};
+  /* opts.props = คุณสมบัติสคริปต์ที่ตั้งไว้ก่อนโหลดโค้ด
+     จำเป็นเพราะ SHEET_ID อ่าน property ตั้งแต่ตอนไฟล์ถูกโหลด ถ้าตั้งทีหลังจะไม่ทัน */
   var props = {};
+  for (var pk in (opts.props || {})) props[pk] = String(opts.props[pk]);
   var cache = {};
   var lockHeld = { v: false };
   function cacheStub_() {

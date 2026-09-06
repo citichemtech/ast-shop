@@ -1813,5 +1813,48 @@ var over37 = [];
 for (var nm37 in fx37.sheets) over37 = over37.concat(fx37.sheets[nm37].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over37, []);
 
+/* ====== 38. ย้ายไฟล์ชีทได้โดยไม่ต้องแก้โค้ด
+
+   6 ก.ย. ไฟล์ชีทถูกลบโดยไม่ตั้งใจ กู้จากถังขยะไม่ทัน ต้องย้ายไปไฟล์ที่กู้มาแทน
+   ตอนนั้นการเปลี่ยนไอดีต้องแก้โค้ด รวมไฟล์ ส่งให้เจ้าของร้านวางทับ แล้ว deploy
+   ทั้งหมดนั้นเพื่อเปลี่ยนข้อความ 44 ตัวอักษร ระหว่างนั้นร้านคีย์ออเดอร์ไม่ได้เลย
+
+   ตอนนี้ตั้งไอดีที่ Script Properties ได้ ครั้งหน้าย้ายไฟล์จบใน 1 นาที */
+console.log('\n38. ตั้งไอดีไฟล์ชีทจากคุณสมบัติสคริปต์');
+
+var DEFAULT_ID = '1s8tS_Fv7YSYPyjzH-rXQdl-5VKBTaV717YYyWUv5k_8';
+
+eq('ไม่ได้ตั้งไว้ = ใช้ค่าตั้งต้นในโค้ด',
+  FS.load(FS.build(), {}).SHEET_ID, DEFAULT_ID);
+
+eq('ตั้งไว้ = ใช้ค่าที่ตั้ง',
+  FS.load(FS.build(), { props: { SHEET_ID: '1AcV0rYN6Mb_TEST' } }).SHEET_ID,
+  '1AcV0rYN6Mb_TEST');
+
+/* คนก๊อปไอดีจากแถบที่อยู่มาวาง มักติดช่องว่างหัวท้ายมาด้วย
+   ถ้าไม่ตัดทิ้ง จะได้ error "ไม่พบไฟล์" ทั้งที่ไอดีถูกทุกตัวอักษร */
+eq('ก๊อปมาแล้วติดช่องว่าง ต้องตัดให้',
+  FS.load(FS.build(), { props: { SHEET_ID: '  1AcV0rYN6Mb_TEST\n' } }).SHEET_ID,
+  '1AcV0rYN6Mb_TEST');
+
+/* ลบค่าทิ้งแล้วเว้นช่องว่างไว้ ต้องถือว่าไม่ได้ตั้ง ไม่ใช่ตั้งเป็นค่าว่าง
+   ไม่งั้นแอปจะไปเปิดไฟล์ชื่อ "" แล้วล่มทั้งระบบ */
+eq('ตั้งเป็นช่องว่างล้วน = ถือว่าไม่ได้ตั้ง',
+  FS.load(FS.build(), { props: { SHEET_ID: '   ' } }).SHEET_ID, DEFAULT_ID);
+
+console.log('\n   ตั้งไอดีแล้วต้องทำงานได้จริงทั้งเล่ม ไม่ใช่แค่ค่าตัวแปรเปลี่ยน');
+var fx38 = FS.build();
+var api38 = FS.load(fx38, { props: { SHEET_ID: 'ไฟล์ที่ย้ายมาใหม่' } });
+api38.setup();
+var made38 = api38.createOrder(order({ cust: 'ลูกค้าหลังย้ายไฟล์' }));
+truthy2('คีย์ออเดอร์บนไฟล์ใหม่ได้', !!made38.no);
+eq('อ่านกลับมาเจอ',
+  api38.getOrders(0).filter(function (o) { return o.no === made38.no }).length, 1);
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over38 = [];
+for (var nm38 in fx38.sheets) over38 = over38.concat(fx38.sheets[nm38].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over38, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
