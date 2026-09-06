@@ -77,7 +77,7 @@ function requireStaff_() {
 
 /* ------------------------------------------------------------------ หน้าเว็บ */
 
-function doGet() {
+function doGet(e) {
   var email;
   try {
     email = requireStaff_();
@@ -88,10 +88,19 @@ function doGet() {
       '<p>' + escapeHtml_(err.message) + '</p></div>'
     ).setTitle('AST — เข้าใช้ระบบไม่ได้');
   }
-  var t = HtmlService.createTemplateFromFile('Index');
+  /* สองแอปในโปรเจกต์เดียว แยกกันที่พารามิเตอร์ท้ายลิงก์
+     ...exec           → คีย์ออเดอร์ (ของเดิม ลิงก์ไม่เปลี่ยน พนักงานไม่ต้องทำอะไร)
+     ...exec?app=stock → สต๊อก & Shopee
+
+     ทำไมไม่แยกเป็นสองโปรเจกต์: โค้ดที่รู้จักโครงชีท สิทธิ์เข้าใช้ และ FEFO
+     มีชุดเดียว ถ้าก๊อปไปอีกโปรเจกต์ วันที่แก้ที่เดียวคือวันที่สองแอปคิดไม่ตรงกัน
+     ทำไมไม่รวมเป็นแอปเดียว: แอปคีย์ออเดอร์มีคนใช้ทุกวันอยู่แล้ว ของใหม่ที่พัง
+     ไม่ควรพาแอปที่ร้านใช้ทำมาหากินล้มไปด้วย */
+  var stock = String(((e || {}).parameter || {}).app || '') === 'stock';
+  var t = HtmlService.createTemplateFromFile(stock ? 'StockIndex' : 'Index');
   t.staffEmail = email;
   var out = t.evaluate()
-    .setTitle('AST — คีย์ออเดอร์')
+    .setTitle(stock ? 'AST — สต๊อก & Shopee' : 'AST — คีย์ออเดอร์')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
   /* ไอคอนตอนกด "เพิ่มไปยังหน้าจอหลัก" — ถ้าไม่ใส่ Chrome จะขึ้นตัว G สีเทาของ Google
      ใช้ตรา STOCK LIST ไม่ใช่โลโก้ AST เพื่อให้แยกออกจากไอคอนแอปหน้าร้านบนจอเดียวกัน

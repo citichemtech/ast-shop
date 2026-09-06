@@ -201,6 +201,20 @@ function build(opts) {
   var log = mk('Log', 10, 305);
   log.setFormulaDown(1, DATA_ROW, 304, '=calc');
 
+  /* จับคู่SKU / นำเข้า Shopee — สองชีทของส่วนนำเข้า Shopee */
+  var map = mk('จับคู่SKU', 9, 506);
+  [1, 7, 8].forEach(function (c) { map.setFormulaDown(c, DATA_ROW, 505, '=mapcalc'); });
+  (opts.skuMap || []).forEach(function (m, i) {
+    var r = DATA_ROW + i;
+    map.cell(r, 2).v = m.code || '';
+    map.cell(r, 3).v = m.name || '';
+    map.cell(r, 4).v = m.variant || '';
+    map.cell(r, 5).v = m.sku;
+    map.cell(r, 6).v = m.mult === undefined ? 1 : m.mult;
+  });
+  var imp = mk('นำเข้า Shopee', 11, 10006);
+  imp.setFormulaDown(1, DATA_ROW, 10005, '=impcalc');
+
   /* ล็อตสินค้า / ตัดล็อต */
   var lot = mk('ล็อตสินค้า', 13, 1006);
   [1, 3, 8, 9, 10, 12, 13].forEach(function (c) { lot.setFormulaDown(c, DATA_ROW, 1005, '=lotcalc'); });
@@ -324,6 +338,18 @@ function load(fixture, opts) {
       }
     },
     Logger: { log: function () {} },
+    /* ลายเซ็น Shopee ทดสอบได้จริงใน node — crypto ของ node ให้ผลเดียวกับ Utilities */
+    Utilities: {
+      computeHmacSha256Signature: function (value, key) {
+        var mac = require('crypto').createHmac('sha256', key).update(String(value)).digest();
+        var out = [];
+        for (var i = 0; i < mac.length; i++) out.push(mac[i] > 127 ? mac[i] - 256 : mac[i]);
+        return out;
+      }
+    },
+    UrlFetchApp: {
+      fetch: function () { throw new Error('ชีทจำลองไม่ยิงเน็ตจริง'); }
+    },
     CacheService: {
       getScriptCache: cacheStub_,
       getUserCache: cacheStub_
@@ -337,7 +363,7 @@ function load(fixture, opts) {
   ctx.global = ctx;
   vm.createContext(ctx);
   var dir = path.join(__dirname, '..', 'apps-script');
-  ['Sheets.gs', 'Fefo.gs', 'Setup.gs', 'Api.gs'].forEach(function (f) {
+  ['Sheets.gs', 'Fefo.gs', 'Shopee.gs', 'Setup.gs', 'Api.gs', 'Stock.gs', 'ShopeeApi.gs'].forEach(function (f) {
     vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f });
   });
   ctx.__props = props;

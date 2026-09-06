@@ -9,6 +9,9 @@
  *   2. สร้างชีท "ตัดล็อต"     — สมุดบันทึกว่าออเดอร์ไหนตัดล็อตไหนไปเท่าไร (เขียนต่อท้ายอย่างเดียว)
  *   3. เพิ่มคอลัมน์ Q "ล็อตที่ตัด" ที่ชีท ออเดอร์_รายการ เป็นสูตรดึงจากชีท ตัดล็อต
  *   4. สร้างชีท "เอกสาร"    — ทะเบียนใบเสนอราคา/ใบแจ้งหนี้/ใบกำกับภาษี/ใบรับเงินมัดจำ
+ *   5. สร้างชีท "จับคู่SKU"   — แปลงรหัส/ชื่อสินค้าฝั่ง Shopee เป็น SKU ในระบบ
+ *   6. สร้างชีท "นำเข้า Shopee" — ทะเบียนกันตัดสต๊อกซ้ำ 1 ออเดอร์ Shopee = 1 แถว
+ *   7. เพิ่มช่องทางขาย "Shopee" ในชีท ตั้งค่า แล้วขยาย dropdown ให้ครอบถึง
  *
  * 9 ชีทเดิมไม่ถูกแตะ ยกเว้นคอลัมน์ Q ที่เพิ่มต่อท้าย ออเดอร์_รายการ (คอลัมน์ว่างอยู่แล้ว)
  */
@@ -20,6 +23,11 @@ var CUT_LAST = 3005;   // ตัดล็อต รองรับ 3000 บร�
    (ของเดิมทำใบละหนึ่งแท็บ ที่ 20 ใบต่อวันจะชนขีดจำกัดของ Google Sheets ใน 2 เดือน) */
 var DOC_LAST = 8005;
 var STOCK_LAST = 150;  // ขอบล่างของชีท สต๊อกคงเหลือ ที่ใช้ในสูตรตรวจยอด
+var MAP_LAST = 505;    // จับคู่SKU รองรับ 500 รายการที่ขายบน Shopee
+/* นำเข้า Shopee — ทะเบียนกันตัดซ้ำ 1 ออเดอร์ Shopee = 1 แถว
+   ต้องใหญ่กว่าชีทออเดอร์มาก เพราะแถวที่นี่ไม่หายไปไหนแม้ออเดอร์เก่าจะถูกล้างออก
+   ถ้าทะเบียนนี้เต็มแล้วเขียนไม่ได้ ระบบจะไม่ตัดสต๊อกให้ ดีกว่าตัดโดยไม่มีบันทึกว่าตัดไปแล้ว */
+var IMP_LAST = 10005;
 
 var C_HEAD_BG = '#1f3864';
 var C_HEAD_FG = '#ffffff';
@@ -34,7 +42,13 @@ function setup() {
   made.push(setupCutSheet_(ss));
   made.push(setupDocSheet_(ss));
   made.push(setupAppSheet_(ss));
+  made.push(setupMapSheet_(ss));
+  made.push(setupImpSheet_(ss));
   made.push(setupItemLotColumn_(ss));
+  // เพิ่มช่องทางขาย Shopee ให้เอง ไม่งั้นนำเข้าออเดอร์ Shopee ไม่ได้เลย
+  // (planOrder_ ปฏิเสธช่องทางที่ไม่มีในชีท ตั้งค่า ตั้งแต่ต้นทาง)
+  try { made.push(ensureChannel_(ss, 'Shopee')); }
+  catch (e) { made.push('เพิ่มช่องทางขาย Shopee ไม่สำเร็จ: ' + e.message); }
   // ซ่อมให้อัตโนมัติ แต่ห้ามล้มทั้ง setup ถ้าซ่อมไม่ได้ — ส่วนอื่นติดตั้งไปแล้ว
   try { made.push(repairStockSheet()); }
   catch (e) { made.push('ซ่อมชีทสต๊อกไม่สำเร็จ: ' + e.message); }
@@ -511,6 +525,139 @@ function setupItemLotColumn_(ss) {
 /* ------------------------------------------------------------------- helpers */
 
 /** ใส่สูตรเดียวกันทั้งคอลัมน์ ตั้งแต่แถว 6 ลงไป n แถว (อ้างอิงสัมพัทธ์ขยับตามแถวเอง) */
+/* ---------------------------------------------------------------- จับคู่SKU */
+
+/**
+ * ตารางแปลงรหัส/ชื่อสินค้าฝั่ง Shopee ให้เป็น SKU ในระบบ
+ *
+ * คอลัมน์ G กับ H เป็นสูตร บอกทันทีว่าแถวนั้นใช้ได้หรือยัง — ถ้าเป็นเรื่องที่
+ * ปล่อยให้คนมานั่งไล่ดูเอง จะมีแถวที่พิมพ์ SKU ผิดตัวอักษรเดียวหลุดไปเสมอ
+ * แล้วออเดอร์ที่ใช้แถวนั้นจะตัดสต๊อกไม่ได้ตอนนำเข้า โดยไม่รู้ว่าเพราะอะไร
+ */
+function setupMapSheet_(ss) {
+  var name = SH.map.name;
+  var s = ss.getSheetByName(name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < MAP_LAST) s.insertRowsAfter(s.getMaxRows(), MAP_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 9) s.insertColumnsAfter(s.getMaxColumns(), 9 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('จับคู่สินค้า Shopee กับ SKU ในระบบ')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'ไฟล์ที่ Shopee ส่งออกมาไม่มี SKU ของร้านอยู่เลย ต้องบอกระบบว่าอะไรคืออะไร  |  ' +
+    'ใส่รหัส (B) ไว้ก่อนเสมอ ชื่อสินค้าบน Shopee เปลี่ยนเมื่อไรการจับคู่ด้วยชื่อจะหลุดทันที  |  ' +
+    'สินค้าจัดเซต เช่น Shopee ขายเป็นแพ็ค 5 ให้ใส่ 5 ที่ช่องตัวคูณ'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'รหัสสินค้าบน Shopee', 'ชื่อสินค้าบน Shopee', 'ชื่อตัวเลือกสินค้า',
+    'SKU ในระบบ', 'ตัวคูณจำนวน\n(ปกติ 1)', 'ชื่อสินค้าในระบบ', 'ตรวจสอบ', 'หมายเหตุ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = MAP_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($E6="","",COUNTA($E$6:$E6))');
+  fillFormula_(s, 7, n,
+    '=IF($E6="","",IFERROR(VLOOKUP($E6,\'' + SH.prod.name + '\'!$B$6:$D$200,3,FALSE),"ไม่พบ SKU"))');
+  fillFormula_(s, 8, n,
+    '=IF(AND($B6="",$C6=""),IF($E6="","","ยังไม่ใส่รหัสหรือชื่อฝั่ง Shopee"),' +
+    'IF($E6="","ยังไม่ใส่ SKU ในระบบ",' +
+    'IF($G6="ไม่พบ SKU","SKU นี้ไม่มีในฐานสินค้า",' +
+    'IF(AND($F6<>"",NOT(ISNUMBER($F6))),"ตัวคูณต้องเป็นตัวเลข",' +
+    'IF(AND(ISNUMBER($F6),$F6<=0),"ตัวคูณต้องมากกว่า 0",' +
+    'IF(COUNTIFS($B$6:$B$' + MAP_LAST + ',$B6,$C$6:$C$' + MAP_LAST + ',$C6,' +
+    '$D$6:$D$' + MAP_LAST + ',$D6)>1,"จับคู่ซ้ำกับแถวอื่น","ใช้ได้"))))))');
+
+  paintCols_(s, n, [2, 3, 4, 5, 6, 9], [1, 7, 8]);
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(2, 150); s.setColumnWidth(3, 260); s.setColumnWidth(4, 170);
+  s.setColumnWidth(5, 120); s.setColumnWidth(7, 240);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' รายการ)';
+}
+
+/* ------------------------------------------------------------ นำเข้า Shopee */
+
+/**
+ * ทะเบียนออเดอร์ Shopee ที่นำเข้าไปแล้ว — ด่านเดียวที่กันตัดสต๊อกซ้ำ
+ *
+ * ทำไมต้องเป็นชีท ไม่ใช่ Script Properties: ของที่กันซ้ำต้องดูย้อนหลังได้ด้วยตา
+ * เวลายอดสต๊อกเพี้ยน คำถามแรกคือ "ใบนี้ตัดไปแล้วหรือยัง" ถ้าคำตอบอยู่ในที่ที่
+ * เปิดดูไม่ได้ ก็จะไม่มีใครตอบได้ และจะจบด้วยการนับสต๊อกใหม่ทั้งร้าน
+ */
+function setupImpSheet_(ss) {
+  var name = SH.imp.name;
+  var s = ss.getSheetByName(name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < IMP_LAST) s.insertRowsAfter(s.getMaxRows(), IMP_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 11) s.insertColumnsAfter(s.getMaxColumns(), 11 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('ทะเบียนออเดอร์ Shopee ที่นำเข้าแล้ว — ระบบเขียนให้เอง')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'ห้ามลบแถวในชีทนี้ทิ้ง  |  ลบเมื่อไร ระบบจะนำเข้าใบเดิมซ้ำแล้วตัดสต๊อกซ้ำ โดยไม่มีอะไรเตือน  |  ' +
+    'จะยกเลิกการตัดของใบไหน ให้ใช้ปุ่มคืนสินค้าในแอป ไม่ใช่มาลบแถวที่นี่'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'เลขที่คำสั่งซื้อ Shopee', 'วันที่สั่งซื้อ', 'สถานะฝั่ง Shopee',
+    'เลขที่ออเดอร์ในระบบ', 'ยอดขายรวม', 'ค่าธรรมเนียม\nShopee', 'สถานะในระบบ',
+    'เวลานำเข้า', 'ผู้นำเข้า', 'หมายเหตุ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = IMP_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+
+  paintCols_(s, n, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [1]);
+  s.getRange(DATA_ROW, 3, n, 1).setNumberFormat('dd/mm/yyyy');
+  s.getRange(DATA_ROW, 9, n, 1).setNumberFormat('dd/mm/yyyy hh:mm');
+  s.getRange(DATA_ROW, 6, n, 2).setNumberFormat('#,##0.00');
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(2, 170); s.setColumnWidth(5, 140); s.setColumnWidth(10, 200);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' ใบ)';
+}
+
+/**
+ * เพิ่มตัวเลือกช่องทางขายที่ยังไม่มี แล้วขยาย dropdown ของ ออเดอร์_หัวบิล ให้ครอบถึง
+ *
+ * ต้องขยาย dropdown ด้วยเสมอ ไม่ใช่แค่พิมพ์ค่าเพิ่มลงชีท ตั้งค่า
+ * ไม่งั้นค่าใหม่จะถูกชีทตีตราว่า "ไม่อยู่ในรายการ" ทุกแถวที่ระบบเขียน
+ */
+function ensureChannel_(ss, want) {
+  var cfg = ss.getSheetByName(SH.cfg.name);
+  if (!cfg) throw new Error('ไม่พบชีท ' + SH.cfg.name);
+
+  var top = DATA_ROW + 1;                       // ตัวเลือกช่องทางขายเริ่มที่ D7
+  var last = Math.max(top, cfg.getMaxRows());
+  var v = cfg.getRange(top, 4, last - top + 1, 1).getValues();
+  var free = 0, have = false, used = top - 1;
+  for (var i = 0; i < v.length; i++) {
+    var t = String(v[i][0] || '').trim();
+    if (t) { used = top + i; if (t === want) have = true; }
+    else if (!free) free = top + i;
+  }
+  if (have) return 'ช่องทางขาย: มี ' + want + ' อยู่แล้ว';
+  if (!free) throw new Error('ไม่มีที่ว่างในคอลัมน์ D ของชีท ' + SH.cfg.name);
+
+  cfg.getRange(free, 4).setValue(want);
+  var bottom = Math.max(used + 1, free);
+  var head = ss.getSheetByName(SH.head.name);
+  if (head) {
+    head.getRange(DATA_ROW, SH.head.IN.channel, head.getMaxRows() - DATA_ROW + 1, 1)
+      .setDataValidation(SpreadsheetApp.newDataValidation()
+        .requireValueInRange(cfg.getRange(top, 4, bottom - top + 1, 1), true)
+        .setAllowInvalid(true).build());
+  }
+  return 'ช่องทางขาย: เพิ่ม ' + want + ' ที่ D' + free + ' และขยาย dropdown ถึง D' + bottom;
+}
+
 function fillFormula_(s, col, n, formula) {
   s.getRange(DATA_ROW, col).setFormula(formula);
   if (n > 1) {

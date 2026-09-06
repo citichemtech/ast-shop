@@ -1,0 +1,204 @@
+<script>
+/* ============================================================================
+ * ส่วนที่แอปคีย์ออเดอร์กับแอปสต๊อกใช้ร่วมกัน
+ *
+ * สองแอปนี้เสิร์ฟคนละลิงก์และมีไอคอนคนละตัวบนหน้าจอมือถือ แต่คุยกับชีทเดียวกัน
+ * ของที่อยู่ในไฟล์นี้คือของที่ "ผิดแล้วผิดทั้งสองแอป" — ตัวเรียกเซิร์ฟเวอร์
+ * กล่องข้อความแจ้ง ขนาดตัวอักษร ชื่อคนทำงาน
+ *
+ * ถ้าปล่อยให้ต่างแอปต่างมีสำเนาของตัวเอง วันที่แก้ที่เดียวคือวันที่สองแอป
+ * เริ่มทำงานไม่เหมือนกันโดยไม่มีอะไรฟ้อง
+ * ========================================================================== */
+
+var BOOT = null;          /* ข้อมูลจากชีท (getBootstrap) */
+var APP = {};             /* ชีท ตั้งค่าแอป */
+var BY_NEW = "✎ พิมพ์ชื่อเอง…";   /* ตัวเลือกสุดท้ายของเมนูชื่อคนทำงาน */
+
+/* -------------------------------------------------------- ตัวช่วยพื้นฐาน */
+
+function $(s){ return document.querySelector(s) }
+function $$(s){ return [].slice.call(document.querySelectorAll(s)) }
+
+var baht = function(n){
+  return "฿" + Number(n||0).toLocaleString("th-TH",
+    { minimumFractionDigits:2, maximumFractionDigits:2 });
+};
+var esc = function(s){
+  return String(s||"").replace(/[&<>"]/g, function(c){
+    return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c];
+  });
+};
+
+function toast(m){
+  var t = $("#toast");
+  t.textContent = m;
+  t.classList.add("on");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function(){ t.classList.remove("on") }, 2400);
+}
+
+/* -------------------------------------------------------------- ข้อความแจ้ง */
+
+function showErr(msg){
+  var b=$("#err"); b.innerHTML=esc(msg); b.classList.add("on");
+  $("#ok").classList.remove("on");
+  b.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function showOk(msg){
+  var b=$("#ok"); b.innerHTML=msg; b.classList.add("on");
+  $("#err").classList.remove("on");
+  b.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function clearMsg(){ $("#err").classList.remove("on"); $("#ok").classList.remove("on") }
+
+/* เรียกฟังก์ชันฝั่งเซิร์ฟเวอร์ — ทุกจุดที่ล้มต้องมีทางออกที่ผู้ใช้เห็น */
+function call(fn, args, done, fail){
+  google.script.run
+    .withSuccessHandler(function(r){ try{ done(r) }catch(e){ showErr("แสดงผลไม่สำเร็จ: "+e.message) } })
+    .withFailureHandler(function(e){
+      var m=(e&&e.message)?e.message:String(e);
+      if(fail) fail(m); else showErr(m);
+    })[fn].apply(null, args||[]);
+}
+
+/* แบบ promise สำหรับจุดที่ต้องต่อหลายขั้น (ออกเลขเอกสาร → วาดกระดาษ → แชร์) */
+function api(fn, args){
+  return new Promise(function(res, rej){
+    call(fn, [args], res, function(m){ rej(new Error(m)) });
+  });
+}
+
+/* ----------------------------------------------------------------- ฟอร์ม */
+
+function fillSelect(sel, list){
+  $(sel).innerHTML = (list||[]).map(function(x){
+    return '<option value="'+esc(x)+'">'+esc(x)+'</option>';
+  }).join("");
+}
+
+function todayISO(){
+  var d=new Date(), p=function(n){return n<10?"0"+n:""+n};
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+}
+function isoOf(ms){
+  var d=new Date(ms), p=function(n){return n<10?"0"+n:""+n};
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+}
+function thaiDate(iso){
+  if(!iso) return "";
+  var d=new Date(iso+"T00:00:00");
+  if(isNaN(d.getTime())) return String(iso);
+  var m=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+  return d.getDate()+" "+m[d.getMonth()]+" "+(d.getFullYear()+543);
+}
+
+/* ------------------------------------------- ขนาดตัวอักษรของทั้งแอป */
+
+/* เจ้าของร้านอ่านตัวอักษรขนาดเดิมไม่ถนัด และคนทำงานแต่ละคนสายตาไม่เท่ากัน
+   จึงให้ปรับเองได้ เก็บไว้ในเครื่องใครเครื่องมัน ไม่ต้องแก้โค้ดใหม่ทุกครั้ง
+   ปรับที่ราก (html) ทีเดียว ทุกขนาดในหน้าเป็น rem จึงขยับตามพร้อมกันทั้งหน้า
+   เก็บคีย์เดียวกันทั้งสองแอป ตั้งขนาดที่แอปไหนก็ได้ อีกแอปตามไปด้วย */
+var FS_MIN = 17, FS_MAX = 30, FS_DEF = 20;
+
+function fsGet(){
+  var n = 0;
+  try { n = Number(localStorage.getItem("ast-fs") || 0) } catch(e){}
+  if (!n || isNaN(n)) n = FS_DEF;
+  return Math.min(FS_MAX, Math.max(FS_MIN, n));
+}
+function fsApply(n){
+  document.documentElement.style.fontSize = n + "px";
+  try { localStorage.setItem("ast-fs", String(n)) } catch(e){}
+  var dn = $("#fs-dn"), up = $("#fs-up");
+  if (dn) dn.disabled = n <= FS_MIN;
+  if (up) up.disabled = n >= FS_MAX;
+}
+function fsInit(){
+  fsApply(fsGet());
+  $("#fs-dn").onclick = function(){ fsApply(Math.max(FS_MIN, fsGet() - 1)) };
+  $("#fs-up").onclick = function(){ fsApply(Math.min(FS_MAX, fsGet() + 1)) };
+}
+
+/* --------------------------------------------------- ชื่อคนที่กำลังทำงาน */
+
+/* ทั้งร้านใช้บัญชี Google เดียวกัน ระบบจึงแยกไม่ออกว่าใครเป็นคนกด
+   รายการนี้ทำให้เลือกชื่อตัวเองได้ แล้วชื่อจะไปอยู่ในช่องพนักงานของงานนั้น
+   (Log ยังบันทึกอีเมลจริงไว้เสมอไม่ว่าเลือกชื่ออะไร) */
+
+/* ชื่อที่คนใช้เครื่องนี้เคยพิมพ์เองไว้ เก็บในเครื่องเท่านั้น ไม่ขึ้นชีท */
+function myStaff(){
+  try { var a = JSON.parse(localStorage.getItem("ast-by-list") || "[]");
+        return Array.isArray(a) ? a : [] } catch(e){ return [] }
+}
+
+/**
+ * ผูกเมนูเลือกชื่อคนทำงาน — ใช้ได้ทั้งสองแอป ส่ง id ของช่องมาเอง
+ *
+ * เดิมโค้ดก้อนนี้อยู่ใน boot() ของแอปคีย์ออเดอร์อย่างเดียว พอมีแอปสต๊อกเพิ่ม
+ * ถ้าก๊อปไปอีกชุด ชื่อที่พิมพ์เองในแอปหนึ่งจะไม่โผล่ในอีกแอป ทั้งที่เป็นคนเดียวกัน
+ */
+function staffInit(selId, newId, list){
+  var sel = $(selId), box = $(newId);
+  if (!sel) return;
+  var base = (list && list.length) ? list.slice() : ["แอดมิน"];
+  base = base.concat(myStaff().filter(function(n){ return base.indexOf(n) < 0 }));
+  fillSelect(selId, base.concat([BY_NEW]));
+
+  var remembered = "";
+  try { remembered = localStorage.getItem("ast-by") || "" } catch(e){}
+  if (remembered && base.indexOf(remembered) > -1) sel.value = remembered;
+
+  sel.onchange = function(){
+    var typing = this.value === BY_NEW;
+    if (box) box.style.display = typing ? "" : "none";
+    if (typing) { if (box) { box.value = ""; box.focus() } return }
+    try { localStorage.setItem("ast-by", this.value) } catch(e){}
+  };
+
+  /* พอพิมพ์ชื่อเสร็จแล้วละมือ เก็บชื่อลงเครื่องและใส่กลับเข้ารายการทันที
+     ไม่ต้องกดปุ่มเพิ่ม ไม่ต้องรีเฟรช */
+  if (box) box.onblur = function(){
+    var v = this.value.trim();
+    if (!v) return;
+    var mine = myStaff();
+    if (mine.indexOf(v) < 0) {
+      mine.push(v);
+      try { localStorage.setItem("ast-by-list", JSON.stringify(mine)) } catch(e){}
+    }
+    var has = false;
+    for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === v) has = true;
+    if (!has) {
+      var op = document.createElement("option");
+      op.value = v; op.textContent = v;
+      sel.insertBefore(op, sel.options[sel.options.length - 1]);
+    }
+    sel.value = v;
+    this.style.display = "none";
+    try { localStorage.setItem("ast-by", v) } catch(e){}
+  };
+}
+
+/**
+ * ชื่อที่จะบันทึกลงชีทจริง
+ * ถ้ากำลังพิมพ์ชื่อใหม่อยู่ ให้ใช้ชื่อที่พิมพ์ ไม่ใช่คำว่า "พิมพ์ชื่อเอง"
+ * ที่เป็นแค่ตัวเลือกในเมนู
+ */
+function staffName(selId, newId){
+  var sel = $(selId);
+  if (!sel) return "";
+  if (sel.value === BY_NEW) return (($(newId) || {}).value || "").trim();
+  return sel.value;
+}
+
+/* -------------------------------------------------------------------- modal */
+
+function openModal(title, html){
+  $("#m-title").textContent=title;
+  $("#m-body").innerHTML=html;
+  $("#modal").classList.add("on");
+}
+function closeModal(){ $("#modal").classList.remove("on"); $("#m-body").innerHTML="" }
+$("#modal").addEventListener("click", function(e){ if(e.target===this) closeModal() });
+$("#m-close").onclick = closeModal;
+document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModal() });
+</script>
