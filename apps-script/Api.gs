@@ -115,7 +115,9 @@ function getBootstrap() {
   var email = requireStaff_();
   var cfg = cfgGet_();
   var ss = ss_();
-  return {
+  /* ผ่าน jsonSafe_ ก่อนเสมอ — ยอดคงเหลือหรือราคาที่เป็น #REF! ในชีท
+     ทำให้ทั้งก้อนส่งไม่ได้ แล้วแอปเปิดไม่ขึ้นเลยแม้แต่หน้าเดียว */
+  return jsonSafe_({
     staff: email,
     shop: cfg.shop,
     /* ไฟล์ที่แอปผูกอยู่จริง ๆ — ในไดรฟ์มีไฟล์ชื่อคล้ายกันหลายอัน
@@ -130,7 +132,7 @@ function getBootstrap() {
     products: readProducts_(),
     lots: readLotSummary_(),
     nextNo: peekNextOrderNo_()
-  };
+  });
 }
 
 function readProducts_() {
@@ -276,6 +278,14 @@ function searchOrders(q, limit) {
  * แยกออกมาเพื่อให้หน้ารายการกับหน้าค้นหาอ่านคอลัมน์ชุดเดียวกันเสมอ
  * ถ้าเขียนสองที่ วันหนึ่งคอลัมน์ขยับแล้วจะแก้ไม่ครบ
  */
+/* ช่องเงินของหัวบิล กับชื่อไทยที่เอาไปบอกคนใช้ว่าช่องไหนเสีย */
+var MONEY_FIELDS = [
+  { key: 'discount', th: 'ส่วนลด' }, { key: 'ship', th: 'ค่าส่ง' },
+  { key: 'subtotal', th: 'ยอดสินค้า' }, { key: 'vatAmt', th: 'VAT' },
+  { key: 'net', th: 'ยอดสุทธิ' }, { key: 'cost', th: 'ต้นทุน' },
+  { key: 'profit', th: 'กำไร' }
+];
+
 function readOrders_(opts) {
   requireStaff_();
   opts = opts || {};
@@ -292,7 +302,7 @@ function readOrders_(opts) {
       var no = String(hv[i][SH.head.IN.no - 1] || '').trim();
       if (!no) continue;
       var d = hv[i][SH.head.IN.date - 1];
-      heads.push({
+      var o = {
         no: no,
         date: d instanceof Date ? isoDate_(d) : String(d || ''),
         channel: String(hv[i][SH.head.IN.channel - 1] || ''),
@@ -321,7 +331,19 @@ function readOrders_(opts) {
         profit: Number(hv[i][15] || 0),
         check: String(hv[i][17] || ''),
         items: []
-      });
+      };
+
+      /* ช่องเงินที่อ่านมาไม่เป็นตัวเลข = สูตรในชีทเสีย (#REF! · #N/A · #VALUE!)
+         แปลงเป็น 0 เงียบ ๆ ไม่ได้ คนจะอ่านยอดผิดโดยไม่รู้ตัว
+         จึงตีตราไว้ที่ช่อง "ตรวจ" ให้ขึ้นป้ายแดงบนหน้าจอ แล้วส่งใบที่เหลือไปตามปกติ */
+      var broken = [];
+      for (var mk = 0; mk < MONEY_FIELDS.length; mk++) {
+        var f = MONEY_FIELDS[mk];
+        if (!isFinite(o[f.key])) { broken.push(f.th); o[f.key] = 0; }
+      }
+      if (broken.length) o.check = 'ช่องสูตรเสียในชีท: ' + broken.join(' · ');
+
+      heads.push(o);
     }
   }
 
@@ -356,7 +378,7 @@ function readOrders_(opts) {
       });
     }
   }
-  return heads;
+  return jsonSafe_(heads);
 }
 
 /* วันเวลาแบบไทยสั้น ๆ สำหรับติดท้ายเหตุผลที่ยกเลิก
@@ -824,7 +846,7 @@ function listDocs(orderNo) {
   }
   /* ใบล่าสุดอยู่บนสุด คนมักพิมพ์ซ้ำใบที่เพิ่งออก */
   out.reverse();
-  return want ? out : out.slice(0, 20);
+  return jsonSafe_(want ? out : out.slice(0, 20));
 }
 
 /**
@@ -939,10 +961,10 @@ function getDoc(no) {
            ใบที่ราคารวม VAT ไว้แล้วจะถูกบวก VAT ซ้ำอีกรอบโดยไม่มีใครรู้ */
         m.vatMode = String(snap.vatMode || '');
         m.novat = !!snap.novat;
-        return { ok: true, exact: true, meta: m, saved: saved, doc: {
+        return jsonSafe_({ ok: true, exact: true, meta: m, saved: saved, doc: {
           type: key || snap.type, lines: snap.lines, base: snap.base, vat: snap.vat,
           vatRate: snap.vatRate, total: snap.total, totalText: snap.totalText
-        } };
+        } });
       }
     }
 
@@ -957,7 +979,7 @@ function getDoc(no) {
     var d = buildDoc_(key || 'rec', { items: ord.items, ship: ord.ship, discount: ord.discount },
       { vatRate: saved.vat > 0 ? cfgGet_().vatRate : 0, vatMode: cfg.vatMode });
     var same = round2_(d.total) === round2_(saved.total);
-    return { ok: true, exact: false, same: same, meta: m, saved: saved, doc: d };
+    return jsonSafe_({ ok: true, exact: false, same: same, meta: m, saved: saved, doc: d });
   }
   throw new Error('ไม่พบใบ ' + want + ' ในชีท เอกสาร');
 }

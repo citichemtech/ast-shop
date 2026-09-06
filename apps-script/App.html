@@ -81,8 +81,11 @@ function boot(){
              : (typeof SHOP_LOGO !== "undefined" ? SHOP_LOGO : "");
   if (hdLogo) $("#logo").innerHTML = '<img src="' + hdLogo + '" alt="">';
   call("getBootstrap", [], function(b){
+    /* ชีทส่ง null มาได้จริงถ้ามีอะไรในนั้นข้ามมาไม่ได้ — บอกให้ชัดดีกว่าพังเป็น
+       "Cannot read properties of null" ซึ่งไม่มีใครเดาออกว่าต้องไปแก้ตรงไหน */
+    if(!b){ throw new Error("ชีทส่งข้อมูลกลับมาไม่ได้ — ลองเปิดชีทดูว่ามีช่องไหนขึ้น #REF! หรือ #N/A อยู่"); }
     BOOT = b; APP = b.app || {};
-    CFG.products = b.products.map(function(p){
+    CFG.products = (b.products||[]).map(function(p){
       /* รูปทรงเดียวกับสินค้าในแอปเดิม ตัวอ่านข้อความจากไลน์จะได้ใช้ได้โดยไม่ต้องแก้ */
       return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
                unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
@@ -468,7 +471,7 @@ function save(){
     ORDERS = []; SUM_CACHE = null;
     call("getBootstrap", [], function(b){
       BOOT=b; $("#next-no").textContent=b.nextNo;
-      CFG.products = b.products.map(function(p){
+      CFG.products = (b.products||[]).map(function(p){
         return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
                  unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
                  reorder:p.reorder };
@@ -613,7 +616,9 @@ function loadOrders(force){
   if(ORD_Q){ runSearch(ORD_Q, true); return }
   if(ORDERS.length && !force){ renderOrders(); return }
   $("#list").innerHTML='<div class="load">กำลังโหลดออเดอร์จากชีท…</div>';
-  call("getOrders",[40],function(list){ ORDERS=list; renderOrders() },
+  /* list||[] ไม่ใช่ความระแวงเปล่า ๆ — ถ้าฝั่งชีทส่งอะไรที่ข้ามมาไม่ได้
+     google.script.run จะส่ง null มาให้เฉย ๆ แล้วหน้าออเดอร์ค้างทั้งจอ */
+  call("getOrders",[40],function(list){ ORDERS = list || []; renderOrders() },
     function(m){ $("#list").innerHTML='<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'+esc(m)+'</div>' });
 }
 
@@ -680,6 +685,7 @@ function statusTag(s){
 function isDead(o){ return String((o&&o.status)||"").trim()==="ยกเลิก" }
 
 function renderOrders(){
+  if(!ORDERS) ORDERS = [];
   if(!ORDERS.length){ $("#list").innerHTML='<div class="empty"><b>ยังไม่มีออเดอร์</b>กดแท็บ “คีย์ออเดอร์” เพื่อบันทึกใบแรก</div>'; return }
   $("#list").innerHTML = ORDERS.map(function(o,i){
     var dead = isDead(o);
@@ -2340,6 +2346,7 @@ function loadSummary(){
   if (SUM_CACHE) { drawSummary(SUM_CACHE); drawDue(SUM_CACHE); return; }
   $("#summary").innerHTML = '<div class="load">กำลังโหลด…</div>';
   call("getOrders", [500], function(list){
+    list = list || [];
     SUM_CACHE = list;
     if (!ORDERS.length) ORDERS = list;
     drawSummary(list);

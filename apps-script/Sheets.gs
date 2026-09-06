@@ -248,6 +248,31 @@ function sheet_(key) {
 }
 
 /**
+ * ทำให้ค่าที่ส่งกลับไปหน้าจอ "ส่งได้จริง"
+ *
+ * ช่องสูตรที่เสียในชีท (#REF! · #N/A · #VALUE!) พออ่านมาผ่าน Number() จะได้ NaN
+ * NaN ส่งข้ามไปหน้าจอไม่ได้ google.script.run จึงส่ง null ให้แทน "ทั้งก้อน"
+ * ผลคือหน้าออเดอร์ค้างที่ "กำลังโหลด…" ทั้งจอ เพราะใบเดียวเสียช่องเดียว
+ * (ของจริง 6 ก.ย. 69: ใบ AST-26-0020 ช่อง VAT เป็น #REF! แล้วทั้งร้านดูออเดอร์ไม่ได้)
+ *
+ * ข้อมูลที่เหลืออีก 20 กว่าใบไม่ได้เสียด้วย จึงต้องส่งไปให้ได้
+ * แปลงเฉพาะตัวที่ส่งไม่ได้เป็น 0 ส่วนการบอกว่าใบไหนเสีย ทำที่ readOrders_
+ */
+function jsonSafe_(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  if (v === null || v === undefined || v instanceof Date) return v;
+  if (Object.prototype.toString.call(v) === '[object Array]') {
+    for (var i = 0; i < v.length; i++) v[i] = jsonSafe_(v[i]);
+    return v;
+  }
+  if (typeof v === 'object') {
+    for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) v[k] = jsonSafe_(v[k]);
+    return v;
+  }
+  return v;
+}
+
+/**
  * ชื่อแท็บที่สะกดต่างกันแต่หมายถึงชีทเดียวกัน
  *
  * ภาษาไทยสะกดได้หลายแบบโดยไม่ผิด — "สต๊อก" กับ "สต๊อค" · "ล็อต" กับ "ล๊อต"

@@ -1932,5 +1932,58 @@ var over39 = [];
 for (var nm39 in fx39.sheets) over39 = over39.concat(fx39.sheets[nm39].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over39, []);
 
+
+/* ====== 40. ช่องสูตรเสียใบเดียว ต้องไม่ทำให้ดูออเดอร์ไม่ได้ทั้งจอ
+
+   6 ก.ย. รอบสาม: ใบ AST-26-0020 ในชีทจริง ช่อง VAT เป็น #REF!
+   อ่านมาผ่าน Number() ได้ NaN ซึ่งส่งข้ามไปหน้าจอไม่ได้
+   google.script.run เลยส่ง null มาให้ทั้งก้อน หน้าออเดอร์ค้างที่ "กำลังโหลด…"
+   ทั้งที่อีก 20 กว่าใบไม่ได้เสียอะไรเลย */
+console.log('\n40. ช่องสูตรเสีย (#REF!) ในออเดอร์ใบเดียว');
+
+var fx40 = FS.build();
+var api40 = FS.load(fx40, {});
+api40.setup();
+var okNo = api40.createOrder(order({ cust: 'ใบที่ดี' })).no;
+var badNo = api40.createOrder(order({ cust: 'ใบที่ช่องสูตรเสีย' })).no;
+
+/* ทำให้ช่อง VAT ของใบหลังเป็น #REF! เหมือนที่เกิดในชีทจริง */
+var head40 = fx40.sheets['ออเดอร์_หัวบิล'];
+var badRow = rowsWith(head40, api40.SH.head.IN.no).filter(function (r) {
+  return head40.cell(r, api40.SH.head.IN.no).v === badNo;
+})[0];
+head40.cell(badRow, api40.SH.head.vatAmt).v = '#REF!';
+
+var got40 = api40.getOrders(40);
+truthy2('ยังได้ออเดอร์กลับมา ไม่ใช่ null', !!got40 && got40.length === 2);
+
+/* ข้อสอบตัวจริง: ทุกตัวเลขที่ส่งกลับต้องส่งข้ามไปหน้าจอได้ ไม่มี NaN หลงเหลือ */
+function anyNaN(v) {
+  if (typeof v === 'number') return !isFinite(v);
+  if (v && typeof v === 'object') {
+    for (var k in v) if (anyNaN(v[k])) return true;
+  }
+  return false;
+}
+truthy2('ไม่มี NaN หลงไปกับข้อมูล', !anyNaN(got40));
+
+var bad40 = got40.filter(function (o) { return o.no === badNo })[0];
+var good40 = got40.filter(function (o) { return o.no === okNo })[0];
+truthy2('ใบที่เสียถูกตีตราว่าช่องสูตรเสีย', /ช่องสูตรเสียในชีท: .*VAT/.test(bad40.check || ''));
+eq('ช่องที่เสียส่งเป็น 0 ไม่ใช่ NaN', bad40.vatAmt, 0);
+truthy2('ใบที่ไม่ได้เสียไม่ถูกตีตราไปด้วย', !/ช่องสูตรเสีย/.test(good40.check || ''));
+truthy2('ใบที่ไม่ได้เสีย ยอดยังครบเหมือนเดิม', good40.net > 0);
+
+console.log('\n   หน้าเปิดแอปก็ต้องรอด ไม่ใช่แค่หน้ารายการออเดอร์');
+fx40.sheets['สต๊อกคงเหลือ'].cell(DATA_ROW, api40.SH.stock.remain).v = '#N/A';
+var boot40 = api40.getBootstrap();
+truthy2('เปิดแอปได้ทั้งที่ยอดคงเหลือช่องหนึ่งเสีย', !!boot40 && !!boot40.products.length);
+truthy2('ไม่มี NaN ในข้อมูลตอนเปิดแอป', !anyNaN(boot40));
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over40 = [];
+for (var nm40 in fx40.sheets) over40 = over40.concat(fx40.sheets[nm40].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over40, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
