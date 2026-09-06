@@ -1822,7 +1822,7 @@ eq('ไม่มีช่องสูตรถูกแตะ', over37, []);
    ตอนนี้ตั้งไอดีที่ Script Properties ได้ ครั้งหน้าย้ายไฟล์จบใน 1 นาที */
 console.log('\n38. ตั้งไอดีไฟล์ชีทจากคุณสมบัติสคริปต์');
 
-var DEFAULT_ID = '1s8tS_Fv7YSYPyjzH-rXQdl-5VKBTaV717YYyWUv5k_8';
+var DEFAULT_ID = '1BS2aHMJbJpcMrqhF3QttihRXg4RR7oLv1VXMGw6ZFPs';
 
 eq('ไม่ได้ตั้งไว้ = ใช้ค่าตั้งต้นในโค้ด',
   FS.load(FS.build(), {}).SHEET_ID, DEFAULT_ID);

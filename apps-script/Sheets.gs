@@ -48,7 +48,11 @@ var SHEET_ID = (function () {
   } catch (e) {
     /* อ่าน property ไม่ได้ไม่ใช่เหตุให้แอปล่ม — ถอยไปใช้ค่าตั้งต้น */
   }
-  return '1s8tS_Fv7YSYPyjzH-rXQdl-5VKBTaV717YYyWUv5k_8';
+  /* ไฟล์เดิม 1s8tS_Fv7YSYPyjzH-rXQdl-5VKBTaV717YYyWUv5k_8 ถูกลบ 6 ก.ย. 69
+     กู้จากถังขยะไม่ทัน ตัวนี้คือไฟล์ที่เจ้าของร้านคัดลอกออกมาจากแท็บที่ยังค้างอยู่
+     ได้สูตรติดมาครบทั้งเล่ม ถ้า Google กู้ไฟล์เดิมคืนได้ ให้ตั้ง SHEET_ID
+     ที่คุณสมบัติสคริปต์เป็นไอดีเดิม ไม่ต้องแก้โค้ดตรงนี้ */
+  return '1BS2aHMJbJpcMrqhF3QttihRXg4RR7oLv1VXMGw6ZFPs';
 })();
 
 /* ไอคอนของเว็บแอป เสิร์ฟจาก GitHub Pages ของร้านเอง
