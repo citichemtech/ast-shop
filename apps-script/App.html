@@ -5,42 +5,9 @@
  * ห้ามกลืน error เงียบ ๆ เพราะพนักงานจะคิดว่าบันทึกแล้วทั้งที่ยังไม่ได้บันทึก
  */
 
-var BOOT = null;          /* ข้อมูลจากชีท */
-var APP = {};             /* ตั้งค่าแอป (ผู้ส่ง ค่าส่ง ลิงก์ติดตาม) */
+
 var ORDERS = [];          /* ออเดอร์ที่โหลดมาล่าสุด */
 var SAVING = false;
-var BY_NEW = "✎ พิมพ์ชื่อเอง…";   /* ตัวเลือกสุดท้ายของเมนูผู้คีย์ออเดอร์ */
-
-/* -------------------------------------------------------------- ข้อความแจ้ง */
-
-function showErr(msg){
-  var b=$("#err"); b.innerHTML=esc(msg); b.classList.add("on");
-  $("#ok").classList.remove("on");
-  b.scrollIntoView({behavior:"smooth",block:"center"});
-}
-function showOk(msg){
-  var b=$("#ok"); b.innerHTML=msg; b.classList.add("on");
-  $("#err").classList.remove("on");
-  b.scrollIntoView({behavior:"smooth",block:"center"});
-}
-function clearMsg(){ $("#err").classList.remove("on"); $("#ok").classList.remove("on") }
-
-/* เรียกฟังก์ชันฝั่งเซิร์ฟเวอร์ — ทุกจุดที่ล้มต้องมีทางออกที่ผู้ใช้เห็น */
-function call(fn, args, done, fail){
-  google.script.run
-    .withSuccessHandler(function(r){ try{ done(r) }catch(e){ showErr("แสดงผลไม่สำเร็จ: "+e.message) } })
-    .withFailureHandler(function(e){
-      var m=(e&&e.message)?e.message:String(e);
-      if(fail) fail(m); else showErr(m);
-    })[fn].apply(null, args||[]);
-}
-
-/* แบบ promise สำหรับจุดที่ต้องต่อหลายขั้น (ออกเลขเอกสาร → วาดกระดาษ → แชร์) */
-function api(fn, args){
-  return new Promise(function(res, rej){
-    call(fn, [args], res, function(m){ rej(new Error(m)) });
-  });
-}
 
 /* ------------------------------------------------------------------ เริ่มระบบ */
 
@@ -83,45 +50,9 @@ function boot(){
     CFG.docSellerEmail = APP.docSellerEmail || "";
 
     /* ผู้คีย์ — ทั้งร้านใช้บัญชี Google เดียวกัน ชื่อคนคีย์จึงต้องเลือกเอง
-       จำไว้ในเครื่องนี้ ครั้งหน้าเปิดมาก็เป็นชื่อเดิม ไม่ต้องเลือกซ้ำทุกใบ */
-    var staffList = (APP.staffList && APP.staffList.length) ? APP.staffList : ["แอดมิน"];
-    /* ชื่อที่เคยพิมพ์เองในเครื่องนี้ ขึ้นมาในรายการด้วย จะได้พิมพ์ครั้งเดียวพอ
-       (คนคีย์คนใหม่มาช่วยวันเดียว ไม่ต้องรอแก้ชีทก่อนถึงจะคีย์ได้) */
-    staffList = staffList.concat(myStaff().filter(function(n){
-      return staffList.indexOf(n) < 0;
-    }));
-    fillSelect("#f-by", staffList.concat([BY_NEW]));
-    var remembered = "";
-    try { remembered = localStorage.getItem("ast-by") || "" } catch(e){}
-    if (remembered && staffList.indexOf(remembered) > -1) $("#f-by").value = remembered;
-    $("#f-by").onchange = function(){
-      var typing = this.value === BY_NEW;
-      $("#f-by-new").style.display = typing ? "" : "none";
-      if (typing) { $("#f-by-new").value = ""; $("#f-by-new").focus(); return }
-      try { localStorage.setItem("ast-by", this.value) } catch(e){}
-    };
-    /* พอพิมพ์ชื่อเสร็จแล้วละมือ เก็บชื่อลงเครื่องและใส่กลับเข้ารายการทันที
-       ไม่ต้องกดปุ่มเพิ่ม ไม่ต้องรีเฟรช */
-    $("#f-by-new").onblur = function(){
-      var v = this.value.trim();
-      if (!v) return;
-      var mine = myStaff();
-      if (mine.indexOf(v) < 0) {
-        mine.push(v);
-        try { localStorage.setItem("ast-by-list", JSON.stringify(mine)) } catch(e){}
-      }
-      var sel = $("#f-by");
-      var has = false;
-      for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === v) has = true;
-      if (!has) {
-        var op = document.createElement("option");
-        op.value = v; op.textContent = v;
-        sel.insertBefore(op, sel.options[sel.options.length - 1]);
-      }
-      sel.value = v;
-      this.style.display = "none";
-      try { localStorage.setItem("ast-by", v) } catch(e){}
-    };
+       ตัวเมนูอยู่ที่ Core เพราะแอปสต๊อกก็ต้องถามชื่อคนทำงานเหมือนกัน
+       และชื่อที่พิมพ์เองต้องโผล่ครบทั้งสองแอป ไม่ใช่ต่างคนต่างจำ */
+    staffInit("#f-by", "#f-by-new", APP.staffList);
 
     fillSelect("#f-channel", b.lists.channel);
     fillSelect("#f-carrier", b.lists.carrier);
@@ -140,15 +71,6 @@ function boot(){
   });
 }
 
-function fillSelect(sel, list){
-  $(sel).innerHTML = (list||[]).map(function(x){
-    return '<option value="'+esc(x)+'">'+esc(x)+'</option>';
-  }).join("");
-}
-function todayISO(){
-  var d=new Date(), p=function(n){return n<10?"0"+n:""+n};
-  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
-}
 
 /* --------------------------------------------------------- รายการสินค้าหลายแถว */
 
@@ -297,17 +219,6 @@ function lotLine(r, p, sku){
     + (lot.next.exp ? " (หมดอายุ "+thaiDate(isoOf(lot.next.exp))+")" : " (ไม่ระบุวันหมดอายุ)")
     + " ก่อน · ล็อตทั้งหมดเหลือ "+lot.total+" ชิ้น";
 }
-function isoOf(ms){
-  var d=new Date(ms), p=function(n){return n<10?"0"+n:""+n};
-  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
-}
-function thaiDate(iso){
-  if(!iso) return "";
-  var d=new Date(iso+"T00:00:00");
-  if(isNaN(d.getTime())) return String(iso);
-  var m=["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
-  return d.getDate()+" "+m[d.getMonth()]+" "+(d.getFullYear()+543);
-}
 
 /* -------------------------------------------------------------- บันทึกออเดอร์ */
 
@@ -341,7 +252,7 @@ function save(){
     vat: /^รับ/.test($("#f-vat").value||""),
     discount: Number($("#f-disc").value)||0,
     ship: Number($("#f-ship").value)||0,
-    status: $("#f-status").value, by: byName(),
+    status: $("#f-status").value, by: staffName("#f-by", "#f-by-new"),
     note: $("#f-note").value.trim(),
     items: items
   };
@@ -537,7 +448,6 @@ function renderOrders(){
       +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
       +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
       +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">📄</button>'
-      +'<button class="sq" data-rt="'+i+'" title="คืนสินค้าเข้าสต๊อก">↩</button>'
       +'</div></div>';
   }).join("");
 }
@@ -692,7 +602,7 @@ function qMake(){
     type:"quote", items:items,
     ship:Number($("#q-ship").value)||0, discount:Number($("#q-disc").value)||0,
     cust:cust, date:$("#q-date").value, terms:"", po:"",
-    note:$("#q-note").value.trim(), by:byName(),
+    note:$("#q-note").value.trim(), by:staffName("#f-by", "#f-by-new"),
     vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
     clientKey: "qt-"+Date.now()+"-"+Math.random().toString(36).slice(2,8)
   }).then(function(r){
@@ -794,49 +704,6 @@ function reprint(no, btn, outSel){
     out.innerHTML = '<div class="msg err" style="display:block">พิมพ์ซ้ำไม่สำเร็จ: '
       + esc(e && e.message ? e.message : e) + '</div>';
   });
-}
-
-/* ------------------------------------------- ขนาดตัวอักษรของทั้งแอป */
-
-/* เจ้าของร้านอ่านตัวอักษรขนาดเดิมไม่ถนัด และคนคีย์แต่ละคนสายตาไม่เท่ากัน
-   จึงให้ปรับเองได้ เก็บไว้ในเครื่องใครเครื่องมัน ไม่ต้องแก้โค้ดใหม่ทุกครั้ง
-   ปรับที่ราก (html) ทีเดียว ทุกขนาดในหน้าเป็น rem จึงขยับตามพร้อมกันทั้งหน้า */
-var FS_MIN = 17, FS_MAX = 30, FS_DEF = 20;
-
-function fsGet(){
-  var n = 0;
-  try { n = Number(localStorage.getItem("ast-fs") || 0) } catch(e){}
-  if (!n || isNaN(n)) n = FS_DEF;
-  return Math.min(FS_MAX, Math.max(FS_MIN, n));
-}
-function fsApply(n){
-  document.documentElement.style.fontSize = n + "px";
-  try { localStorage.setItem("ast-fs", String(n)) } catch(e){}
-  var dn = $("#fs-dn"), up = $("#fs-up");
-  if (dn) dn.disabled = n <= FS_MIN;
-  if (up) up.disabled = n >= FS_MAX;
-}
-function fsInit(){
-  fsApply(fsGet());
-  $("#fs-dn").onclick = function(){ fsApply(Math.max(FS_MIN, fsGet() - 1)) };
-  $("#fs-up").onclick = function(){ fsApply(Math.min(FS_MAX, fsGet() + 1)) };
-}
-
-/* ------------------------------------------------- ชื่อคนคีย์ออเดอร์ */
-
-/* ชื่อที่คนใช้เครื่องนี้เคยพิมพ์เองไว้ เก็บในเครื่องเท่านั้น ไม่ขึ้นชีท */
-function myStaff(){
-  try { var a = JSON.parse(localStorage.getItem("ast-by-list") || "[]");
-        return Array.isArray(a) ? a : [] } catch(e){ return [] }
-}
-
-/* ชื่อที่จะบันทึกลงชีทจริง — ถ้ากำลังพิมพ์ชื่อใหม่อยู่ ให้ใช้ชื่อที่พิมพ์
-   ไม่ใช่คำว่า "พิมพ์ชื่อเอง" ที่เป็นแค่ตัวเลือกในเมนู */
-function byName(){
-  var sel = $("#f-by");
-  if (!sel) return "";
-  if (sel.value === BY_NEW) return ($("#f-by-new").value || "").trim();
-  return sel.value;
 }
 
 /* ------------------------------------------------------------------ เอกสารขาย */
@@ -946,7 +813,7 @@ function openDoc(o, preType){
     $("#dc-out").innerHTML='<div class="load">กำลังออกเลขเอกสารและลงชีท…</div>';
     api("issueDoc", {
       type:type, orderNo:o.no, cust:cust, po:$("#dc-po").value.trim(),
-      terms:$("#dc-terms").value, date:o.date, by:byName(),
+      terms:$("#dc-terms").value, date:o.date, by:staffName("#f-by", "#f-by-new"),
       vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
       form: readFormTicks(),
       clientKey: "dc-"+o.no+"-"+type+"-"+Date.now()
@@ -1413,71 +1280,22 @@ function drawSummary(all){
   if (byStaff.length > 1)
     h += section_("ผู้คีย์ออเดอร์", rows_(byStaff, function(g){ return g.n + " ใบ" }));
 
-  h += '<div id="sum-low"></div>';
-
   h += '<div class="hint" style="padding:0 2px">ตัวเลขทั้งหมดมาจากชีทโดยตรง '
     + 'ไม่ได้คิดซ้ำในแอป · ไม่รวมออเดอร์ที่ยกเลิก</div>';
 
   $("#summary").innerHTML = h;
-  drawLowStock();
 }
-
-/**
- * เตือนของใกล้หมดไว้ท้ายหน้าสรุป
- *
- * วางไว้ที่นี่เพราะคนเปิดหน้าสรุปเพื่อดูว่าขายอะไรดี — คำถามถัดไปในหัวเสมอคือ
- * "แล้วของยังพอไหม" ถ้าคำตอบอยู่คนละแท็บ จะไม่มีใครกดไปดูจนกว่าจะขายของที่หมดไปแล้ว
- * ใช้ข้อมูลที่หน้าสต๊อกโหลดไว้ ถ้ายังไม่เคยเปิดค่อยยิงขอ
- */
-function drawLowStock(){
-  var box = $("#sum-low");
-  if (!box) return;
-  function paint(d){
-    var low = (d.low || []).slice(0, 8);
-    if (!low.length) return;
-    box.innerHTML = '<div class="card"><div class="subhd" style="margin-top:0">'
-      + 'ของใกล้หมด ' + d.low.length + ' รายการ</div>'
-      + low.map(function(p){
-          return '<div class="row"><div class="i"><b>' + esc(p.name || p.sku) + '</b>'
-            + '<span>' + esc(p.sku) + ' · เหลือ ' + (p.remain===null?"—":p.remain) + ' ' + esc(p.unit)
-            + (p.reorder ? ' · จุดสั่งซื้อ ' + p.reorder : '') + '</span></div>'
-            + '<div class="acts"><span class="tag ' + (p.level==="out"?"bad":"wait") + '">'
-            + (p.level==="out" ? "ของหมด" : "ต่ำ") + '</span></div></div>';
-        }).join("")
-      + (d.low.length > low.length
-          ? '<div class="hint">และอีก ' + (d.low.length - low.length) + ' รายการ ดูทั้งหมดที่แท็บสต๊อก</div>' : "")
-      + '</div>';
-  }
-  if (typeof STOCK_DATA !== "undefined" && STOCK_DATA) { paint(STOCK_DATA); return }
-  call("getStockBoard", [], function(d){
-    if (typeof STOCK_DATA !== "undefined") STOCK_DATA = d;
-    paint(d);
-  }, function(){ /* เตือนสต๊อกโหลดไม่ได้ ไม่ใช่เหตุให้หน้าสรุปทั้งหน้าพัง */ });
-}
-
-/* -------------------------------------------------------------------- modal */
-
-function openModal(title, html){
-  $("#m-title").textContent=title;
-  $("#m-body").innerHTML=html;
-  $("#modal").classList.add("on");
-}
-function closeModal(){ $("#modal").classList.remove("on"); $("#m-body").innerHTML="" }
-$("#modal").addEventListener("click", function(e){ if(e.target===this) closeModal() });
-$("#m-close").onclick = closeModal;
-document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModal() });
 
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
 
 function go(page){
-  ["new","list","quote","stock","sum"].forEach(function(p){
+  ["new","list","quote","sum"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===page) });
   if(page==="list") loadOrders();
   if(page==="sum")  loadSummary();
   if(page==="quote") quoteInit();
-  if(page==="stock") stockInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){
@@ -1497,13 +1315,12 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
 
   $("#list").addEventListener("click", function(e){
-    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc],[data-rt]");
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc]");
     if(!b) return;
     if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
     else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
     else if(b.dataset.sm!==undefined) openMsg(ORDERS[+b.dataset.sm]);
     else if(b.dataset.dc!==undefined) openDoc(ORDERS[+b.dataset.dc]);
-    else if(b.dataset.rt!==undefined) openReturn(ORDERS[+b.dataset.rt]);
   });
 
   boot();

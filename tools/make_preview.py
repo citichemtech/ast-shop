@@ -310,6 +310,11 @@ window.google = { script: { run: (function(){
         return { ok:true, saved:saved, failed:[], skipped:[], capacity:MOCK_CAP };
       });
     },
+    getOrder: function(no){
+      reply(function(){
+        return MOCK_ORDERS.filter(function(o){ return o.no === String(no).trim() })[0] || null;
+      });
+    },
     getMoves: function(){
       reply(function(){
         return { total:3, moves:[
@@ -364,20 +369,32 @@ window.google = { script: { run: (function(){
 
 
 def main():
-    out = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "out" / "preview.html"
-    out.parent.mkdir(parents=True, exist_ok=True)
+    """ประกอบทั้งสองแอปเป็นหน้าเว็บในเครื่อง
 
-    # รับ Index.html ที่รวมไฟล์แล้วได้ด้วย เพื่อพิสูจน์ว่าตัวที่เอาไปวางจริงยังทำงานได้
-    src = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else GS / "Index.html"
+    ระบบจริงเสิร์ฟสองลิงก์จากโปรเจกต์เดียว (…/exec กับ …/exec?app=stock)
+    ตัวอย่างในเครื่องจึงต้องมีสองไฟล์เหมือนกัน ไม่งั้นทดสอบได้แอปเดียว
+    """
+    if len(sys.argv) > 1:
+        jobs = [(pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else GS / "Index.html",
+                 pathlib.Path(sys.argv[1]))]
+    else:
+        jobs = [(GS / "Index.html", ROOT / "out" / "preview.html"),
+                (GS / "StockIndex.html", ROOT / "out" / "preview-stock.html")]
+    for src, out in jobs:
+        build_one(src, out)
+
+
+def build_one(src, out):
+    out.parent.mkdir(parents=True, exist_ok=True)
     index = src.read_text(encoding="utf-8")
 
     def sub_include(m):
         name = m.group(1)
         return (GS / (name + ".html")).read_text(encoding="utf-8")
 
-    page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
-    if n not in (0, 6):
-        sys.exit("คาดว่าจะมี include 6 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
+    # ไม่ตรวจจำนวน include เพราะสองหน้าประกอบไฟล์ไม่เท่ากัน
+    # ด่านจริงคือบรรทัดข้างล่างที่ล้มถ้ายังมี scriptlet ของ HtmlService เหลืออยู่
+    page = re.sub(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
 
     page = page.replace('"<?= staffEmail ?>"', json.dumps(BOOT["staff"]))
     if "<?" in page:

@@ -11,30 +11,41 @@ var STOCK_SUB = "board";
 var STOCK_DATA = null;      /* ผลจาก getStockBoard ครั้งล่าสุด */
 var MAP_DATA = null;        /* ตารางจับคู่ SKU ครั้งล่าสุด */
 
-var STOCK_TABS = [
-  { key: "board", label: "สต๊อกสินค้า" },
-  { key: "imp",   label: "นำเข้า Shopee" },
-  { key: "map",   label: "จับคู่ SKU" },
-  { key: "moves", label: "ประวัติ" }
-];
+/**
+ * เปิดแอป — เรียกครั้งเดียวตอนโหลดหน้า
+ *
+ * แอปนี้ขอ getBootstrap ก้อนเดียวกับแอปคีย์ออเดอร์ เพราะต้องใช้รายชื่อพนักงาน
+ * กับตัวเลือก dropdown ชุดเดียวกัน — ถ้าแยกกันขอ วันที่เพิ่มช่องทางขายใหม่
+ * แอปหนึ่งจะเห็น อีกแอปไม่เห็น
+ */
+function bootStock(){
+  fsInit();
+  $("#who").textContent = STAFF_EMAIL;
+  var logo = (typeof APP_LOGO !== "undefined" && APP_LOGO) ? APP_LOGO
+           : (typeof SHOP_LOGO !== "undefined" ? SHOP_LOGO : "");
+  if (logo) $("#logo").innerHTML = '<img src="' + logo + '" alt="">';
 
-function stockInit(){
-  if (!$("#stock-nav").innerHTML){
-    $("#stock-nav").innerHTML = STOCK_TABS.map(function(t){
-      return '<button data-s="'+t.key+'"'+(t.key===STOCK_SUB?' class="on"':'')+'>'+esc(t.label)+'</button>';
-    }).join("");
-    $("#stock-nav").addEventListener("click", function(e){
-      var b = e.target.closest("button[data-s]"); if(!b) return;
-      stockGo(b.dataset.s);
-    });
+  $$(".tabs button[data-s]").forEach(function(b){
+    b.onclick = function(){ stockGo(b.dataset.s) };
+  });
+
+  call("getBootstrap", [], function(b){
+    BOOT = b; APP = b.app || {};
+    staffInit("#s-by", "#s-by-new", APP.staffList);
     impInit();
-  }
-  stockGo(STOCK_SUB);
+    $("#booting").style.display = "none";
+    $("#pg-stock").style.display = "";
+    stockGo(STOCK_SUB);
+  }, function(m){
+    $("#booting").innerHTML = '<div style="color:var(--red);line-height:1.7">'
+      + 'โหลดข้อมูลจากชีทไม่สำเร็จ<br>' + esc(m)
+      + '<br><br><button class="mini" onclick="location.reload()">ลองใหม่</button></div>';
+  });
 }
 
 function stockGo(sub){
   STOCK_SUB = sub;
-  $$("#stock-nav button").forEach(function(b){ b.classList.toggle("on", b.dataset.s===sub) });
+  $$(".tabs button[data-s]").forEach(function(b){ b.classList.toggle("on", b.dataset.s===sub) });
   ["board","imp","map","moves"].forEach(function(k){
     $("#sub-"+k).style.display = (k===sub) ? "" : "none";
   });
@@ -466,7 +477,7 @@ function impOpts(){
     carrier: $("#imp-carrier").value,
     feeMode: $("#imp-fee").value,
     keepShip: $("#imp-keepship").checked,
-    by: byName()
+    by: staffName("#s-by", "#s-by-new")
   };
 }
 
@@ -614,8 +625,6 @@ function impCommit(){
   call("commitShopee", [batch, impOpts()], function(r){
     b.disabled = false;
     STOCK_DATA = null;
-    SUM_CACHE = null;
-    ORDERS = [];
     var msg = "ตัดสต๊อกแล้ว "+r.saved.length+" ใบ";
     if (r.skipped.length) msg += " · ข้าม "+r.skipped.length+" ใบ";
     if (r.failed.length)  msg += " · ล้มเหลว "+r.failed.length+" ใบ";
@@ -668,8 +677,24 @@ function loadMoves(force){
 
 /* --------------------------------------------------------- คืนสินค้า */
 
+/** ค้นออเดอร์ตามเลขที่ แล้วเปิดหน้าคืนของ — ทางเข้าเดียวของแอปนี้ */
+function findForReturn(){
+  var no = $("#rt-no").value.trim();
+  if (!no){ toast("ยังไม่ได้ใส่เลขที่ออเดอร์"); return }
+  var b = $("#rt-find"); b.disabled = true; b.textContent = "กำลังค้น…";
+  clearMsg();
+  call("getOrder", [no], function(o){
+    b.disabled = false; b.textContent = "ค้นหาใบนี้";
+    if (!o){ showErr("ไม่พบออเดอร์ " + no + " ในชีท"); return }
+    openReturn(o);
+  }, function(m){
+    b.disabled = false; b.textContent = "ค้นหาใบนี้";
+    showErr("ค้นไม่สำเร็จ: " + m);
+  });
+}
+
 /**
- * เปิดจากรายการออเดอร์ — คืนของเข้าสต๊อกโดยไม่ลบการขายทิ้ง
+ * คืนของเข้าสต๊อกโดยไม่ลบการขายทิ้ง
  * การขายเกิดขึ้นจริงและอาจออกเอกสารไปแล้ว ที่เปลี่ยนคือของกลับเข้าคลัง
  */
 function openReturn(o){
@@ -697,15 +722,22 @@ function openReturn(o){
     if (!why){ toast("ต้องใส่เหตุผลที่คืน"); return }
 
     var b = $("#rt-go"); b.disabled = true; b.textContent = "กำลังบันทึก…";
-    call("recordReturn", [{ orderNo:o.no, items:items, why:why, by:byName() }], function(){
+    call("recordReturn", [{ orderNo:o.no, items:items, why:why, by: staffName("#s-by", "#s-by-new") }], function(){
       closeModal();
-      STOCK_DATA = null; SUM_CACHE = null;
+      STOCK_DATA = null;
       toast("คืนของเข้าสต๊อกแล้ว");
-      loadOrders(true);
+      loadMoves(true);
     }, function(m){
       b.disabled = false; b.textContent = "คืนของเข้าสต๊อก";
       toast("คืนไม่สำเร็จ: "+m);
     });
   };
 }
+
+/* --------------------------------------------------------- ผูกปุ่มทั้งหมด */
+
+document.addEventListener("DOMContentLoaded", function(){
+  $("#rt-find").onclick = findForReturn;
+  bootStock();
+});
 </script>

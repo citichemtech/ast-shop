@@ -1,5 +1,8 @@
 /*
- * ขับหน้าสต๊อก / นำเข้าออเดอร์ Shopee ด้วยเบราว์เซอร์จริง
+ * ขับ "แอปสต๊อก & Shopee" ด้วยเบราว์เซอร์จริง
+ *
+ * แอปนี้เสิร์ฟคนละลิงก์กับแอปคีย์ออเดอร์ (…/exec?app=stock) จึงทดสอบแยกไฟล์
+ * ข้อสอบข้อแรกของชุดนี้คือมันต้องยืนอยู่ได้เองโดยไม่ต้องมีโค้ดของแอปคีย์ออเดอร์
  *
  *   python3 tools/make_preview.py && node tools/t_ui_stock.js
  *
@@ -13,7 +16,7 @@
 var path = require('path');
 var { chromium } = require('/opt/node22/lib/node_modules/playwright');
 
-var FILE = 'file://' + path.join(__dirname, '..', 'out', process.env.PV || 'preview.html');
+var FILE = 'file://' + path.join(__dirname, '..', 'out', process.env.PV || 'preview-stock.html');
 var fails = 0;
 
 function eq(label, got, want) {
@@ -62,12 +65,15 @@ var SHEET = [
   page.on('dialog', function (d) { d.accept(); });
 
   await page.goto(FILE);
-  await page.waitForSelector('#form', { state: 'visible', timeout: 20000 });
+  await page.waitForSelector('#pg-stock', { state: 'visible', timeout: 20000 });
 
-  /* ---------- 1. เข้าแท็บสต๊อก ---------- */
+  /* ---------- 1. หน้าแรกคือสต๊อก ---------- */
   console.log('\n1. หน้าสต๊อกสินค้า');
-  await page.click('.tabs button[data-go="stock"]');
   await page.waitForSelector('#stock-body .row', { timeout: 20000 });
+  eq('แถบล่างมี 4 ปุ่ม ไม่มีของแอปคีย์ออเดอร์ปน',
+    await page.locator('.tabs button').count(), 4);
+  eq('ไม่มีฟอร์มคีย์ออเดอร์อยู่ในหน้านี้',
+    await page.locator('#pg-new').count(), 0);
   truthy('มีหัวข้อของที่ต้องสั่งเพิ่ม',
     /ต้องสั่งเพิ่ม/.test(await page.textContent('#stock-body')));
   truthy('เตือนล็อตใกล้หมดอายุ',
@@ -80,7 +86,7 @@ var SHEET = [
 
   /* ---------- 2. นำเข้าไฟล์ Shopee ---------- */
   console.log('\n2. นำเข้าออเดอร์จากไฟล์ Shopee');
-  await page.click('#stock-nav button[data-s="imp"]');
+  await page.click('.tabs button[data-s="imp"]');
   await page.click('#imp-paste-open');
   await page.fill('#imp-paste', SHEET);
   await page.click('#imp-paste-go');
@@ -135,7 +141,7 @@ var SHEET = [
 
   /* ---------- 5. ตรวจใหม่แล้วตัดจริง ---------- */
   console.log('\n5. ตัดสต๊อก');
-  await page.click('#stock-nav button[data-s="imp"]');
+  await page.click('.tabs button[data-s="imp"]');
   await page.click('#imp-preview');
   await page.waitForSelector('#imp-result .kpis', { timeout: 20000 });
   truthy('จับคู่แล้ว ใบที่เคยถูกกันไว้กลับมาพร้อมตัด',
@@ -162,7 +168,7 @@ var SHEET = [
 
   /* ---------- 7. ประวัติ ---------- */
   console.log('\n7. ประวัติรับเข้า–ขายออก–คืนสินค้า');
-  await page.click('#stock-nav button[data-s="moves"]');
+  await page.click('.tabs button[data-s="moves"]');
   await page.waitForSelector('#mv-list .row', { timeout: 20000 });
   var mv = await page.textContent('#mv-list');
   truthy('มีรับเข้า', /รับเข้า/.test(mv));
@@ -172,9 +178,15 @@ var SHEET = [
 
   /* ---------- 8. คืนสินค้าเข้าสต๊อก ---------- */
   console.log('\n8. คืนสินค้า');
-  await page.click('.tabs button[data-go="list"]');
-  await page.waitForSelector('#list [data-rt]', { timeout: 20000 });
-  await page.click('#list [data-rt]');
+  await page.click('.tabs button[data-s="moves"]');
+  await page.fill('#rt-no', 'AST-26-9999');
+  await page.click('#rt-find');
+  await page.waitForSelector('#err.on', { timeout: 20000 });
+  truthy('หาใบไม่เจอ ต้องบอกตรง ๆ ไม่ใช่เงียบ',
+    /ไม่พบออเดอร์ AST-26-9999/.test(await page.textContent('#err')));
+
+  await page.fill('#rt-no', 'AST-26-0005');
+  await page.click('#rt-find');
   await page.waitForSelector('#rt-go', { timeout: 20000 });
   await page.click('#rt-go');
   await page.waitForTimeout(300);
@@ -187,13 +199,14 @@ var SHEET = [
     return window.SENT.filter(function (x) { return x && x.fn === 'recordReturn'; });
   });
   eq('ส่งคำสั่งคืนของขึ้นชีท', ret.length, 1);
+  eq('คืนถูกใบ', ret[0].p.orderNo, 'AST-26-0005');
   eq('ส่งเหตุผลไปด้วย', ret[0].p.why, 'ลูกค้าตีกลับ ของไม่ตรงรุ่น');
   truthy('ส่งจำนวนที่คืนไปด้วย', ret[0].p.items.length > 0 && ret[0].p.items[0].qty > 0);
+  truthy('ส่งชื่อผู้ทำรายการไปด้วย', !!ret[0].p.by);
 
   /* ---------- 9. ช่องเชื่อม API ---------- */
   console.log('\n9. ช่องเชื่อม Shopee API');
-  await page.click('.tabs button[data-go="stock"]');
-  await page.click('#stock-nav button[data-s="imp"]');
+  await page.click('.tabs button[data-s="imp"]');
   await page.click('#imp-api');
   await page.waitForSelector('#modal.on', { timeout: 20000 });
   var api = await page.textContent('#m-body');
