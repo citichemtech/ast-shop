@@ -50,9 +50,10 @@ var SHEET_ID = (function () {
   }
   /* ไฟล์เดิม 1s8tS_Fv7YSYPyjzH-rXQdl-5VKBTaV717YYyWUv5k_8 ถูกลบ 6 ก.ย. 69
      กู้จากถังขยะไม่ทัน ตัวนี้คือไฟล์ที่เจ้าของร้านคัดลอกออกมาจากแท็บที่ยังค้างอยู่
-     ได้สูตรติดมาครบทั้งเล่ม ถ้า Google กู้ไฟล์เดิมคืนได้ ให้ตั้ง SHEET_ID
-     ที่คุณสมบัติสคริปต์เป็นไอดีเดิม ไม่ต้องแก้โค้ดตรงนี้ */
-  return '1BS2aHMJbJpcMrqhF3QttihRXg4RR7oLv1VXMGw6ZFPs';
+     ชื่อ "⭐️AST_ระบบออเดอร์และสต๊อค-(ตัวใช้งานจริง)" มีครบทั้ง 13 แท็บ
+     รวมชีทที่ setup() เคยสร้างไว้ (ล็อตสินค้า · ตัดล็อต · เอกสาร · ตั้งค่าแอป)
+     ถ้าย้ายไฟล์อีก ให้ตั้ง SHEET_ID ที่คุณสมบัติสคริปต์ ไม่ต้องแก้โค้ดตรงนี้ */
+  return '1AcV0rYN6Mb_T3Z9e4mPaP6LsT1sP34Lop1l-22sSWCQ';
 })();
 
 /* ไอคอนของเว็บแอป เสิร์ฟจาก GitHub Pages ของร้านเอง
@@ -233,13 +234,59 @@ function whoAmI() {
 
 function sheet_(key) {
   var s = sheetIfAny_(key);
-  if (!s) throw new Error('ไม่พบชีท "' + SH[key].name + '" — ยังไม่ได้สั่ง setup() หรือมีคนเปลี่ยนชื่อชีท');
+  if (!s) {
+    var have = '';
+    try {
+      var all = ss_().getSheets(), names = [];
+      for (var i = 0; i < all.length; i++) names.push(all[i].getName());
+      have = names.join(' · ');
+    } catch (e) { have = ''; }
+    throw new Error('ไม่พบชีท "' + SH[key].name + '" — ยังไม่ได้สั่ง setup() หรือมีคนเปลี่ยนชื่อชีท' +
+      (have ? '\n\nชีทที่มีอยู่ในไฟล์นี้: ' + have : ''));
+  }
   return s;
+}
+
+/**
+ * ตัดสิ่งที่ตามองไม่เห็นออกจากชื่อชีทก่อนเทียบ
+ *
+ * ชื่อที่พิมพ์เองมักมีช่องว่างหัวท้ายติดมาโดยไม่รู้ตัว หรือเป็นช่องว่างไม่ตัดคำ
+ * ที่ก๊อปมาจากที่อื่น มองยังไงก็เหมือนกันเป๊ะแต่ getSheetByName ไม่เจอ
+ * แล้วทั้งร้านคีย์ออเดอร์ไม่ได้ทั้งวัน — เคยเกิดมาแล้ว จึงเทียบแบบไม่ถือสาตรงนี้
+ */
+function normSheetName_(s) {
+  return String(s == null ? '' : s)
+    .replace(/[\u00A0\u200B\u200C\u200D\uFEFF]/g, ' ')  // ช่องว่างไม่ตัดคำ + อักขระความกว้างศูนย์
+    .replace(/\s+/g, ' ')
+    .replace(/^ | $/g, '')
+    .toLowerCase();
+}
+
+/**
+ * หาชีทตามชื่อ โดยไม่ถือสาช่องว่างหัวท้ายกับตัวพิมพ์ใหญ่เล็ก
+ *
+ * ใช้ตัวนี้แทน getSheetByName ทุกที่ ไม่งั้นฝั่ง setup() จะมองไม่เห็นชีทที่ชื่อ
+ * เพี้ยนไปหนึ่งช่องว่าง แล้วสร้างชีทเปล่าซ้ำขึ้นมาอีกใบ ซึ่งแย่กว่าเดิม
+ */
+function findSheet_(ss, name) {
+  var s = ss.getSheetByName(name);
+  if (s) return s;
+
+  /* ชื่อไม่ตรงเป๊ะ ค่อยไล่ดูทีละแท็บ — ทางนี้เดินเฉพาะตอนหาไม่เจอ
+     ปกติจึงไม่เสียเวลาเพิ่มเลย */
+  var target = normSheetName_(name);
+  if (!target) return null;
+  var all = [];
+  try { all = ss.getSheets() || []; } catch (e) { return null; }
+  for (var i = 0; i < all.length; i++) {
+    if (normSheetName_(all[i].getName()) === target) return all[i];
+  }
+  return null;
 }
 
 /** เหมือน sheet_ แต่คืน null แทนที่จะโยน error — ใช้กับชีทที่ไม่มีก็ยังทำงานต่อได้ */
 function sheetIfAny_(key) {
-  return ss_().getSheetByName(SH[key].name) || null;
+  return findSheet_(ss_(), SH[key].name);
 }
 
 /**
@@ -403,7 +450,7 @@ function taxId_(v) {
 }
 
 function appCfg_() {
-  var s = ss_().getSheetByName(SH.app.name);
+  var s = sheetIfAny_('app');
   var out = {
     sender: { name: '', addr: '', tel: '' },
     shipFee: 0, freeOver: 0, codFee: 0, line: '',

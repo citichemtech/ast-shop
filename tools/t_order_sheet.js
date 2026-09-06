@@ -1822,20 +1822,20 @@ eq('ไม่มีช่องสูตรถูกแตะ', over37, []);
    ตอนนี้ตั้งไอดีที่ Script Properties ได้ ครั้งหน้าย้ายไฟล์จบใน 1 นาที */
 console.log('\n38. ตั้งไอดีไฟล์ชีทจากคุณสมบัติสคริปต์');
 
-var DEFAULT_ID = '1BS2aHMJbJpcMrqhF3QttihRXg4RR7oLv1VXMGw6ZFPs';
+var DEFAULT_ID = '1AcV0rYN6Mb_T3Z9e4mPaP6LsT1sP34Lop1l-22sSWCQ';
 
 eq('ไม่ได้ตั้งไว้ = ใช้ค่าตั้งต้นในโค้ด',
   FS.load(FS.build(), {}).SHEET_ID, DEFAULT_ID);
 
 eq('ตั้งไว้ = ใช้ค่าที่ตั้ง',
-  FS.load(FS.build(), { props: { SHEET_ID: '1AcV0rYN6Mb_TEST' } }).SHEET_ID,
-  '1AcV0rYN6Mb_TEST');
+  FS.load(FS.build(), { props: { SHEET_ID: '1TEST_ไอดีที่ตั้งเอง' } }).SHEET_ID,
+  '1TEST_ไอดีที่ตั้งเอง');
 
 /* คนก๊อปไอดีจากแถบที่อยู่มาวาง มักติดช่องว่างหัวท้ายมาด้วย
    ถ้าไม่ตัดทิ้ง จะได้ error "ไม่พบไฟล์" ทั้งที่ไอดีถูกทุกตัวอักษร */
 eq('ก๊อปมาแล้วติดช่องว่าง ต้องตัดให้',
-  FS.load(FS.build(), { props: { SHEET_ID: '  1AcV0rYN6Mb_TEST\n' } }).SHEET_ID,
-  '1AcV0rYN6Mb_TEST');
+  FS.load(FS.build(), { props: { SHEET_ID: '  1TEST_ไอดีที่ตั้งเอง\n' } }).SHEET_ID,
+  '1TEST_ไอดีที่ตั้งเอง');
 
 /* ลบค่าทิ้งแล้วเว้นช่องว่างไว้ ต้องถือว่าไม่ได้ตั้ง ไม่ใช่ตั้งเป็นค่าว่าง
    ไม่งั้นแอปจะไปเปิดไฟล์ชื่อ "" แล้วล่มทั้งระบบ */
@@ -1855,6 +1855,56 @@ console.log('\n   ไม่มีสูตรถูกเขียนทับ�
 var over38 = [];
 for (var nm38 in fx38.sheets) over38 = over38.concat(fx38.sheets[nm38].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over38, []);
+
+
+/* ====== 39. ชื่อชีทเพี้ยนไปหนึ่งช่องว่าง ต้องไม่ทำให้ทั้งร้านคีย์ออเดอร์ไม่ได้
+
+   6 ก.ย. หลังกู้ไฟล์ชีทมาใหม่ เจ้าของร้านพิมพ์ชื่อแท็บเองทั้ง 13 แท็บ
+   แล้ว setup() ล้มด้วย 'ไม่พบชีท "ตั้งค่า"' ทั้งที่บนจอชื่อเหมือนกันทุกตัวอักษร
+   — ต่างกันแค่ช่องว่างท้ายชื่อที่มองไม่เห็น
+
+   ของแบบนี้ห้ามหยุดร้านได้อีก ตัวโปรแกรมต้องยอมชื่อที่ต่างกันแค่ช่องว่างหรือตัวพิมพ์ */
+console.log('\n39. ชื่อชีทเพี้ยนเรื่องช่องว่างกับตัวพิมพ์ ต้องยังหาเจอ');
+
+/** เปลี่ยนชื่อแท็บในชีทจำลอง เหมือนคนดับเบิลคลิกแล้วพิมพ์ใหม่ */
+function renameTab(fx, from, to) {
+  var sh = fx.sheets[from];
+  if (!sh) throw new Error('ไม่มีแท็บชื่อ ' + from + ' ในชีทจำลอง');
+  delete fx.sheets[from];
+  sh.name = to;
+  fx.sheets[to] = sh;
+}
+
+var fx39 = FS.build();
+renameTab(fx39, 'ตั้งค่า', 'ตั้งค่า ');          // ช่องว่างท้ายชื่อ — ตัวที่ทำร้านล่มจริง
+renameTab(fx39, 'Log', 'log');                  // ตัวพิมพ์เล็กหมด
+renameTab(fx39, 'ล็อตสินค้า', ' ล็อตสินค้า');    // ช่องว่างหน้าชื่อ
+var api39 = FS.load(fx39, {});
+
+api39.setup();
+console.log('  ok   setup() ผ่านทั้งที่ชื่อสามแท็บเพี้ยน');
+
+var made39 = api39.createOrder(order({ cust: 'ลูกค้าชื่อแท็บเพี้ยน' }));
+truthy2('คีย์ออเดอร์ได้', !!made39.no);
+eq('อ่านกลับมาเจอ',
+  api39.getOrders(0).filter(function (o) { return o.no === made39.no }).length, 1);
+
+/* ลง Log ที่แท็บชื่อ log ตัวเล็ก ไม่ใช่สร้างแท็บ Log ใบใหม่ทิ้งไว้ */
+truthy2('ไม่ได้สร้างแท็บซ้ำขึ้นมาอีกใบ', !fx39.sheets['Log'] && !fx39.sheets['ตั้งค่า']);
+truthy2('ประวัติลงที่แท็บเดิมที่ชื่อตัวเล็ก',
+  rowsWith(fx39.sheets['log'], api39.SH.log.IN.type).length > 0);
+
+console.log('\n   ชื่อที่ต่างกันจริง ๆ ยังต้องฟ้องเหมือนเดิม และต้องบอกด้วยว่าในไฟล์มีแท็บอะไรบ้าง');
+var fx39b = FS.build();
+renameTab(fx39b, 'ตั้งค่า', 'ตั้งค่าระบบ');   // คนละชื่อ ไม่ใช่แค่ช่องว่าง
+var api39b = FS.load(fx39b, {});
+var msg39 = throws('ไม่พบชีทจริง ๆ ต้อง error', function () { api39b.setup(); }, 'ไม่พบชีท "ตั้งค่า"');
+truthy2('บอกรายชื่อแท็บที่มีอยู่ให้ด้วย', /ชีทที่มีอยู่ในไฟล์นี้: .*ตั้งค่าระบบ/.test(msg39 || ''));
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over39 = [];
+for (var nm39 in fx39.sheets) over39 = over39.concat(fx39.sheets[nm39].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over39, []);
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

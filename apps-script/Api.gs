@@ -1010,7 +1010,7 @@ function saveSignature(which, sig) {
   if (!key) throw new Error('ไม่รู้ว่าจะเก็บลายเซ็นของใคร');
 
   var json = signClean_(sig);
-  var s = ss_().getSheetByName(SH.app.name);
+  var s = sheetIfAny_('app');
   if (!s) throw new Error('ยังไม่มีชีท ' + SH.app.name + ' — สั่ง setup ก่อนหนึ่งครั้ง');
 
   var n = Math.max(1, s.getLastRow() - DATA_ROW + 1);

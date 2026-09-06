@@ -48,7 +48,7 @@ function setup() {
 
 function setupLotSheet_(ss) {
   var name = SH.lot.name;
-  var s = ss.getSheetByName(name);
+  var s = findSheet_(ss, name);
   var fresh = !s;
   if (fresh) s = ss.insertSheet(name);
 
@@ -105,7 +105,7 @@ function setupLotSheet_(ss) {
   s.getRange(DATA_ROW, 5, n, 2).setNumberFormat('dd/mm/yyyy');
   s.getRange(DATA_ROW, 7, n, 3).setNumberFormat('#,##0');
 
-  var skuRange = ss.getSheetByName(SH.prod.name).getRange('B6:B200');
+  var skuRange = findSheet_(ss, SH.prod.name).getRange('B6:B200');
   s.getRange(DATA_ROW, 2, n, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInRange(skuRange, true).setAllowInvalid(true).build()
   );
@@ -122,7 +122,7 @@ function setupLotSheet_(ss) {
 
 function setupCutSheet_(ss) {
   var name = SH.cut.name;
-  var s = ss.getSheetByName(name);
+  var s = findSheet_(ss, name);
   var fresh = !s;
   if (fresh) s = ss.insertSheet(name);
 
@@ -168,7 +168,7 @@ function setupCutSheet_(ss) {
  */
 function setupDocSheet_(ss) {
   var name = SH.doc.name;
-  var s = ss.getSheetByName(name);
+  var s = findSheet_(ss, name);
   var fresh = !s;
   if (fresh) s = ss.insertSheet(name);
 
@@ -471,7 +471,7 @@ function runClearOld_(doIt) {
     /* ใบกำกับภาษีที่ออกไปแล้วลบไม่ได้ตามกฎหมาย จึงไม่แตะ แต่ต้องบอกให้รู้
        ว่ามีใบที่ชี้ไปหาออเดอร์ที่ไม่มีอยู่แล้ว จะได้ไม่งงตอนเปิดชีท เอกสาร */
     var orphan = 0;
-    if (ss_().getSheetByName(SH.doc.name)) {
+    if (sheetIfAny_('doc')) {
       var ds = sheet_('doc'), dLast = formulaLimit_('doc');
       if (dLast >= DATA_ROW) {
         var dv = ds.getRange(DATA_ROW, SH.doc.IN.orderNo, dLast - DATA_ROW + 1, 1).getValues();
@@ -640,7 +640,7 @@ function scanCalc_(key) {
   var cols = cfg.CALC || [];
   var out = { flat: 0, rows: 0, good: 0, cols: cols };
   /* ชีทที่ยังไม่มีในไฟล์ให้ข้ามไป ไม่ใช่ล้มทั้งการซ่อม ชีทอื่นจะได้ซ่อมต่อได้ */
-  if (!cols.length || !ss_().getSheetByName(cfg.name)) { out.cols = []; return out; }
+  if (!cols.length || !sheetIfAny_(key)) { out.cols = []; return out; }
   var sh = sheet_(key);
   var limit = formulaLimit_(key);
   if (limit < DATA_ROW) return out;
@@ -1079,7 +1079,7 @@ function countRef_(s, cols) {
  * (จาก $B$150 เหลือ $B$117) ถ้าเพิ่มสินค้าเกินแถวนั้นจะนับไม่ครบเงียบ ๆ
  */
 function repairSummaryRange_() {
-  var s = ss_().getSheetByName('สรุปยอดขาย');
+  var s = findSheet_(ss_(), 'สรุปยอดขาย');
   if (!s) return '';
   var cell = s.getRange('B23');
   var f = String(cell.getFormula() || '');
@@ -1097,7 +1097,7 @@ function repairSummaryRange_() {
  */
 function setupAppSheet_(ss) {
   var name = SH.app.name;
-  var s = ss.getSheetByName(name);
+  var s = findSheet_(ss, name);
   var fresh = !s;
   if (fresh) s = ss.insertSheet(name);
   if (s.getMaxColumns() < 5) s.insertColumnsAfter(s.getMaxColumns(), 5 - s.getMaxColumns());
@@ -1205,7 +1205,7 @@ function setupAppSheet_(ss) {
 /* ------------------------------------ คอลัมน์ "ล็อตที่ตัด" ที่ ออเดอร์_รายการ */
 
 function setupItemLotColumn_(ss) {
-  var s = ss.getSheetByName(SH.item.name);
+  var s = findSheet_(ss, SH.item.name);
   if (!s) throw new Error('ไม่พบชีท ' + SH.item.name);
   var col = SH.item.lot;  // 17 = Q
 

@@ -31,6 +31,7 @@ Sheet.prototype.cell = function (r, c) {
 Sheet.prototype.setFormulaDown = function (col, fromRow, toRow, tag) {
   for (var r = fromRow; r <= toRow; r++) this.cell(r, col).f = tag || ('=F' + col);
 };
+Sheet.prototype.getName = function () { return this.name; };
 Sheet.prototype.getMaxRows = function () { return this.maxRows; };
 Sheet.prototype.getMaxColumns = function () { return this.cols; };
 Sheet.prototype.getLastRow = function () {
@@ -329,6 +330,12 @@ function load(fixture, opts) {
           setSpreadsheetTimeZone: function (t) { fixture.tz = t; },
           getUrl: function () { return 'https://docs.google.com/spreadsheets/d/FAKEID/edit'; },
           getSheetByName: function (n) { return fixture.sheets[n] || null; },
+          /* ไล่ดูทุกแท็บ — โค้ดจริงใช้ตอนชื่อชีทไม่ตรงเป๊ะ (ช่องว่างหัวท้าย/ตัวพิมพ์) */
+          getSheets: function () {
+            var out = [];
+            for (var n in fixture.sheets) out.push(fixture.sheets[n]);
+            return out;
+          },
           insertSheet: function (n) { return (fixture.sheets[n] = new Sheet(n, 13, 1006)); }
         };
       },
