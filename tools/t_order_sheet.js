@@ -2105,5 +2105,98 @@ truthy2('มีแถวบันทึกการซ่อมสูตร', lo
   return String(fx42.sheets['Log'].cell(r, api42.SH.log.IN.field).v).indexOf('VAT') > -1;
 }));
 
+
+/* ====== 43. รับของเข้าสต๊อก — ต้องลงสองชีทพร้อมกันเสมอ
+
+   7 ก.ย. 69 คีย์ออเดอร์ IPA ไม่ได้ เพราะในล็อตเหลือ 0 ทั้งที่ของมาถึงร้านแล้ว
+   ตอนนั้นการรับของต้องเปิดชีทลงเอง 2 ที่ (รับเข้า + ล็อตสินค้า)
+   ลืมอันใดอันหนึ่งคือพังเงียบ ๆ ทั้งคู่:
+     ลงแต่ล็อต    → ยอดคงเหลือเป็นศูนย์
+     ลงแต่รับเข้า → ขายไม่ได้เพราะ FEFO ไม่มีล็อตให้ตัด                     */
+console.log('\n43. รับของเข้าสต๊อก');
+
+function recvPayload(extra) {
+  var o = {
+    clientKey: 'rk-' + Math.random(), sku: 'CHEM-001', qty: 10, cost: 800,
+    date: '2026-09-07', type: 'ซื้อเข้า', doc: 'PO-26-005', ref: 'ร้านเคมีภัณฑ์',
+    note: '', staff: 'AEY', lotNo: 'L-กันยา', exp: '2027-09-07'
+  };
+  for (var k in (extra || {})) o[k] = extra[k];
+  return o;
+}
+
+var fx43 = FS.build({ lots: [{ sku: 'CHEM-001', lotNo: 'L-เดิม', exp: '2026-10-01', recv: '2026-08-01', qty: 3 }] });
+var api43 = FS.load(fx43, {});
+api43.setup();
+
+var R43 = fx43.sheets['รับเข้า'], L43 = fx43.sheets['ล็อตสินค้า'];
+var got43 = api43.receiveStock(recvPayload());
+
+truthy2('บันทึกสำเร็จ', got43.ok === true);
+var rRow = rowsWith(R43, api43.SH.recv.IN.sku).slice(-1)[0];
+eq('ลงชีท รับเข้า ครบทุกช่อง',
+  [R43.cell(rRow, api43.SH.recv.IN.sku).v, R43.cell(rRow, api43.SH.recv.IN.qty).v,
+   R43.cell(rRow, api43.SH.recv.IN.cost).v, R43.cell(rRow, api43.SH.recv.IN.type).v,
+   R43.cell(rRow, api43.SH.recv.IN.doc).v, R43.cell(rRow, api43.SH.recv.IN.staff).v],
+  ['CHEM-001', 10, 800, 'ซื้อเข้า', 'PO-26-005', 'AEY']);
+
+var lRows = rowsWith(L43, api43.SH.lot.IN.lotNo);
+var lRow = lRows.slice(-1)[0];
+eq('ลงชีท ล็อตสินค้า ให้ด้วยในครั้งเดียว',
+  [L43.cell(lRow, api43.SH.lot.IN.sku).v, L43.cell(lRow, api43.SH.lot.IN.lotNo).v,
+   L43.cell(lRow, api43.SH.lot.IN.qty).v],
+  ['CHEM-001', 'L-กันยา', 10]);
+eq('จำนวนสองชีทมาจากเลขเดียวกัน ไม่มีทางกรอกไม่ตรง',
+  R43.cell(rRow, api43.SH.recv.IN.qty).v, L43.cell(lRow, api43.SH.lot.IN.qty).v);
+eq('ยอดในล็อตรวมเพิ่มขึ้นจริง (3 เดิม + 10 ใหม่)', got43.lotRemain, 13);
+
+console.log('\n   ขายของที่เพิ่งรับเข้าได้ทันที ไม่ต้องรออะไร');
+var made43 = api43.createOrder(order({
+  cust: 'ลูกค้าหลังรับของ', items: [{ sku: 'CHEM-001', qty: 12, price: 1200 }]
+}));
+truthy2('คีย์ออเดอร์ 12 ชิ้นผ่าน (ก่อนรับของมีแค่ 3)', !!made43.no);
+
+console.log('\n   กดซ้ำ / เน็ตหลุดแล้วยิงใหม่ ต้องไม่ได้ของสองก้อน');
+var key43 = 'rk-กันซ้ำ';
+var a43 = api43.receiveStock(recvPayload({ clientKey: key43, lotNo: 'L-ซ้ำ' }));
+var b43 = api43.receiveStock(recvPayload({ clientKey: key43, lotNo: 'L-ซ้ำ' }));
+eq('ยิงซ้ำได้คำตอบเดิม ไม่เขียนเพิ่ม', [a43.recvRow, a43.lotRow], [b43.recvRow, b43.lotRow]);
+eq('มีล็อต L-ซ้ำ อยู่ใบเดียว', rowsWith(L43, api43.SH.lot.IN.lotNo).filter(function (r) {
+  return L43.cell(r, api43.SH.lot.IN.lotNo).v === 'L-ซ้ำ';
+}).length, 1);
+
+console.log('\n   ของที่คุมล็อตอยู่แล้ว ห้ามรับเข้าโดยไม่ใส่เลขล็อต');
+throws('ไม่ใส่ล็อตต้องไม่ยอม',
+  function () { api43.receiveStock(recvPayload({ lotNo: '' })); }, 'เป็นสินค้าที่คุมล็อต');
+throws('เลขล็อตซ้ำต้องไม่ยอม',
+  function () { api43.receiveStock(recvPayload({ lotNo: 'L-เดิม' })); }, 'มีอยู่แล้วในชีท');
+throws('จำนวนติดลบต้องไม่ยอม',
+  function () { api43.receiveStock(recvPayload({ qty: -5, lotNo: 'L-ลบ' })); }, 'ต้องมากกว่า 0');
+throws('รหัสสินค้าที่ไม่มีในฐานต้องไม่ยอม',
+  function () { api43.receiveStock(recvPayload({ sku: 'SKU-ไม่มีจริง', lotNo: 'L-x' })); }, 'ไม่มีรหัส');
+throws('ประเภทรับเข้าที่ไม่มีในชีท ตั้งค่า ต้องไม่ยอม',
+  function () { api43.receiveStock(recvPayload({ type: 'ยกเมฆ', lotNo: 'L-y' })); }, 'ไม่มีในตัวเลือก');
+throws('ไม่มี clientKey ต้องไม่ยอมบันทึก',
+  function () { api43.receiveStock(recvPayload({ clientKey: '', lotNo: 'L-z' })); }, 'clientKey');
+
+console.log('\n   ที่ปฏิเสธไปทั้งหมด ต้องไม่ทิ้งแถวค้างไว้ในชีทเลยสักแถว');
+eq('ไม่มีล็อตของใบที่ถูกปฏิเสธ', rowsWith(L43, api43.SH.lot.IN.lotNo).filter(function (r) {
+  return /^L-(ลบ|x|y|z)$/.test(String(L43.cell(r, api43.SH.lot.IN.lotNo).v));
+}).length, 0);
+
+console.log('\n   ของที่ไม่เคยคุมล็อต รับเข้าโดยไม่ใส่ล็อตได้');
+var plain43 = api43.receiveStock(recvPayload({ sku: 'SKU-141', qty: 25, cost: 35, lotNo: '', exp: '' }));
+truthy2('ผ่าน และบอกว่าไม่ได้ลงล็อต', plain43.ok && !plain43.lotNo && plain43.lotRemain === null);
+
+console.log('\n   ต้องลงบันทึกว่าใครรับของเข้า');
+truthy2('มีแถวรับของเข้าใน Log', rowsWith(fx43.sheets['Log'], api43.SH.log.IN.type).some(function (r) {
+  return String(fx43.sheets['Log'].cell(r, api43.SH.log.IN.type).v) === 'รับของเข้า';
+}));
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over43 = [];
+for (var nm43 in fx43.sheets) over43 = over43.concat(fx43.sheets[nm43].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over43, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

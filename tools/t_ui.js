@@ -1418,6 +1418,63 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ราคาต่อหน่วยถูกถอด VAT ออกแล้ว (120 ÷ 1.07)', f3.price1, '112.15');
   eq('ยอดสุทธิยังเท่ายอดบนใบ ไม่ได้บวก VAT ซ้ำ', f3.net, qTotal3);
 
+  /* ---------- 29. หน้ารับของเข้าสต๊อก ---------- */
+  console.log('\n29. รับของเข้าสต๊อก');
+  await page.click('.tabs button[data-go="recv"]');
+  await page.waitForTimeout(400);
+  truthy('เปิดหน้ารับของได้',
+    await page.evaluate(function () { return $('#pg-recv').style.display !== 'none' }));
+
+  /* ของที่คุมล็อต ต้องบอกให้ชัดว่าเลขล็อตเป็นของบังคับ */
+  var chemSku = await page.evaluate(function () {
+    for (var k in MOCK_BOOT.lots) return k;
+    return '';
+  });
+  await page.selectOption('#r-sku', chemSku);
+  await page.waitForTimeout(200);
+  truthy('บอกว่าสินค้าตัวนี้คุมล็อต',
+    /คุมล็อต ต้องใส่เลขล็อต/.test(await page.textContent('#r-lot-why')));
+  truthy('โชว์ยอดคงเหลือปัจจุบันให้ดูก่อนกรอก',
+    /ตอนนี้สต๊อกเหลือ/.test(await page.textContent('#r-now')));
+
+  console.log('\n   ลืมใส่เลขล็อต ต้องกันไว้ก่อนถึงเซิร์ฟเวอร์');
+  await page.fill('#r-qty', '12');
+  var sentBefore = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#btn-recv');
+  await page.waitForTimeout(400);
+  truthy('ขึ้นคำเตือนเรื่องเลขล็อต',
+    /ต้องใส่เลขล็อต/.test(await page.textContent('#err')));
+  eq('ไม่ได้ยิงขึ้นชีทเลย',
+    await page.evaluate(function () { return window.SENT.length }), sentBefore);
+
+  console.log('\n   กรอกครบแล้วบันทึกได้ และยอดคงเหลือขยับตาม');
+  var before29 = await page.evaluate(function (sku) {
+    return MOCK_BOOT.products.filter(function (p) { return p.sku === sku })[0].remain;
+  }, chemSku);
+  await page.fill('#r-lot', 'L-ทดสอบ29');
+  await page.fill('#r-exp', '2027-12-31');
+  await page.click('#btn-recv');
+  await page.waitForTimeout(1200);
+  var sent29 = await page.evaluate(function () { return window.SENT[window.SENT.length - 1] });
+  eq('ส่งจำนวนและเลขล็อตไปถูกต้อง',
+    [sent29.sku, sent29.qty, sent29.lotNo, sent29.exp],
+    [chemSku, 12, 'L-ทดสอบ29', '2027-12-31']);
+  truthy('มี clientKey กันบันทึกซ้ำติดไปด้วย', /^rs-/.test(String(sent29.clientKey || '')));
+  truthy('ขึ้นข้อความว่ารับของแล้ว พร้อมยอดคงเหลือ',
+    /รับ .* เข้า 12 ชิ้นแล้ว/.test(await page.textContent('#ok')));
+  eq('ยอดคงเหลือของสินค้าเพิ่มขึ้นจริง',
+    await page.evaluate(function (sku) {
+      return MOCK_BOOT.products.filter(function (p) { return p.sku === sku })[0].remain;
+    }, chemSku), before29 + 12);
+  eq('ล้างช่องจำนวนกับเลขล็อตให้พร้อมรับของก้อนถัดไป',
+    await page.evaluate(function () { return [$('#r-qty').value, $('#r-lot').value] }), ['', '']);
+
+  console.log('\n   หน้าคีย์ออเดอร์ต้องเห็นยอดใหม่ทันที ไม่ต้องเปิดแอปใหม่');
+  truthy('ตัวเลือกสินค้าในฟอร์มออเดอร์อัปเดตยอดคงเหลือแล้ว',
+    await page.evaluate(function (n) {
+      return $$('#items .it')[0].querySelector('.i-sku').innerHTML.indexOf('(เหลือ ' + n + ')') > -1;
+    }, before29 + 12));
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

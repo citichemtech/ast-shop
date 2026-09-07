@@ -2688,16 +2688,145 @@ $("#modal").addEventListener("click", function(e){ if(e.target===this) closeModa
 $("#m-close").onclick = closeModal;
 document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModal() });
 
+/* ------------------------------------------------------------ รับของเข้าสต๊อก
+
+   หน้านี้มีอยู่เพราะการรับของต้องลงสองชีทเสมอ (รับเข้า + ล็อตสินค้า)
+   ตอนที่ยังต้องเปิดชีทลงเอง ลืมอันใดอันหนึ่งเมื่อไรคือพังแบบเงียบ ๆ:
+   ลงแต่ล็อต ยอดคงเหลือเป็นศูนย์ · ลงแต่รับเข้า ขายไม่ได้เพราะไม่มีล็อตให้ตัด   */
+
+var RECV_KEY = "";     /* คีย์กันบันทึกซ้ำของครั้งนี้ ออกใหม่ทุกครั้งที่บันทึกสำเร็จ */
+var RECV_READY = false;
+
+function recvInit(){
+  if(RECV_READY) return;
+  RECV_READY = true;
+
+  $("#r-sku").innerHTML = prodOptions("");
+  fillSelect("#r-type", (BOOT && BOOT.lists && BOOT.lists.recvType) || ["ซื้อเข้า"]);
+  $("#r-date").value = todayISO();
+
+  /* ผู้บันทึกใช้รายชื่อชุดเดียวกับหน้าคีย์ออเดอร์ และจำคนล่าสุดไว้เหมือนกัน */
+  var by = $("#f-by");
+  $("#r-by").innerHTML = by ? by.innerHTML : "";
+  if(by && by.value) $("#r-by").value = by.value;
+
+  $("#r-sku").onchange = recvSkuChanged;
+  $("#btn-recv").onclick = recvSave;
+  recvSkuChanged();
+}
+
+/** ของตัวนี้คุมล็อตไหม เหลือเท่าไร — ตอบจากข้อมูลที่โหลดมาตอนเปิดแอป */
+function recvLotInfo(sku){
+  var lot = (BOOT && BOOT.lots) ? BOOT.lots[sku] : null;
+  return lot || null;
+}
+
+function recvSkuChanged(){
+  var sku = $("#r-sku").value;
+  var card = $("#r-lot-card");
+  if(!sku){
+    $("#r-now").textContent = "เลือกสินค้าก่อน";
+    card.style.display = "none";
+    return;
+  }
+  var p = null;
+  for(var i=0;i<CFG.products.length;i++) if(CFG.products[i].sku===sku){ p=CFG.products[i]; break }
+  var lot = recvLotInfo(sku);
+  var now = "ตอนนี้สต๊อกเหลือ " + ((p && p.remain!==null && p.remain!==undefined) ? p.remain : "—") + " " + ((p&&p.unit)||"ชิ้น");
+  if(lot) now += " · ในล็อตเหลือ " + lot.total + " (" + lot.count + " ล็อต)";
+  $("#r-now").textContent = now;
+
+  /* คุมล็อตอยู่แล้ว = บังคับใส่เลขล็อต · ยังไม่เคยมีล็อต = ใส่ก็ได้ไม่ใส่ก็ได้ */
+  card.style.display = "";
+  $("#r-lot-why").innerHTML = lot
+    ? "<b>สินค้าตัวนี้คุมล็อต ต้องใส่เลขล็อต</b> ไม่งั้นของเข้าสต๊อกแต่ขายไม่ได้ เพราะระบบไม่มีล็อตให้ตัด"
+    : "สินค้าตัวนี้ยังไม่เคยลงล็อตไว้ ใส่หรือไม่ใส่ก็ได้ — ถ้าเป็นของที่มีวันหมดอายุ แนะนำให้ใส่";
+}
+
+function recvSave(){
+  clearMsg();
+  var sku = $("#r-sku").value;
+  var qty = Number($("#r-qty").value);
+  if(!sku){ showErr("ยังไม่ได้เลือกสินค้า"); return }
+  if(!(qty > 0)){ showErr("จำนวนที่รับเข้าต้องมากกว่า 0"); return }
+
+  var lot = recvLotInfo(sku);
+  var lotNo = $("#r-lot").value.trim();
+  if(lot && !lotNo){
+    showErr("สินค้าตัวนี้คุมล็อต ต้องใส่เลขล็อตด้วย — ถ้าลงแต่จำนวน ของจะเข้าสต๊อกแต่ขายไม่ได้");
+    return;
+  }
+
+  /* คีย์เดิมตลอดจนกว่าจะบันทึกสำเร็จ กดซ้ำหรือเน็ตหลุดแล้วยิงใหม่จึงไม่ได้ของสองก้อน */
+  if(!RECV_KEY) RECV_KEY = "rs-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+
+  var btn = $("#btn-recv");
+  btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+  call("receiveStock", [{
+    clientKey: RECV_KEY, sku: sku, qty: qty,
+    cost: $("#r-cost").value.trim(), date: $("#r-date").value,
+    type: $("#r-type").value, doc: $("#r-doc").value.trim(),
+    ref: $("#r-ref").value.trim(), note: $("#r-note").value.trim(),
+    staff: $("#r-by").value, lotNo: lotNo, exp: $("#r-exp").value
+  }], function(res){
+    btn.disabled = false; btn.textContent = "บันทึกรับของเข้า";
+    if(!res){ showErr("ชีทตอบกลับมาไม่ได้ — ลองกดใหม่อีกครั้ง"); return }
+    RECV_KEY = "";
+    recvDone(res);
+  }, function(m){
+    btn.disabled = false; btn.textContent = "บันทึกรับของเข้า";
+    showErr(m);
+  });
+}
+
+function recvDone(res){
+  /* ยอดที่โชว์เป็นตัวที่อ่านกลับจากชีทหลังคำนวณเสร็จ ไม่ใช่บวกเอาเองในแอป */
+  var lines = [
+    "รับ " + esc(res.name || res.sku) + " เข้า " + res.qty + " ชิ้นแล้ว",
+    res.lotNo ? "ลงล็อต " + esc(res.lotNo) + " ให้ด้วย" : "สินค้าตัวนี้ไม่ได้คุมล็อต ลงเฉพาะชีทรับเข้า"
+  ];
+  if(res.remain !== null && res.remain !== undefined) lines.push("สต๊อกคงเหลือตอนนี้ " + res.remain);
+  if(res.lotRemain !== null && res.lotRemain !== undefined) lines.push("ในล็อตรวม " + res.lotRemain);
+  showOk(lines.join("<br>"));
+  toast("บันทึกรับของเข้าแล้ว");
+
+  /* ยอดคงเหลือในหน้าคีย์ออเดอร์ต้องตรงกับของจริงทันที ไม่ใช่รอเปิดแอปใหม่ */
+  call("getBootstrap", [], function(b){
+    if(!b) return;
+    BOOT = b;
+    CFG.products = (b.products||[]).map(function(p){
+      return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
+               unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
+               reorder:p.reorder };
+    });
+    var keep = $("#r-sku").value;
+    $("#r-sku").innerHTML = prodOptions(keep);
+    $("#r-sku").value = keep;
+    itemRows().forEach(function(r){
+      var sel = r.querySelector(".i-sku");
+      var v = sel.value;
+      sel.innerHTML = prodOptions(v);
+      sel.value = v;
+    });
+    recvSkuChanged();
+  }, function(){ /* โหลดยอดใหม่ไม่ได้ไม่ใช่เรื่องใหญ่ ของลงชีทไปแล้ว */ });
+
+  ["r-qty","r-cost","r-lot","r-exp","r-doc","r-ref","r-note"].forEach(function(id){
+    $("#"+id).value = "";
+  });
+}
+
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
 
 function go(page){
-  ["new","list","quote","sum"].forEach(function(p){
+  ["new","list","recv","quote","sum"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===page) });
   if(page==="list") loadOrders();
   if(page==="sum")  loadSummary();
   if(page==="quote") quoteInit();
+  if(page==="recv") recvInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){

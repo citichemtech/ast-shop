@@ -383,6 +383,81 @@ textarea{resize:vertical}
   </section>
 
   <!-- --------------------------------------------------------- สรุป -->
+  <!-- รับของเข้าสต๊อก — ลงชีท รับเข้า กับ ล็อตสินค้า พร้อมกันในครั้งเดียว
+       ก่อนมีหน้านี้ต้องเปิดชีทลงเองสองที่ ซึ่งลืมอันใดอันหนึ่งเมื่อไรคือพังเงียบ ๆ -->
+  <section id="pg-recv" style="display:none">
+    <div class="card">
+      <div class="fld">
+        <label>สินค้าที่รับเข้า</label>
+        <select id="r-sku"></select>
+        <div class="hint" id="r-now">เลือกสินค้าก่อน</div>
+      </div>
+      <div class="two">
+        <div class="fld">
+          <label>จำนวนที่รับเข้า</label>
+          <input id="r-qty" type="number" inputmode="decimal" min="0" step="any" placeholder="0">
+        </div>
+        <div class="fld">
+          <label>ต้นทุนต่อหน่วย (บาท)</label>
+          <input id="r-cost" type="number" inputmode="decimal" min="0" step="any" placeholder="เว้นว่างได้">
+        </div>
+      </div>
+      <div class="two">
+        <div class="fld">
+          <label>วันที่รับเข้า</label>
+          <input id="r-date" type="date">
+        </div>
+        <div class="fld">
+          <label>ประเภทรับเข้า</label>
+          <select id="r-type"></select>
+        </div>
+      </div>
+      <div class="two">
+        <div class="fld">
+          <label>เลขที่เอกสาร</label>
+          <input id="r-doc" placeholder="เช่น PO-26-005">
+        </div>
+        <div class="fld">
+          <label>อ้างอิง / ผู้ขาย</label>
+          <input id="r-ref" placeholder="ชื่อร้านที่ซื้อมา">
+        </div>
+      </div>
+    </div>
+
+    <!-- กล่องล็อตขึ้นเองเมื่อสินค้าตัวนั้นคุมล็อต และบังคับกรอกด้วย
+         เพราะลงรับเข้าเฉย ๆ โดยไม่มีล็อต = ของเข้าสต๊อกแต่ขายไม่ได้ -->
+    <div class="card" id="r-lot-card">
+      <div class="sec-hd"><h2>ล็อตของก้อนนี้</h2></div>
+      <div class="hint" id="r-lot-why" style="padding:0 2px 8px"></div>
+      <div class="two">
+        <div class="fld">
+          <label>เลขล็อต</label>
+          <input id="r-lot" placeholder="เช่น I1070926">
+        </div>
+        <div class="fld">
+          <label>วันหมดอายุ</label>
+          <input id="r-exp" type="date">
+        </div>
+      </div>
+      <div class="hint">ไม่มีวันหมดอายุก็เว้นว่างได้ · ระบบจะตัดล็อตที่หมดอายุก่อนเสมอ (FEFO)</div>
+    </div>
+
+    <div class="card">
+      <div class="fld">
+        <label>หมายเหตุ</label>
+        <input id="r-note" placeholder="เว้นว่างได้">
+      </div>
+      <div class="fld">
+        <label>ผู้บันทึก</label>
+        <select id="r-by"></select>
+      </div>
+      <button class="big" id="btn-recv">บันทึกรับของเข้า</button>
+      <div class="hint">บันทึกครั้งเดียวลงทั้งชีท <b>รับเข้า</b> และ <b>ล็อตสินค้า</b>
+        จำนวนสองที่มาจากเลขเดียวกันเสมอ จึงไม่มีทางกรอกไม่ตรงกัน</div>
+    </div>
+    <div id="r-done"></div>
+  </section>
+
   <section id="pg-sum" style="display:none">
     <!-- สองกล่องนี้อยู่บนสุดโดยตั้งใจ เป็นเรื่องที่ต้องรู้ก่อนดูยอดขาย
          เงินที่ยังไม่ได้เก็บ และของที่กำลังจะหมด -->
@@ -405,6 +480,7 @@ textarea{resize:vertical}
 <div class="tabs">
   <button data-go="new" class="on"><em>＋</em>คีย์ออเดอร์</button>
   <button data-go="list"><em>▤</em>ออเดอร์</button>
+  <button data-go="recv"><em>📥</em>รับของ</button>
   <button data-go="quote"><em>◇</em>เสนอราคา</button>
   <button data-go="sum"><em>▦</em>สรุปยอด</button>
 </div>

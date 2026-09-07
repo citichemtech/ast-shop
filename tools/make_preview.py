@@ -374,6 +374,28 @@ window.google = { script: { run: (function(){
                  doc: JSON.parse(JSON.stringify(f.doc)) };
       });
     },
+    /* รับของเข้า — ของจริงเขียนสองชีท ที่นี่ขยับตัวเลขในข้อมูลจำลองให้เหมือนกัน
+       สำคัญตรงที่ต้องคืน remain / lotRemain กลับมา เพราะหน้าจอเอาไปโชว์ */
+    receiveStock: function(p){
+      window.SENT.push(p);
+      reply(function(){
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        var pr = MOCK_BOOT.products.filter(function(x){ return x.sku===p.sku })[0];
+        if(!pr) throw new Error("ไม่มีรหัส "+p.sku+" ในชีท ฐานสินค้า");
+        var qty = Number(p.qty)||0;
+        if(!(qty>0)) throw new Error("จำนวนที่รับเข้าต้องมากกว่า 0");
+        var lot = MOCK_BOOT.lots[p.sku];
+        if(lot && !p.lotNo) throw new Error(p.sku+" เป็นสินค้าที่คุมล็อต — ต้องใส่เลขล็อตด้วย");
+        if(pr.remain !== null && pr.remain !== undefined) pr.remain = Number(pr.remain) + qty;
+        if(p.lotNo){
+          if(!lot) lot = MOCK_BOOT.lots[p.sku] = { total:0, count:0, next:null };
+          lot.total += qty; lot.count += 1;
+        }
+        return { ok:true, sku:p.sku, name:pr.name, qty:qty, lotNo:p.lotNo||"",
+                 exp:p.exp||"", remain:(pr.remain===undefined?null:pr.remain),
+                 lotRemain:(p.lotNo && lot)?lot.total:null, recvRow:9, lotRow:p.lotNo?9:0 };
+      });
+    },
     createOrder: function(p){
       window.SENT.push(p);
       reply(function(){

@@ -2219,3 +2219,158 @@ function pickFrom_(v, list, label) {
   throw new Error(label + ' "' + x + '" ไม่มีในตัวเลือกของชีท ตั้งค่า — ' +
     'ที่มีคือ ' + list.join(' / '));
 }
+
+/* ------------------------------------------------------- รับของเข้าสต๊อก */
+
+/**
+ * รับของเข้า — ลงชีท รับเข้า และ ล็อตสินค้า พร้อมกันในครั้งเดียว
+ *
+ * ทำไมต้องเป็นคำสั่งเดียว ไม่ใช่ให้เปิดชีทลงเองสองที่:
+ * เคมีที่คุมล็อตต้องมีทั้งสองแถวเสมอ ขาดอันใดอันหนึ่งคือพัง และพังแบบเงียบ ๆ ด้วย
+ *   ลงแต่ล็อต    → ยอดคงเหลือยังเป็นศูนย์ ทั้งที่ล็อตบอกว่ามีของ
+ *   ลงแต่รับเข้า → สต๊อกเพิ่มแต่ขายไม่ได้ เพราะไม่มีล็อตให้ FEFO ตัด
+ * เจ้าของร้านเจอกับตัวมาแล้ว 7 ก.ย. 69 (IPA 1000ml ขายไม่ได้เพราะล็อตเหลือ 0)
+ *
+ * จำนวนสองชีทมาจากตัวเลขเดียวกันเสมอ จึงไม่มีทางกรอกไม่ตรงกัน
+ * ล้มกลางทางเมื่อไร แถวที่เพิ่งเขียนถูกล้างทิ้งทั้งคู่ ไม่ทิ้งของครึ่งใบไว้ในชีท
+ */
+function receiveStock(payload) {
+  var email = requireStaff_();
+  var p = payload || {};
+
+  var clientKey = String(p.clientKey || '').trim();
+  if (!clientKey) throw new Error('คำขอไม่มี clientKey — ระบบกันบันทึกซ้ำไม่ได้ ไม่บันทึกให้');
+
+  var props = PropertiesService.getScriptProperties();
+  var done = props.getProperty('rs_' + clientKey);
+  if (done) return jsonSafe_(JSON.parse(done));
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('มีคนกำลังบันทึกอยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
+  }
+
+  var written = { recv: 0, lot: 0 };
+  try {
+    done = props.getProperty('rs_' + clientKey);
+    if (done) return jsonSafe_(JSON.parse(done));
+
+    var plan = planReceive_(p, email);
+
+    var rRow = nextRow_('recv', SH.recv.IN.sku);
+    if (!rRow) throw new Error('ชีท ' + SH.recv.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
+      formulaLimit_('recv') + ') — ต้องลากสูตรลงเพิ่มก่อน');
+    writeRow_('recv', rRow, {
+      date: plan.date, doc: plan.doc, type: plan.type, ref: plan.ref,
+      sku: plan.sku, qty: plan.qty, cost: plan.cost, staff: plan.staff, note: plan.note
+    });
+    written.recv = rRow;
+
+    if (plan.lotNo) {
+      var lRow = nextRow_('lot', SH.lot.IN.sku);
+      if (!lRow) throw new Error('ชีท ' + SH.lot.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
+        formulaLimit_('lot') + ') — ต้องลากสูตรลงเพิ่มก่อน');
+      writeRow_('lot', lRow, {
+        sku: plan.sku, lotNo: plan.lotNo, exp: plan.exp, recv: plan.date,
+        qty: plan.qty, note: plan.note
+      });
+      written.lot = lRow;
+    }
+
+    SpreadsheetApp.flush();
+
+    /* อ่านยอดกลับจากชีทที่คำนวณเสร็จแล้ว ไม่ใช่บวกเอาเองในโค้ด
+       ตัวเลขที่โชว์ให้คนอ่านต้องเป็นตัวเดียวกับที่ชีทเห็น ไม่งั้นเถียงกันทีหลัง */
+    var stock = readStock_();
+    var lots = readLots_()[plan.sku] || [];
+    var lotLeft = 0;
+    for (var i = 0; i < lots.length; i++) lotLeft += lots[i].remain;
+
+    var res = {
+      ok: true, sku: plan.sku, name: plan.name, qty: plan.qty,
+      lotNo: plan.lotNo, exp: p.exp || '',
+      remain: stock[plan.sku] === undefined ? null : stock[plan.sku],
+      lotRemain: plan.lotNo ? lotLeft : null,
+      recvRow: written.recv, lotRow: written.lot
+    };
+
+    props.setProperty('rs_' + clientKey, JSON.stringify(res));
+    writeLog_(email, 'รับของเข้า', SH.recv.name, plan.doc,
+      plan.sku + (plan.lotNo ? ' ล็อต ' + plan.lotNo : ''), '', plan.qty,
+      'รับของเข้าจากแอป โดย ' + plan.staff + ' (บัญชี ' + email + ')');
+
+    return jsonSafe_(res);
+  } catch (err) {
+    try {
+      if (written.lot) clearRow_('lot', written.lot);
+      if (written.recv) clearRow_('recv', written.recv);
+      SpreadsheetApp.flush();
+    } catch (e) {
+      Logger.log('ถอยกลับการรับของไม่สำเร็จ: ' + e.message + ' ' + JSON.stringify(written));
+    }
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ตรวจทุกอย่างให้ครบก่อนเขียนแม้แต่แถวเดียว
+ *
+ * ตรวจก่อนเขียนเสมอ ไม่ใช่เขียนไปตรวจไป — ของที่เขียนลงชีทแล้วถอยกลับได้ไม่หมด
+ * ทุกครั้ง (สูตรชีทอื่นอ่านไปแล้ว) จึงต้องมั่นใจก่อนว่าจะไม่ล้มกลางทาง
+ */
+function planReceive_(p, email) {
+  var lists = cfgLists_();
+
+  var sku = String(p.sku || '').trim();
+  if (!sku) throw new Error('ยังไม่ได้เลือกสินค้า');
+
+  var prods = readProducts_();
+  var prod = null;
+  for (var i = 0; i < prods.length; i++) if (prods[i].sku === sku) { prod = prods[i]; break; }
+  if (!prod) throw new Error('ไม่มีรหัส ' + sku + ' ในชีท ' + SH.prod.name);
+
+  var qty = Number(p.qty);
+  if (!isFinite(qty) || qty <= 0) throw new Error('จำนวนที่รับเข้าต้องมากกว่า 0');
+
+  /* ต้นทุนเว้นว่างได้ (ของแถม ของคืน ปรับยอด) แต่ถ้าใส่มาต้องเป็นตัวเลขที่ไม่ติดลบ */
+  var cost = null;
+  if (p.cost !== '' && p.cost !== null && p.cost !== undefined) {
+    cost = Number(p.cost);
+    if (!isFinite(cost) || cost < 0) throw new Error('ต้นทุนต่อหน่วยไม่ถูกต้อง');
+  }
+
+  var type = pickFrom_(p.type, lists.recvType, 'ประเภทรับเข้า');
+  var date = parseDate_(p.date) || new Date();
+
+  var lotNo = String(p.lotNo || '').trim();
+  var exp = null;
+  if (lotNo) {
+    exp = parseDate_(p.exp);
+    if (p.exp && !exp) throw new Error('วันหมดอายุอ่านไม่ออก — ใส่แบบ 2027-09-07');
+    var have = readLots_()[sku] || [];
+    for (var k = 0; k < have.length; k++) {
+      if (have[k].lotNo === lotNo) {
+        throw new Error('เลขล็อต ' + lotNo + ' ของ ' + sku + ' มีอยู่แล้วในชีท ' +
+          SH.lot.name + ' (แถว ' + have[k].row + ') — ใช้เลขล็อตซ้ำไม่ได้');
+      }
+    }
+  } else {
+    /* สินค้าที่เคยลงล็อตไว้แล้ว ถ้ารับเข้าโดยไม่ใส่ล็อต ยอดสองที่จะเริ่มไม่ตรงกันทันที
+       และจะขายของล็อตใหม่ไม่ได้เลยเพราะ FEFO ไม่เห็นของก้อนนี้ */
+    var known = readLots_()[sku];
+    if (known && known.length) {
+      throw new Error(sku + ' เป็นสินค้าที่คุมล็อต (มี ' + known.length + ' ล็อตในชีทแล้ว) ' +
+        '— ต้องใส่เลขล็อตด้วย ไม่งั้นยอดสต๊อกกับยอดล็อตจะไม่ตรงกัน');
+    }
+  }
+
+  return {
+    sku: sku, name: prod.name, qty: qty, cost: cost, type: type, date: date,
+    doc: String(p.doc || '').trim(), ref: String(p.ref || '').trim(),
+    note: String(p.note || '').trim(),
+    staff: String(p.staff || '').trim() || email,
+    lotNo: lotNo, exp: exp
+  };
+}
