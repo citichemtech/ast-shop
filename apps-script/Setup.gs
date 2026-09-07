@@ -634,11 +634,63 @@ function checkSheet() {
   return msg;
 }
 
-/** นับช่องที่ควรเป็นสูตรตาม CALC แต่กลายเป็นค่านิ่ง พร้อมบอกแถวต้นแบบที่ยังดี */
+/**
+ * เลขนิ่งที่ค้างอยู่ใต้แถวสุดท้ายที่ยังมีสูตร — อ่านอย่างเดียว ไม่ลบอะไร
+ *
+ * เกิดตอนมีคนก๊อปช่องสูตรแล้ว "วางเฉพาะค่า" ลากยาวเกินแถวที่มีสูตรจริง
+ * ตอนนี้ยังไม่ทำอะไรผิดเพราะระบบไม่เขียนออเดอร์เกินแถวที่มีสูตรอยู่แล้ว
+ * แต่วันที่ลากสูตรลงมาเพิ่ม ยอดผิดพวกนี้จะกลายเป็นยอดของออเดอร์ใหม่ทันที
+ */
+function calcJunkBelow_(key) {
+  var cfg = SH[key];
+  var out = { n: 0, from: 0, to: 0 };
+  var cols = cfg.CALC || [];
+  if (!cols.length) return out;
+  var sh = sheetIfAny_(key);
+  if (!sh) return out;
+  var start = formulaLimit_(key) + 1;
+  var last = sh.getLastRow();
+  if (last < start) return out;
+
+  var wide = sh.getLastColumn();
+  var v = sh.getRange(start, 1, last - start + 1, wide).getValues();
+  var f = sh.getRange(start, 1, last - start + 1, wide).getFormulas();
+  for (var i = 0; i < v.length; i++) {
+    for (var k = 0; k < cols.length; k++) {
+      var c = cols[k];
+      if (c > wide) continue;
+      if (String(f[i][c - 1] || '').charAt(0) === '=') continue;
+      var val = v[i][c - 1];
+      if (val === '' || val === null || val === undefined) continue;
+      out.n++;
+      if (!out.from) out.from = start + i;
+      out.to = start + i;
+    }
+  }
+  return out;
+}
+
+/**
+ * ช่องสูตรช่องนี้ยังใช้ได้ไหม — คำตอบเดียวที่ทั้งการตรวจและการซ่อมใช้ร่วมกัน
+ *
+ * '' = ปกติ · 'flat' = ถูกพิมพ์ทับจนไม่เหลือสูตร · 'ref' = ยังเป็นสูตรแต่ชี้ไปหาช่องที่ถูกลบ
+ *
+ * ตัว 'ref' สำคัญไม่แพ้กัน และเคยหลุดมาแล้ว: 7 ก.ย. 69 ช่อง VAT กับยอดสุทธิของ
+ * ใบที่ "รับ VAT" เป็น =...#REF!... ทั้งคอลัมน์ ตัวตรวจเดิมเห็นว่าขึ้นต้นด้วย =
+ * ก็นับว่าปกติ เลยไม่ซ่อมให้ ทั้งที่ใบละพันบาทอ่านยอดไม่ได้เลยสักใบ
+ */
+function calcBad_(f) {
+  f = String(f == null ? '' : f);
+  if (f.charAt(0) !== '=') return 'flat';
+  if (f.indexOf('#REF!') > -1) return 'ref';
+  return '';
+}
+
+/** นับช่องที่ควรเป็นสูตรตาม CALC แต่ใช้ไม่ได้แล้ว พร้อมบอกแถวต้นแบบที่ยังดี */
 function scanCalc_(key) {
   var cfg = SH[key];
   var cols = cfg.CALC || [];
-  var out = { flat: 0, rows: 0, good: 0, cols: cols };
+  var out = { flat: 0, ref: 0, bad: 0, rows: 0, good: 0, cols: cols };
   /* ชีทที่ยังไม่มีในไฟล์ให้ข้ามไป ไม่ใช่ล้มทั้งการซ่อม ชีทอื่นจะได้ซ่อมต่อได้ */
   if (!cols.length || !sheetIfAny_(key)) { out.cols = []; return out; }
   var sh = sheet_(key);
@@ -651,8 +703,9 @@ function scanCalc_(key) {
     var whole = true;
     for (var k = 0; k < cols.length; k++) {
       var c = cols[k];
-      var isF = c <= out.f[i].length && String(out.f[i][c - 1] || '').charAt(0) === '=';
-      if (!isF) { out.flat++; whole = false; }
+      var why = c <= out.f[i].length ? calcBad_(out.f[i][c - 1]) : 'flat';
+      if (!why) continue;
+      out[why]++; out.bad++; whole = false;
     }
     /* แถวต้นแบบคือแถวแรกที่ทุกช่องสูตรยังครบ ใช้เป็นตัวคัดลอกไปซ่อมแถวที่พัง */
     if (whole && !out.good) out.good = DATA_ROW + i;
@@ -688,10 +741,25 @@ function repairOrderSheets() {
         '(วัดจากคอลัมน์ที่ ' + cfg.probe + ') — ต้องกู้ชีทจากประวัติเวอร์ชันของ Google');
       continue;
     }
-    if (!before.flat) { out.push('  ' + cfg.name + ': ปกติดีอยู่แล้ว'); continue; }
+    /* เลขนิ่งที่ค้างอยู่ "ใต้" แถวสุดท้ายที่มีสูตร ตัวซ่อมไม่แตะ เพราะไม่รู้ว่า
+       เจ้าของร้านตั้งใจเขียนอะไรไว้เองหรือเปล่า แต่ต้องบอกให้รู้ทุกครั้ง
+       ถึงจะไม่มีอะไรต้องซ่อมก็ตาม — วันที่ลากสูตรลงมาเพิ่ม ยอดผิดพวกนี้จะติดมาด้วย */
+    var junk = calcJunkBelow_(key);
+    var junkMsg = junk.n
+      ? '  ' + cfg.name + ': มีเลขนิ่งค้างอยู่ใต้แถวสุดท้ายที่มีสูตร ' + junk.n +
+        ' ช่อง (แถว ' + junk.from + '-' + junk.to + ') — เลือกช่วงนั้นแล้วกด Delete ทิ้ง ' +
+        'ตัวซ่อมไม่ลบให้เพราะไม่รู้ว่าตั้งใจเขียนไว้เองหรือเปล่า'
+      : '';
+
+    if (!before.bad) {
+      out.push('  ' + cfg.name + ': ปกติดีอยู่แล้ว');
+      if (junkMsg) out.push(junkMsg);
+      continue;
+    }
     if (!before.good) {
-      out.push('  ' + cfg.name + ': เสีย ' + before.flat + ' ช่อง แต่ไม่มีแถวไหนสูตรครบเลย ' +
+      out.push('  ' + cfg.name + ': เสีย ' + before.bad + ' ช่อง แต่ไม่มีแถวไหนสูตรครบเลย ' +
         'จึงไม่มีต้นแบบให้คัดลอก — ต้องซ่อมด้วยมือ');
+      if (junkMsg) out.push(junkMsg);
       continue;
     }
 
@@ -705,7 +773,7 @@ function repairOrderSheets() {
         var bad = false;
         if (r < before.rows) {
           var row = before.f[r];
-          bad = !(c <= row.length && String(row[c - 1] || '').charAt(0) === '=');
+          bad = c > row.length || !!calcBad_(row[c - 1]);
         }
         if (bad) { if (!len) start = DATA_ROW + r; len++; continue; }
         if (len) {
@@ -720,8 +788,11 @@ function repairOrderSheets() {
     SpreadsheetApp.flush();
     var after = scanCalc_(key);
     total += fixedCells;
-    out.push('  ' + cfg.name + ': ซ่อม ' + fixedCells + ' ช่อง (เหลือ ' + after.flat + ') ' +
+    out.push('  ' + cfg.name + ': ซ่อม ' + fixedCells + ' ช่อง (เหลือ ' + after.bad + ') ' +
+      '— เลขนิ่ง ' + before.flat + ' · #REF! ' + before.ref + ' ' +
       'ใช้แถว ' + before.good + ' เป็นต้นแบบ');
+
+    if (junkMsg) out.push(junkMsg);
   }
 
   var msg = 'ซ่อมสูตรของชีทออเดอร์\n' + (out.length ? out.join('\n') : '  ไม่มีอะไรต้องซ่อม') +

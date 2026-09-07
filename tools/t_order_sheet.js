@@ -1985,5 +1985,72 @@ var over40 = [];
 for (var nm40 in fx40.sheets) over40 = over40.concat(fx40.sheets[nm40].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over40, []);
 
+
+/* ====== 41. ซ่อมสูตรที่ยังเป็นสูตรอยู่ แต่ชี้ไปหาช่องที่ถูกลบ
+
+   7 ก.ย. 69: ช่อง VAT (M) กับ ยอดชำระสุทธิ (N) ของใบที่ "รับ VAT" เป็น #REF! ทั้งคอลัมน์
+   repairOrderSheets เดิมมองแค่ว่า "ขึ้นต้นด้วย = ไหม" ก็เลยนับว่าปกติ ไม่ซ่อมให้
+   เจ้าของร้านต้องมาก๊อปสูตรเองแล้ววางผิดเป็นเลขนิ่ง 542.50 เท่ากันทั้งคอลัมน์
+   ทั้งสองอาการต้องซ่อมได้ด้วยคำสั่งเดียว */
+console.log('\n41. ซ่อมสูตรที่เป็น #REF! และสูตรที่ถูกวางทับเป็นเลขนิ่ง');
+
+var fx41 = FS.build();
+var api41 = FS.load(fx41, {});
+api41.setup();
+api41.createOrder(order({ cust: 'ใบที่หนึ่ง' }));
+api41.createOrder(order({ cust: 'ใบที่สอง' }));
+
+var H41 = fx41.sheets['ออเดอร์_หัวบิล'];
+var VAT_COL = api41.SH.head.vatAmt;   /* M */
+var NET_COL = api41.SH.head.net;      /* N */
+
+/* อาการที่ 1 — ยังเป็นสูตร แต่ข้างในมี #REF! (ตัวที่หลุดมาของจริง) */
+H41.cell(DATA_ROW + 1, VAT_COL).f = "=IF($I7=\"รับ VAT\",ROUND($J7*#REF!,2),0)";
+/* อาการที่ 2 — ถูกวางทับด้วยเลขนิ่ง 542.50 เท่ากันทุกแถว */
+H41.cell(DATA_ROW + 1, NET_COL).f = null;
+H41.cell(DATA_ROW + 1, NET_COL).v = 542.5;
+
+var scanBefore = api41.scanCalc_('head');
+eq('ตรวจเจอทั้งสองอาการ แยกชนิดถูก',
+  [scanBefore.ref, scanBefore.flat, scanBefore.bad], [1, 1, 2]);
+truthy2('มีแถวต้นแบบที่ยังดีให้ใช้', scanBefore.good === DATA_ROW);
+
+var msg41 = api41.repairOrderSheets();
+truthy2('รายงานบอกจำนวนที่ซ่อมและชนิดของอาการ',
+  /ออเดอร์_หัวบิล: ซ่อม 2 ช่อง \(เหลือ 0\).*เลขนิ่ง 1 · #REF! 1/.test(msg41));
+
+var tmplF = H41.cell(DATA_ROW, VAT_COL).f;
+eq('ช่อง #REF! ได้สูตรจากแถวต้นแบบกลับมา', H41.cell(DATA_ROW + 1, VAT_COL).f, tmplF);
+eq('ช่องที่เป็นเลขนิ่งได้สูตรกลับมาด้วย',
+  H41.cell(DATA_ROW + 1, NET_COL).f, H41.cell(DATA_ROW, NET_COL).f);
+eq('ซ่อมแล้วไม่เหลืออะไรเสีย', api41.scanCalc_('head').bad, 0);
+
+console.log('\n   สั่งซ้ำต้องไม่มีอะไรให้ซ่อมอีก และห้ามแตะช่องที่คนกรอกเอง');
+truthy2('สั่งซ้ำบอกว่าปกติดีอยู่แล้ว', /ออเดอร์_หัวบิล: ปกติดีอยู่แล้ว/.test(api41.repairOrderSheets()));
+eq('ชื่อลูกค้าที่คนกรอกยังอยู่ครบ',
+  H41.cell(DATA_ROW + 1, api41.SH.head.IN.cust).v, 'ใบที่สอง');
+
+console.log('\n   เลขนิ่งที่วางเลยแถวที่มีสูตรลงไป ต้องฟ้อง แต่ห้ามลบให้เอง');
+var lim41 = api41.formulaLimit_('head');
+H41.cell(lim41 + 1, VAT_COL).v = 542.5;
+H41.cell(lim41 + 2, VAT_COL).v = 542.5;
+var msg41b = api41.repairOrderSheets();
+truthy2('ฟ้องว่ามีเลขนิ่งค้างใต้แถวสุดท้าย พร้อมบอกช่วงแถว',
+  new RegExp('มีเลขนิ่งค้างอยู่ใต้แถวสุดท้ายที่มีสูตร 2 ช่อง \\(แถว ' +
+    (lim41 + 1) + '-' + (lim41 + 2) + '\\)').test(msg41b));
+eq('ไม่ลบให้เอง ปล่อยไว้ให้เจ้าของร้านตัดสินใจ', H41.cell(lim41 + 1, VAT_COL).v, 542.5);
+
+console.log('\n   ไม่มีต้นแบบให้ก๊อป ต้องบอกตรง ๆ ไม่ใช่เดาสูตรเอง');
+var fx41b = FS.build();
+var api41b = FS.load(fx41b, {});
+api41b.setup();
+api41b.createOrder(order({ cust: 'ใบเดียวที่มี' }));
+var H41b = fx41b.sheets['ออเดอร์_หัวบิล'];
+var lim41b = api41b.formulaLimit_('head');
+for (var r41 = DATA_ROW; r41 <= lim41b; r41++) H41b.cell(r41, VAT_COL).f = '=#REF!';
+truthy2('บอกว่าไม่มีต้นแบบ ต้องซ่อมด้วยมือ',
+  /ออเดอร์_หัวบิล: เสีย \d+ ช่อง แต่ไม่มีแถวไหนสูตรครบเลย/.test(api41b.repairOrderSheets()));
+eq('ไม่ไปเดาสูตรใส่ให้เอง', H41b.cell(DATA_ROW, VAT_COL).f, '=#REF!');
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
