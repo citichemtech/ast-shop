@@ -2052,5 +2052,58 @@ truthy2('บอกว่าไม่มีต้นแบบ ต้องซ่�
   /ออเดอร์_หัวบิล: เสีย \d+ ช่อง แต่ไม่มีแถวไหนสูตรครบเลย/.test(api41b.repairOrderSheets()));
 eq('ไม่ไปเดาสูตรใส่ให้เอง', H41b.cell(DATA_ROW, VAT_COL).f, '=#REF!');
 
+
+/* ====== 42. เขียนสูตร VAT คืน ตอนที่ไม่เหลือแถวต้นแบบให้ก๊อปแล้ว
+
+   7 ก.ย. 69 รอบสาม: สูตร #REF! ถูกก๊อปไปทับทั้งคอลัมน์ M กับ N
+   repairOrderSheets จึงช่วยไม่ได้ เพราะไม่เหลือแถวดีให้เป็นต้นแบบสักแถว
+   ทางเดียวที่เหลือคือเขียนสูตรลงไปเอง ซึ่งปกติเป็นสิ่งที่ห้ามทำ
+   จึงต้องกันไว้ให้แน่นที่สุด: แตะแค่สองคอลัมน์ และไม่ยอมทับของที่ยังดี */
+console.log('\n42. เขียนสูตร VAT / ยอดสุทธิ คืนเมื่อไม่เหลือต้นแบบ');
+
+var fx42 = FS.build();
+var api42 = FS.load(fx42, {});
+api42.setup();
+api42.createOrder(order({ cust: 'ใบก่อนพัง' }));
+var H42 = fx42.sheets['ออเดอร์_หัวบิล'];
+var M42 = api42.SH.head.vatAmt, N42 = api42.SH.head.net;
+var lim42 = api42.formulaLimit_('head');
+
+console.log('\n   สูตรยังดีอยู่ ต้องไม่ยอมเขียนทับ');
+truthy2('ปฏิเสธและบอกวิธียืนยัน',
+  /ไม่มี #REF! เลยสักช่อง จึงไม่เขียนทับให้[\s\S]*writeVatFormulas\('เขียนทับ'\)/
+    .test(api42.writeVatFormulas()));
+eq('ไม่ได้แตะสูตรเดิมเลย', H42.cell(DATA_ROW, M42).f, '=headcalc');
+
+console.log('\n   พังทั้งคอลัมน์แล้ว ต้องเขียนคืนให้');
+for (var r42 = DATA_ROW; r42 <= lim42; r42++) {
+  H42.cell(r42, M42).f = '=IF($I' + r42 + '="รับ VAT",ROUND($J' + r42 + '*#REF!,2),0)';
+  H42.cell(r42, N42).f = '=$J' + r42 + '-$K' + r42 + '+$L' + r42 + '+#REF!';
+}
+var rows42 = lim42 - DATA_ROW + 1;
+var msg42 = api42.writeVatFormulas();
+truthy2('รายงานว่าซ่อม #REF! หมดแล้ว',
+  new RegExp('#REF! ก่อนซ่อม ' + (rows42 * 2) + ' ช่อง → เหลือ 0 ช่อง').test(msg42));
+
+/* สูตรที่เขียนต้องอ้างแถวของตัวเอง ไม่ใช่ลอกแถวแรกไปทั้งคอลัมน์ */
+eq('แถว 6 อ้างแถว 6', H42.cell(DATA_ROW, M42).f,
+  '=IF($A6="","",IF($I6="รับ VAT",ROUND(($J6-$K6)*ตั้งค่า!$B$8,2),0))');
+eq('แถว 7 อ้างแถว 7', H42.cell(DATA_ROW + 1, N42).f,
+  '=IF($A7="","",$J7-$K7+$L7+$M7)');
+truthy2('อัตรา VAT อ่านจากชีท ตั้งค่า ไม่ฝัง 7% ไว้ในสูตร',
+  H42.cell(lim42, M42).f.indexOf('ตั้งค่า!$B$8') > -1);
+
+console.log('\n   แตะแค่สองคอลัมน์นี้ คอลัมน์อื่นห้ามขยับ');
+eq('ยอดสินค้า (J) ยังเป็นสูตรเดิม', H42.cell(DATA_ROW, api42.SH.head.subtotal).f, '=headcalc');
+eq('ชื่อลูกค้าที่คีย์ไว้ยังอยู่',
+  H42.cell(DATA_ROW, api42.SH.head.IN.cust).v, 'ใบก่อนพัง');
+eq('ไม่เขียนเลยแถวที่มีสูตร', H42.cell(lim42 + 1, M42).f, null);
+
+console.log('\n   ต้องลงบันทึกไว้ว่าใครสั่งและซ่อมอะไร');
+var logRows42 = rowsWith(fx42.sheets['Log'], api42.SH.log.IN.type);
+truthy2('มีแถวบันทึกการซ่อมสูตร', logRows42.some(function (r) {
+  return String(fx42.sheets['Log'].cell(r, api42.SH.log.IN.field).v).indexOf('VAT') > -1;
+}));
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

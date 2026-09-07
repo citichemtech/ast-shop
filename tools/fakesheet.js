@@ -125,6 +125,13 @@ Range.prototype.setFormula = function (f) {
   for (var i = 0; i < this.nr; i++) for (var j = 0; j < this.nc; j++) this.s.cell(this.r + i, this.c + j).f = f;
   return this;
 };
+/* setFormulas = ใส่สูตรทีละหลายแถว ใช้ตอนเขียนสูตร VAT คืนทั้งคอลัมน์ */
+Range.prototype.setFormulas = function (rows) {
+  for (var i = 0; i < this.nr; i++) {
+    for (var j = 0; j < this.nc; j++) this.s.cell(this.r + i, this.c + j).f = rows[i][j];
+  }
+  return this;
+};
 Range.prototype.copyTo = function (dst) {
   var f = this.s.cell(this.r, this.c).f;
   for (var i = 0; i < dst.nr; i++) for (var j = 0; j < dst.nc; j++) dst.s.cell(dst.r + i, dst.c + j).f = f;

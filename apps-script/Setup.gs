@@ -1327,3 +1327,85 @@ function paintCols_(s, n, inCols, calcCols) {
     s.getRange(DATA_ROW, calcCols[j], n, 1).setBackground(C_CALC_BG).setFontColor(null);
   }
 }
+
+/* ------------------------------- เขียนสูตร VAT / ยอดสุทธิ ที่ ออเดอร์_หัวบิล คืน */
+
+/**
+ * สูตรสองช่องที่ระบบยอมเขียนเองได้ — และเป็นที่เดียวในโปรแกรมทั้งหมด
+ *
+ * ปกติกฎเหล็กคือ "ไม่เดาสูตรของเจ้าของร้าน" repairOrderSheets จึงคัดลอกจากแถวที่ยังดี
+ * ในชีทเดียวกันเสมอ แต่ 7 ก.ย. 69 เกิดกรณีที่วิธีนั้นช่วยไม่ได้เลย:
+ * สูตร #REF! ถูกคัดลอกไปทับทั้งคอลัมน์ M กับ N จนไม่เหลือแถวดีให้เป็นต้นแบบสักแถว
+ *
+ * ทำไมถึงกล้าเขียนสูตรสองช่องนี้เอง — เพราะพิสูจน์กับข้อมูลจริงแล้วว่าใช่:
+ *   VAT   = (ยอดสินค้า − ส่วนลด) × อัตราใน ตั้งค่า!B8  เฉพาะใบที่ "รับ VAT"  ไม่คิดกับค่าส่ง
+ *   สุทธิ = ยอดสินค้า − ส่วนลด + ค่าส่ง + VAT
+ * ตรงกับใบที่สูตรยังดีทุกใบก่อนเกิดเหตุ (0016 · 0023 · 0026 · 0027 · 0029-0032 · 0034 · 0035)
+ * และ ตั้งค่า!B8 คือช่องเดียวกับที่ cfgGet_() อ่านอัตรา VAT มาใช้ทั้งระบบ
+ */
+var HEAD_VAT_FORMULA = '=IF($A{r}="","",IF($I{r}="รับ VAT",ROUND(($J{r}-$K{r})*ตั้งค่า!$B$8,2),0))';
+var HEAD_NET_FORMULA = '=IF($A{r}="","",$J{r}-$K{r}+$L{r}+$M{r})';
+
+/**
+ * เขียนสูตร VAT (M) กับ ยอดชำระสุทธิ (N) ของ ออเดอร์_หัวบิล ใหม่ทั้งคอลัมน์
+ *
+ * ใช้เฉพาะตอนที่ repairOrderSheets ช่วยไม่ได้ เพราะไม่เหลือแถวดีให้เป็นต้นแบบ
+ * ถ้าสูตรยังดีอยู่จะไม่ยอมเขียนทับ ต้องยืนยันด้วย writeVatFormulas('เขียนทับ')
+ * เขียนแค่สองคอลัมน์นี้ ในช่วงแถวที่มีสูตรอยู่แล้วเท่านั้น ช่องกรอกไม่ถูกแตะ
+ */
+function writeVatFormulas(confirm) {
+  var email = requireStaff_();
+  var sh = sheet_('head');
+  var limit = formulaLimit_('head');
+  if (limit < DATA_ROW) {
+    throw new Error('ชีท ' + SH.head.name + ' ไม่เหลือสูตรเลยแม้แต่แถวเดียว ' +
+      'ต้องกู้ชีทจากประวัติเวอร์ชันของ Google ก่อน');
+  }
+  var n = limit - DATA_ROW + 1;
+  var M = SH.head.vatAmt, N = SH.head.net;
+
+  var before = countHeadRef_(sh, n, M, N);
+  if (!before && String(confirm || '') !== 'เขียนทับ') {
+    var okMsg = 'ช่อง VAT กับ ยอดชำระสุทธิ ไม่มี #REF! เลยสักช่อง จึงไม่เขียนทับให้\n' +
+      'ถ้าตั้งใจจะเขียนสูตรใหม่จริง ๆ ให้สั่ง writeVatFormulas(\'เขียนทับ\')';
+    Logger.log(okMsg);
+    return okMsg;
+  }
+
+  var fm = [], fn = [];
+  for (var i = 0; i < n; i++) {
+    var r = DATA_ROW + i;
+    fm.push([HEAD_VAT_FORMULA.replace(/\{r\}/g, r)]);
+    fn.push([HEAD_NET_FORMULA.replace(/\{r\}/g, r)]);
+  }
+  sh.getRange(DATA_ROW, M, n, 1).setFormulas(fm);
+  sh.getRange(DATA_ROW, N, n, 1).setFormulas(fn);
+  SpreadsheetApp.flush();
+
+  var after = countHeadRef_(sh, n, M, N);
+  writeLog_(email, 'ซ่อมสูตร', SH.head.name, '', 'VAT + ยอดชำระสุทธิ',
+    '#REF! ' + before + ' ช่อง', 'เขียนสูตรใหม่ ' + (n * 2) + ' ช่อง',
+    'สูตรถูกคัดลอกทับจนไม่เหลือแถวต้นแบบ');
+
+  var msg = 'เขียนสูตรใหม่ที่ ' + SH.head.name + ' แถว ' + DATA_ROW + '-' + limit + '\n' +
+    '  ช่อง VAT (คอลัมน์ ' + M + ') และ ยอดชำระสุทธิ (คอลัมน์ ' + N + ') รวม ' + (n * 2) + ' ช่อง\n' +
+    '  #REF! ก่อนซ่อม ' + before + ' ช่อง → เหลือ ' + after + ' ช่อง\n' +
+    '  คอลัมน์อื่นไม่ถูกแตะเลย และลงบันทึกไว้ในชีท ' + SH.log.name + ' แล้ว';
+  if (after) {
+    msg += '\n\n  ยังเหลือ #REF! อยู่ แปลว่าชื่อชีท ตั้งค่า หรือช่อง B8 (อัตรา VAT) มีปัญหา — ' +
+      'เปิดชีท ตั้งค่า ดูว่าช่อง B8 เป็น 7.0% จริงไหม';
+  }
+  Logger.log(msg);
+  return msg;
+}
+
+/** นับ #REF! เฉพาะสองคอลัมน์นี้ ใช้ทั้งก่อนและหลังเขียน */
+function countHeadRef_(sh, n, M, N) {
+  var f = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
+  var c = 0;
+  for (var i = 0; i < f.length; i++) {
+    if (String(f[i][M - 1] || '').indexOf('#REF!') > -1) c++;
+    if (String(f[i][N - 1] || '').indexOf('#REF!') > -1) c++;
+  }
+  return c;
+}
