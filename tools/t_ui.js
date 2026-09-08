@@ -583,13 +583,19 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     });
   });
   eq('จับคู่โลโก้ถูกทุกเจ้า · เจ้าที่ไม่มีโลโก้คืนค่าว่างแล้วพิมพ์เป็นตัวหนังสือแทน',
-    logoMap, ['flash', 'kerry', 'kerry', 'post', 'moto', '', '']);
-  eq('โลโก้ทั้งสี่เป็น PNG ชุดใหม่ ไม่ใช่ JPEG ชุดเดิม',
+    logoMap, ['flash', 'kerry', 'kerry', 'post', 'moto', 'spx', '']);
+  eq('โลโก้ทุกอันเป็น PNG ชุดใหม่ ไม่ใช่ JPEG ชุดเดิม',
     await page.evaluate(function () {
-      return ['flash', 'kerry', 'post', 'moto'].map(function (k) {
+      return ['flash', 'kerry', 'post', 'moto', 'spx'].map(function (k) {
         return CARRIER_LOGOS[k].slice(0, 14);
       });
-    }), ['data:image/png', 'data:image/png', 'data:image/png', 'data:image/png']);
+    }), ['data:image/png', 'data:image/png', 'data:image/png', 'data:image/png',
+         'data:image/png']);
+  truthy('ปุ่มนำเข้า Shopee มีไอคอน Shopee ขึ้นจริง',
+    await page.evaluate(function () {
+      var el = $('#btn-shop-ic');
+      return !!el && /^data:image\//.test(el.src || '');
+    }));
 
   console.log('\n17. เตือนเมื่อยังไม่ได้กรอกที่อยู่ผู้ส่ง');
   await page.evaluate(function () { go('list'); });
@@ -1535,16 +1541,24 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     ['260907AAA2', 'สำเร็จแล้ว', '07/09/2026', '08/09/2026', 'ของที่ร้านไม่มีขาย',
      'ZZZ-999', '250', '1',
      '0', 'J&T Express', 'TH88888', 'ผู้ซื้อ สอง', '0899999999',
-     '1 ถ.สอง', 'กรุงเทพมหานคร', '10500']
+     '1 ถ.สอง', 'กรุงเทพมหานคร', '10500'],
+    /* ใบที่ตีกลับ — ของยังอยู่ที่ร้าน ห้ามให้กดนำเข้าไปตัดสต๊อก */
+    ['260907AAA3', 'ตีกลับ', '07/09/2026', '08/09/2026', name30, sku30,
+     String(price30), '3',
+     '0', 'Flash Express', 'TH77777', 'ผู้ซื้อ สาม', '0800000003',
+     '3 ถ.สาม', 'ชลบุรี', '20000']
   ].map(function (r) { return r.join('\t') }).join('\n');
 
   var sentBefore30 = await page.evaluate(function () { return window.SENT.length });
   await page.fill('#sp-text', PASTE30);
   await page.click('#sp-read');
   await page.waitForTimeout(700);
-  truthy('บอกว่ามีใบพร้อมนำเข้ากี่ใบ และติดปัญหากี่ใบ',
+  truthy('บอกว่ามีใบพร้อมนำเข้ากี่ใบ ติดปัญหากี่ใบ ตีกลับกี่ใบ',
     /พร้อมนำเข้า 1 ใบ/.test(await page.textContent('#sp-sum')) &&
-    /ติดปัญหา 1 ใบ/.test(await page.textContent('#sp-sum')));
+    /ติดปัญหา 1 ใบ/.test(await page.textContent('#sp-sum')) &&
+    /ตีกลับ\/ยกเลิก 1 ใบ/.test(await page.textContent('#sp-sum')));
+  truthy('ใบที่ตีกลับบอกเหตุผลว่าทำไมไม่นำเข้า',
+    /ของยังอยู่ที่ร้าน สต๊อกไม่ควรถูกตัด/.test(await page.textContent('#sp-list')));
   truthy('ใบที่จับคู่สินค้าไม่ได้ บอกชื่อสินค้าที่จับไม่ได้ตรง ๆ',
     /จับคู่สินค้าไม่ได้.*ของที่ร้านไม่มีขาย/.test(await page.textContent('#sp-list')));
   truthy('โชว์ต้นทุนกับกำไรให้เห็นก่อนกดนำเข้า',
@@ -1569,11 +1583,12 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('รายการสินค้าใช้รหัสของร้าน ไม่ใช่รหัสของ Shopee',
     [sent30[0].items.length, sent30[0].items[0].sku, sent30[0].items[0].qty],
     [1, sku30, 2]);
-  eq('ชื่อ ที่อยู่ เบอร์โทร ติดไปด้วย — ที่อยู่ขึ้นต้นด้วยชื่อผู้รับ',
-    [sent30[0].cust, sent30[0].tel, sent30[0].addr],
-    ['ผู้ซื้อ ทดสอบ', '0812345678', 'ผู้ซื้อ ทดสอบ\n9/9 ถ.ทดสอบ ปทุมธานี 12150']);
-  eq('ไม่ส่งเลขพัสดุกับขนส่งขึ้นไป',
-    [sent30[0].track, sent30[0].carrier], [undefined, undefined]);
+  eq('ส่งชื่อลูกค้าขึ้นไป', sent30[0].cust, 'ผู้ซื้อ ทดสอบ');
+  eq('ไม่ส่งที่อยู่ เบอร์โทร เลขพัสดุ ขนส่ง ขึ้นไปเลย — ไม่ได้ใช้ต่อ',
+    [sent30[0].addr, sent30[0].tel, sent30[0].track, sent30[0].carrier],
+    [undefined, undefined, undefined, undefined]);
+  eq('ใบที่ Shopee บอกว่าส่งสำเร็จแล้ว ลงชีทเป็น "ส่งแล้ว" ให้เลย',
+    sent30[0].status, 'ส่งแล้ว');
   eq('ค่าส่งกับส่วนลดเป็นศูนย์ ไม่ได้ดูดของ Shopee เข้ามา',
     [sent30[0].ship, sent30[0].discount], [0, 0]);
   eq('ใช้วันจัดส่ง ไม่ใช่วันสั่งซื้อ', sent30[0].date, '2026-09-08');
@@ -1697,6 +1712,26 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(300);
   truthy('เห็นสถานะใหม่โดยไม่ต้องโหลดใหม่',
     /ส่งบัญชีแล้ว/.test(await page.textContent('#list')));
+
+  /* ---------- 32. คู่มือใช้งาน ---------- */
+  console.log('\n32. คู่มือใช้งาน');
+  await page.click('.tabs button[data-go="recv"]');
+  await page.waitForTimeout(300);
+  await page.click('#fs-help');
+  await page.waitForTimeout(300);
+  truthy('เปิดคู่มือจากปุ่ม ? บนหัวจอได้',
+    await page.evaluate(function () { return $('#pg-help').style.display !== 'none' }));
+  truthy('มีหัวข้อครบทุกงานหลัก', await page.evaluate(function () {
+    return $$('#pg-help details').length >= 7;
+  }));
+  truthy('มีเรื่องใบที่ตีกลับของ Shopee อยู่ในคู่มือ',
+    /ตีกลับ/.test(await page.textContent('#pg-help')));
+  truthy('มีกฎห้ามลบทั้งแถวในชีท',
+    /ลบทั้งแถว/.test(await page.textContent('#pg-help')));
+  await page.click('#hp-back');
+  await page.waitForTimeout(300);
+  truthy('กดกลับแล้วได้หน้าเดิมที่ยืนอยู่ก่อนเปิดคู่มือ',
+    await page.evaluate(function () { return $('#pg-recv').style.display !== 'none' }));
 
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');

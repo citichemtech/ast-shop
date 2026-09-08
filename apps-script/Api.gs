@@ -2474,7 +2474,10 @@ function shopeeMatch(orders) {
 
     out.push({
       sn: sn, date: String(o.date || ''), cust: String(o.cust || ''),
-      tel: String(o.tel || ''), addr: String(o.addr || ''),
+      /* สถานะจากไฟล์ส่งกลับไปให้หน้าจอตัดสินใจ — ใบที่ตีกลับต้องไม่ถูกนำเข้า
+         เพราะของยังอยู่ที่ร้าน นำเข้าไปคือตัดสต๊อกทิ้งโดยไม่มีใครรู้ */
+      status: String(o.status || ''), back: !!o.back, done: !!o.done,
+      backWhy: String(o.backWhy || ''),
       items: items, subtotal: round2_(sub),
       /* ต้นทุนรวมเป็น null เมื่อมีสินค้าที่ยังไม่รู้ต้นทุน — หน้าจอเอาไปบอกให้รู้
          แทนที่จะโชว์ตัวเลขที่คิดจากต้นทุนศูนย์แล้วดูเหมือนกำไรดีเกินจริง */

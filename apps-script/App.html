@@ -2823,8 +2823,16 @@ function recvDone(res){
 
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
 
+var HELP_FROM = "new";
+
+/** หน้าที่กำลังเปิดอยู่ — ใช้ตอนกดกลับจากคู่มือ */
+function curPage(){
+  var on = $$(".tabs button").filter(function(b){ return b.classList.contains("on") })[0];
+  return on ? on.dataset.go : "new";
+}
+
 function go(page){
-  ["new","list","recv","quote","sum","shop"].forEach(function(p){
+  ["new","list","recv","quote","sum","shop","help"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   /* หน้านำเข้า Shopee ไม่มีปุ่มของตัวเองบนแถบล่าง เข้ามาจากหน้าออเดอร์
@@ -2853,6 +2861,16 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#btn-save").onclick  = save;
   docBarInit();
   $("#btn-shop").onclick = function(){ go("shop") };
+  /* ไอคอนอยู่ใน Assets ซึ่งเป็นตัวแปรใน JS ไม่ใช่ไฟล์รูป จึงใส่ตอนเปิดแอป
+     ไม่ใช่เขียนไว้ใน HTML — และถ้าวันไหนไอคอนหาย ปุ่มก็ยังอ่านออกเหมือนเดิม */
+  ["#btn-shop-ic", "#sp-ic"].forEach(function(sel){
+    var el = $(sel);
+    if (el && typeof SHOPEE_ICON !== "undefined") el.src = SHOPEE_ICON;
+    else if (el) el.remove();
+  });
+  /* คู่มืออยู่ปุ่ม ? บนหัวจอ เห็นได้จากทุกหน้า — กลับแล้วไปหน้าที่ยืนอยู่ก่อนเปิด */
+  $("#fs-help").onclick = function(){ HELP_FROM = curPage(); go("help") };
+  $("#hp-back").onclick = function(){ go(HELP_FROM || "new") };
   ["f-disc","f-ship"].forEach(function(id){ $("#"+id).oninput = recalc });
   ["f-vat","f-status"].forEach(function(id){ $("#"+id).onchange = recalc });
   $("#f-disc").addEventListener("change", recalc);

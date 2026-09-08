@@ -217,6 +217,22 @@ textarea{resize:vertical}
 .okact{display:flex;gap:8px;margin-top:11px}
 .okact button{flex:1;padding:12px 8px;border-radius:10px;border:1px solid var(--green);
   background:#fff;color:var(--green);font-weight:700;font-size:0.85rem}
+
+/* คู่มือ — พับเก็บทีละหัวข้อ เปิดมาเห็นสารบัญก่อน ไม่ใช่กำแพงตัวหนังสือ */
+.hp details{border:1px solid var(--line);border-radius:11px;background:#fff;margin-bottom:9px}
+.hp summary{padding:13px 14px;font-weight:700;cursor:pointer;list-style:none;line-height:1.4}
+.hp summary::-webkit-details-marker{display:none}
+.hp summary::after{content:"＋";float:right;color:var(--gray);font-weight:400}
+.hp details[open] summary::after{content:"−"}
+.hp details[open] summary{border-bottom:1px solid var(--line)}
+.hp .bd{padding:12px 14px 15px;font-size:0.86rem;line-height:1.65}
+.hp .bd b{color:var(--ink)}
+.hp .bd ol,.hp .bd ul{margin:6px 0;padding-left:20px}
+.hp .bd li{margin-bottom:5px}
+.hp .bd .warn{border-left:3px solid var(--amber);background:#fffaf1;
+  padding:9px 11px;border-radius:0 8px 8px 0;margin-top:9px}
+.hp .bd .stop{border-left:3px solid var(--red);background:#fff6f6;
+  padding:9px 11px;border-radius:0 8px 8px 0;margin-top:9px}
 </style>
 
 <div class="top">
@@ -226,6 +242,7 @@ textarea{resize:vertical}
     <span class="who" id="who"></span>
   </div>
   <div class="fsz">
+    <button id="fs-help" title="คู่มือใช้งาน" aria-label="คู่มือใช้งาน">?</button>
     <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง">ก−</button>
     <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น">ก+</button>
   </div>
@@ -324,9 +341,106 @@ textarea{resize:vertical}
       <input id="ord-q" placeholder="ค้นหา — เลขออเดอร์ ชื่อลูกค้า เบอร์โทร เลขพัสดุ"
              autocomplete="off">
       <div class="hint" id="ord-q-hint">ปล่อยว่างไว้ = ใบล่าสุด 40 ใบ · พิมพ์ 2 ตัวอักษรขึ้นไปเพื่อค้นทั้งชีท</div>
-      <button class="btn ghost" id="btn-shop" style="margin-top:10px">📦 นำเข้าออเดอร์จาก Shopee</button>
+      <button class="btn ghost" id="btn-shop" style="margin-top:10px">
+        <img id="btn-shop-ic" alt="" style="height:1.15em;vertical-align:-0.18em;margin-right:7px">
+        นำเข้าออเดอร์จาก Shopee</button>
     </div>
     <div class="card" id="list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <!-- ---------------------------------------------------------- คู่มือใช้งาน
+       ไม่ทำเป็นแท็บ เพราะแถบล่างเต็มแล้ว และคู่มือเป็นของที่เปิดนาน ๆ ครั้ง
+       เข้าจากปุ่ม ? บนหัวจอ ซึ่งเห็นได้จากทุกหน้า -->
+  <section id="pg-help" style="display:none">
+    <div class="card hp">
+      <div class="sec-hd"><h2>คู่มือใช้งาน</h2></div>
+      <div class="hint" style="padding:0 2px 12px">กดหัวข้อเพื่อเปิดอ่าน ·
+        ทุกอย่างในนี้ทำจากมือถือได้หมด ไม่ต้องเปิดชีท</div>
+
+      <details><summary>1. คีย์ออเดอร์</summary><div class="bd">
+        <ol>
+          <li>แท็บ <b>คีย์ออเดอร์</b> → กรอกชื่อลูกค้า เบอร์ ที่อยู่<br>
+            พิมพ์ชื่อลูกค้าเก่า ระบบจะเด้งชื่อขึ้นมาให้เลือก แล้วเติมเบอร์กับที่อยู่ให้เอง</li>
+          <li>ที่อยู่จำไม่ได้ ใช้ช่อง <b>ค้นตำบล/อำเภอ</b> พิมพ์ชื่อตำบล จะได้รหัสไปรษณีย์ให้เลย</li>
+          <li>เลือกสินค้า ใส่จำนวน — ราคาขึ้นเองจากฐานสินค้า ขายราคาพิเศษให้พิมพ์ทับได้</li>
+          <li>กด <b>บันทึกออเดอร์ลงชีท</b></li>
+        </ol>
+        <b>ลูกค้าส่งข้อความมาเป็นชุด</b> — วางข้อความลงช่องบนสุดแล้วกด “อ่านข้อความให้”
+        ระบบจะแยกชื่อ เบอร์ ที่อยู่ สินค้า ให้ดูก่อน แล้วค่อยกดใช้
+        <div class="warn"><b>สต๊อกถูกตัดตอนกดบันทึก</b> ไม่ใช่ตอนส่งของ
+          ถ้ายังไม่แน่ใจว่าลูกค้าเอาแน่ ให้ออกใบเสนอราคาแทน (ไม่ตัดสต๊อก)</div>
+      </div></details>
+
+      <details><summary>2. รับของเข้าสต๊อก (แท็บ 📥 รับของ)</summary><div class="bd">
+        เลือกสินค้า → ใส่จำนวนกับต้นทุน → ถ้าเป็นของที่คุมล็อต ต้องใส่เลขล็อตกับวันหมดอายุด้วย
+        → กดบันทึก
+        <div class="warn"><b>ของที่คุมล็อตต้องมีเลขล็อตเสมอ</b>
+          ลงแต่จำนวนโดยไม่มีล็อต = ของเข้าสต๊อกแต่ขายไม่ได้ เพราะระบบไม่มีล็อตให้ตัด
+          (เคยเกิดจริงกับ IPA 1000ml)</div>
+        ระบบตัดของที่ <b>หมดอายุก่อน ขายก่อน</b> ให้เองอัตโนมัติ ไม่ต้องเลือกล็อตเอง
+      </div></details>
+
+      <details><summary>3. ออกเอกสาร (ปุ่ม 📄 ที่แถวออเดอร์)</summary><div class="bd">
+        <ul>
+          <li><b>ใบเสร็จรับเงิน / ใบกำกับภาษี</b> — ลูกค้าจ่ายแล้วและขอใบกำกับภาษี</li>
+          <li><b>ใบแจ้งหนี้ / บิลเงินสด</b> — วางบิล ยังไม่ได้รับเงิน</li>
+          <li><b>ใบรับเงินมัดจำ</b> — รับมัดจำก่อน ยังส่งของไม่ครบ</li>
+        </ul>
+        ใบที่ออกแล้วกด <b>พิมพ์ซ้ำ</b> ได้ตลอด ได้ใบเดิมเป๊ะ เพราะระบบถ่ายรูปใบไว้ตอนออก
+        <div class="stop"><b>ออกใบผิดห้ามแก้ทับ</b> ให้กด <b>ยกเลิกใบ</b> พร้อมบอกเหตุผล
+          แล้วออกใบใหม่ — ใบที่ลูกค้าถืออยู่กับในระบบจะได้ตรงกันเสมอ เวลาสรรพากรตรวจ</div>
+      </div></details>
+
+      <details><summary>4. ส่งบัญชี (ปุ่ม 🧾 ที่แถวออเดอร์)</summary><div class="bd">
+        ติ๊กว่าจะส่งใบไหน แล้วกด <b>ส่งบัญชี</b> — ไฟล์จะไปอยู่ในโฟลเดอร์ไดรฟ์
+        <b>AST_ส่งบัญชี</b> แยกตามเดือน บัญชีเปิดดูเองได้ตลอด ไม่ต้องรออีเมล<br>
+        สถานะบัญชีแยกจากสถานะออเดอร์ ของส่งถึงลูกค้าแล้วแต่ยังไม่ส่งบัญชีก็เห็นได้<br>
+        ยังไม่มีเอกสารจะส่ง ให้ตั้งสถานะเป็น <b>รอเอกสาร</b> ไว้ก่อน
+      </div></details>
+
+      <details><summary>5. นำเข้าออเดอร์ Shopee</summary><div class="bd">
+        <ol>
+          <li>Seller Centre → คำสั่งซื้อของฉัน → <b>ส่งออก</b> แล้วเปิดไฟล์ด้วย Excel</li>
+          <li><b>Ctrl+A</b> แล้ว <b>Ctrl+C</b> (ต้องคลุมแถวหัวตารางมาด้วย)</li>
+          <li>แท็บ <b>ออเดอร์</b> → 📦 นำเข้าออเดอร์จาก Shopee → วาง → อ่านข้อมูล</li>
+          <li>ตรวจทีละใบแล้วกดนำเข้า</li>
+        </ol>
+        เอาเข้ามาแค่ <b>ชื่อ · สินค้า · จำนวน · ราคาขาย · สถานะ</b> เพราะงานเดียวที่ต้องการคือ
+        ตัดสต๊อกกับรู้กำไร ส่วนการส่งของ Shopee ทำเองหมดแล้ว
+        <div class="warn"><b>ใบที่ตีกลับ/ยกเลิก ระบบไม่นำเข้าให้</b>
+          เพราะของยังอยู่ที่ร้าน ถ้านำเข้าไปจะกลายเป็นตัดสต๊อกทิ้งฟรี ๆ</div>
+        <b>จับคู่สินค้าไม่ได้?</b> ไปใส่รหัสของร้าน (เช่น SKU-141) ในช่อง
+        “เลขอ้างอิง SKU” ของสินค้านั้นใน Shopee ทำครั้งเดียว ใช้ได้ตลอดไป
+      </div></details>
+
+      <details><summary>6. เวลาเจอปัญหา</summary><div class="bd">
+        <ul>
+          <li><b>“ล็อตมีของไม่พอ”</b> — ไปแท็บ 📥 รับของ ลงล็อตที่เพิ่งซื้อเข้ามาก่อน</li>
+          <li><b>“ช่องสูตรเสียในชีท”</b> ขึ้นแดงที่แถวออเดอร์ — เปิด Apps Script
+            สั่งฟังก์ชัน <b>repairOrderSheets</b> หนึ่งครั้ง</li>
+          <li><b>บันทึกไม่สำเร็จ / เน็ตหลุด</b> — กดซ้ำได้เลย ระบบกันออเดอร์ซ้ำไว้แล้ว
+            จะไม่ได้สองใบ</li>
+          <li><b>ลูกค้าไม่รับของ</b> — กดปุ่ม ✖ ที่แถวออเดอร์ ของจะคืนเข้าสต๊อกและล็อตให้เอง
+            ไม่ใช่แค่เปลี่ยนคำว่ายกเลิก</li>
+        </ul>
+      </div></details>
+
+      <details><summary>7. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
+        <div class="stop"><b>ลบสินค้าออกจากฐานสินค้า ให้ลบ “ค่าในช่อง” ไม่ใช่ “ลบทั้งแถว”</b><br>
+          ลบทั้งแถวทีไร สูตรของชีทอื่นที่ชี้มาจะพังเป็น #REF! ทั้งคอลัมน์ทุกที
+          (เคยพังไป 38 แถว)</div>
+        <ul>
+          <li><b>ช่องพื้นเทาคือสูตร ห้ามพิมพ์ทับ</b> — พิมพ์ทับแล้วเลขจะนิ่งอยู่อย่างนั้น
+            ไม่อัปเดตตามอีกเลย และไม่มีอะไรเตือน</li>
+          <li>อยากเพิ่มตัวเลือกใน dropdown (ช่องทางขาย ขนส่ง สถานะ) เติมในชีท
+            <b>ตั้งค่า</b> ได้เลย ไม่ต้องแก้โค้ด</li>
+          <li>ชีทถูกสำรองอัตโนมัติทุกวันตอนตี 1 เก็บย้อนหลัง 30 วัน
+            อยู่ในโฟลเดอร์ <b>AST_สำรองชีทอัตโนมัติ</b></li>
+        </ul>
+      </div></details>
+
+      <button class="btn ghost" id="hp-back" style="margin-top:6px">← กลับ</button>
+    </div>
   </section>
 
   <!-- ------------------------------------------------ นำเข้าออเดอร์ Shopee
@@ -334,7 +448,9 @@ textarea{resize:vertical}
        และงานนี้ทำวันละครั้ง ไม่ใช่ของที่ต้องกดถึงตลอดวันเหมือนอีกห้าอัน -->
   <section id="pg-shop" style="display:none">
     <div class="card">
-      <div class="sec-hd"><h2>นำเข้าออเดอร์จาก Shopee</h2></div>
+      <div class="sec-hd"><h2>
+        <img id="sp-ic" alt="" style="height:1.25em;vertical-align:-0.2em;margin-right:8px">
+        นำเข้าออเดอร์จาก Shopee</h2></div>
       <div class="msg err" id="sp-warn" style="display:none"></div>
       <div class="hint" style="padding:0 2px 10px">
         <b>ขั้นที่ 1</b> เปิด Shopee Seller Centre → <b>คำสั่งซื้อของฉัน</b> → <b>ส่งออก</b>
@@ -361,10 +477,11 @@ textarea{resize:vertical}
           <select id="sp-by"></select>
         </div>
       </div>
-      <div class="hint">นำเข้าเฉพาะ <b>วันจัดส่ง · เลขคำสั่งซื้อ · ชื่อลูกค้า · ที่อยู่ ·
-        เบอร์โทร · สินค้า · จำนวน · ราคาขาย</b> (ต้นทุนกับกำไรชีทคิดให้เองจากฐานสินค้า)<br>
-        เลขพัสดุ ขนส่ง ค่าส่ง ส่วนลด <b>ไม่เอาเข้ามา</b> — Shopee จัดส่งและเก็บค่าส่งเอง
-        ตัวเลขพวกนั้นไม่ใช่ยอดขายของร้าน<br>
+      <div class="hint">งานเดียวที่ต้องการจากออเดอร์ Shopee คือ <b>ตัดสต๊อกกับรู้กำไร</b>
+        จึงนำเข้าแค่ <b>ชื่อลูกค้า · สินค้า · จำนวน · ราคาขาย</b>
+        (ต้นทุนกับกำไรชีทคิดให้เองจากฐานสินค้า)<br>
+        ที่อยู่ เบอร์โทร เลขพัสดุ ขนส่ง ค่าส่ง ส่วนลด <b>ไม่เอาเข้ามา</b> —
+        Shopee ส่งของเองทั้งหมด ตั้งแต่ใบปะหน้าจนถึงเก็บค่าส่ง<br>
         บันทึกเป็น <b>ไม่รับ VAT</b> เสมอ เพราะใบกำกับภาษีออกผ่านแพลตฟอร์ม</div>
     </div>
 

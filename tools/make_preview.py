@@ -453,7 +453,8 @@ window.google = { script: { run: (function(){
           var dup=!!(o.sn && done[o.sn]);
           if(dup) already++;
           return { sn:o.sn||"", date:o.date||"", cust:o.cust||"",
-                   tel:o.tel||"", addr:o.addr||"",
+                   status:o.status||"", back:!!o.back, done:!!o.done,
+                   backWhy:o.backWhy||"",
                    items:items, subtotal:Math.round(sub*100)/100,
                    costTotal: costKnown?Math.round(cost*100)/100:null,
                    profit: costKnown?Math.round((sub-cost)*100)/100:null,

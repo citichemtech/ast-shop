@@ -12,6 +12,9 @@ function carrierLogo(name){
      รับทั้งสองคำไว้ ชีทจะเขียนชื่อไหนใบปะหน้าก็ยังได้โลโก้ถูกอัน */
   if(n.indexOf("kerry")>-1||n.indexOf("kex")>-1) return CARRIER_LOGOS.kerry;
   if(n.indexOf("ไปรษณี")>-1||n.indexOf("post")>-1||n.indexOf("ems")>-1) return CARRIER_LOGOS.post;
+  /* ออเดอร์ Shopee ใช้ใบปะหน้าของ Shopee เอง ใบนี้จึงแทบไม่ได้ใช้
+     แต่ร้านส่งของนอก Shopee ผ่าน SPX ก็ได้ จึงมีไว้ให้ครบ */
+  if(n.indexOf("spx")>-1||n.indexOf("shopee")>-1) return CARRIER_LOGOS.spx;
   if(n.indexOf("ด่วน")>-1||n.indexOf("ใกล้เคียง")>-1) return CARRIER_LOGOS.moto;
   return "";
 }

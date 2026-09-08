@@ -93,16 +93,14 @@ var SHOPEE_COLS = [
            "ordercreationtime", "orderpaidtime", "เวลาการชำระสินค้า"] },
   { key: "cust", label: "ชื่อลูกค้า",
     pats: ["ชื่อผู้รับ", "receivername", "ชื่อผู้ซื้อ", "buyerusername", "username"] },
-  { key: "tel", label: "เบอร์โทร",
-    pats: ["หมายเลขโทรศัพท์", "เบอร์โทรศัพท์", "phonenumber", "เบอร์โทร"] },
-  { key: "addr", label: "ที่อยู่",
-    pats: ["ที่อยู่ในการจัดส่ง", "ที่อยู่จัดส่ง", "deliveryaddress", "ที่อยู่"] },
-  /* Shopee แยกตำบล อำเภอ จังหวัด รหัสไปรษณีย์ ออกเป็นคอลัมน์ต่างหาก
-     ไม่เก็บมาด้วยคือที่อยู่ที่ได้ไม่ครบ ส่งของตามนั้นไม่ถึง */
-  { key: "town", label: "ตำบล", pats: ["ตำบลแขวง", "ตำบล", "แขวง", "town"] },
-  { key: "district", label: "อำเภอ", pats: ["อำเภอเขต", "อำเภอ", "เขต", "district"] },
-  { key: "province", label: "จังหวัด", pats: ["จังหวัด", "province"] },
-  { key: "zip", label: "รหัสไปรษณีย์", pats: ["รหัสไปรษณีย์", "zipcode", "postalcode"] },
+  /* สองช่องนี้ตัดสินว่าใบไหน "ของถึงมือลูกค้าแล้ว" กับใบไหน "ของกลับมาที่ร้าน"
+     ซึ่งเป็นเรื่องเป็นตายของสต๊อก — ใบที่ตีกลับถ้านำเข้าไปจะตัดของทิ้งฟรี ๆ */
+  { key: "status", label: "สถานะการสั่งซื้อ",
+    not: ["ยกเลิกคืนเงิน", "returnrefund"],
+    pats: ["สถานะการสั่งซื้อ", "สถานะคำสั่งซื้อ", "orderstatus"] },
+  { key: "back", label: "สถานะการยกเลิก/คืนเงิน",
+    pats: ["สถานะการยกเลิกคืนเงิน", "สถานะการคืนเงิน", "returnrefundstatus",
+           "cancelreason", "เหตุผลการยกเลิก"] },
   { key: "name", label: "ชื่อสินค้า", need: true,
     not: ["ตัวเลือก", "รุ่น", "variation"],
     pats: ["ชื่อสินค้า", "productname"] },
@@ -236,16 +234,15 @@ function shopeeRead(text) {
 
     var o = byId[sn];
     if (!o) {
-      o = { sn: sn, date: "", cust: "", tel: "", addr: "", lines: [] };
+      o = { sn: sn, date: "", cust: "", status: "", lines: [] };
       byId[sn] = o;
       orders.push(o);
     }
     /* วันจัดส่งก่อน ไม่มีค่อยใช้วันสั่งซื้อ */
     first(o, "date", shopeeDate(cell(row, "shipDate")) || shopeeDate(cell(row, "date")));
     first(o, "cust", cell(row, "cust"));
-    first(o, "tel", cell(row, "tel"));
-    first(o, "addr", shopeeAddr(cell(row, "addr"), cell(row, "town"),
-      cell(row, "district"), cell(row, "province"), cell(row, "zip")));
+    first(o, "status", cell(row, "status"));
+    first(o, "backWhy", cell(row, "back"));
 
     if (nm || vr || sk) {
       var pr = cell(row, "price");
@@ -260,32 +257,36 @@ function shopeeRead(text) {
 
   for (var k = 0; k < orders.length; k++) {
     var od = orders[k];
-
-    /* ชื่อกับที่อยู่ต้องอยู่ด้วยกันเสมอ
-       ชื่อที่ Shopee ส่งมาเป็นชื่อบัญชีผู้ซื้อ ซึ่งตั้งกันแปลก ๆ และบางไฟล์ถูกปิดบัง
-       เหลือแค่ D*******n — ชื่อแบบนั้นเอาไปพิมพ์บนใบปะหน้าหรือค้นหาทีหลังไม่ได้เลย
-       เอาชื่อไปไว้บรรทัดแรกของที่อยู่ด้วย ที่อยู่จึงสมบูรณ์ในตัวเองไม่ว่าชื่อจะเพี้ยนแค่ไหน */
-    if (od.cust && od.addr && od.addr.indexOf(od.cust) < 0) {
-      od.addr = od.cust + "\n" + od.addr;
-    }
-
     /* Shopee ปิดบังชื่อผู้ซื้อในไฟล์บางแบบ ช่องชื่อจึงว่างได้จริง
        ปล่อยว่างไว้คือบันทึกไม่ผ่านทั้งใบ จึงใส่ชื่อที่ตามกลับไปหาใบเดิมได้แทน
        และหน้าตรวจโชว์ชื่อนี้ตรง ๆ ก่อนกดยืนยัน ไม่ได้เติมให้เงียบ ๆ */
     if (!od.cust) od.cust = "ลูกค้า Shopee " + od.sn;
+    od.back = shopeeBack(od);
+    od.done = !od.back && shopeeDone(od);
   }
 
   return { ok: true, orders: orders, missing: [], headers: headers };
 }
 
-/** ที่อยู่เต็ม — ต่อท้ายเฉพาะส่วนที่ยังไม่มีอยู่ในที่อยู่หลัก ไม่ให้ซ้ำสองรอบ */
-function shopeeAddr(addr, town, district, province, zip) {
-  var out = String(addr || "").trim();
-  [town, district, province, zip].forEach(function (x) {
-    x = String(x || "").trim();
-    if (x && out.indexOf(x) < 0) out += (out ? " " : "") + x;
-  });
-  return out;
+/**
+ * ใบนี้ของกลับมาที่ร้านแล้วหรือเปล่า
+ *
+ * ตัวนี้สำคัญที่สุดในไฟล์ — ใบที่ตีกลับหรือยกเลิก ของไม่เคยออกจากร้านจริง
+ * ถ้านำเข้าไป ระบบจะตัดสต๊อกให้ทันที กลายเป็นของหายจากชีททั้งที่ยังอยู่บนชั้น
+ * แล้วไม่มีใครรู้จนกว่าจะตรวจนับ จึงต้องคัดออกตั้งแต่หน้าตรวจ ไม่ให้กดนำเข้าได้เลย
+ *
+ * เช็ค "ไม่สำเร็จ" ก่อนคำว่า "สำเร็จ" เสมอ เพราะคำหลังเป็นส่วนหนึ่งของคำแรก
+ */
+function shopeeBack(o) {
+  var t = (String(o.status || "") + " " + String(o.backWhy || "")).toLowerCase();
+  return /ตีกลับ|คืนสินค้า|คืนเงิน|ยกเลิก|ไม่สำเร็จ|cancel|return|refund|failed|unsuccess/
+    .test(t);
+}
+
+/** ของถึงมือลูกค้าแล้ว — ใบพวกนี้ลงชีทเป็น "ส่งแล้ว" ได้เลย ไม่ต้องมาไล่แก้ทีหลัง */
+function shopeeDone(o) {
+  return /สำเร็จ|จัดส่งแล้ว|ส่งแล้ว|จัดส่งสำเร็จ|complete|delivered|shipped/
+    .test(String(o.status || "").toLowerCase());
 }
 
 /* ------------------------------------------------------------------ หน้าจอ */
@@ -370,9 +371,21 @@ function shopRead() {
   });
 }
 
+/** ใบที่กดนำเข้าได้จริง — ใบที่ตีกลับถูกคัดออกตรงนี้ ไม่ให้หลุดไปตัดสต๊อก */
 function shopReady() {
   if (!SHOP.match || !SHOP.match.orders) return [];
-  return SHOP.match.orders.filter(function (o) { return o.ok; });
+  return SHOP.match.orders.filter(function (o) { return o.ok && !o.back; });
+}
+
+/** สถานะที่จะลงชีท — ใบที่ส่งถึงแล้วลงเป็น "ส่งแล้ว" ไม่ต้องมาไล่แก้ทีหลัง */
+function shopStatus(o) {
+  var list = (BOOT && BOOT.lists && BOOT.lists.status) || [];
+  if (o.done) {
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i]).indexOf("ส่งแล้ว") > -1) return list[i];
+    }
+  }
+  return $("#sp-status").value;
 }
 
 function shopRender() {
@@ -387,12 +400,14 @@ function shopRender() {
 
   var all = SHOP.match.orders || [];
   var ok = shopReady();
-  var dup = all.filter(function (o) { return o.already; }).length;
-  var bad = all.length - ok.length - dup;
+  var dup = all.filter(function (o) { return o.already && !o.back; }).length;
+  var back = all.filter(function (o) { return o.back; }).length;
+  var bad = all.length - ok.length - dup - back;
 
   sum.innerHTML =
     '<span class="tag ok">พร้อมนำเข้า ' + ok.length + ' ใบ</span> ' +
     (dup ? '<span class="tag">เคยนำเข้าแล้ว ' + dup + ' ใบ</span> ' : "") +
+    (back ? '<span class="tag wait">ตีกลับ/ยกเลิก ' + back + ' ใบ</span> ' : "") +
     (bad ? '<span class="tag bad">ติดปัญหา ' + bad + ' ใบ</span>' : "");
 
   box.innerHTML = all.map(function (o) {
@@ -410,7 +425,12 @@ function shopRender() {
     }).join("");
 
     var note = "";
-    if (o.already) {
+    if (o.back) {
+      /* ของกลับมาที่ร้านแล้ว นำเข้าไปคือตัดสต๊อกทิ้งฟรี ๆ จึงไม่ให้กดเลย */
+      note = '<div style="color:var(--amber)">ตีกลับ / ยกเลิก' +
+        (o.backWhy ? " (" + esc(o.backWhy) + ")" : "") +
+        " — <b>ไม่นำเข้า</b> เพราะของยังอยู่ที่ร้าน สต๊อกไม่ควรถูกตัด</div>";
+    } else if (o.already) {
       note = '<div class="tag">นำเข้าไปแล้วเป็นใบ ' + esc(o.existingNo) + " — ข้ามใบนี้</div>";
     } else if (o.issues && o.issues.length) {
       note = '<div style="color:var(--red)">' + o.issues.map(esc).join("<br>") + "</div>";
@@ -428,7 +448,7 @@ function shopRender() {
     return '<div class="row"><div class="i">' +
       "<b>" + esc(o.cust) + "</b>" +
       "<span>" + esc(o.sn) + (o.date ? " · ส่งวันที่ " + esc(thaiDate(o.date)) : "") +
-      (o.tel ? " · " + esc(o.tel) : "") + "</span>" +
+      (o.status ? " · " + esc(o.status) : "") + "</span>" +
       '<div style="font-size:0.82rem;margin-top:4px">' + lines + "</div>" +
       '<div style="font-size:0.82rem;margin-top:4px;color:var(--gray)">' + money + "</div>" +
       note + "</div></div>";
@@ -448,17 +468,16 @@ function shopPayload(o) {
     date: o.date || todayISO(),
     channel: SHOP.channel,
     cust: o.cust,
-    tel: o.tel,
-    addr: o.addr,
-    /* เลขพัสดุ ขนส่ง ค่าส่ง ส่วนลด — ไม่เอาเข้ามาโดยตั้งใจ
-       Shopee จัดส่งและเก็บเงินค่าส่งเอง ตัวเลขพวกนั้นเป็นของแพลตฟอร์ม
-       ไม่ใช่ยอดขายของร้าน เอาเข้ามาปนจะทำให้สรุปยอดกับกำไรเพี้ยน */
+    /* ที่อยู่ เบอร์โทร เลขพัสดุ ขนส่ง ค่าส่ง ส่วนลด — ไม่เอาเข้ามาโดยตั้งใจ
+       งานเดียวที่ต้องการจากออเดอร์ Shopee คือ "ตัดสต๊อกกับรู้กำไร"
+       ส่วนการส่งของ Shopee ทำเองทั้งหมด ตั้งแต่ใบปะหน้าจนถึงเก็บค่าส่ง
+       ดึงเข้ามาก็ไม่มีใครใช้ต่อ แถมหน้าตรวจรกจนดูของที่ต้องดูจริงไม่ทัน */
     /* ออกใบกำกับภาษีผ่านแพลตฟอร์ม ไม่ได้ออกจากระบบนี้ จึงเป็นไม่รับ VAT
        ใบไหนต้องออกจริงค่อยแก้ทีละใบในชีท */
     vat: false,
     discount: 0,
     ship: 0,
-    status: $("#sp-status").value,
+    status: shopStatus(o),
     by: $("#sp-by").value,
     note: "Shopee " + o.sn,
     items: (o.items || []).map(function (x) {
