@@ -396,6 +396,64 @@ window.google = { script: { run: (function(){
                  lotRemain:(p.lotNo && lot)?lot.total:null, recvRow:9, lotRow:p.lotNo?9:0 };
       });
     },
+    /* ตรวจออเดอร์ Shopee ก่อนนำเข้า — ล้อตรรกะฝั่งชีทตัวจริง (Api.gs)
+       จับคู่ด้วยรหัสก่อน แล้วค่อยชื่อ · ใบที่เคยนำเข้าแล้วดูจากคำว่า Shopee ในหมายเหตุ */
+    shopeeMatch: function(list){
+      window.SENT.push({fn:"shopeeMatch", n:(list||[]).length});
+      reply(function(){
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        function norm(s){
+          return String(s==null?"":s).replace(/[()\[\]{}]/g," ")
+            .replace(/\s+/g," ").trim().toLowerCase();
+        }
+        var bySku={}, byName={};
+        MOCK_BOOT.products.forEach(function(p){
+          bySku[String(p.sku).trim().toLowerCase()]=p;
+          var n=norm(p.name); if(n && !byName[n]) byName[n]=p;
+        });
+        var done={};
+        MOCK_ORDERS.forEach(function(o){
+          var m=/Shopee\s+([A-Za-z0-9]+)/.exec(String(o.note||""));
+          if(m) done[m[1]]=o.no;
+        });
+        function hit(sku,name){
+          var s=String(sku||"").trim().toLowerCase();
+          if(s && bySku[s]) return bySku[s];
+          var n=norm(name); if(!n) return null;
+          if(byName[n]) return byName[n];
+          for(var k in byName){
+            if(k && (n.indexOf(k)===0 || k.indexOf(n)===0)) return byName[k];
+          }
+          return null;
+        }
+        var already=0;
+        var out=(list||[]).map(function(o){
+          var issues=[], sub=0;
+          var items=(o.lines||[]).map(function(ln){
+            var p=hit(ln.sku, ln.name);
+            var qty=Number(ln.qty);
+            var price=(ln.price===""||ln.price==null)?null:Number(ln.price);
+            if(!p) issues.push('จับคู่สินค้าไม่ได้: "'+(ln.name||ln.sku||"(ไม่มีชื่อ)")+'"');
+            if(!(qty>0)||qty!==Math.floor(qty)) issues.push('จำนวนไม่ถูกต้อง: "'+ln.qty+'"');
+            if(p && qty>0) sub+=Math.round(qty*(price===null?Number(p.price||0):price)*100)/100;
+            return { sku:p?p.sku:"", name:p?p.name:String(ln.name||""),
+                     shopeeName:String(ln.name||""), shopeeSku:String(ln.sku||""),
+                     qty:qty, price:price, ok:!!p };
+          });
+          if(!items.length) issues.push("ใบนี้ไม่มีรายการสินค้า");
+          if(!o.sn) issues.push("ไม่มีหมายเลขคำสั่งซื้อของ Shopee — กันนำเข้าซ้ำไม่ได้");
+          var dup=!!(o.sn && done[o.sn]);
+          if(dup) already++;
+          return { sn:o.sn||"", date:o.date||"", cust:o.cust||"", tel:o.tel||"",
+                   addr:o.addr||"", carrier:o.carrier||"", track:o.track||"",
+                   ship:Number(o.ship||0), discount:Number(o.discount||0),
+                   status:o.status||"", items:items, subtotal:Math.round(sub*100)/100,
+                   issues:issues, ok:(!issues.length && !dup), already:dup,
+                   existingNo:dup?done[o.sn]:"" };
+        });
+        return { orders:out, already:already };
+      });
+    },
     createOrder: function(p){
       window.SENT.push(p);
       reply(function(){
@@ -441,8 +499,8 @@ def main():
         return (GS / (name + ".html")).read_text(encoding="utf-8")
 
     page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
-    if n not in (0, 7):
-        sys.exit("คาดว่าจะมี include 7 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
+    if n not in (0, 8):
+        sys.exit("คาดว่าจะมี include 8 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
 
     page = page.replace('"<?= staffEmail ?>"', json.dumps(BOOT["staff"]))
     if "<?" in page:

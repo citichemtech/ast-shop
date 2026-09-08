@@ -1475,6 +1475,130 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       return $$('#items .it')[0].querySelector('.i-sku').innerHTML.indexOf('(เหลือ ' + n + ')') > -1;
     }, before29 + 12));
 
+  /* ---------- 30. นำเข้าออเดอร์จาก Shopee ---------- */
+  console.log('\n30. นำเข้าออเดอร์จาก Shopee');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(400);
+  await page.click('#btn-shop');
+  await page.waitForTimeout(400);
+  truthy('เปิดหน้านำเข้า Shopee จากหน้าออเดอร์ได้',
+    await page.evaluate(function () { return $('#pg-shop').style.display !== 'none' }));
+  truthy('แท็บ "ออเดอร์" ยังติดไฟค้างไว้ ไม่ใช่ดับหมดทั้งแถบ',
+    await page.evaluate(function () {
+      return $('.tabs button[data-go="list"]').classList.contains('on');
+    }));
+  truthy('ตั้งสถานะเริ่มต้นเป็น "ชำระแล้ว" เพราะ Shopee เก็บเงินไปแล้ว',
+    await page.evaluate(function () { return $('#sp-status').value }) === 'ชำระแล้ว');
+
+  console.log('\n   วางของที่ไม่ใช่ตาราง ต้องบอกว่าอ่านไม่ได้ ไม่ใช่เงียบ');
+  await page.fill('#sp-text', 'สวัสดีครับ ส่งของด้วย');
+  await page.click('#sp-read');
+  await page.waitForTimeout(400);
+  truthy('บอกว่าหาคอลัมน์ไม่เจอ พร้อมชื่อคอลัมน์ที่ขาด',
+    /หาคอลัมน์ไม่เจอ/.test(await page.textContent('#err')));
+
+  console.log('\n   วางตารางจริง — ต้องกางให้ตรวจก่อน ยังไม่เขียนอะไรลงชีท');
+  var sku30 = await page.evaluate(function () { return MOCK_BOOT.products[0].sku });
+  var name30 = await page.evaluate(function () { return MOCK_BOOT.products[0].name });
+  var price30 = await page.evaluate(function () { return MOCK_BOOT.products[0].price });
+  var HEAD30 = ['หมายเลขคำสั่งซื้อ', 'สถานะการสั่งซื้อ', 'วันที่ทำการสั่งซื้อ',
+    'ชื่อสินค้า', 'เลขอ้างอิง SKU (ตัวเลือก)', 'ราคาขาย', 'จำนวน',
+    'ค่าจัดส่งที่ชำระโดยผู้ซื้อ', 'ผู้ให้บริการขนส่ง', 'หมายเลขติดตามพัสดุ',
+    'ชื่อผู้รับ', 'หมายเลขโทรศัพท์', 'ที่อยู่ในการจัดส่ง', 'จังหวัด', 'รหัสไปรษณีย์'];
+  var PASTE30 = [HEAD30,
+    ['260907AAA1', 'สำเร็จแล้ว', '07/09/2026', name30, sku30, String(price30), '2',
+     '0', 'Flash Express', 'TH99999', 'ผู้ซื้อ ทดสอบ', '0812345678',
+     '9/9 ถ.ทดสอบ', 'ปทุมธานี', '12150'],
+    ['260907AAA2', 'สำเร็จแล้ว', '07/09/2026', 'ของที่ร้านไม่มีขาย', 'ZZZ-999', '250', '1',
+     '0', 'J&T Express', 'TH88888', 'ผู้ซื้อ สอง', '0899999999',
+     '1 ถ.สอง', 'กรุงเทพมหานคร', '10500']
+  ].map(function (r) { return r.join('\t') }).join('\n');
+
+  var sentBefore30 = await page.evaluate(function () { return window.SENT.length });
+  await page.fill('#sp-text', PASTE30);
+  await page.click('#sp-read');
+  await page.waitForTimeout(700);
+  truthy('บอกว่ามีใบพร้อมนำเข้ากี่ใบ และติดปัญหากี่ใบ',
+    /พร้อมนำเข้า 1 ใบ/.test(await page.textContent('#sp-sum')) &&
+    /ติดปัญหา 1 ใบ/.test(await page.textContent('#sp-sum')));
+  truthy('ใบที่จับคู่สินค้าไม่ได้ บอกชื่อสินค้าที่จับไม่ได้ตรง ๆ',
+    /จับคู่สินค้าไม่ได้.*ของที่ร้านไม่มีขาย/.test(await page.textContent('#sp-list')));
+  eq('ตรวจอย่างเดียว ยังไม่ได้สั่งบันทึกอะไร',
+    await page.evaluate(function (n) {
+      return window.SENT.slice(n).filter(function (x) { return x && x.clientKey }).length;
+    }, sentBefore30), 0);
+
+  console.log('\n   กดนำเข้า — เขียนเฉพาะใบที่พร้อม ใบที่ติดปัญหาต้องไม่ถูกเขียน');
+  var before30 = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#sp-go');
+  await page.waitForTimeout(1200);
+  var sent30 = await page.evaluate(function (n) {
+    return window.SENT.slice(n).filter(function (x) { return x && x.clientKey });
+  }, before30);
+  eq('ยิงบันทึกไปใบเดียว', sent30.length, 1);
+  eq('กุญแจกันซ้ำผูกกับหมายเลขของ Shopee', sent30[0].clientKey, 'sp-260907AAA1');
+  eq('ช่องทางขายเป็น Shopee', sent30[0].channel, 'Shopee');
+  eq('หมายเหตุเก็บหมายเลข Shopee ไว้ตามกลับได้', sent30[0].note, 'Shopee 260907AAA1');
+  eq('บันทึกเป็นไม่รับ VAT', sent30[0].vat, false);
+  eq('วันที่แปลงเป็นรูปแบบที่ชีทใช้', sent30[0].date, '2026-09-07');
+  eq('รายการสินค้าใช้รหัสของร้าน ไม่ใช่รหัสของ Shopee',
+    [sent30[0].items.length, sent30[0].items[0].sku, sent30[0].items[0].qty],
+    [1, sku30, 2]);
+  eq('เลขพัสดุกับขนส่งติดไปด้วย', [sent30[0].track, sent30[0].carrier],
+    ['TH99999', 'Flash Express']);
+  truthy('ขึ้นสรุปว่านำเข้าสำเร็จกี่ใบ',
+    /นำเข้าสำเร็จ 1 ใบ/.test(await page.textContent('#ok')));
+  truthy('ล้างรายการที่นำเข้าไปแล้วออกจากหน้าจอ กันกดซ้ำ',
+    await page.evaluate(function () { return $('#sp-list').innerHTML === '' }));
+
+  console.log('\n   ใบที่ขนส่งไม่มีในชีท ต้องให้คนเลือกเอง ห้ามเดาเป็นตัวแรกในรายการ');
+  var PASTE30B = [HEAD30,
+    ['260907BBB1', 'สำเร็จแล้ว', '07/09/2026', name30, sku30, String(price30), '1',
+     '0', 'J&T Express', 'TH77777', 'ผู้ซื้อ สาม', '0800000003',
+     '3 ถ.สาม', 'ชลบุรี', '20000']
+  ].map(function (r) { return r.join('\t') }).join('\n');
+  await page.fill('#sp-text', PASTE30B);
+  await page.click('#sp-read');
+  await page.waitForTimeout(700);
+  truthy('ใบที่ขนส่งไม่มีในชีท ขึ้นเตือนไว้ให้เห็นก่อนกด',
+    /ขนส่ง “J&T Express” ไม่มีในชีท/.test(await page.textContent('#sp-list')));
+  var before30b = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#sp-go');
+  await page.waitForTimeout(500);
+  truthy('กันไว้ก่อน แล้วบอกให้เลือกขนส่ง',
+    /เลือก “ขนส่งที่จะใช้แทน”/.test(await page.textContent('#err')));
+  eq('ยังไม่ได้เขียนอะไรลงชีท',
+    await page.evaluate(function (n) {
+      return window.SENT.slice(n).filter(function (x) { return x && x.clientKey }).length;
+    }, before30b), 0);
+
+  await page.selectOption('#sp-carrier', 'Kerry Express');
+  await page.click('#sp-go');
+  await page.waitForTimeout(1000);
+  var sent30b = await page.evaluate(function (n) {
+    return window.SENT.slice(n).filter(function (x) { return x && x.clientKey });
+  }, before30b);
+  eq('เลือกแล้วบันทึกได้ ใช้ขนส่งที่คนเลือก', sent30b[0].carrier, 'Kerry Express');
+  truthy('เก็บชื่อขนส่งเดิมจากไฟล์ไว้ในหมายเหตุ ไม่ให้ข้อมูลหาย',
+    sent30b[0].note === 'Shopee 260907BBB1 · ขนส่งตามไฟล์ J&T Express');
+
+  console.log('\n   วางไฟล์เดิมซ้ำ — ใบที่เคยนำเข้าแล้วต้องขึ้นว่าข้าม ไม่ใช่เขียนซ้ำ');
+  await page.evaluate(function () {
+    MOCK_ORDERS.push({ no: 'AST-26-0099', note: 'Shopee 260907CCC1', items: [] });
+  });
+  var PASTE30C = [HEAD30,
+    ['260907CCC1', 'สำเร็จแล้ว', '07/09/2026', name30, sku30, String(price30), '1',
+     '0', 'Flash Express', 'TH66666', 'ผู้ซื้อ สี่', '0800000004',
+     '4 ถ.สี่', 'ระยอง', '21000']
+  ].map(function (r) { return r.join('\t') }).join('\n');
+  await page.fill('#sp-text', PASTE30C);
+  await page.click('#sp-read');
+  await page.waitForTimeout(700);
+  truthy('บอกว่าเคยนำเข้าไปแล้วเป็นใบไหน',
+    /นำเข้าไปแล้วเป็นใบ AST-26-0099/.test(await page.textContent('#sp-list')));
+  truthy('ไม่มีปุ่มให้กดนำเข้าซ้ำ',
+    await page.evaluate(function () { return $('#sp-go').style.display === 'none' }));
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

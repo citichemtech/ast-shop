@@ -2819,14 +2819,18 @@ function recvDone(res){
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
 
 function go(page){
-  ["new","list","recv","quote","sum"].forEach(function(p){
+  ["new","list","recv","quote","sum","shop"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
-  $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===page) });
+  /* หน้านำเข้า Shopee ไม่มีปุ่มของตัวเองบนแถบล่าง เข้ามาจากหน้าออเดอร์
+     จึงให้แท็บ "ออเดอร์" ยังติดไฟค้างไว้ ไม่ใช่ดับหมดทั้งแถบจนไม่รู้ว่าอยู่ตรงไหน */
+  var tab = (page==="shop") ? "list" : page;
+  $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===tab) });
   if(page==="list") loadOrders();
   if(page==="sum")  loadSummary();
   if(page==="quote") quoteInit();
   if(page==="recv") recvInit();
+  if(page==="shop") shopInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){
@@ -2843,6 +2847,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#btn-parse").onclick = doParse;
   $("#btn-save").onclick  = save;
   docBarInit();
+  $("#btn-shop").onclick = function(){ go("shop") };
   ["f-disc","f-ship"].forEach(function(id){ $("#"+id).oninput = recalc });
   ["f-vat","f-status"].forEach(function(id){ $("#"+id).onchange = recalc });
   $("#f-disc").addEventListener("change", recalc);

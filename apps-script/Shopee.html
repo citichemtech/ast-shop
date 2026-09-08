@@ -1,0 +1,564 @@
+<script>
+/* ================================================== นำเข้าออเดอร์จาก Shopee
+
+   ทางเข้าข้อมูลคือ "วางข้อความ" ไม่ใช่อัปโหลดไฟล์ — ตั้งใจเลือกแบบนี้
+   ไฟล์ที่โหลดจาก Seller Centre เป็น .xlsx ซึ่งแกะเองในเบราว์เซอร์ไม่ได้
+   ถ้าจะแกะต้องลากไลบรารีจากเน็ตเข้ามา = แอปพังทันทีที่เน็ตร้านช้าหรือลิงก์ตาย
+   แต่คนขายต้องเปิดไฟล์ดูอยู่แล้ว เลือกทั้งแผ่นแล้วกดคัดลอก = ได้ตารางครบทุกคอลัมน์
+   วางลงช่องเดียวจบ ไม่ต้องแปลงไฟล์ ไม่ต้องพึ่งของนอกสักตัว
+
+   ทั้งไฟล์นี้ "ไม่เขียนอะไรลงชีทเอง" — ตอนกดยืนยันจะวนเรียก createOrder ตัวเดิม
+   ที่ผ่านการตัดล็อต FEFO · ถอยกลับตอนล้ม · กันบันทึกซ้ำ · ตรวจยอดกับชีท มาแล้ว
+   ของใหม่มีแค่ "อ่านตาราง" กับ "จับคู่สินค้า" ซึ่งพลาดแล้วยังไม่ทำข้อมูลเสีย
+   เพราะคนต้องเห็นหน้าตรวจก่อนเสมอ                                          */
+
+/* ---------------------------------------------------------- ตัวอ่านตาราง */
+
+/** ตัวคั่นคอลัมน์ — ก๊อปจาก Excel ได้แท็บ · โหลด .csv มาได้จุลภาค */
+function shopeeDelim(text) {
+  var head = String(text || "").split(/\r?\n/).slice(0, 5).join("\n");
+  var tab = 0, com = 0, semi = 0;
+  for (var i = 0; i < head.length; i++) {
+    var c = head.charAt(i);
+    if (c === "\t") tab++; else if (c === ",") com++; else if (c === ";") semi++;
+  }
+  if (tab && tab >= com && tab >= semi) return "\t";
+  if (semi > com) return ";";
+  return ",";
+}
+
+/**
+ * แยกข้อความเป็นตาราง
+ *
+ * ต้องรองรับเครื่องหมายคำพูดจริง ๆ ไม่ใช่ split(",") เฉย ๆ
+ * เพราะที่อยู่ลูกค้ามีจุลภาคเกือบทุกใบ และบางใบมีขึ้นบรรทัดใหม่อยู่ในช่องเดียว
+ * ตัดผิดทีเดียวคือคอลัมน์เลื่อนทั้งไฟล์ แล้วเบอร์โทรไปโผล่ช่องที่อยู่
+ *
+ * เปิดโหมดคำพูดเฉพาะตอนคำพูดอยู่ต้นช่องเท่านั้น ไม่งั้นชื่อสินค้าอย่าง
+ * 2" pipe จะกลืนทั้งไฟล์เข้าไปเป็นช่องเดียว
+ */
+function shopeeCells(text, dlm) {
+  text = String(text == null ? "" : text).replace(/^﻿/, "");
+  dlm = dlm || shopeeDelim(text);
+  var rows = [], row = [], f = "", q = false, i = 0;
+  while (i < text.length) {
+    var c = text.charAt(i);
+    if (q) {
+      if (c === '"') {
+        if (text.charAt(i + 1) === '"') { f += '"'; i += 2; continue; }
+        q = false; i++; continue;
+      }
+      f += c; i++; continue;
+    }
+    if (c === '"' && f === "") { q = true; i++; continue; }
+    if (c === dlm) { row.push(f); f = ""; i++; continue; }
+    if (c === "\r") { i++; continue; }
+    if (c === "\n") { row.push(f); rows.push(row); row = []; f = ""; i++; continue; }
+    f += c; i++;
+  }
+  row.push(f); rows.push(row);
+  return rows.filter(function (r) {
+    for (var k = 0; k < r.length; k++) if (String(r[k]).trim() !== "") return true;
+    return false;
+  });
+}
+
+/** หัวคอลัมน์แบบตัดเรื่องจุกจิกออก — Shopee ใส่วงเล็บ ดอกจัน เว้นวรรคไม่เท่ากัน */
+function shopeeNormHd(s) {
+  return String(s == null ? "" : s).toLowerCase()
+    .replace(/[ ​‌‍﻿]/g, "")
+    .replace(/[^0-9a-z฀-๿]/g, "");
+}
+
+/**
+ * คอลัมน์ที่ต้องหาให้เจอ
+ *
+ * เรียงคำใน pats ตามลำดับที่อยากได้ก่อน เช่นราคาเอา "ราคาขาย" (ที่ลูกค้าจ่ายจริง)
+ * ก่อน "ราคาตั้งต้น" (ราคาป้ายก่อนลด) — สลับกันเมื่อไรกำไรผิดทั้งไฟล์
+ *
+ * not คือคำที่ถ้าเจอแล้วห้ามใช้คอลัมน์นั้น กันหัวคอลัมน์ที่มีคำเดียวกันแย่งกัน
+ * เช่น "จำนวน" กับ "จำนวนเงินทั้งหมด"
+ */
+var SHOPEE_COLS = [
+  { key: "sn", label: "หมายเลขคำสั่งซื้อ", need: true,
+    pats: ["หมายเลขคำสั่งซื้อ", "เลขที่คำสั่งซื้อ", "ordersn", "orderid", "หมายเลขออเดอร์"] },
+  { key: "date", label: "วันที่สั่งซื้อ",
+    pats: ["วันที่ทำการสั่งซื้อ", "เวลาการสั่งซื้อ", "วันที่สั่งซื้อ", "ordercreationdate",
+           "ordercreationtime", "orderpaidtime", "เวลาการชำระสินค้า"] },
+  { key: "status", label: "สถานะการสั่งซื้อ",
+    not: ["ยกเลิก", "คืนเงิน", "cancel", "return", "refund"],
+    pats: ["สถานะการสั่งซื้อ", "สถานะคำสั่งซื้อ", "orderstatus"] },
+  { key: "cust", label: "ชื่อผู้รับ",
+    pats: ["ชื่อผู้รับ", "receivername", "ชื่อผู้ซื้อ", "buyerusername", "username"] },
+  { key: "tel", label: "เบอร์โทร",
+    pats: ["หมายเลขโทรศัพท์", "เบอร์โทรศัพท์", "phonenumber", "เบอร์โทร"] },
+  { key: "addr", label: "ที่อยู่",
+    pats: ["ที่อยู่ในการจัดส่ง", "ที่อยู่จัดส่ง", "deliveryaddress", "ที่อยู่"] },
+  /* Shopee แยกตำบล อำเภอ จังหวัด รหัสไปรษณีย์ ออกเป็นคอลัมน์ต่างหาก
+     ไม่เก็บมาด้วยคือใบปะหน้าพัสดุพิมพ์ออกมาแล้วส่งไม่ถึง */
+  { key: "town", label: "ตำบล", pats: ["ตำบลแขวง", "ตำบล", "แขวง", "town"] },
+  { key: "district", label: "อำเภอ", pats: ["อำเภอเขต", "อำเภอ", "เขต", "district"] },
+  { key: "province", label: "จังหวัด", pats: ["จังหวัด", "province"] },
+  { key: "zip", label: "รหัสไปรษณีย์", pats: ["รหัสไปรษณีย์", "zipcode", "postalcode"] },
+  { key: "carrier", label: "ขนส่ง",
+    pats: ["ผู้ให้บริการขนส่ง", "ตัวเลือกการจัดส่ง", "ช่องทางการจัดส่ง", "shippingoption",
+           "ขนส่ง"] },
+  { key: "track", label: "เลขพัสดุ",
+    pats: ["หมายเลขติดตามพัสดุ", "trackingnumber", "เลขพัสดุ", "หมายเลขพัสดุ"] },
+  { key: "name", label: "ชื่อสินค้า", need: true,
+    not: ["ตัวเลือก", "รุ่น", "variation"],
+    pats: ["ชื่อสินค้า", "productname"] },
+  { key: "variation", label: "ชื่อตัวเลือก",
+    pats: ["ชื่อตัวเลือก", "ชื่อรุ่นสินค้า", "variationname"] },
+  { key: "sku", label: "รหัสสินค้า",
+    pats: ["เลขอ้างอิงskuตัวเลือก", "skuสินค้า", "variationsku", "เลขอ้างอิงsku",
+           "skureferenceno", "parentsku", "sku"] },
+  { key: "qty", label: "จำนวน", need: true,
+    not: ["เงิน", "ราคา", "ทั้งหมด", "total", "amount", "ยกเลิก", "คืน"],
+    pats: ["จำนวน", "quantity", "จำนวนสินค้า"] },
+  { key: "price", label: "ราคาขาย",
+    not: ["สุทธิ", "ทั้งหมด", "รวม", "total", "subtotal"],
+    pats: ["ราคาขาย", "dealprice", "ราคาที่ชำระ", "ราคาตั้งต้น", "originalprice"] },
+  { key: "ship", label: "ค่าจัดส่ง",
+    not: ["ผู้ขาย", "seller", "ส่วนลด", "shopee", "คืน"],
+    pats: ["ค่าจัดส่งที่ชำระโดยผู้ซื้อ", "ค่าจัดส่งที่ผู้ซื้อชำระ", "buyerpaidshippingfee",
+           "ค่าจัดส่ง"] },
+  { key: "discount", label: "ส่วนลด",
+    not: ["shopee", "แพลตฟอร์ม", "platform"],
+    pats: ["โค้ดส่วนลดชำระโดยผู้ขาย", "ส่วนลดจากผู้ขาย", "sellerdiscount", "ส่วนลด"] }
+];
+
+function shopeeBanned(c, h) {
+  var no = c.not || [];
+  for (var i = 0; i < no.length; i++) {
+    if (h.indexOf(shopeeNormHd(no[i])) > -1) return true;
+  }
+  return false;
+}
+
+/** จับหัวคอลัมน์ให้เข้ากับช่องที่เราต้องใช้ — คอลัมน์หนึ่งใช้ได้ครั้งเดียว */
+function shopeeFindCols(head) {
+  var norm = (head || []).map(shopeeNormHd);
+  var used = {}, map = {}, missing = [];
+  for (var n = 0; n < SHOPEE_COLS.length; n++) {
+    var c = SHOPEE_COLS[n], hit = -1;
+    for (var p = 0; p < c.pats.length && hit < 0; p++) {
+      var want = shopeeNormHd(c.pats[p]);
+      if (!want) continue;
+      /* ตรงเป๊ะก่อนเสมอ แล้วค่อยยอมแบบ "มีคำนี้อยู่ในหัวคอลัมน์" */
+      for (var i = 0; i < norm.length && hit < 0; i++) {
+        if (used[i] || !norm[i]) continue;
+        if (norm[i] === want && !shopeeBanned(c, norm[i])) hit = i;
+      }
+      for (var j = 0; j < norm.length && hit < 0; j++) {
+        if (used[j] || !norm[j]) continue;
+        if (norm[j].indexOf(want) > -1 && !shopeeBanned(c, norm[j])) hit = j;
+      }
+    }
+    if (hit > -1) { used[hit] = true; map[c.key] = hit; }
+    else if (c.need) missing.push(c.label);
+  }
+  return { map: map, missing: missing };
+}
+
+/**
+ * หาแถวหัวตาราง
+ *
+ * ไฟล์ที่โหลดมาบางทีมีบรรทัดชื่อรายงานอยู่ข้างบนก่อนหัวตาราง
+ * และคนก๊อปมาก็มักลากมาเกินไปหนึ่งสองบรรทัด จึงไม่ฟันธงว่าแถวแรกคือหัวตาราง
+ */
+function shopeeHeadRow(rows) {
+  var best = null;
+  for (var i = 0; i < rows.length && i < 12; i++) {
+    var f = shopeeFindCols(rows[i]);
+    if (!f.missing.length) return { row: i, cols: f.map, missing: [] };
+    if (!best || f.missing.length < best.f.missing.length) best = { row: i, f: f };
+  }
+  return best
+    ? { row: best.row, cols: best.f.map, missing: best.f.missing }
+    : { row: 0, cols: {}, missing: ["ทุกคอลัมน์"] };
+}
+
+/** ตัวเลขจากช่องในตาราง — ตัดจุลภาค สัญลักษณ์เงิน และช่องว่างออกก่อน */
+function shopeeNum(v) {
+  var s = String(v == null ? "" : v).replace(/[^0-9.\-]/g, "");
+  var n = Number(s);
+  return isFinite(n) ? n : 0;
+}
+
+/**
+ * วันที่ — Shopee ไทยเขียนแบบ วัน/เดือน/ปี ไม่ใช่ เดือน/วัน/ปี
+ * และไฟล์ที่เปิดผ่าน Excel ไทยบางเครื่องกลายเป็น พ.ศ. จึงแปลงกลับให้ด้วย
+ */
+function shopeeDate(s) {
+  s = String(s || "").trim();
+  var m = /(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/.exec(s);
+  if (m) return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
+  m = /(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/.exec(s);
+  if (m) {
+    var y = Number(m[3]);
+    if (y < 100) y += 2000;
+    if (y > 2400) y -= 543;
+    return y + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2);
+  }
+  return "";
+}
+
+/**
+ * อ่านข้อความที่วางมา → รายการออเดอร์พร้อมส่งไปตรวจกับชีท
+ *
+ * ไฟล์ Shopee เป็น "หนึ่งบรรทัด = หนึ่งสินค้า" ใบที่มีสามชิ้นจึงกินสามบรรทัด
+ * ข้อมูลระดับใบ (ลูกค้า ที่อยู่ ค่าส่ง) บางไฟล์ซ้ำทุกบรรทัด บางไฟล์ใส่แค่บรรทัดแรก
+ * จึงเก็บ "ค่าแรกที่ไม่ว่าง" ของแต่ละใบ และค่าเงินไม่บวกสะสม ไม่งั้นค่าส่งใบละ 50
+ * จะกลายเป็น 150 ในใบที่มีสามบรรทัด
+ */
+function shopeeRead(text) {
+  var rows = shopeeCells(text);
+  if (!rows.length) return { ok: false, orders: [], missing: [], headers: [] };
+
+  var h = shopeeHeadRow(rows);
+  var headers = (rows[h.row] || []).filter(function (x) { return String(x).trim() !== ""; });
+  if (h.missing.length) {
+    return { ok: false, orders: [], missing: h.missing, headers: headers };
+  }
+
+  var c = h.cols;
+  function cell(r, key) {
+    var i = c[key];
+    if (i === undefined || i === null) return "";
+    /* ="0812345678" คือวิธีที่ Excel กันเลข 0 หน้าหาย ต้องถอดออกก่อนใช้ */
+    return String(r[i] == null ? "" : r[i]).replace(/^=/, "").replace(/^"|"$/g, "").trim();
+  }
+  function first(o, k, v) { if (!o[k] && v) o[k] = v; }
+
+  var orders = [], byId = {}, lastSn = "";
+  for (var r = h.row + 1; r < rows.length; r++) {
+    var row = rows[r];
+    var sn = cell(row, "sn");
+    var nm = cell(row, "name");
+    var vr = cell(row, "variation");
+    var sk = cell(row, "sku");
+    if (!sn && !nm && !sk) continue;
+    if (!sn) sn = lastSn;
+    if (!sn) continue;
+    lastSn = sn;
+
+    var o = byId[sn];
+    if (!o) {
+      o = { sn: sn, date: "", cust: "", tel: "", addr: "", carrier: "", track: "",
+            status: "", ship: 0, discount: 0, lines: [] };
+      byId[sn] = o;
+      orders.push(o);
+    }
+    first(o, "date", shopeeDate(cell(row, "date")));
+    first(o, "cust", cell(row, "cust"));
+    first(o, "tel", cell(row, "tel"));
+    first(o, "carrier", cell(row, "carrier"));
+    first(o, "track", cell(row, "track"));
+    first(o, "status", cell(row, "status"));
+    first(o, "addr", shopeeAddr(cell(row, "addr"), cell(row, "town"),
+      cell(row, "district"), cell(row, "province"), cell(row, "zip")));
+    if (!o.ship) o.ship = shopeeNum(cell(row, "ship"));
+    if (!o.discount) o.discount = shopeeNum(cell(row, "discount"));
+
+    if (nm || vr || sk) {
+      var pr = cell(row, "price");
+      o.lines.push({
+        name: [nm, vr].join(" ").replace(/\s+/g, " ").trim(),
+        sku: sk,
+        qty: shopeeNum(cell(row, "qty")),
+        price: pr === "" ? "" : shopeeNum(pr)
+      });
+    }
+  }
+
+  /* Shopee ปิดบังชื่อผู้ซื้อในไฟล์บางแบบ ช่องชื่อจึงว่างได้จริง
+     ปล่อยว่างไว้คือบันทึกไม่ผ่านทั้งใบ จึงใส่ชื่อที่ตามกลับไปหาใบเดิมได้แทน
+     และหน้าตรวจโชว์ชื่อนี้ตรง ๆ ก่อนกดยืนยัน ไม่ได้เติมให้เงียบ ๆ */
+  for (var k = 0; k < orders.length; k++) {
+    if (!orders[k].cust) orders[k].cust = "ลูกค้า Shopee " + orders[k].sn;
+  }
+
+  return { ok: true, orders: orders, missing: [], headers: headers };
+}
+
+/** ที่อยู่เต็ม — ต่อท้ายเฉพาะส่วนที่ยังไม่มีอยู่ในที่อยู่หลัก ไม่ให้ซ้ำสองรอบ */
+function shopeeAddr(addr, town, district, province, zip) {
+  var out = String(addr || "").trim();
+  [town, district, province, zip].forEach(function (x) {
+    x = String(x || "").trim();
+    if (x && out.indexOf(x) < 0) out += (out ? " " : "") + x;
+  });
+  return out;
+}
+
+/* ------------------------------------------------------------------ หน้าจอ */
+
+var SHOP = { ready: false, busy: false, match: null, channel: "" };
+
+/** ช่องทางขายชื่อ Shopee ในชีท ตั้งค่า — ไม่มีคือบันทึกไม่ได้สักใบ ต้องบอกก่อนเริ่ม */
+function shopChannel() {
+  var list = (typeof BOOT !== "undefined" && BOOT && BOOT.lists && BOOT.lists.channel) || [];
+  for (var i = 0; i < list.length; i++) if (/shopee/i.test(list[i])) return list[i];
+  return "";
+}
+
+/**
+ * ขนส่งในไฟล์ → ชื่อขนส่งที่ชีทรู้จัก
+ *
+ * จับคู่ไม่ได้คืนค่าว่าง ไม่ใช่เดาเอาตัวแรกในรายการ — ของเดิมในฝั่งชีท
+ * ถ้าส่งค่าว่างไปจะกลายเป็นขนส่งตัวแรกของรายการเอง ซึ่งจะเขียน "Flash Express"
+ * ทับใบที่ Shopee ส่งด้วย J&T เงียบ ๆ จึงต้องให้คนเลือกเองเมื่อจับคู่ไม่ได้
+ */
+function shopCarrier(want) {
+  var list = (typeof BOOT !== "undefined" && BOOT && BOOT.lists && BOOT.lists.carrier) || [];
+  var w = String(want || "").trim().toLowerCase();
+  if (!w) return "";
+  for (var i = 0; i < list.length; i++) {
+    if (String(list[i]).trim().toLowerCase() === w) return list[i];
+  }
+  for (var j = 0; j < list.length; j++) {
+    var o = String(list[j]).trim().toLowerCase();
+    var key = o.split(" ")[0];
+    if (!key) continue;
+    if (w.indexOf(key) > -1 || o.indexOf(w.split(" ")[0]) > -1) return list[j];
+  }
+  return "";
+}
+
+function shopInit() {
+  if (!SHOP.ready) {
+    SHOP.ready = true;
+    $("#sp-read").onclick = shopRead;
+    $("#sp-go").onclick = shopGo;
+    $("#sp-back").onclick = function () { go("list"); };
+    $("#sp-clear").onclick = function () {
+      $("#sp-text").value = ""; SHOP.match = null; shopRender();
+    };
+  }
+
+  var st = (BOOT && BOOT.lists && BOOT.lists.status) || [];
+  fillSelect("#sp-status", st);
+  /* เงินของ Shopee เก็บผ่านแพลตฟอร์มไปแล้วตั้งแต่ลูกค้ากดสั่ง
+     ตั้งต้นเป็น "ชำระแล้ว" จึงตรงกับความจริงมากกว่า "รอชำระ" ซึ่งเป็นตัวแรกของรายการ */
+  for (var i = 0; i < st.length; i++) {
+    if (st[i].indexOf("ชำระแล้ว") > -1) { $("#sp-status").value = st[i]; break; }
+  }
+
+  var car = (BOOT && BOOT.lists && BOOT.lists.carrier) || [];
+  $("#sp-carrier").innerHTML = '<option value="">— ใช้ขนส่งตามไฟล์ Shopee —</option>' +
+    car.map(function (x) { return '<option value="' + esc(x) + '">' + esc(x) + "</option>"; }).join("");
+
+  var by = $("#f-by");
+  $("#sp-by").innerHTML = by ? by.innerHTML : "";
+  if (by && by.value) $("#sp-by").value = by.value;
+
+  SHOP.channel = shopChannel();
+  var warn = $("#sp-warn");
+  /* กล่องข้อความใช้คลาส on เป็นตัวเปิดปิด สั่ง style.display ตรง ๆ จะโดนคลาสทับ */
+  if (SHOP.channel) {
+    warn.classList.remove("on");
+  } else {
+    warn.classList.add("on");
+    warn.innerHTML = "<b>ชีท ตั้งค่า ยังไม่มีช่องทางขายชื่อ “Shopee”</b>" +
+      "ให้เปิดชีท <b>ตั้งค่า</b> แล้วเติมคำว่า Shopee ลงในคอลัมน์ “ช่องทางขาย” ก่อน " +
+      "ไม่งั้นบันทึกไม่ผ่านสักใบ";
+  }
+  shopRender();
+}
+
+function shopRead() {
+  clearMsg();
+  var txt = $("#sp-text").value;
+  if (!String(txt || "").trim()) { showErr("ยังไม่ได้วางข้อมูลจากไฟล์ Shopee"); return; }
+
+  var res = shopeeRead(txt);
+  if (!res.ok) {
+    /* บอกชื่อคอลัมน์ที่หาไม่เจอ พร้อมรายชื่อหัวคอลัมน์ที่อ่านได้จริง
+       เพื่อให้คนที่เจอปัญหาส่งกลับมาให้แก้ได้ทันที ไม่ต้องเดากันไปมา */
+      showErr("อ่านตารางไม่ได้ — หาคอลัมน์ไม่เจอ: <b>" + esc(res.missing.join(" · ")) + "</b>" +
+      (res.headers.length
+        ? "<br><br>หัวคอลัมน์ที่อ่านได้จากที่วางมา:<br>" + esc(res.headers.join(" · "))
+        : "<br><br>อ่านหัวคอลัมน์ไม่ได้เลย — ตอนคัดลอกให้ลากคลุมทั้งแผ่นรวมแถวหัวตารางด้วย"));
+    SHOP.match = null;
+    shopRender();
+    return;
+  }
+  if (!res.orders.length) {
+    showErr("อ่านหัวตารางได้ แต่ไม่เจอออเดอร์สักใบ — ตอนคัดลอกอาจได้มาแค่แถวหัวตาราง");
+    SHOP.match = null; shopRender(); return;
+  }
+
+  $("#sp-list").innerHTML = '<div class="load">กำลังตรวจกับชีท ' + res.orders.length + ' ใบ…</div>';
+  call("shopeeMatch", [res.orders], function (m) {
+    SHOP.match = m || null;
+    if (!SHOP.match) { showErr("ตรวจกับชีทไม่สำเร็จ ลองกดใหม่อีกครั้ง"); }
+    shopRender();
+  }, function (msg) {
+    SHOP.match = null;
+    $("#sp-list").innerHTML = '<div class="empty" style="color:var(--red)">ตรวจกับชีทไม่สำเร็จ<br>'
+      + esc(msg) + "</div>";
+  });
+}
+
+function shopReady() {
+  if (!SHOP.match || !SHOP.match.orders) return [];
+  return SHOP.match.orders.filter(function (o) { return o.ok; });
+}
+
+function shopRender() {
+  var box = $("#sp-list"), sum = $("#sp-sum"), btn = $("#sp-go");
+  if (!SHOP.match) {
+    box.innerHTML = "";
+    sum.innerHTML = "";
+    btn.style.display = "none";
+    $("#sp-prog").innerHTML = "";
+    return;
+  }
+
+  var all = SHOP.match.orders || [];
+  var ok = shopReady();
+  var dup = all.filter(function (o) { return o.already; }).length;
+  var bad = all.length - ok.length - dup;
+
+  sum.innerHTML =
+    '<span class="tag ok">พร้อมนำเข้า ' + ok.length + ' ใบ</span> ' +
+    (dup ? '<span class="tag">เคยนำเข้าแล้ว ' + dup + ' ใบ</span> ' : "") +
+    (bad ? '<span class="tag bad">ติดปัญหา ' + bad + ' ใบ</span>' : "");
+
+  box.innerHTML = all.map(function (o) {
+    var car = shopCarrier(o.carrier);
+    var lines = (o.items || []).map(function (it) {
+      var nm = it.ok
+        ? esc(it.sku) + " · " + esc(it.name)
+        : '<span style="color:var(--red)">' + esc(it.shopeeName || it.shopeeSku) + " — จับคู่ไม่ได้</span>";
+      /* จับคู่ได้แล้วชื่อไม่ตรงกันเป๊ะ ให้เห็นชื่อบน Shopee ด้วย
+         การจับคู่ยอมให้ชื่อขึ้นต้นตรงกันก็ผ่าน ซึ่งมีโอกาสไปโดนสินค้าคนละรุ่น
+         โชว์ทั้งสองชื่อคู่กันคือทางเดียวที่คนตรวจจะจับได้ก่อนกดยืนยัน */
+      var from = (it.ok && it.shopeeName && it.shopeeName !== it.name)
+        ? '<span style="color:var(--gray)"> ← ' + esc(it.shopeeName) + "</span>" : "";
+      return "<div>" + nm + " × " + it.qty +
+        (it.price === null || it.price === "" ? "" : " @ " + baht(it.price)) + from + "</div>";
+    }).join("");
+
+    var note = "";
+    if (o.already) {
+      note = '<div class="tag">นำเข้าไปแล้วเป็นใบ ' + esc(o.existingNo) + " — ข้ามใบนี้</div>";
+    } else if (o.issues && o.issues.length) {
+      note = '<div style="color:var(--red)">' + o.issues.map(esc).join("<br>") + "</div>";
+    } else if (o.carrier && !car) {
+      note = '<div style="color:var(--amber)">ขนส่ง “' + esc(o.carrier) +
+        "” ไม่มีในชีท — จะใช้ขนส่งที่เลือกไว้ข้างบนแทน และเก็บชื่อเดิมไว้ในหมายเหตุ</div>";
+    }
+
+    return '<div class="row"><div class="i">' +
+      "<b>" + esc(o.cust) + "</b>" +
+      "<span>" + esc(o.sn) + (o.date ? " · " + esc(thaiDate(o.date)) : "") +
+      (o.track ? " · " + esc(o.track) : "") + "</span>" +
+      '<div style="font-size:0.82rem;margin-top:4px">' + lines + "</div>" +
+      '<div style="font-size:0.82rem;margin-top:4px;color:var(--gray)">ยอดสินค้า ' +
+      baht(o.subtotal) + (o.discount ? " · ส่วนลด " + baht(o.discount) : "") +
+      (o.ship ? " · ค่าส่ง " + baht(o.ship) : "") + "</div>" +
+      note + "</div></div>";
+  }).join("");
+
+  btn.style.display = ok.length ? "" : "none";
+  btn.textContent = "นำเข้า " + ok.length + " ใบ ลงชีท";
+  btn.disabled = !ok.length || SHOP.busy || !SHOP.channel;
+}
+
+/** ข้อมูลที่จะส่งไปบันทึกจริง — หน้าตรวจโชว์ทุกตัวที่อยู่ในนี้แล้ว */
+function shopPayload(o) {
+  var raw = String(o.carrier || "");
+  var car = shopCarrier(raw) || $("#sp-carrier").value;
+  var note = "Shopee " + o.sn + (raw && !shopCarrier(raw) ? " · ขนส่งตามไฟล์ " + raw : "");
+  return {
+    /* กุญแจกันซ้ำผูกกับหมายเลขของ Shopee ไม่ใช่เวลาที่กด
+       กดซ้ำ เน็ตหลุดแล้วกดใหม่ หรือวางไฟล์เดิมอีกรอบ ก็ไม่ได้ออเดอร์สองใบ */
+    clientKey: "sp-" + o.sn,
+    date: o.date || todayISO(),
+    channel: SHOP.channel,
+    cust: o.cust,
+    tel: o.tel,
+    addr: o.addr,
+    carrier: car,
+    track: o.track,
+    /* ออเดอร์ Shopee ออกใบกำกับภาษีผ่านแพลตฟอร์ม ไม่ได้ออกจากระบบนี้
+       ตั้งเป็นไม่รับ VAT ไว้ ถ้าใบไหนต้องออกจริงค่อยแก้ทีละใบในชีท */
+    vat: false,
+    discount: o.discount || 0,
+    ship: o.ship || 0,
+    status: $("#sp-status").value,
+    by: $("#sp-by").value,
+    note: note,
+    items: (o.items || []).map(function (x) {
+      return { sku: x.sku, qty: x.qty, price: (x.price === null ? "" : x.price) };
+    })
+  };
+}
+
+function shopGo() {
+  if (SHOP.busy) return;
+  clearMsg();
+
+  var pick = shopReady();
+  if (!pick.length) { showErr("ไม่มีใบไหนที่พร้อมนำเข้า"); return; }
+  if (!SHOP.channel) {
+    showErr("ชีท ตั้งค่า ยังไม่มีช่องทางขาย “Shopee” — เติมก่อนแล้วเปิดแอปใหม่");
+    return;
+  }
+  var need = pick.filter(function (o) { return !shopCarrier(o.carrier); });
+  if (need.length && !$("#sp-carrier").value) {
+    showErr("มี " + need.length + " ใบที่ขนส่งในไฟล์ไม่มีในชีท — เลือก “ขนส่งที่จะใช้แทน” ข้างบนก่อน " +
+      "ระบบไม่เดาให้ เพราะเดาผิดคือใบปะหน้าพิมพ์ผิดขนส่ง");
+    return;
+  }
+
+  SHOP.busy = true;
+  var btn = $("#sp-go");
+  btn.disabled = true;
+
+  var done = [], failed = [], i = 0;
+  (function next() {
+    if (i >= pick.length) { shopFinish(done, failed); return; }
+    var o = pick[i];
+    $("#sp-prog").innerHTML = "กำลังบันทึก " + (i + 1) + " / " + pick.length +
+      " — " + esc(o.sn) + " …";
+    /* ทีละใบ ไม่ยิงพร้อมกัน — ฝั่งชีทจับล็อกทีละคำขออยู่แล้ว
+       ยิงพร้อมกันสิบใบคือรอคิวกันเองจนหมดเวลา แล้วได้ใบครึ่ง ๆ กลาง ๆ */
+    call("createOrder", [shopPayload(o)], function (res) {
+      done.push({ sn: o.sn, no: (res && res.no) || "", dup: !!(res && res.duplicate) });
+      i++; next();
+    }, function (msg) {
+      failed.push({ sn: o.sn, msg: msg });
+      i++; next();
+    });
+  })();
+}
+
+function shopFinish(done, failed) {
+  SHOP.busy = false;
+  $("#sp-prog").innerHTML = "";
+  $("#sp-go").disabled = false;
+
+  var html = "<b>นำเข้าสำเร็จ " + done.length + " ใบ</b>";
+  if (done.length) {
+    html += "<br>" + done.map(function (d) {
+      return esc(d.sn) + " → " + esc(d.no) + (d.dup ? " (มีอยู่แล้ว)" : "");
+    }).join("<br>");
+  }
+  if (failed.length) {
+    html += "<br><br><b>ไม่สำเร็จ " + failed.length + " ใบ</b><br>" + failed.map(function (f) {
+      return esc(f.sn) + " — " + esc(f.msg);
+    }).join("<br>");
+  }
+  if (failed.length) showErr(html); else showOk(html);
+
+  /* ล้างของที่นำเข้าไปแล้วออกจากหน้าจอ กันกดยืนยันซ้ำโดยไม่ตั้งใจ
+     (กดซ้ำจริงก็ไม่ได้ใบซ้ำ เพราะกุญแจกันซ้ำ แต่ไม่ควรให้กดได้ตั้งแต่แรก) */
+  SHOP.match = null;
+  shopRender();
+  /* รายการออเดอร์ต้องโหลดใหม่ ไม่งั้นกลับไปหน้าออเดอร์แล้วไม่เห็นใบที่เพิ่งเข้า */
+  ORDERS = [];
+}
+</script>
