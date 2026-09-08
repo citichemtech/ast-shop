@@ -36,6 +36,7 @@ function setup() {
   made.push(setupAppSheet_(ss));
   made.push(setupItemLotColumn_(ss));
   made.push(setupAccounting_(ss));
+  made.push(setupCarrierList_(ss));
   // ซ่อมให้อัตโนมัติ แต่ห้ามล้มทั้ง setup ถ้าซ่อมไม่ได้ — ส่วนอื่นติดตั้งไปแล้ว
   try { made.push(repairStockSheet()); }
   catch (e) { made.push('ซ่อมชีทสต๊อกไม่สำเร็จ: ' + e.message); }
@@ -1272,6 +1273,66 @@ function setupAppSheet_(ss) {
 
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name +
     (fresh ? ' — อย่าลืมกรอกที่อยู่และเบอร์โทรผู้ส่ง ใบปะหน้าพัสดุใช้ค่านี้' : '');
+}
+
+/* --------------------------------------------- ขนส่งที่ Shopee ใช้ส่งของให้ */
+
+/** ขนส่งที่ต้องมีเพิ่ม เพราะออเดอร์จากแพลตฟอร์มใช้ชื่อพวกนี้ ไม่ใช่ชื่อที่ร้านเลือกเอง
+ *  ใส่ตัวย่อ (SPX) ไว้ในชื่อด้วยตั้งใจ เพราะไฟล์ที่ Shopee ส่งออกมาเขียนว่า
+ *  "Standard Delivery - ส่งธรรมดาในประเทศ-SPX Express" ซึ่งจับคู่ด้วยคำว่า SPX ได้ */
+var EXTRA_CARRIERS = ['Shopee Xpress (SPX)', 'J&T Express'];
+
+/**
+ * เติมขนส่งที่ขาด และขยายช่วง dropdown ให้ครอบของใหม่
+ *
+ * ของเดิม dropdown ผูกกับช่วงแคบ ๆ แค่ห้าแถว เติมชื่อที่หกลงไปเฉย ๆ ชีทจะขึ้น
+ * สามเหลี่ยมเตือนทุกแถวที่ใช้ค่าใหม่ ทั้งที่ค่านั้นถูกต้อง — จึงต้องผูกช่วงใหม่ด้วย
+ * ผูกกว้างไว้เลย 20 แถว เจ้าของร้านเติมเองรอบหน้าจะได้ไม่ต้องมาสั่ง setup อีก
+ */
+function setupCarrierList_(ss) {
+  var cfg = sheet_('cfg');
+  var head = findSheet_(ss, SH.head.name);
+  if (!head) throw new Error('ไม่พบชีท ' + SH.head.name);
+
+  var TOP = DATA_ROW + 1;          // แถว 7 = ค่าแรกของชุด dropdown
+  var ROWS = 20;                   // ช่วงที่ผูกไว้ กว้างกว่าที่ใช้จริงเผื่ออนาคต
+  if (cfg.getMaxRows() < TOP + ROWS - 1) {
+    cfg.insertRowsAfter(cfg.getMaxRows(), TOP + ROWS - 1 - cfg.getMaxRows());
+  }
+
+  var col = 5;                     // E = ช่องทางจัดส่ง
+  var have = {}, firstFree = 0;
+  var v = cfg.getRange(TOP, col, ROWS, 1).getValues();
+  for (var i = 0; i < ROWS; i++) {
+    var x = String(v[i][0] || '').trim();
+    if (x) have[x.toLowerCase()] = true;
+    else if (!firstFree) firstFree = TOP + i;
+  }
+
+  var added = [];
+  for (var k = 0; k < EXTRA_CARRIERS.length; k++) {
+    var want = EXTRA_CARRIERS[k];
+    if (have[want.toLowerCase()]) continue;
+    if (!firstFree) break;         // เต็มช่วงแล้ว ไม่ไปเขียนทับของใคร
+    cfg.getRange(firstFree, col).setValue(want).setFontColor(C_IN_FG);
+    have[want.toLowerCase()] = true;
+    added.push(want);
+    firstFree = (firstFree - TOP + 1 < ROWS) ? firstFree + 1 : 0;
+  }
+
+  /* ผูก dropdown ของช่องขนส่งในหัวบิลใหม่ ให้ครอบช่วงที่กว้างขึ้น
+     allowInvalid ไว้ ค่าที่มีอยู่เดิมจึงไม่ถูกตีว่าผิดแม้แต่แถวเดียว */
+  var last = formulaLimit_('head');
+  if (last >= DATA_ROW) {
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(cfg.getRange(TOP, col, ROWS, 1), true)
+      .setAllowInvalid(true).build();
+    head.getRange(DATA_ROW, SH.head.IN.carrier, last - DATA_ROW + 1, 1).setDataValidation(rule);
+  }
+
+  return added.length
+    ? 'เพิ่มขนส่ง ' + added.join(' · ') + ' ในชีท ' + SH.cfg.name + ' และขยายช่วงตัวเลือกให้แล้ว'
+    : 'ขนส่งครบอยู่แล้ว (ขยายช่วงตัวเลือกให้เผื่อเติมเองภายหลัง)';
 }
 
 /* ----------------------------------------------- สถานะบัญชี ที่ ออเดอร์_หัวบิล */

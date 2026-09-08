@@ -1910,7 +1910,7 @@ function planOrder_(p, email) {
 
   var date = parseDate_(p.date);
   var channel = pickFrom_(p.channel, lists.channel, 'ช่องทางขาย');
-  var carrier = pickFrom_(p.carrier, lists.carrier, 'ช่องทางจัดส่ง');
+  var carrier = pickCarrier_(p.carrier, lists.carrier);
   var status = pickFrom_(p.status || lists.status[0], lists.status, 'สถานะออเดอร์');
   var vat = p.vat ? 'รับ VAT' : 'ไม่รับ VAT';
 
@@ -2220,6 +2220,21 @@ function parseDate_(s) {
 }
 
 /** ค่าที่ส่งมาต้องเป็นหนึ่งในตัวเลือกของชีท ตั้งค่า ไม่งั้น dropdown กับสูตรจะเพี้ยน */
+/**
+ * ช่องทางจัดส่ง — เว้นว่างได้ ต่างจากช่องอื่นที่ต้องเลือกเสมอ
+ *
+ * "ไม่รู้ว่าใครส่ง" เป็นคำตอบที่ถูกต้องได้จริงสำหรับช่องนี้ ออเดอร์ Shopee
+ * แพลตฟอร์มเรียกขนส่งเอง ร้านไม่ได้เลือก และชื่อขนส่งที่ Shopee ส่งมาก็มัก
+ * ไม่ใช่ชื่อที่ร้านใช้ ถ้าเติมขนส่งตัวแรกในรายการให้ = เขียนข้อมูลที่ไม่จริง
+ * ลงชีท แล้วใบปะหน้ากับข้อความแจ้งเลขพัสดุจะบอกขนส่งผิดตามไปทั้งใบ
+ * เว้นว่างไว้แล้วบอกไม่ได้ ยังดีกว่าบอกผิด
+ */
+function pickCarrier_(v, list) {
+  var x = String(v || '').trim();
+  if (!x) return '';
+  return pickFrom_(x, list, 'ช่องทางจัดส่ง');
+}
+
 function pickFrom_(v, list, label) {
   var x = String(v || '').trim();
   if (!x) return list[0] || '';
@@ -2416,6 +2431,10 @@ function shopeeMatch(orders) {
     var sn = String(o.sn || '').trim();
     var lines = o.lines || [];
     var items = [], issues = [], sub = 0;
+    /* ต้นทุนมาจากชีท ฐานสินค้า ไม่ใช่จากไฟล์ Shopee
+       สินค้าตัวไหนยังไม่ได้ใส่ต้นทุน ต้องตอบว่า "คิดไม่ได้" ไม่ใช่นับเป็นศูนย์
+       ไม่งั้นหน้าจอจะโชว์กำไรเต็มยอดขาย ซึ่งสวยเกินจริงและตัดสินใจผิดตามได้ */
+    var cost = 0, costKnown = true;
 
     for (var j = 0; j < lines.length; j++) {
       var ln = lines[j] || {};
@@ -2435,11 +2454,15 @@ function shopeeMatch(orders) {
       }
       if (hit && qty > 0 && (price === null || price >= 0)) {
         sub += round2_(qty * (price === null ? Number(hit.price || 0) : price));
+        if (hit.cost === '' || hit.cost === null || hit.cost === undefined) costKnown = false;
+        else cost += round2_(qty * Number(hit.cost));
       }
       items.push({
         sku: hit ? hit.sku : '', name: hit ? hit.name : String(ln.name || ''),
         shopeeName: String(ln.name || ''), shopeeSku: String(ln.sku || ''),
-        qty: qty, price: price, ok: !!hit
+        qty: qty, price: price, ok: !!hit,
+        cost: (hit && hit.cost !== '' && hit.cost !== null && hit.cost !== undefined)
+          ? Number(hit.cost) : null
       });
     }
 
@@ -2452,10 +2475,11 @@ function shopeeMatch(orders) {
     out.push({
       sn: sn, date: String(o.date || ''), cust: String(o.cust || ''),
       tel: String(o.tel || ''), addr: String(o.addr || ''),
-      carrier: String(o.carrier || ''), track: String(o.track || ''),
-      ship: Number(o.ship || 0), discount: Number(o.discount || 0),
-      status: String(o.status || ''),
       items: items, subtotal: round2_(sub),
+      /* ต้นทุนรวมเป็น null เมื่อมีสินค้าที่ยังไม่รู้ต้นทุน — หน้าจอเอาไปบอกให้รู้
+         แทนที่จะโชว์ตัวเลขที่คิดจากต้นทุนศูนย์แล้วดูเหมือนกำไรดีเกินจริง */
+      costTotal: costKnown ? round2_(cost) : null,
+      profit: costKnown ? round2_(sub - cost) : null,
       issues: issues, ok: !issues.length && !dup,
       already: dup, existingNo: dup ? done[sn] : ''
     });

@@ -2279,8 +2279,42 @@ truthy2('บอกว่ากันนำเข้าซ้ำไม่ได�
   /ไม่มีหมายเลขคำสั่งซื้อของ Shopee/.test(pre44c.orders[0].issues.join(' ')));
 eq('และไม่ผ่าน', pre44c.orders[0].ok, false);
 
+/* ====================================== 45. ช่องขนส่งเว้นว่างได้ */
+console.log('\n45. ออเดอร์ที่ไม่ระบุขนส่ง — ต้องเว้นช่องไว้ ไม่ใช่เดาเป็นตัวแรกในรายการ');
+var fx45 = FS.build();
+var api45 = FS.load(fx45, {});
+api45.setup();
+var head45 = fx45.sheets['ออเดอร์_หัวบิล'];
+var G = api45.SH.head.IN.carrier;
+
+var no45 = api45.createOrder(order({ clientKey: 'k45', carrier: '' })).no;
+var row45 = api45.findOrderRow_(no45).row;
+eq('ช่องขนส่งในชีทว่างจริง ๆ', head45.cell(row45, G).v, '');
+eq('หน้าออเดอร์ก็เห็นเป็นค่าว่าง',
+  api45.getOrders(40).filter(function (o) { return o.no === no45 })[0].carrier, '');
+
+console.log('\n   ระบุมาแล้วยังต้องตรวจเหมือนเดิม ไม่ใช่ปล่อยผ่านทุกค่า');
+var no45b = api45.createOrder(order({ clientKey: 'k45b', carrier: 'Kerry Express' })).no;
+eq('ค่าที่ถูกต้องลงชีทตามเดิม',
+  head45.cell(api45.findOrderRow_(no45b).row, G).v, 'Kerry Express');
+throws('ขนส่งที่ไม่มีในรายการยังไม่ผ่าน',
+  function () { api45.createOrder(order({ clientKey: 'k45c', carrier: 'ขนส่งลุงสมชาย' })) },
+  'ไม่มีในตัวเลือก');
+
+console.log('\n   setup เติมขนส่งของ Shopee ให้ในชีท ตั้งค่า');
+var cfg45 = fx45.sheets['ตั้งค่า'];
+var carr45 = api45.cfgLists_().carrier;
+truthy2('มี Shopee Xpress (SPX)', carr45.indexOf('Shopee Xpress (SPX)') > -1);
+truthy2('มี J&T Express', carr45.indexOf('J&T Express') > -1);
+truthy2('ของเดิมยังอยู่ครบ ไม่ถูกทับ',
+  carr45.indexOf('Flash Express') > -1 && carr45.indexOf('รับเองที่ร้าน') > -1);
+var before45 = carr45.length;
+api45.setup();
+eq('สั่ง setup ซ้ำไม่เติมซ้ำ', api45.cfgLists_().carrier.length, before45);
+
 console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
 var over44 = [];
+for (var nm45 in fx45.sheets) over44 = over44.concat(fx45.sheets[nm45].overwrittenFormulas);
 for (var nm44 in fx44.sheets) over44 = over44.concat(fx44.sheets[nm44].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over44, []);
 

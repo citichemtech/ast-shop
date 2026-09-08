@@ -20,7 +20,7 @@ GS = ROOT / "apps-script"
 
 PRODUCTS = [
     {"sku": "SKU-141", "group": "TOOLING", "unit": "ชิ้น", "perPack": 1, "price": 129, "remain": 980,
-     "name": "End Mill Corn cut 2F  3.0*15*3.175*38L (1pcs)"},
+     "cost": 64, "name": "End Mill Corn cut 2F  3.0*15*3.175*38L (1pcs)"},
     {"sku": "SKU-143", "group": "TOOLING", "unit": "ชิ้น", "perPack": 1, "price": 149, "remain": 500,
      "name": "End Mill Corn cut 2F  3.175*22*3.175*45L (1pcs)"},
     {"sku": "SKU-160", "group": "TOOLING", "unit": "ชุด", "perPack": 10, "price": 750, "remain": 40,
@@ -39,7 +39,8 @@ BOOT = {
     "reorderDefault": 50,
     "lists": {
         "channel": ["หน้าร้าน", "Shopee", "เพจ Facebook"],
-        "carrier": ["Flash Express", "Kerry Express", "ไปรษณีย์ไทย", "ส่งด่วน (ไรเดอร์)", "รับเองที่ร้าน"],
+        "carrier": ["Flash Express", "Kerry Express", "ไปรษณีย์ไทย", "ส่งด่วน (ไรเดอร์)",
+                    "รับเองที่ร้าน", "Shopee Xpress (SPX)", "J&T Express"],
         "vat": ["ไม่รับ VAT", "รับ VAT"],
         "status": ["รอชำระ", "ชำระแล้ว", "จัดของแล้ว", "ส่งแล้ว", "ยกเลิก"],
         "acct": ["ยังไม่ส่งบัญชี", "รอเอกสาร", "พร้อมส่งบัญชี", "ส่งบัญชีแล้ว",
@@ -430,26 +431,32 @@ window.google = { script: { run: (function(){
         }
         var already=0;
         var out=(list||[]).map(function(o){
-          var issues=[], sub=0;
+          var issues=[], sub=0, cost=0, costKnown=true;
           var items=(o.lines||[]).map(function(ln){
             var p=hit(ln.sku, ln.name);
             var qty=Number(ln.qty);
             var price=(ln.price===""||ln.price==null)?null:Number(ln.price);
             if(!p) issues.push('จับคู่สินค้าไม่ได้: "'+(ln.name||ln.sku||"(ไม่มีชื่อ)")+'"');
             if(!(qty>0)||qty!==Math.floor(qty)) issues.push('จำนวนไม่ถูกต้อง: "'+ln.qty+'"');
-            if(p && qty>0) sub+=Math.round(qty*(price===null?Number(p.price||0):price)*100)/100;
+            if(p && qty>0){
+              sub+=Math.round(qty*(price===null?Number(p.price||0):price)*100)/100;
+              if(p.cost===""||p.cost==null) costKnown=false;
+              else cost+=Math.round(qty*Number(p.cost)*100)/100;
+            }
             return { sku:p?p.sku:"", name:p?p.name:String(ln.name||""),
                      shopeeName:String(ln.name||""), shopeeSku:String(ln.sku||""),
-                     qty:qty, price:price, ok:!!p };
+                     qty:qty, price:price, ok:!!p,
+                     cost:(p && p.cost!=="" && p.cost!=null)?Number(p.cost):null };
           });
           if(!items.length) issues.push("ใบนี้ไม่มีรายการสินค้า");
           if(!o.sn) issues.push("ไม่มีหมายเลขคำสั่งซื้อของ Shopee — กันนำเข้าซ้ำไม่ได้");
           var dup=!!(o.sn && done[o.sn]);
           if(dup) already++;
-          return { sn:o.sn||"", date:o.date||"", cust:o.cust||"", tel:o.tel||"",
-                   addr:o.addr||"", carrier:o.carrier||"", track:o.track||"",
-                   ship:Number(o.ship||0), discount:Number(o.discount||0),
-                   status:o.status||"", items:items, subtotal:Math.round(sub*100)/100,
+          return { sn:o.sn||"", date:o.date||"", cust:o.cust||"",
+                   tel:o.tel||"", addr:o.addr||"",
+                   items:items, subtotal:Math.round(sub*100)/100,
+                   costTotal: costKnown?Math.round(cost*100)/100:null,
+                   profit: costKnown?Math.round((sub-cost)*100)/100:null,
                    issues:issues, ok:(!issues.length && !dup), already:dup,
                    existingNo:dup?done[o.sn]:"" };
         });

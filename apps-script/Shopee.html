@@ -82,29 +82,27 @@ function shopeeNormHd(s) {
 var SHOPEE_COLS = [
   { key: "sn", label: "หมายเลขคำสั่งซื้อ", need: true,
     pats: ["หมายเลขคำสั่งซื้อ", "เลขที่คำสั่งซื้อ", "ordersn", "orderid", "หมายเลขออเดอร์"] },
+  /* วันจัดส่งมาก่อนวันสั่งซื้อ เพราะยอดขายของร้านนับตอนของออกจากร้าน ไม่ใช่ตอนลูกค้ากดสั่ง
+     ใบที่ยังไม่ได้ส่งจะไม่มีวันจัดส่ง ตกไปใช้วันสั่งซื้อแทน ดีกว่าปล่อยว่าง */
+  { key: "shipDate", label: "วันจัดส่ง",
+    not: ["กำหนด", "ภายใน", "deadline", "estimate", "โดยประมาณ"],
+    pats: ["วันที่จัดส่งสินค้า", "เวลาส่งสินค้า", "เวลาที่ทำการจัดส่ง", "วันที่ส่งสินค้า",
+           "shipouttime", "shipoutdate", "วันที่ส่งของ"] },
   { key: "date", label: "วันที่สั่งซื้อ",
     pats: ["วันที่ทำการสั่งซื้อ", "เวลาการสั่งซื้อ", "วันที่สั่งซื้อ", "ordercreationdate",
            "ordercreationtime", "orderpaidtime", "เวลาการชำระสินค้า"] },
-  { key: "status", label: "สถานะการสั่งซื้อ",
-    not: ["ยกเลิก", "คืนเงิน", "cancel", "return", "refund"],
-    pats: ["สถานะการสั่งซื้อ", "สถานะคำสั่งซื้อ", "orderstatus"] },
-  { key: "cust", label: "ชื่อผู้รับ",
+  { key: "cust", label: "ชื่อลูกค้า",
     pats: ["ชื่อผู้รับ", "receivername", "ชื่อผู้ซื้อ", "buyerusername", "username"] },
   { key: "tel", label: "เบอร์โทร",
     pats: ["หมายเลขโทรศัพท์", "เบอร์โทรศัพท์", "phonenumber", "เบอร์โทร"] },
   { key: "addr", label: "ที่อยู่",
     pats: ["ที่อยู่ในการจัดส่ง", "ที่อยู่จัดส่ง", "deliveryaddress", "ที่อยู่"] },
   /* Shopee แยกตำบล อำเภอ จังหวัด รหัสไปรษณีย์ ออกเป็นคอลัมน์ต่างหาก
-     ไม่เก็บมาด้วยคือใบปะหน้าพัสดุพิมพ์ออกมาแล้วส่งไม่ถึง */
+     ไม่เก็บมาด้วยคือที่อยู่ที่ได้ไม่ครบ ส่งของตามนั้นไม่ถึง */
   { key: "town", label: "ตำบล", pats: ["ตำบลแขวง", "ตำบล", "แขวง", "town"] },
   { key: "district", label: "อำเภอ", pats: ["อำเภอเขต", "อำเภอ", "เขต", "district"] },
   { key: "province", label: "จังหวัด", pats: ["จังหวัด", "province"] },
   { key: "zip", label: "รหัสไปรษณีย์", pats: ["รหัสไปรษณีย์", "zipcode", "postalcode"] },
-  { key: "carrier", label: "ขนส่ง",
-    pats: ["ผู้ให้บริการขนส่ง", "ตัวเลือกการจัดส่ง", "ช่องทางการจัดส่ง", "shippingoption",
-           "ขนส่ง"] },
-  { key: "track", label: "เลขพัสดุ",
-    pats: ["หมายเลขติดตามพัสดุ", "trackingnumber", "เลขพัสดุ", "หมายเลขพัสดุ"] },
   { key: "name", label: "ชื่อสินค้า", need: true,
     not: ["ตัวเลือก", "รุ่น", "variation"],
     pats: ["ชื่อสินค้า", "productname"] },
@@ -118,14 +116,7 @@ var SHOPEE_COLS = [
     pats: ["จำนวน", "quantity", "จำนวนสินค้า"] },
   { key: "price", label: "ราคาขาย",
     not: ["สุทธิ", "ทั้งหมด", "รวม", "total", "subtotal"],
-    pats: ["ราคาขาย", "dealprice", "ราคาที่ชำระ", "ราคาตั้งต้น", "originalprice"] },
-  { key: "ship", label: "ค่าจัดส่ง",
-    not: ["ผู้ขาย", "seller", "ส่วนลด", "shopee", "คืน"],
-    pats: ["ค่าจัดส่งที่ชำระโดยผู้ซื้อ", "ค่าจัดส่งที่ผู้ซื้อชำระ", "buyerpaidshippingfee",
-           "ค่าจัดส่ง"] },
-  { key: "discount", label: "ส่วนลด",
-    not: ["shopee", "แพลตฟอร์ม", "platform"],
-    pats: ["โค้ดส่วนลดชำระโดยผู้ขาย", "ส่วนลดจากผู้ขาย", "sellerdiscount", "ส่วนลด"] }
+    pats: ["ราคาขาย", "dealprice", "ราคาที่ชำระ", "ราคาตั้งต้น", "originalprice"] }
 ];
 
 function shopeeBanned(c, h) {
@@ -245,21 +236,16 @@ function shopeeRead(text) {
 
     var o = byId[sn];
     if (!o) {
-      o = { sn: sn, date: "", cust: "", tel: "", addr: "", carrier: "", track: "",
-            status: "", ship: 0, discount: 0, lines: [] };
+      o = { sn: sn, date: "", cust: "", tel: "", addr: "", lines: [] };
       byId[sn] = o;
       orders.push(o);
     }
-    first(o, "date", shopeeDate(cell(row, "date")));
+    /* วันจัดส่งก่อน ไม่มีค่อยใช้วันสั่งซื้อ */
+    first(o, "date", shopeeDate(cell(row, "shipDate")) || shopeeDate(cell(row, "date")));
     first(o, "cust", cell(row, "cust"));
     first(o, "tel", cell(row, "tel"));
-    first(o, "carrier", cell(row, "carrier"));
-    first(o, "track", cell(row, "track"));
-    first(o, "status", cell(row, "status"));
     first(o, "addr", shopeeAddr(cell(row, "addr"), cell(row, "town"),
       cell(row, "district"), cell(row, "province"), cell(row, "zip")));
-    if (!o.ship) o.ship = shopeeNum(cell(row, "ship"));
-    if (!o.discount) o.discount = shopeeNum(cell(row, "discount"));
 
     if (nm || vr || sk) {
       var pr = cell(row, "price");
@@ -272,11 +258,21 @@ function shopeeRead(text) {
     }
   }
 
-  /* Shopee ปิดบังชื่อผู้ซื้อในไฟล์บางแบบ ช่องชื่อจึงว่างได้จริง
-     ปล่อยว่างไว้คือบันทึกไม่ผ่านทั้งใบ จึงใส่ชื่อที่ตามกลับไปหาใบเดิมได้แทน
-     และหน้าตรวจโชว์ชื่อนี้ตรง ๆ ก่อนกดยืนยัน ไม่ได้เติมให้เงียบ ๆ */
   for (var k = 0; k < orders.length; k++) {
-    if (!orders[k].cust) orders[k].cust = "ลูกค้า Shopee " + orders[k].sn;
+    var od = orders[k];
+
+    /* ชื่อกับที่อยู่ต้องอยู่ด้วยกันเสมอ
+       ชื่อที่ Shopee ส่งมาเป็นชื่อบัญชีผู้ซื้อ ซึ่งตั้งกันแปลก ๆ และบางไฟล์ถูกปิดบัง
+       เหลือแค่ D*******n — ชื่อแบบนั้นเอาไปพิมพ์บนใบปะหน้าหรือค้นหาทีหลังไม่ได้เลย
+       เอาชื่อไปไว้บรรทัดแรกของที่อยู่ด้วย ที่อยู่จึงสมบูรณ์ในตัวเองไม่ว่าชื่อจะเพี้ยนแค่ไหน */
+    if (od.cust && od.addr && od.addr.indexOf(od.cust) < 0) {
+      od.addr = od.cust + "\n" + od.addr;
+    }
+
+    /* Shopee ปิดบังชื่อผู้ซื้อในไฟล์บางแบบ ช่องชื่อจึงว่างได้จริง
+       ปล่อยว่างไว้คือบันทึกไม่ผ่านทั้งใบ จึงใส่ชื่อที่ตามกลับไปหาใบเดิมได้แทน
+       และหน้าตรวจโชว์ชื่อนี้ตรง ๆ ก่อนกดยืนยัน ไม่ได้เติมให้เงียบ ๆ */
+    if (!od.cust) od.cust = "ลูกค้า Shopee " + od.sn;
   }
 
   return { ok: true, orders: orders, missing: [], headers: headers };
@@ -303,29 +299,6 @@ function shopChannel() {
   return "";
 }
 
-/**
- * ขนส่งในไฟล์ → ชื่อขนส่งที่ชีทรู้จัก
- *
- * จับคู่ไม่ได้คืนค่าว่าง ไม่ใช่เดาเอาตัวแรกในรายการ — ของเดิมในฝั่งชีท
- * ถ้าส่งค่าว่างไปจะกลายเป็นขนส่งตัวแรกของรายการเอง ซึ่งจะเขียน "Flash Express"
- * ทับใบที่ Shopee ส่งด้วย J&T เงียบ ๆ จึงต้องให้คนเลือกเองเมื่อจับคู่ไม่ได้
- */
-function shopCarrier(want) {
-  var list = (typeof BOOT !== "undefined" && BOOT && BOOT.lists && BOOT.lists.carrier) || [];
-  var w = String(want || "").trim().toLowerCase();
-  if (!w) return "";
-  for (var i = 0; i < list.length; i++) {
-    if (String(list[i]).trim().toLowerCase() === w) return list[i];
-  }
-  for (var j = 0; j < list.length; j++) {
-    var o = String(list[j]).trim().toLowerCase();
-    var key = o.split(" ")[0];
-    if (!key) continue;
-    if (w.indexOf(key) > -1 || o.indexOf(w.split(" ")[0]) > -1) return list[j];
-  }
-  return "";
-}
-
 function shopInit() {
   if (!SHOP.ready) {
     SHOP.ready = true;
@@ -344,10 +317,6 @@ function shopInit() {
   for (var i = 0; i < st.length; i++) {
     if (st[i].indexOf("ชำระแล้ว") > -1) { $("#sp-status").value = st[i]; break; }
   }
-
-  var car = (BOOT && BOOT.lists && BOOT.lists.carrier) || [];
-  $("#sp-carrier").innerHTML = '<option value="">— ใช้ขนส่งตามไฟล์ Shopee —</option>' +
-    car.map(function (x) { return '<option value="' + esc(x) + '">' + esc(x) + "</option>"; }).join("");
 
   var by = $("#f-by");
   $("#sp-by").innerHTML = by ? by.innerHTML : "";
@@ -427,7 +396,6 @@ function shopRender() {
     (bad ? '<span class="tag bad">ติดปัญหา ' + bad + ' ใบ</span>' : "");
 
   box.innerHTML = all.map(function (o) {
-    var car = shopCarrier(o.carrier);
     var lines = (o.items || []).map(function (it) {
       var nm = it.ok
         ? esc(it.sku) + " · " + esc(it.name)
@@ -446,19 +414,23 @@ function shopRender() {
       note = '<div class="tag">นำเข้าไปแล้วเป็นใบ ' + esc(o.existingNo) + " — ข้ามใบนี้</div>";
     } else if (o.issues && o.issues.length) {
       note = '<div style="color:var(--red)">' + o.issues.map(esc).join("<br>") + "</div>";
-    } else if (o.carrier && !car) {
-      note = '<div style="color:var(--amber)">ขนส่ง “' + esc(o.carrier) +
-        "” ไม่มีในชีท — จะใช้ขนส่งที่เลือกไว้ข้างบนแทน และเก็บชื่อเดิมไว้ในหมายเหตุ</div>";
+    }
+
+    /* ต้นทุนมาจากชีท ฐานสินค้า ไม่ใช่จากไฟล์ Shopee — ใบไหนมีสินค้าที่ยังไม่ได้ใส่ต้นทุน
+       จะบอกตรง ๆ ว่าคิดกำไรไม่ได้ ดีกว่าโชว์กำไรที่สูงเกินจริงเพราะต้นทุนเป็นศูนย์ */
+    var money = "ยอดขาย " + baht(o.subtotal);
+    if (o.costTotal !== null && o.costTotal !== undefined) {
+      money += " · ต้นทุน " + baht(o.costTotal) + " · กำไร " + baht(o.profit);
+    } else if (o.ok) {
+      money += ' · <span style="color:var(--amber)">ยังไม่มีต้นทุนในฐานสินค้า คิดกำไรไม่ได้</span>';
     }
 
     return '<div class="row"><div class="i">' +
       "<b>" + esc(o.cust) + "</b>" +
-      "<span>" + esc(o.sn) + (o.date ? " · " + esc(thaiDate(o.date)) : "") +
-      (o.track ? " · " + esc(o.track) : "") + "</span>" +
+      "<span>" + esc(o.sn) + (o.date ? " · ส่งวันที่ " + esc(thaiDate(o.date)) : "") +
+      (o.tel ? " · " + esc(o.tel) : "") + "</span>" +
       '<div style="font-size:0.82rem;margin-top:4px">' + lines + "</div>" +
-      '<div style="font-size:0.82rem;margin-top:4px;color:var(--gray)">ยอดสินค้า ' +
-      baht(o.subtotal) + (o.discount ? " · ส่วนลด " + baht(o.discount) : "") +
-      (o.ship ? " · ค่าส่ง " + baht(o.ship) : "") + "</div>" +
+      '<div style="font-size:0.82rem;margin-top:4px;color:var(--gray)">' + money + "</div>" +
       note + "</div></div>";
   }).join("");
 
@@ -469,9 +441,6 @@ function shopRender() {
 
 /** ข้อมูลที่จะส่งไปบันทึกจริง — หน้าตรวจโชว์ทุกตัวที่อยู่ในนี้แล้ว */
 function shopPayload(o) {
-  var raw = String(o.carrier || "");
-  var car = shopCarrier(raw) || $("#sp-carrier").value;
-  var note = "Shopee " + o.sn + (raw && !shopCarrier(raw) ? " · ขนส่งตามไฟล์ " + raw : "");
   return {
     /* กุญแจกันซ้ำผูกกับหมายเลขของ Shopee ไม่ใช่เวลาที่กด
        กดซ้ำ เน็ตหลุดแล้วกดใหม่ หรือวางไฟล์เดิมอีกรอบ ก็ไม่ได้ออเดอร์สองใบ */
@@ -481,16 +450,17 @@ function shopPayload(o) {
     cust: o.cust,
     tel: o.tel,
     addr: o.addr,
-    carrier: car,
-    track: o.track,
-    /* ออเดอร์ Shopee ออกใบกำกับภาษีผ่านแพลตฟอร์ม ไม่ได้ออกจากระบบนี้
-       ตั้งเป็นไม่รับ VAT ไว้ ถ้าใบไหนต้องออกจริงค่อยแก้ทีละใบในชีท */
+    /* เลขพัสดุ ขนส่ง ค่าส่ง ส่วนลด — ไม่เอาเข้ามาโดยตั้งใจ
+       Shopee จัดส่งและเก็บเงินค่าส่งเอง ตัวเลขพวกนั้นเป็นของแพลตฟอร์ม
+       ไม่ใช่ยอดขายของร้าน เอาเข้ามาปนจะทำให้สรุปยอดกับกำไรเพี้ยน */
+    /* ออกใบกำกับภาษีผ่านแพลตฟอร์ม ไม่ได้ออกจากระบบนี้ จึงเป็นไม่รับ VAT
+       ใบไหนต้องออกจริงค่อยแก้ทีละใบในชีท */
     vat: false,
-    discount: o.discount || 0,
-    ship: o.ship || 0,
+    discount: 0,
+    ship: 0,
     status: $("#sp-status").value,
     by: $("#sp-by").value,
-    note: note,
+    note: "Shopee " + o.sn,
     items: (o.items || []).map(function (x) {
       return { sku: x.sku, qty: x.qty, price: (x.price === null ? "" : x.price) };
     })
@@ -507,13 +477,6 @@ function shopGo() {
     showErr("ชีท ตั้งค่า ยังไม่มีช่องทางขาย “Shopee” — เติมก่อนแล้วเปิดแอปใหม่");
     return;
   }
-  var need = pick.filter(function (o) { return !shopCarrier(o.carrier); });
-  if (need.length && !$("#sp-carrier").value) {
-    showErr("มี " + need.length + " ใบที่ขนส่งในไฟล์ไม่มีในชีท — เลือก “ขนส่งที่จะใช้แทน” ข้างบนก่อน " +
-      "ระบบไม่เดาให้ เพราะเดาผิดคือใบปะหน้าพิมพ์ผิดขนส่ง");
-    return;
-  }
-
   SHOP.busy = true;
   var btn = $("#sp-go");
   btn.disabled = true;
