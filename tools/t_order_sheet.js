@@ -2201,5 +2201,88 @@ var over43 = [];
 for (var nm43 in fx43.sheets) over43 = over43.concat(fx43.sheets[nm43].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over43, []);
 
+
+/* ====== 44. นำเข้าออเดอร์จาก Shopee — ขั้นตรวจก่อนนำเข้า
+
+   ตัวตรวจนี้ตั้งใจให้ "อ่านอย่างเดียว" การบันทึกจริงยังใช้ createOrder ตัวเดิม
+   ที่ผ่านการตัดล็อต FEFO · ถอยกลับตอนล้ม · กันบันทึกซ้ำ มาแล้วทั้งหมด
+   ของใหม่จึงมีแค่จับคู่สินค้ากับดูว่าเคยนำเข้าหรือยัง ซึ่งพลาดแล้วไม่ทำข้อมูลเสีย */
+console.log('\n44. ตรวจออเดอร์ Shopee ก่อนนำเข้า');
+
+var fx44 = FS.build();
+var api44 = FS.load(fx44, {});
+api44.setup();
+
+var P141 = 'End Mill Corn cut 2F 3.0*15*3.175*38L (1pcs)';
+var pre44 = api44.shopeeMatch([
+  { sn: '2609ABCDEF', date: '2026-09-08', cust: 'ลูกค้าช้อปปี้', tel: '0812345678',
+    addr: '1/2 ถ.ทดสอบ', carrier: 'Shopee Express', track: 'SPX123', ship: 0,
+    lines: [{ sku: 'SKU-141', name: 'อะไรก็ได้', qty: 2, price: 110 }] },
+  /* จับด้วยชื่อล้วน — ของจริงคอลัมน์ SKU ของ Shopee มักว่าง */
+  { sn: '2609GHIJKL', date: '2026-09-08', cust: 'ลูกค้าที่สอง', tel: '0898888888',
+    addr: '3/4 ถ.ทดสอบ', ship: 0,
+    lines: [{ sku: '', name: P141, qty: 1, price: '' }] },
+  /* ชื่อไม่มีในฐาน ต้องบอกตรง ๆ ไม่เดาให้ */
+  { sn: '2609MNOPQR', date: '2026-09-08', cust: 'ลูกค้าที่สาม', ship: 0,
+    lines: [{ sku: '', name: 'ของที่ร้านไม่เคยขาย', qty: 1, price: 50 }] }
+]);
+
+eq('ตรวจครบทุกใบ', pre44.orders.length, 3);
+eq('จับด้วยรหัสได้', [pre44.orders[0].items[0].sku, pre44.orders[0].ok], ['SKU-141', true]);
+eq('คิดยอดสินค้าจากราคาที่ Shopee ส่งมา', pre44.orders[0].subtotal, 220);
+eq('จับด้วยชื่อล้วนได้ตอนคอลัมน์รหัสว่าง', pre44.orders[1].items[0].sku, 'SKU-141');
+eq('ราคาว่าง = ใช้ราคาในฐานสินค้า', pre44.orders[1].subtotal, 129);
+eq('ของที่ไม่มีในฐาน ต้องไม่ผ่าน', pre44.orders[2].ok, false);
+truthy2('และบอกชื่อที่จับไม่ได้มาตรง ๆ',
+  /จับคู่สินค้าไม่ได้: "ของที่ร้านไม่เคยขาย"/.test(pre44.orders[2].issues.join(' ')));
+
+console.log('\n   ตรวจแล้วต้องไม่มีอะไรถูกเขียนลงชีทเลย');
+eq('ยังไม่มีออเดอร์ในชีทสักใบ',
+  rowsWith(fx44.sheets['ออเดอร์_หัวบิล'], api44.SH.head.IN.no).length, 0);
+
+console.log('\n   นำเข้าจริงด้วย createOrder ตัวเดิม แล้วต้องรู้ว่าเคยนำเข้าไปแล้ว');
+var o44 = pre44.orders[0];
+var made44 = api44.createOrder({
+  clientKey: 'sp-' + o44.sn, date: o44.date, channel: 'Shopee', cust: o44.cust,
+  tel: o44.tel, addr: o44.addr, carrier: 'Flash Express', track: o44.track,
+  vat: false, discount: 0, ship: 0, status: 'ชำระแล้ว',
+  note: 'Shopee ' + o44.sn,
+  items: [{ sku: 'SKU-141', qty: 2, price: 110 }]
+});
+truthy2('บันทึกผ่าน', !!made44.no);
+
+var pre44b = api44.shopeeMatch([
+  { sn: '2609ABCDEF', cust: 'ลูกค้าช้อปปี้', ship: 0,
+    lines: [{ sku: 'SKU-141', name: '', qty: 2, price: 110 }] }
+]);
+eq('ใบเดิมถูกตีตราว่านำเข้าไปแล้ว',
+  [pre44b.orders[0].already, pre44b.orders[0].existingNo, pre44b.already],
+  [true, made44.no, 1]);
+eq('และไม่ให้นำเข้าซ้ำ', pre44b.orders[0].ok, false);
+
+console.log('\n   ยิง createOrder ซ้ำด้วยคีย์เดิม ต้องได้ใบเดิม ไม่ใช่ใบใหม่');
+var again44 = api44.createOrder({
+  clientKey: 'sp-2609ABCDEF', date: o44.date, channel: 'Shopee', cust: o44.cust,
+  tel: o44.tel, addr: o44.addr, carrier: 'Flash Express', vat: false,
+  discount: 0, ship: 0, status: 'ชำระแล้ว', note: 'Shopee 2609ABCDEF',
+  items: [{ sku: 'SKU-141', qty: 2, price: 110 }]
+});
+eq('ได้เลขใบเดิม', [again44.no, again44.duplicate], [made44.no, true]);
+eq('มีออเดอร์ในชีทใบเดียว',
+  rowsWith(fx44.sheets['ออเดอร์_หัวบิล'], api44.SH.head.IN.no).length, 1);
+
+console.log('\n   ใบที่ไม่มีหมายเลข Shopee ต้องไม่ยอม เพราะกันซ้ำไม่ได้');
+var pre44c = api44.shopeeMatch([
+  { sn: '', cust: 'ไม่มีเลขที่', ship: 0, lines: [{ sku: 'SKU-141', qty: 1, price: 1 }] }
+]);
+truthy2('บอกว่ากันนำเข้าซ้ำไม่ได้',
+  /ไม่มีหมายเลขคำสั่งซื้อของ Shopee/.test(pre44c.orders[0].issues.join(' ')));
+eq('และไม่ผ่าน', pre44c.orders[0].ok, false);
+
+console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over44 = [];
+for (var nm44 in fx44.sheets) over44 = over44.concat(fx44.sheets[nm44].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over44, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

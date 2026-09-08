@@ -2374,3 +2374,130 @@ function planReceive_(p, email) {
     lotNo: lotNo, exp: exp
   };
 }
+
+/* ------------------------------------------------ นำเข้าออเดอร์จาก Shopee */
+
+/**
+ * ตรวจออเดอร์ที่โหลดมาจาก Shopee ก่อนนำเข้า — อ่านอย่างเดียว ไม่เขียนอะไรทั้งสิ้น
+ *
+ * ตั้งใจให้ตัวนี้ "ไม่เขียน" เพราะการบันทึกจริงยังใช้ createOrder ตัวเดิม
+ * ที่ผ่านการตัดล็อต FEFO · ถอยกลับตอนล้ม · กันบันทึกซ้ำ · ตรวจยอดกับชีท มาแล้วทั้งหมด
+ * ของใหม่มีแค่ "จับคู่สินค้า" กับ "ดูว่าเคยนำเข้าไปหรือยัง" ซึ่งพลาดแล้วไม่ทำข้อมูลเสีย
+ *
+ * คืนผลเป็นรายใบ ให้หน้าจอเอาไปกางให้คนตรวจก่อนกดยืนยัน
+ * ใบไหนจับคู่สินค้าไม่ได้จะบอกชื่อที่จับไม่ได้มาตรง ๆ ไม่เดาให้
+ */
+function shopeeMatch(orders) {
+  requireStaff_();
+  var list = orders || [];
+  if (!list.length) return jsonSafe_({ orders: [], already: 0 });
+
+  var prods = readProducts_();
+  var bySku = {}, byName = {};
+  for (var i = 0; i < prods.length; i++) {
+    bySku[String(prods[i].sku).trim().toLowerCase()] = prods[i];
+    var n = normProdName_(prods[i].name);
+    if (n && !byName[n]) byName[n] = prods[i];
+  }
+
+  var done = shopeeImported_();
+
+  var out = [], already = 0;
+  for (var k = 0; k < list.length; k++) {
+    var o = list[k] || {};
+    var sn = String(o.sn || '').trim();
+    var lines = o.lines || [];
+    var items = [], issues = [], sub = 0;
+
+    for (var j = 0; j < lines.length; j++) {
+      var ln = lines[j] || {};
+      var qty = Number(ln.qty);
+      var price = (ln.price === '' || ln.price === null || ln.price === undefined)
+        ? null : Number(ln.price);
+      var hit = matchProd_(ln.sku, ln.name, bySku, byName);
+
+      if (!hit) {
+        issues.push('จับคู่สินค้าไม่ได้: "' + String(ln.name || ln.sku || '(ไม่มีชื่อ)') + '"');
+      }
+      if (!(qty > 0) || qty !== Math.floor(qty)) {
+        issues.push('จำนวนไม่ถูกต้อง: "' + String(ln.qty) + '"');
+      }
+      if (price !== null && !(price >= 0)) {
+        issues.push('ราคาไม่ถูกต้อง: "' + String(ln.price) + '"');
+      }
+      if (hit && qty > 0 && (price === null || price >= 0)) {
+        sub += round2_(qty * (price === null ? Number(hit.price || 0) : price));
+      }
+      items.push({
+        sku: hit ? hit.sku : '', name: hit ? hit.name : String(ln.name || ''),
+        shopeeName: String(ln.name || ''), shopeeSku: String(ln.sku || ''),
+        qty: qty, price: price, ok: !!hit
+      });
+    }
+
+    if (!items.length) issues.push('ใบนี้ไม่มีรายการสินค้า');
+    if (!sn) issues.push('ไม่มีหมายเลขคำสั่งซื้อของ Shopee — กันนำเข้าซ้ำไม่ได้');
+
+    var dup = !!(sn && done[sn]);
+    if (dup) already++;
+
+    out.push({
+      sn: sn, date: String(o.date || ''), cust: String(o.cust || ''),
+      tel: String(o.tel || ''), addr: String(o.addr || ''),
+      carrier: String(o.carrier || ''), track: String(o.track || ''),
+      ship: Number(o.ship || 0), discount: Number(o.discount || 0),
+      status: String(o.status || ''),
+      items: items, subtotal: round2_(sub),
+      issues: issues, ok: !issues.length && !dup,
+      already: dup, existingNo: dup ? done[sn] : ''
+    });
+  }
+  return jsonSafe_({ orders: out, already: already });
+}
+
+/**
+ * ชื่อสินค้าที่ตัดเรื่องจุกจิกออกก่อนเทียบ
+ *
+ * ชื่อบน Shopee มักมีวงเล็บ ตัวคั่น หรือช่องว่างไม่เท่ากับในฐานสินค้า
+ * เทียบแบบตรงตัวเป๊ะจะไม่เจอเลยแม้แต่ตัวเดียว ทั้งที่คนอ่านรู้ว่าตัวเดียวกัน
+ */
+function normProdName_(s) {
+  return String(s == null ? '' : s)
+    .replace(/[ ​-‍﻿]/g, ' ')
+    .replace(/[()\[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * จับคู่สินค้า: รหัสก่อน แล้วค่อยชื่อ
+ *
+ * ไม่เดาแบบ "คล้าย ๆ" เกินกว่าขึ้นต้นตรงกัน เพราะจับผิดตัวคือขายผิดของ
+ * ตัดสต๊อกผิดตัว และต้นทุนกับกำไรผิดทั้งใบ — ให้คนตัดสินดีกว่าเดาแล้วเงียบ
+ */
+function matchProd_(sku, name, bySku, byName) {
+  var s = String(sku || '').trim().toLowerCase();
+  if (s && bySku[s]) return bySku[s];
+
+  var n = normProdName_(name);
+  if (!n) return null;
+  if (byName[n]) return byName[n];
+
+  /* ชื่อบน Shopee มักมีคำต่อท้ายเพิ่ม เช่นสีหรือขนาดที่ร้านไม่ได้แยกรหัส */
+  for (var key in byName) {
+    if (key && (n.indexOf(key) === 0 || key.indexOf(n) === 0)) return byName[key];
+  }
+  return null;
+}
+
+/** หมายเลข Shopee ที่เคยนำเข้าแล้ว → เลขออเดอร์ในชีท (อ่านจากช่องหมายเหตุ) */
+function shopeeImported_() {
+  var out = {};
+  var rows = readOrders_({ limit: 0 });
+  for (var i = 0; i < rows.length; i++) {
+    var m = /Shopee\s+([A-Za-z0-9]+)/.exec(String(rows[i].note || ''));
+    if (m) out[m[1]] = rows[i].no;
+  }
+  return out;
+}
