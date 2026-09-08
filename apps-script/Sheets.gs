@@ -82,9 +82,17 @@ var SH = {
     name: 'ออเดอร์_หัวบิล',
     IN: {
       no: 1, date: 2, channel: 3, cust: 4, tel: 5, addr: 6, carrier: 7, track: 8,
-      vat: 9, discount: 11, ship: 12, status: 17, staff: 19, note: 20
+      vat: 9, discount: 11, ship: 12, status: 17, staff: 19, note: 20,
+      /* งานบัญชีเป็นคนละเส้นทางกับงานส่งของ ใบที่ส่งถึงมือลูกค้าแล้วแต่ยังไม่ได้
+         ส่งบัญชี เกิดขึ้นทุกวัน ถ้าใช้ช่องสถานะเดียวกันจะเห็นได้ทีละเรื่อง
+         สามช่องนี้ setupAccounting() เป็นคนสร้าง ไม่ได้มีมาแต่แรกในชีท */
+      acct: 22,      // V = สถานะบัญชี
+      acctAt: 23,    // W = วันเวลาที่ส่งบัญชี
+      acctWhat: 24   // X = ส่งอะไรไปบ้าง
     },
     CALC: [10, 13, 14, 15, 16, 18, 21],
+    /* จำนวนคอลัมน์ที่ readOrders_ อ่านมาทั้งแถว — ต้องคลุมถึง X */
+    width: 24,
     // คอลัมน์สูตรที่ใช้วัดว่าสูตรลากมาถึงแถวไหน (J = ยอดสินค้า)
     probe: 10,
     subtotal: 10,  // J = ยอดสินค้า  ใช้ตรวจว่าชีทคำนวณตรงกับที่ตั้งใจ
@@ -573,14 +581,20 @@ function appCfg_() {
 /** ตัวเลือก dropdown จากชีท ตั้งค่า (D7:D  ช่องทางขาย, E ขนส่ง, F VAT, G สถานะ) */
 function cfgLists_() {
   var s = sheet_('cfg');
-  var v = s.getRange('D7:H11').getValues();
+  /* ช่วงนี้กว้างกว่ารายการที่มีจริง เผื่อเจ้าของร้านเติมตัวเลือกเพิ่มเองในชีท
+     ได้โดยไม่ต้องมาแก้โค้ด — ช่องว่างถูกกรองทิ้งอยู่แล้วใน col()
+     หดตามขนาดชีทจริงเสมอ ขอเกินขอบชีทเมื่อไรคือ error แล้วทั้งแอปคีย์ออเดอร์ไม่ได้ */
+  var rows = Math.min(20, Math.max(0, (s.getMaxRows() || 0) - 6));
+  var cols = Math.min(6, Math.max(0, (s.getMaxColumns() || 0) - 3));
+  var v = (rows > 0 && cols > 0) ? s.getRange(7, 4, rows, cols).getValues() : [];
   function col(i) {
     var out = [];
     for (var r = 0; r < v.length; r++) {
-      var x = String(v[r][i] || '').trim();
+      var x = String((v[r] && v[r][i]) || '').trim();
       if (x) out.push(x);
     }
     return out;
   }
-  return { channel: col(0), carrier: col(1), vat: col(2), status: col(3), recvType: col(4) };
+  return { channel: col(0), carrier: col(1), vat: col(2), status: col(3), recvType: col(4),
+           acct: col(5) };
 }

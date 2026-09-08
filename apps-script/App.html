@@ -696,6 +696,9 @@ function renderOrders(){
       +'<span style="color:var(--ink);font-weight:700">'+baht(o.net)+'</span> '
       +'<span class="tag '+statusTag(o.status)+'">'+esc(o.status||"-")+'</span>'
       + (o.check && o.check!=="OK" ? ' <span class="tag bad">'+esc(o.check)+'</span>' : '')
+      /* สถานะบัญชีแยกจากสถานะออเดอร์ — ของถึงมือลูกค้าแล้วแต่ยังค้างส่งบัญชี
+         เป็นเรื่องที่เกิดทุกวัน ถ้าไม่โชว์คู่กันจะรู้อีกทีตอนสิ้นเดือน */
+      + (dead ? '' : ' ' + acctTag(o))
       +'</div><div class="acts">'
       /* ใบที่ยกเลิกแล้วไม่มีปุ่มอะไรให้กด — ของคืนสต๊อกไปแล้ว ยอดเป็นศูนย์แล้ว
          ถ้ายังพิมพ์ใบปะหน้าหรือออกเอกสารจากใบนี้ได้ วันหนึ่งจะมีคนส่งของตามใบที่ยกเลิก */
@@ -704,6 +707,8 @@ function renderOrders(){
         +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
         +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
         +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">📄</button>'
+        /* ส่งบัญชีเป็นคนละงานกับออกเอกสาร จึงเป็นคนละปุ่ม */
+        +'<button class="sq" data-ac="'+i+'" title="ส่งบัญชี">🧾</button>'
         /* ลูกค้าทักมาขอเพิ่มของก่อนร้านแพ็คส่ง เป็นเรื่องปกติของหน้างาน
            ทางที่เคยทำได้มีแค่ยกเลิกใบเดิมแล้วคีย์ใหม่ทั้งใบ เสียเลขออเดอร์ไปหนึ่งใบทุกครั้ง */
         +'<button class="sq" data-ed="'+i+'" title="แก้รายการสินค้า / เพิ่มสินค้า">✏️</button>'
@@ -2857,12 +2862,13 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
 
   $("#list").addEventListener("click", function(e){
-    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc],[data-ed],[data-cx]");
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc],[data-ac],[data-ed],[data-cx]");
     if(!b) return;
     if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
     else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
     else if(b.dataset.sm!==undefined) openMsg(ORDERS[+b.dataset.sm]);
     else if(b.dataset.dc!==undefined) openDoc(ORDERS[+b.dataset.dc]);
+    else if(b.dataset.ac!==undefined) openAcct(ORDERS[+b.dataset.ac]);
     else if(b.dataset.ed!==undefined) openEditItems(ORDERS[+b.dataset.ed]);
     else if(b.dataset.cx!==undefined) openCancel(ORDERS[+b.dataset.cx]);
   });

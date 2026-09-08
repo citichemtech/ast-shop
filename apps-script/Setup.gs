@@ -35,6 +35,7 @@ function setup() {
   made.push(setupDocSheet_(ss));
   made.push(setupAppSheet_(ss));
   made.push(setupItemLotColumn_(ss));
+  made.push(setupAccounting_(ss));
   // ซ่อมให้อัตโนมัติ แต่ห้ามล้มทั้ง setup ถ้าซ่อมไม่ได้ — ส่วนอื่นติดตั้งไปแล้ว
   try { made.push(repairStockSheet()); }
   catch (e) { made.push('ซ่อมชีทสต๊อกไม่สำเร็จ: ' + e.message); }
@@ -1271,6 +1272,83 @@ function setupAppSheet_(ss) {
 
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name +
     (fresh ? ' — อย่าลืมกรอกที่อยู่และเบอร์โทรผู้ส่ง ใบปะหน้าพัสดุใช้ค่านี้' : '');
+}
+
+/* ----------------------------------------------- สถานะบัญชี ที่ ออเดอร์_หัวบิล */
+
+/** ตัวเลือกสถานะบัญชี — เจ้าของร้านแก้/เพิ่มเองในชีท ตั้งค่า คอลัมน์ I ได้ */
+var ACCT_LIST = ['ยังไม่ส่งบัญชี', 'รอเอกสาร', 'พร้อมส่งบัญชี', 'ส่งบัญชีแล้ว', 'บัญชีตีกลับ'];
+var ACCT_FIRST = ACCT_LIST[0];
+
+/**
+ * สามคอลัมน์ท้าย ออเดอร์_หัวบิล สำหรับงานส่งบัญชี
+ *
+ * ทำไมต้องแยกจากช่องสถานะออเดอร์ (Q): ของส่งถึงมือลูกค้าแล้วแต่ยังไม่ได้ส่งบัญชี
+ * เป็นเรื่องที่เกิดทุกวัน ถ้าใช้ช่องเดียวกันจะเห็นได้ทีละเรื่อง แล้วใบที่ตกหล่น
+ * จะรู้อีกทีตอนสิ้นเดือน — ซึ่งสายไปสำหรับการยื่นภาษี
+ *
+ * ไม่ยุ่งกับคอลัมน์เดิมสักช่อง เขียนเฉพาะ V W X ที่ยังว่างอยู่
+ * และไม่เขียนทับหัวคอลัมน์ที่มีของอื่นอยู่ก่อน — เจอแล้วหยุด ไม่ทับ
+ */
+function setupAccounting_(ss) {
+  var s = findSheet_(ss, SH.head.name);
+  if (!s) throw new Error('ไม่พบชีท ' + SH.head.name);
+
+  var C = SH.head.IN;
+  var cols = [
+    { col: C.acct, head: 'สถานะบัญชี', width: 130 },
+    { col: C.acctAt, head: 'วันที่ส่งบัญชี', width: 150 },
+    { col: C.acctWhat, head: 'ส่งบัญชีอะไรไปบ้าง', width: 320 }
+  ];
+
+  var need = SH.head.width;
+  if (s.getMaxColumns() < need) s.insertColumnsAfter(s.getMaxColumns(), need - s.getMaxColumns());
+
+  for (var i = 0; i < cols.length; i++) {
+    var cur = String(s.getRange(HEAD_ROW, cols[i].col).getValue() || '').trim();
+    if (cur && cur !== cols[i].head) {
+      throw new Error('คอลัมน์ที่ ' + cols[i].col + ' ของชีท ' + SH.head.name +
+        ' มีหัวข้อ "' + cur + '" อยู่แล้ว — หยุดไว้ก่อน ไม่เขียนทับของเดิม');
+    }
+    s.getRange(HEAD_ROW, cols[i].col).setValue(cols[i].head)
+      .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+      .setVerticalAlignment('middle').setWrap(true);
+    s.setColumnWidth(cols[i].col, cols[i].width);
+  }
+
+  /* รายการตัวเลือกไปอยู่ในชีท ตั้งค่า ที่เดียวกับ dropdown ชุดอื่น
+     เพื่อให้เจ้าของร้านเพิ่มสถานะเองได้โดยไม่ต้องแก้โค้ด */
+  var cfg = sheet_('cfg');
+  if (cfg.getMaxColumns() < 9) cfg.insertColumnsAfter(cfg.getMaxColumns(), 9 - cfg.getMaxColumns());
+  /* หัวตารางของชุด dropdown อยู่แถว 6 ค่าเริ่มแถว 7 — คนละที่กับหัวชีทอื่น
+     เขียนผิดแถวคือ cfgLists_ อ่านไม่เจอ แล้วสถานะบัญชีจะไม่มีให้เลือกสักตัว */
+  var LIST_HEAD = DATA_ROW, LIST_TOP = DATA_ROW + 1;
+  if (String(cfg.getRange(LIST_HEAD, 9).getValue() || '').trim() === '') {
+    cfg.getRange(LIST_HEAD, 9).setValue('สถานะบัญชี')
+      .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold');
+  }
+  var wrote = 0;
+  for (var k = 0; k < ACCT_LIST.length; k++) {
+    var cell = cfg.getRange(LIST_TOP + k, 9);
+    if (String(cell.getValue() || '').trim() === '') { cell.setValue(ACCT_LIST[k]); wrote++; }
+  }
+  cfg.setColumnWidth(9, 140);
+
+  /* ผูก dropdown กับช่วงในชีท ตั้งค่า ไม่ใช่รายการตายตัวในโค้ด
+     เพิ่มสถานะในชีทแล้วช่องในหัวบิลรับค่าใหม่ได้ทันทีโดยไม่ต้อง deploy */
+  var last = formulaLimit_('head');
+  if (last >= DATA_ROW) {
+    var n = last - DATA_ROW + 1;
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(cfg.getRange(LIST_TOP, 9, ACCT_LIST.length, 1), true)
+      .setAllowInvalid(true).build();
+    s.getRange(DATA_ROW, C.acct, n, 1).setDataValidation(rule).setFontColor(C_IN_FG);
+    s.getRange(DATA_ROW, C.acctAt, n, 1).setFontColor(C_IN_FG);
+    s.getRange(DATA_ROW, C.acctWhat, n, 1).setFontColor(C_IN_FG);
+  }
+
+  return 'เพิ่มคอลัมน์ V W X (สถานะบัญชี) ที่ชีท ' + SH.head.name +
+    (wrote ? ' และเติมตัวเลือกสถานะบัญชี ' + wrote + ' ค่าในชีท ' + SH.cfg.name : '');
 }
 
 /* ------------------------------------ คอลัมน์ "ล็อตที่ตัด" ที่ ออเดอร์_รายการ */

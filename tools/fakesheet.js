@@ -308,8 +308,85 @@ function build(opts) {
 
 /* ------------------------------------------------- โหลด .gs เข้ามารันใน node */
 
+/* ------------------------------------------------ ไดรฟ์จำลอง (ใช้ตอนส่งบัญชี)
+
+   จำลองแค่เท่าที่ Acct.gs เรียกจริง: หาโฟลเดอร์จากไอดี · สร้างโฟลเดอร์ย่อย ·
+   สร้างไฟล์ · ทิ้งไฟล์ลงถังขยะ  พอสำหรับพิสูจน์เรื่องที่พลาดแล้วเจ็บ คือ
+   เขียนไฟล์ไม่ครบแล้วชีทดันจดว่าส่งแล้ว                                        */
+
+function blob_(data, type, name, opts) {
+  var b = {
+    _data: data, _type: type, _name: name,
+    getName: function () { return b._name; },
+    setName: function (n) { b._name = n; return b; },
+    getContentType: function () { return b._type; },
+    getDataAsString: function () { return String(b._data); },
+    getAs: function (want) {
+      /* ตัวแปลงของ Google ไม่ได้ทำงานทุกกรณี — เปิดสวิตช์ให้ข้อสอบทดสอบทางที่แปลงไม่ได้ */
+      if (opts && opts.noPdf) throw new Error('Converting from image/png to application/pdf is not supported.');
+      return blob_(b._data, want, String(b._name).replace(/\.[^.]+$/, ''), opts);
+    }
+  };
+  return b;
+}
+
+function fakeDrive(opts) {
+  var files = [], folders = {}, seq = { n: 0 };
+
+  function mkFolder(name, parent) {
+    var id = 'folder-' + (++seq.n);
+    var f = {
+      _id: id, _name: name, _parent: parent, _kids: [],
+      getId: function () { return id; },
+      getName: function () { return name; },
+      getUrl: function () { return 'https://drive.google.com/drive/folders/' + id; },
+      createFolder: function (n) { var k = mkFolder(n, f); f._kids.push(k); return k; },
+      getFoldersByName: function (n) {
+        var hit = f._kids.filter(function (k) { return k._name === n; });
+        var i = 0;
+        return { hasNext: function () { return i < hit.length; }, next: function () { return hit[i++]; } };
+      },
+      createFile: function (b) {
+        if (opts && opts.driveFail && files.length >= opts.driveFail) {
+          throw new Error('ไดรฟ์เต็ม (จำลอง)');
+        }
+        var file = {
+          _folder: f, _blob: b, _trashed: false,
+          getName: function () { return b.getName(); },
+          getBlob: function () { return b; },
+          setTrashed: function (t) { file._trashed = !!t; return file; }
+        };
+        files.push(file);
+        return file;
+      }
+    };
+    folders[id] = f;
+    return f;
+  }
+
+  var root = mkFolder('ไดรฟ์ของฉัน', null);
+  return {
+    files: files,
+    live: function () { return files.filter(function (f) { return !f._trashed; }); },
+    app: {
+      getFolderById: function (id) {
+        if (!folders[id]) throw new Error('ไม่พบโฟลเดอร์ ' + id);
+        return folders[id];
+      },
+      createFolder: function (n) { return root.createFolder(n); },
+      getFileById: function () {
+        return { getParents: function () {
+          var done = false;
+          return { hasNext: function () { return !done; }, next: function () { done = true; return root; } };
+        } };
+      }
+    }
+  };
+}
+
 function load(fixture, opts) {
   opts = opts || {};
+  var drive = fakeDrive(opts);
   /* opts.props = คุณสมบัติสคริปต์ที่ตั้งไว้ก่อนโหลดโค้ด
      จำเป็นเพราะ SHEET_ID อ่าน property ตั้งแต่ตอนไฟล์ถูกโหลด ถ้าตั้งทีหลังจะไม่ทัน */
   var props = {};
@@ -375,8 +452,25 @@ function load(fixture, opts) {
         if (!m) throw new Error('parseDate: รูปแบบไม่ตรง ' + txt);
         return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]),
           Number(m[4]), Number(m[5]), Number(m[6]));
-      }
+      },
+      /* รองรับเฉพาะรูปแบบที่โค้ดของเราใช้จริง ไม่ทำตัวแปลงครบทุกแบบของ Google */
+      formatDate: function (d, tz, fmt) {
+        var p = function (n) { return n < 10 ? '0' + n : '' + n; };
+        if (fmt === 'yyyy-MM') return d.getFullYear() + '-' + p(d.getMonth() + 1);
+        if (fmt === 'yyyy-MM-dd HH:mm') {
+          return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+            ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+        }
+        if (fmt === 'd/M/yyyy HH:mm') {
+          return d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear() +
+            ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+        }
+        throw new Error('formatDate: ยังไม่ได้ทำรูปแบบ ' + fmt);
+      },
+      base64Decode: function (b64) { return Buffer.from(String(b64), 'base64'); },
+      newBlob: function (data, type, name) { return blob_(data, type, name, opts); }
     },
+    DriveApp: drive.app,
     LockService: {
       getScriptLock: function () {
         return {
@@ -401,7 +495,7 @@ function load(fixture, opts) {
   var dir = path.join(__dirname, '..', 'apps-script');
   /* Doc.gs ต้องโหลดด้วย ไม่งั้น issueDoc/voidDoc เรียก docType_ ไม่เจอ
      ทะเบียนเอกสารเป็นของที่แก้ทีหลังไม่ได้ จึงต้องมีข้อสอบคุมเหมือนส่วนอื่น */
-  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs'];
+  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs'];
   /* BUNDLE=1 = สอบไฟล์ที่รวมแล้วแทนไฟล์ต้นฉบับ
      ไฟล์ที่เอาไปวางใน Apps Script จริงคือไฟล์ที่รวมแล้ว ถ้าตัวรวมทำอะไรพัง
      ข้อสอบที่อ่านแต่ต้นฉบับจะผ่านหมดโดยที่ของจริงใช้ไม่ได้ */
@@ -413,6 +507,7 @@ function load(fixture, opts) {
     vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f });
   });
   ctx.__props = props;
+  ctx.__drive = drive;
   return ctx;
 }
 

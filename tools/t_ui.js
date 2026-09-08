@@ -1599,6 +1599,104 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ไม่มีปุ่มให้กดนำเข้าซ้ำ',
     await page.evaluate(function () { return $('#sp-go').style.display === 'none' }));
 
+  /* ---------- 31. ส่งบัญชี ---------- */
+  console.log('\n31. ส่งบัญชี — แยกจากปุ่มออกเอกสาร');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(600);
+  truthy('แถวออเดอร์โชว์สถานะบัญชีคู่กับสถานะออเดอร์',
+    /ยังไม่ส่งบัญชี/.test(await page.textContent('#list')));
+
+  var acctNo = await page.evaluate(function () { return ORDERS[0].no });
+  await page.click('#list [data-ac="0"]');
+  await page.waitForTimeout(700);
+  truthy('เปิดหน้าต่างส่งบัญชีของใบที่กด',
+    (await page.textContent('#m-title')).indexOf(acctNo) > -1);
+  truthy('บอกว่าไฟล์จะไปอยู่โฟลเดอร์ไหน',
+    /AST_ส่งบัญชี/.test(await page.textContent('#m-body')));
+  truthy('บอกว่าไม่ได้แนบสลิป เพราะดูจากรายการเดินบัญชี',
+    /รายการเดินบัญชี/.test(await page.textContent('#m-body')));
+
+  console.log('\n   ใบที่ยังไม่เคยออกเอกสาร ต้องบอกตรง ๆ ไม่ใช่โชว์ช่องติ๊กเปล่า');
+  /* ข้อสอบหมวดก่อนหน้าออกใบให้ออเดอร์ใบนี้ไปแล้ว เก็บไว้ก่อนแล้วคืนทีหลัง
+     จะได้ทดสอบทางที่ "ยังไม่เคยออกใบ" ได้จริงโดยไม่กระทบหมวดอื่น */
+  await page.evaluate(function () { window.__docs = MOCK_DOCS.slice(); MOCK_DOCS.length = 0; });
+  await page.click('#m-close');
+  await page.waitForTimeout(250);
+  await page.click('#list [data-ac="0"]');
+  await page.waitForTimeout(700);
+  truthy('บอกให้ไปออกเอกสารก่อน',
+    /ยังไม่เคยออกเอกสาร/.test(await page.textContent('#ac-docs')));
+  eq('ไม่มีช่องติ๊กเอกสารให้กดเลย',
+    await page.evaluate(function () { return $$('.ac-doc').length }), 0);
+
+  console.log('\n   เปลี่ยนสถานะอย่างเดียว ไม่ส่งไฟล์');
+  var before31 = await page.evaluate(function () { return window.SENT.length });
+  await page.selectOption('#ac-st', 'รอเอกสาร');
+  await page.click('#ac-save');
+  await page.waitForTimeout(700);
+  var sent31 = await page.evaluate(function (n) {
+    return window.SENT.slice(n).filter(function (x) { return x && x.fn === 'setAcctStatus' });
+  }, before31);
+  eq('ยิงแค่คำสั่งเปลี่ยนสถานะ', sent31.length, 1);
+  eq('ส่งสถานะที่เลือกไปถูกต้อง', sent31[0].acct, 'รอเอกสาร');
+  eq('ไม่ได้ส่งไฟล์อะไรขึ้นไปเลย',
+    await page.evaluate(function (n) {
+      return window.SENT.slice(n).filter(function (x) { return x && x.files }).length;
+    }, before31), 0);
+
+  console.log('\n   ไม่ติ๊กอะไรเลยแล้วกดส่ง ต้องกันไว้ก่อนถึงเซิร์ฟเวอร์');
+  await page.evaluate(function () {
+    $$('.ac-x').forEach(function (c) { c.checked = false });
+    $$('.ac-doc').forEach(function (c) { c.checked = false });
+  });
+  var before31b = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#ac-go');
+  await page.waitForTimeout(400);
+  truthy('บอกว่ายังไม่ได้ติ๊ก', /ยังไม่ได้ติ๊ก/.test(await page.textContent('#ac-out')));
+  eq('ไม่ได้ยิงอะไรขึ้นไป',
+    await page.evaluate(function (n) { return window.SENT.length - n }, before31b), 0);
+
+  console.log('\n   ใบที่ออกไปแล้วจริง ๆ กลับมา แล้วส่งบัญชี');
+  /* คืนใบที่ข้อสอบหมวดก่อนหน้าออกไว้ ใบพวกนี้มีรายการสินค้าครบ วาดรูปได้จริง */
+  await page.evaluate(function () {
+    (window.__docs || []).forEach(function (d) { MOCK_DOCS.push(d) });
+  });
+  var docNo31 = await page.evaluate(function () { return MOCK_DOCS[0].no });
+  await page.click('#m-close');
+  await page.waitForTimeout(300);
+  await page.click('#list [data-ac="0"]');
+  await page.waitForTimeout(700);
+  truthy('เห็นใบที่ออกไปแล้วในรายการให้ติ๊ก',
+    (await page.textContent('#ac-docs')).indexOf(docNo31) > -1);
+  eq('ติ๊กใบแรกไว้ให้เลย',
+    await page.evaluate(function () { return $$('.ac-doc')[0].checked }), true);
+
+  var picked31 = await page.evaluate(function () {
+    return $$('.ac-doc').filter(function (c) { return c.checked }).map(function (c) { return c.value });
+  });
+  var before31c = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#ac-go');
+  await page.waitForTimeout(4000);
+  var pack31 = await page.evaluate(function (n) {
+    return window.SENT.slice(n).filter(function (x) { return x && x.files })[0];
+  }, before31c);
+  truthy('ส่งคำขอขึ้นไปแล้ว', !!pack31);
+  eq('ส่งเฉพาะใบที่ติ๊กไว้ ไม่ใช่ทุกใบของออเดอร์',
+    (pack31.files || []).map(function (f) { return f.name }), picked31);
+  eq('ข้อมูลประกอบส่งไปครบสองอย่าง', pack31.extras, ['order', 'cust']);
+  truthy('รูปที่ส่งเป็น JPEG ที่ย่อแล้ว ไม่ใช่ PNG ก้อนโต',
+    /^data:image\/jpeg;base64,/.test(pack31.files[0].data));
+  truthy('มี clientKey กันส่งซ้ำ', /^[a-z0-9]/i.test(String(pack31.clientKey || '')));
+  eq('บอกเลขออเดอร์ที่ส่งไปด้วย', pack31.no, acctNo);
+  truthy('ขึ้นลิงก์โฟลเดอร์ให้กดเปิด',
+    /เปิดโฟลเดอร์บัญชี/.test(await page.textContent('#ac-out')));
+
+  console.log('\n   ส่งเสร็จแล้ว แถวออเดอร์ต้องเปลี่ยนเป็น "ส่งบัญชีแล้ว" ทันที');
+  await page.click('#m-close');
+  await page.waitForTimeout(300);
+  truthy('เห็นสถานะใหม่โดยไม่ต้องโหลดใหม่',
+    /ส่งบัญชีแล้ว/.test(await page.textContent('#list')));
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

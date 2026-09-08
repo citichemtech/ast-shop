@@ -1,0 +1,207 @@
+<script>
+/* ================================================================ ส่งบัญชี
+
+   ปุ่มนี้แยกจากปุ่มออกเอกสารโดยตั้งใจ — คนละงาน คนละเวลา คนละคนก็ได้
+   ออกเอกสาร = ทำใบให้ลูกค้า · ส่งบัญชี = ส่งสำเนาให้ฝ่ายบัญชีเก็บเข้าแฟ้ม
+   ใบที่ออกให้ลูกค้าไปแล้วแต่ยังไม่ได้ส่งบัญชี เป็นเรื่องที่เกิดทุกวัน
+   ถ้าอยู่ปุ่มเดียวกันจะแยกไม่ออกว่าใบไหนตกหล่น จนกว่าจะถึงสิ้นเดือน
+
+   รูปที่ส่งไปเป็นภาพจาก canvas ตัวเดียวกับที่ใช้พิมพ์ จึงเป็นใบหน้าตาเดียว
+   กับที่ลูกค้าถืออยู่เป๊ะ ไม่ใช่ใบที่ประกอบขึ้นใหม่ตอนกดส่ง                  */
+
+var ACCT = { no: "", pack: null, key: null, busy: false };
+
+/** ป้ายสถานะบัญชีบนแถวออเดอร์ — ว่าง = ยังไม่เคยแตะ ถือว่ายังไม่ส่ง */
+function acctTag(o) {
+  var v = String((o && o.acct) || "").trim();
+  if (!v) v = "ยังไม่ส่งบัญชี";
+  var cls = v.indexOf("ส่งบัญชีแล้ว") > -1 ? "ok"
+          : (v.indexOf("ตีกลับ") > -1 ? "bad" : "wait");
+  return '<span class="tag ' + cls + '">' + esc(v) + "</span>";
+}
+
+function openAcct(o) {
+  ACCT.no = o.no;
+  ACCT.pack = null;
+  ACCT.key = newKey();
+  openModal("ส่งบัญชี — " + o.no, '<div class="load">กำลังดูว่าใบนี้มีอะไรให้ส่งบ้าง…</div>');
+  call("acctPack", [o.no], function (pack) {
+    if (!pack) { $("#m-body").innerHTML = '<div class="empty" style="color:var(--red)">อ่านข้อมูลไม่สำเร็จ</div>'; return; }
+    ACCT.pack = pack;
+    acctRender();
+  }, function (msg) {
+    $("#m-body").innerHTML = '<div class="empty" style="color:var(--red)">' + esc(msg) + "</div>";
+  });
+}
+
+function acctRender() {
+  var p = ACCT.pack;
+  var list = (BOOT && BOOT.lists && BOOT.lists.acct) || [];
+  var now = String(p.acct || "").trim() || (list[0] || "ยังไม่ส่งบัญชี");
+
+  var docs = p.docs || [];
+  var docHtml = docs.length
+    ? docs.map(function (d, i) {
+        return '<label><input type="checkbox" class="ac-doc" value="' + esc(d.no) + '"' +
+          (i === 0 ? " checked" : "") + '><span>' + esc(d.type) + " <b>" + esc(d.no) +
+          "</b><br>" + esc(thaiDate(d.date)) + " · " + baht(d.total) + "</span></label>";
+      }).join("")
+    : '<div class="hint">ใบนี้ยังไม่เคยออกเอกสารเลย — ออกเอกสารก่อน (ปุ่ม 📄 ที่แถวออเดอร์) ' +
+      "แล้วค่อยกลับมาส่งบัญชี ตอนนี้ส่งได้แต่ใบสรุปข้อมูล</div>";
+
+  $("#m-body").innerHTML =
+     '<div class="hint" style="margin-bottom:10px">'
+    +'ไฟล์จะถูกเก็บเข้าโฟลเดอร์ <b>AST_ส่งบัญชี</b> ในไดรฟ์ แยกโฟลเดอร์ย่อยตามเดือน '
+    +'บัญชีเปิดดูได้เองตลอดเวลา ไม่ต้องรออีเมล</div>'
+
+    +'<div class="fld"><label>สถานะบัญชีตอนนี้</label>'
+    +'<select id="ac-st">'
+    + list.map(function (x) {
+        return '<option value="' + esc(x) + '"' + (x === now ? " selected" : "") + ">" + esc(x) + "</option>";
+      }).join("")
+    +'</select>'
+    +'<button class="mini" id="ac-save" style="margin-top:8px">บันทึกสถานะอย่างเดียว</button>'
+    +'<div class="hint">ใช้ตอน “รอเอกสาร” หรือ “บัญชีตีกลับ” ซึ่งยังไม่มีไฟล์จะส่ง</div></div>'
+
+    + (p.acctAt ? '<div class="msg ok" style="display:block">ส่งบัญชีไปแล้วเมื่อ <b>'
+        + esc(p.acctAt) + "</b><br>" + esc(p.acctWhat || "") + "</div>" : "")
+
+    +'<div class="subhd">เอกสารที่จะส่ง</div>'
+    +'<div class="fchk" id="ac-docs" style="grid-template-columns:1fr">' + docHtml + "</div>"
+
+    +'<div class="subhd">ข้อมูลประกอบ (รวมเป็นไฟล์สรุปหนึ่งใบ)</div>'
+    +'<div class="fchk" style="grid-template-columns:1fr">'
+    +'<label><input type="checkbox" class="ac-x" value="order" checked>'
+    +'<span>เลขออเดอร์ · ช่องทางขาย · ยอดสุทธิ · ยอด VAT</span></label>'
+    +'<label><input type="checkbox" class="ac-x" value="cust" checked>'
+    +'<span>ข้อมูลลูกค้า / เลขผู้เสียภาษี</span></label></div>'
+
+    +'<div class="hint" style="margin-bottom:10px">การชำระเงินไม่ได้แนบสลิป — '
+    +'ร้านรับเงินผ่านธนาคาร บัญชีตรวจจากรายการเดินบัญชีเอง ไฟล์สรุปเขียนบอกไว้ให้แล้ว</div>'
+
+    +'<div id="ac-out"></div>'
+    +'<button class="btn" id="ac-go">ส่งบัญชี</button>';
+
+  $("#ac-save").onclick = acctSaveStatus;
+  $("#ac-go").onclick = acctSend;
+}
+
+function acctSaveStatus() {
+  var btn = $("#ac-save");
+  btn.disabled = true;
+  call("setAcctStatus", [ACCT.no, $("#ac-st").value, ""], function (r) {
+    btn.disabled = false;
+    if (!r) { $("#ac-out").innerHTML = '<div class="msg err" style="display:block">บันทึกไม่สำเร็จ</div>'; return; }
+    acctPatchOrder({ acct: r.acct });
+    toast("บันทึกสถานะบัญชีเป็น “" + r.acct + "” แล้ว");
+  }, function (msg) {
+    btn.disabled = false;
+    $("#ac-out").innerHTML = '<div class="msg err" style="display:block">' + esc(msg) + "</div>";
+  });
+}
+
+/**
+ * ย่อรูปใบให้พอดีกับการส่งขึ้นชีท
+ *
+ * ใบที่วาดไว้เป็น PNG ที่ 300 dpi ก้อนละหลายเมกะไบต์ ส่งขึ้นไปทีละสองสามใบ
+ * คือคำขอที่ใหญ่เกินจนหลุดกลางทาง — และเป็นการหลุดแบบที่ไม่มีข้อความบอกด้วย
+ * ย่อลงเหลือ 150 dpi แบบ JPEG ซึ่งเป็นความละเอียดเดียวกับใบที่สแกนส่งกันทั่วไป
+ * พิมพ์ลงกระดาษ A4 แล้วอ่านออกครบทุกตัว
+ */
+function acctShrink(url) {
+  return new Promise(function (res, rej) {
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var c = document.createElement("canvas");
+        c.width = DOC_W; c.height = DOC_H;
+        var x = c.getContext("2d");
+        x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+        x.drawImage(img, 0, 0, c.width, c.height);
+        res(c.toDataURL("image/jpeg", 0.9));
+      } catch (e) { rej(e); }
+    };
+    img.onerror = function () { rej(new Error("อ่านรูปใบที่วาดไว้ไม่ได้")); };
+    img.src = url;
+  });
+}
+
+/** วาดใบหนึ่งใบเป็นรูปพร้อมส่ง — ใช้ "สำเนา" เพราะต้นฉบับเป็นของลูกค้า */
+function acctDrawDoc(no) {
+  return api("getDoc", no).then(function (r) {
+    var m = r.meta;
+    m.seller = CFG.docSeller || ""; m.sellerEmail = CFG.docSellerEmail || "";
+    return buildDocPage(r.doc, m, CFG.doc || {}, "สำเนา");
+  }).then(acctShrink).then(function (data) {
+    return { name: no, data: data };
+  });
+}
+
+function acctSend() {
+  if (ACCT.busy) return;
+  var picks = $$("#ac-docs .ac-doc").filter(function (c) { return c.checked; })
+    .map(function (c) { return c.value; });
+  var extras = $$(".ac-x").filter(function (c) { return c.checked; })
+    .map(function (c) { return c.value; });
+
+  if (!picks.length && !extras.length) {
+    $("#ac-out").innerHTML = '<div class="msg err" style="display:block">ยังไม่ได้ติ๊กว่าจะส่งอะไร</div>';
+    return;
+  }
+
+  ACCT.busy = true;
+  var btn = $("#ac-go");
+  btn.disabled = true;
+  $("#ac-out").innerHTML = '<div class="load">กำลังวาดเอกสาร ' + picks.length + " ใบ…</div>";
+
+  /* วาดทีละใบตามลำดับ ไม่วาดพร้อมกัน — เครื่องมือถือรุ่นเก่าวาด canvas A4
+     สามใบพร้อมกันแล้วแท็บดับไปเฉย ๆ ซึ่งดูเหมือนแอปค้างโดยไม่มีข้อความอะไรเลย */
+  var files = [];
+  var chain = Promise.resolve();
+  picks.forEach(function (no, i) {
+    chain = chain.then(function () {
+      $("#ac-out").innerHTML = '<div class="load">กำลังวาดใบ ' + (i + 1) + " / " +
+        picks.length + " (" + esc(no) + ")…</div>";
+      return acctDrawDoc(no).then(function (f) { files.push(f); });
+    });
+  });
+
+  chain.then(function () {
+    $("#ac-out").innerHTML = '<div class="load">กำลังส่งเข้าโฟลเดอร์บัญชี…</div>';
+    return api("sendToAccounting", {
+      clientKey: ACCT.key, no: ACCT.no, date: ACCT.pack.date,
+      by: byName(), files: files, extras: extras
+    });
+  }).then(function (r) {
+    ACCT.busy = false;
+    btn.disabled = false;
+    if (!r) throw new Error("ส่งแล้วแต่ไม่ได้คำตอบกลับมา — เปิดโฟลเดอร์บัญชีดูก่อนกดซ้ำ");
+    /* กุญแจใหม่หลังสำเร็จ การกดครั้งต่อไปจึงเป็นการส่งรอบใหม่จริง ไม่ใช่การกดซ้ำ */
+    ACCT.key = newKey();
+    var img = (r.kinds || []).filter(function (k) { return k === "image"; }).length;
+    $("#ac-out").innerHTML = '<div class="msg ok" style="display:block">'
+      + (r.duplicate ? "ใบนี้ส่งไปแล้วก่อนหน้านี้ ไม่ได้ส่งซ้ำ" :
+         "<b>ส่งบัญชีแล้ว " + (r.sent || []).length + " ไฟล์</b><br>" +
+         esc((r.sent || []).join(" · ")))
+      + (img ? "<br>หมายเหตุ: มี " + img + " ไฟล์ที่แปลงเป็น PDF ไม่ได้ จึงเก็บเป็นรูปแทน" : "")
+      + '<br><a href="' + esc(r.folderUrl) + '" target="_blank">เปิดโฟลเดอร์บัญชี</a></div>';
+    acctPatchOrder({ acct: "ส่งบัญชีแล้ว", acctAt: r.at || "", acctWhat: (r.sent || []).join(" · ") });
+  }, function (e) {
+    ACCT.busy = false;
+    btn.disabled = false;
+    $("#ac-out").innerHTML = '<div class="msg err" style="display:block">'
+      + esc(e && e.message ? e.message : e) + "</div>";
+  });
+}
+
+/** อัปเดตแถวในหน้าออเดอร์ให้ตรงกับที่เพิ่งบันทึก โดยไม่ต้องโหลดทั้งชีทใหม่ */
+function acctPatchOrder(patch) {
+  for (var i = 0; i < ORDERS.length; i++) {
+    if (ORDERS[i].no !== ACCT.no) continue;
+    for (var k in patch) ORDERS[i][k] = patch[k];
+    break;
+  }
+  if (ACCT.pack) for (var k2 in patch) ACCT.pack[k2] = patch[k2];
+  renderOrders();
+}
+</script>

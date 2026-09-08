@@ -297,7 +297,11 @@ function readOrders_(opts) {
   var hLast = formulaLimit_('head');
   var heads = [];
   if (hLast >= DATA_ROW) {
-    var hv = hs.getRange(DATA_ROW, 1, hLast - DATA_ROW + 1, 21).getValues();
+    /* อ่านให้ถึงคอลัมน์ X (สถานะบัญชี) แต่ไม่เกินขอบชีทจริง —
+       ชีทที่ยังไม่ได้สั่ง setup จะมีแค่ 21 คอลัมน์ ขอเกินไปคือ error ทั้งหน้าออเดอร์ */
+    var hWide = Math.min(SH.head.width, hs.getMaxColumns());
+    var hv = hs.getRange(DATA_ROW, 1, hLast - DATA_ROW + 1, hWide).getValues();
+    var hcell = function (row, col) { return col <= row.length ? row[col - 1] : ''; };
     for (var i = 0; i < hv.length; i++) {
       var no = String(hv[i][SH.head.IN.no - 1] || '').trim();
       if (!no) continue;
@@ -330,6 +334,10 @@ function readOrders_(opts) {
         cost: Number(hv[i][14] || 0),
         profit: Number(hv[i][15] || 0),
         check: String(hv[i][17] || ''),
+        /* งานบัญชีเป็นคนละเรื่องกับสถานะออเดอร์ ใบที่ส่งของแล้วยังค้างส่งบัญชีได้ */
+        acct: String(hcell(hv[i], SH.head.IN.acct) || '').trim(),
+        acctAt: String(hcell(hv[i], SH.head.IN.acctAt) || '').trim(),
+        acctWhat: String(hcell(hv[i], SH.head.IN.acctWhat) || '').trim(),
         items: []
       };
 

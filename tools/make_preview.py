@@ -42,6 +42,8 @@ BOOT = {
         "carrier": ["Flash Express", "Kerry Express", "ไปรษณีย์ไทย", "ส่งด่วน (ไรเดอร์)", "รับเองที่ร้าน"],
         "vat": ["ไม่รับ VAT", "รับ VAT"],
         "status": ["รอชำระ", "ชำระแล้ว", "จัดของแล้ว", "ส่งแล้ว", "ยกเลิก"],
+        "acct": ["ยังไม่ส่งบัญชี", "รอเอกสาร", "พร้อมส่งบัญชี", "ส่งบัญชีแล้ว",
+                 "บัญชีตีกลับ"],
         "recvType": ["ซื้อเข้า", "ตรวจนับ", "คืนจากลูกค้า", "ปรับเพิ่ม", "ปรับลด"],
     },
     "file": {"name": "AST_Stock List Tooling chemical newapp",
@@ -454,6 +456,47 @@ window.google = { script: { run: (function(){
         return { orders:out, already:already };
       });
     },
+    /* ส่งบัญชี — ของจริงเขียนไฟล์ลงไดรฟ์ ที่นี่แค่จำไว้ว่าส่งอะไรไป
+       ข้อสอบสนใจว่าหน้าจอส่ง "อะไร" ขึ้นไป ไม่ใช่ไฟล์ไปโผล่ที่ไหน */
+    acctPack: function(no){
+      window.SENT.push({fn:"acctPack", no:no});
+      reply(function(){
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === String(no) })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ "+no);
+        return {
+          no:o.no, date:o.date, channel:o.channel, cust:o.cust,
+          net:o.net, vatAmt:o.vatAmt||0, status:o.status,
+          acct:o.acct||"ยังไม่ส่งบัญชี", acctAt:o.acctAt||"", acctWhat:o.acctWhat||"",
+          docs: MOCK_DOCS.filter(function(d){ return d.orderNo === o.no && !d.voidWhy })
+            .map(function(d){ return {no:d.no, type:d.type, date:d.date, total:d.total, hasSnap:true} })
+        };
+      });
+    },
+    setAcctStatus: function(no, st){
+      window.SENT.push({fn:"setAcctStatus", no:no, acct:st});
+      reply(function(){
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        MOCK_ORDERS.forEach(function(o){ if(o.no===String(no)) o.acct = st });
+        return {ok:true, no:no, acct:st};
+      });
+    },
+    sendToAccounting: function(p){
+      window.SENT.push(p);
+      reply(function(){
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        var sent = (p.files||[]).map(function(f){ return f.name });
+        if((p.extras||[]).length) sent.push("สรุป-"+p.no+".txt");
+        var at = "2026-09-08 10:30";
+        MOCK_ORDERS.forEach(function(o){
+          if(o.no===String(p.no)){ o.acct="ส่งบัญชีแล้ว"; o.acctAt=at; o.acctWhat=sent.join(" · ") }
+        });
+        return {ok:true, no:p.no, at:at, sent:sent,
+                folderUrl:"https://drive.google.com/drive/folders/FAKE",
+                folderName:"2026-09",
+                kinds: sent.map(function(){ return "pdf" })};
+      });
+    },
     createOrder: function(p){
       window.SENT.push(p);
       reply(function(){
@@ -499,8 +542,8 @@ def main():
         return (GS / (name + ".html")).read_text(encoding="utf-8")
 
     page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub_include, index)
-    if n not in (0, 8):
-        sys.exit("คาดว่าจะมี include 8 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
+    if n not in (0, 9):
+        sys.exit("คาดว่าจะมี include 9 อัน (หรือ 0 ถ้ารวมไฟล์มาแล้ว) แต่เจอ %d อัน" % n)
 
     page = page.replace('"<?= staffEmail ?>"', json.dumps(BOOT["staff"]))
     if "<?" in page:
