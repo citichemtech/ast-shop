@@ -569,6 +569,28 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   /* ---------- 17. ไม่ได้กรอกที่อยู่ผู้ส่ง ต้องบอกก่อนพิมพ์ ----------
      ที่อยู่ผู้ส่งมาจากชีท ตั้งค่าแอป และตั้งต้นเป็นช่องว่าง ถ้าไม่บอกอะไรเลย
      จะรู้ตัวอีกทีตอนแปะใบปะหน้าบนกล่องไปแล้ว */
+  /* ---------- 16.5 โลโก้ขนส่งบนใบปะหน้า ----------
+     ชุดใหม่ที่เจ้าของร้านส่งมา 8 ก.ย. 69 เปลี่ยนทั้งสี่รูป
+     จับคู่ผิดคือแปะกล่องส่งลูกค้าด้วยโลโก้ขนส่งเจ้าอื่น */
+  console.log('\n16.5 โลโก้ขนส่งบนใบปะหน้า');
+  var logoMap = await page.evaluate(function () {
+    return ['Flash Express', 'Kerry Express', 'KEX Express', 'ไปรษณีย์ไทย',
+            'ส่งด่วน (ไรเดอร์)', 'Shopee Xpress (SPX)', 'รับเองที่ร้าน'].map(function (n) {
+      var u = carrierLogo(n);
+      if (!u) return '';
+      for (var k in CARRIER_LOGOS) if (CARRIER_LOGOS[k] === u) return k;
+      return '?';
+    });
+  });
+  eq('จับคู่โลโก้ถูกทุกเจ้า · เจ้าที่ไม่มีโลโก้คืนค่าว่างแล้วพิมพ์เป็นตัวหนังสือแทน',
+    logoMap, ['flash', 'kerry', 'kerry', 'post', 'moto', '', '']);
+  eq('โลโก้ทั้งสี่เป็น PNG ชุดใหม่ ไม่ใช่ JPEG ชุดเดิม',
+    await page.evaluate(function () {
+      return ['flash', 'kerry', 'post', 'moto'].map(function (k) {
+        return CARRIER_LOGOS[k].slice(0, 14);
+      });
+    }), ['data:image/png', 'data:image/png', 'data:image/png', 'data:image/png']);
+
   console.log('\n17. เตือนเมื่อยังไม่ได้กรอกที่อยู่ผู้ส่ง');
   await page.evaluate(function () { go('list'); });
   await page.waitForTimeout(400);
