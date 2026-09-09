@@ -310,8 +310,9 @@ async function buildDocPage(d, m, cfg, copy) {
     var nm = wrapText(x, ln.name, COLS[1].w - 30).slice(0, 2);
     nm.forEach(function (t2, k) { fitLeft(x, t2, xs[1] + 16, ry2 + k * 26, COLS[1].w - 30, F_BODY); });
     if (ln.po) fitLeft(x, ln.po, xs[2] + 10, ry2, COLS[2].w - 16, pt(9.5));
-    /* หน่วยเขียนติดกับจำนวนในช่องเดียว ใบจริงไม่มีคอลัมน์หน่วยแยก */
-    fitCenter(x, String(ln.qty) + (ln.unit ? " " + ln.unit : ""),
+    /* หน่วยเขียนติดกับจำนวนในช่องเดียว ใบจริงไม่มีคอลัมน์หน่วยแยก
+       qtyUnit กันกรณีหน่วยขึ้นต้นด้วยตัวเลข ไม่งั้น "1" กับ "10" อ่านติดเป็น 110 */
+    fitCenter(x, qtyUnit(ln.qty, ln.unit),
               xs[3] + COLS[3].w / 2, ry2, COLS[3].w - 10, F_BODY);
     fitRight(x, money(ln.price), xs[4] + COLS[4].w - 16, ry2, COLS[4].w - 24, F_BODY);
     fitRight(x, money(ln.amount), xs[5] + COLS[5].w - 16, ry2, COLS[5].w - 24, F_BODY);

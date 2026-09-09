@@ -722,6 +722,21 @@ var baht=function(n){return "฿"+Number(n||0).toLocaleString("th-TH",{minimumFr
 var esc=function(s){return String(s||"").replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
 function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("on")},2400)}
 
+/* จำนวนกับหน่วยเขียนติดกันในช่องเดียว (ใบจริงไม่มีคอลัมน์หน่วยแยก)
+   ถ้าหน่วยขึ้นต้นด้วยตัวเลข ลูกค้าจะอ่านรวมเป็นเลขเดียวกัน —
+   ของจริงในใบเสนอราคา QO26-00006 ขึ้นว่า "1 10" (1 ชุด บรรจุ 10 ชิ้น)
+   ซึ่งอ่านได้ว่าหนึ่งร้อยสิบ ต่างกันสิบเท่าและเป็นเรื่องเงิน
+     หน่วยที่เป็นตัวเลขล้วน = ไม่ใช่หน่วย (คนกรอกใส่ขนาดบรรจุมา) ไม่พิมพ์
+     หน่วยที่ขึ้นต้นด้วยตัวเลข = ใส่วงเล็บคั่นให้เห็นว่าเป็นคนละตัวเลข */
+function qtyUnit(qty, unit){
+  var q = String(qty === null || qty === undefined ? "" : qty);
+  var u = String(unit === null || unit === undefined ? "" : unit).trim();
+  if (!u) return q;
+  if (/^[\d.,]+$/.test(u)) return q;
+  if (/^\d/.test(u)) return q + " (" + u + ")";
+  return q + " " + u;
+}
+
 /* CFG มีไว้ให้โค้ดที่ยกมาจากแอปเดิม (ตัวอ่านข้อความ + ใบปะหน้า) ใช้ได้โดยไม่ต้องแก้
    ของเดิมมาจาก localStorage ตัวนี้มาจากชีท — ชื่อฟิลด์เหมือนเดิมทุกตัว */
 var CFG = { products:[], sender:{name:"",addr:"",tel:""}, codFee:0, logo:"", brand:"",

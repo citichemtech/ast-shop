@@ -2272,7 +2272,7 @@ function orderMsg(o){
     if (p.size) t += "🔷 " + p.size + "\n";
     /* ราคา 0 = ของแถม เขียนให้ลูกค้าอ่านรู้เรื่องว่าได้อะไรฟรีไปบ้าง */
     if (Number(it.price) === 0)
-      t += "🎁 แถมฟรี " + num_(it.qty) + " " + (it.unit || "ชิ้น") + "\n";
+      t += "🎁 แถมฟรี " + qtyUnit(num_(it.qty), it.unit || "ชิ้น") + "\n";
     else
       t += "💰 " + num_(it.price) + "×" + num_(it.qty) + " = " + num_(it.total) + "\n";
   });
@@ -2551,14 +2551,14 @@ function drawAlerts(){
             return '<div class="lotline ' + (bad ? 'bad' : 'warn') + '">'
               + (bad ? '⛔ หมดอายุแล้ว ' + (-e.days) + ' วัน' : '⚠️ อีก ' + e.days + ' วันหมดอายุ')
               + ' — ' + esc(e.name) + ' · ล็อต ' + esc(e.lotNo)
-              + ' · เหลือ ' + e.remain + ' ' + esc(e.unit||"ชิ้น") + '</div>';
+              + ' · เหลือ ' + esc(qtyUnit(e.remain, e.unit||"ชิ้น")) + '</div>';
           }).join("")
         + (exp.length > 6 ? '<div class="hint">และอีก ' + (exp.length-6) + ' ล็อต</div>' : '')
       : '')
     + (low.length ? '<div class="subhd">ถึงจุดสั่งซื้อแล้ว (' + low.length + ')</div>'
         + low.slice(0,8).map(function(p){
             return '<div class="lotline ' + (p.remain <= 0 ? 'bad' : 'warn') + '">'
-              + (p.remain <= 0 ? '⛔ หมดแล้ว' : '📦 เหลือ ' + p.remain + ' ' + esc(p.unit||"ชิ้น"))
+              + (p.remain <= 0 ? '⛔ หมดแล้ว' : '📦 เหลือ ' + esc(qtyUnit(p.remain, p.unit||"ชิ้น")))
               + ' — ' + esc(p.name)
               + ' <span style="color:var(--gray)">(จุดสั่งซื้อ ' + p.point + ')</span></div>';
           }).join("")
@@ -2966,7 +2966,8 @@ function recvSkuChanged(){
   var p = null;
   for(var i=0;i<CFG.products.length;i++) if(CFG.products[i].sku===sku){ p=CFG.products[i]; break }
   var lot = recvLotInfo(sku);
-  var now = "ตอนนี้สต๊อกเหลือ " + ((p && p.remain!==null && p.remain!==undefined) ? p.remain : "—") + " " + ((p&&p.unit)||"ชิ้น");
+  var now = "ตอนนี้สต๊อกเหลือ " + qtyUnit(
+    (p && p.remain!==null && p.remain!==undefined) ? p.remain : "—", (p&&p.unit)||"ชิ้น");
   if(lot) now += " · ในล็อตเหลือ " + lot.total + " (" + lot.count + " ล็อต)";
   $("#r-now").textContent = now;
 

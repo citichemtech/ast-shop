@@ -1868,6 +1868,58 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ตัวเลขในข้อความตรงกับตัวเลขบนจอ ไม่ได้คิดคนละรอบ',
     dayCopy.indexOf(want34.net) > -1 && dayTxt.indexOf(want34.net) > -1);
 
+  /* ---------- 35. หน่วยที่ขึ้นต้นด้วยตัวเลข ---------- */
+  console.log('\n35. จำนวนกับหน่วยต้องไม่อ่านติดกันเป็นเลขเดียว');
+  var qu = await page.evaluate(function () {
+    return {
+      packNum:  qtyUnit(1, '10'),
+      packWord: qtyUnit(1, '10pcs'),
+      normal:   qtyUnit(3, 'ชิ้น'),
+      blank:    qtyUnit(3, ''),
+      spaces:   qtyUnit(3, '   '),
+      decimal:  qtyUnit(2, '2.5'),
+      comma:    qtyUnit(2, '1,000'),
+      ml:       qtyUnit(1, '500ml'),
+      dash:     qtyUnit(1, '-')
+    };
+  });
+  eq('หน่วยเป็นตัวเลขล้วน = คนกรอกใส่ขนาดบรรจุมา ไม่ใช่หน่วย จึงไม่พิมพ์',
+    qu.packNum, '1');
+  eq('หน่วยขึ้นต้นด้วยตัวเลข ใส่วงเล็บคั่นให้เห็นว่าคนละตัวเลข',
+    qu.packWord, '1 (10pcs)');
+  eq('หน่วยปกติเขียนเหมือนเดิมทุกอย่าง', qu.normal, '3 ชิ้น');
+  eq('ไม่มีหน่วย พิมพ์แต่จำนวน', qu.blank, '3');
+  eq('หน่วยที่เป็นช่องว่างล้วน ถือว่าไม่มีหน่วย', qu.spaces, '3');
+  eq('ทศนิยมก็เป็นตัวเลขล้วน', qu.decimal, '2');
+  eq('ตัวเลขมีลูกน้ำก็ยังเป็นตัวเลขล้วน', qu.comma, '2');
+  eq('หน่วยจริงที่ขึ้นต้นด้วยตัวเลข (500ml) ยังพิมพ์อยู่ แค่ใส่วงเล็บ',
+    qu.ml, '1 (500ml)');
+  eq('เครื่องหมายขีด (บรรทัดส่วนลด) ไม่ใช่ตัวเลข พิมพ์ตามเดิม', qu.dash, '1 -');
+
+  console.log('\n   ของจริง: ใบเสนอราคาที่วาดออกมาต้องไม่มีคำว่า "1 10"');
+  var drawn = await page.evaluate(async function () {
+    var seen = [];
+    var real = window.fitCenter;
+    window.fitCenter = function (x, text) { seen.push(String(text)); return real.apply(null, arguments) };
+    try {
+      await buildDocPage({
+        no: 'QO26-00006', type: 'ใบเสนอราคา', date: '2026-09-09',
+        base: 2300, vat: 0, total: 2300,
+        lines: [
+          { name: 'Set Single Flute Endmill 1F 2.0*22*3.175*45L (10pcs)',
+            po: '', qty: 1, unit: '10', price: 900, amount: 900 },
+          { name: 'Set Single Flute 1F 3.175*22*3.175*45L',
+            po: '', qty: 1, unit: '10pcs', price: 1400, amount: 1400 }
+        ]
+      }, { cust: { name: 'บริษัททดสอบ จำกัด' } }, CFG.doc || {}, 'ต้นฉบับ');
+    } finally { window.fitCenter = real; }
+    return seen;
+  });
+  truthy('ไม่มีช่องไหนพิมพ์ว่า "1 10" ให้ลูกค้าอ่านเป็น 110',
+    drawn.indexOf('1 10') === -1);
+  truthy('ยังพิมพ์จำนวน 1 อยู่ ไม่ได้หายไปทั้งช่อง', drawn.indexOf('1') > -1);
+  truthy('บรรทัดที่หน่วยเป็น 10pcs ได้วงเล็บคั่นให้', drawn.indexOf('1 (10pcs)') > -1);
+
   /* ---------- 32. คู่มือใช้งาน ---------- */
   console.log('\n32. คู่มือใช้งาน');
   await page.click('.tabs button[data-go="recv"]');
