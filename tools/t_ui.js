@@ -2333,6 +2333,102 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('กดกลับแล้วได้หน้าเดิมที่ยืนอยู่ก่อนเปิดคู่มือ',
     await page.evaluate(function () { return $('#pg-recv').style.display !== 'none' }));
 
+  /* ---------- 40. แถวออเดอร์ — ปุ่มรูปจริง 8 อัน กับสามเหลี่ยมบอกงานถัดไป ---------- */
+  console.log('\n40. แถวออเดอร์ — ไอคอนรูปจริงกับสามเหลี่ยมสี');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(300);
+  var keep40 = await page.evaluate(function () { return JSON.stringify(MOCK_ORDERS) });
+  await page.evaluate(function () {
+    function mk(no, cust, status, acct) {
+      return { no: no, date: '2026-09-01', channel: 'เพจ Facebook', cust: cust,
+               tel: '', addr: '', carrier: 'Flash Express', track: '', vat: 'ไม่รับ VAT',
+               discount: 0, ship: 0, status: status, acct: acct, staff: '', note: '',
+               subtotal: 100, vatAmt: 0, net: 100, cost: 40, profit: 60, check: 'OK',
+               items: [{ sku: 'SKU-141', name: 'ของทดสอบ', unit: 'ชิ้น',
+                         qty: 1, price: 100, total: 100, lot: '' }] };
+    }
+    MOCK_ORDERS.length = 0;
+    MOCK_ORDERS.push(
+      mk('F-1', 'ใบยังไม่ได้เงิน',  'รอชำระ',   ''),
+      mk('F-2', 'ได้เงินแล้ว',      'ชำระแล้ว', ''),
+      mk('F-3', 'เอกสารครบ',        'ชำระแล้ว', 'พร้อมส่งบัญชี'),
+      mk('F-4', 'จบงานแล้ว',        'ชำระแล้ว', 'ส่งบัญชีแล้ว'),
+      mk('F-5', 'ใบที่ตีกลับ',      'ตีกลับ',   'ส่งบัญชีแล้ว')
+    );
+    ORDERS = []; SUM_CACHE = null;
+    loadOrders();
+  });
+  await page.waitForTimeout(700);
+  var seen40 = await page.evaluate(function () {
+    var out = { legend: [], rows: [] };
+    $$('#list .flagkey span').forEach(function (s) {
+      var i = s.querySelector('i');
+      out.legend.push({ text: s.textContent.trim(),
+                        color: i ? getComputedStyle(i).borderBottomColor : '' });
+    });
+    $$('#list .row').forEach(function (r) {
+      var b = r.querySelector('.i b');
+      var f = b && b.querySelector('.flag');
+      var q = function (sel) { return [].slice.call(r.querySelectorAll(sel)) };
+      var btns = q('.acts .sq');
+      var tops = {};
+      btns.forEach(function (x) { tops[Math.round(x.getBoundingClientRect().top)] = 1 });
+      out.rows.push({
+        cust: b ? b.textContent.trim() : '',
+        flags: q('.flag').length,
+        key: f ? f.className.replace('flag', '').trim() : null,
+        color: f ? getComputedStyle(f).borderBottomColor : '',
+        /* สามเหลี่ยมต้องอยู่บรรทัดเดียวกับชื่อ ไม่ใช่ลอยอยู่บรรทัดของตัวเอง */
+        inline: f ? Math.abs(f.getBoundingClientRect().top - b.getBoundingClientRect().top) < 20 : false,
+        btns: btns.length,
+        icons: q('.acts .sqic').length,
+        lines: Object.keys(tops).length,
+        srcs: q('.acts .sqic').map(function (im) { return im.getAttribute('src').slice(-40) }),
+        iconW: btns.length ? Math.round(r.querySelector('.sqic').getBoundingClientRect().width) : 0
+      });
+    });
+    return out;
+  });
+
+  eq('คำอธิบายสีขึ้นครั้งเดียวเหนือลิสต์ ครบสี่สถานะ', seen40.legend.length, 4);
+  eq('เรียงตามลำดับความเร่งของงาน', seen40.legend.map(function (x) { return x.text }),
+    ['รอชำระ', 'ยังไม่ส่งบัญชี', 'พร้อมส่งบัญชี', 'ส่งบัญชีแล้ว']);
+  eq('สี่สีต้องไม่ซ้ำกันเลย ไม่งั้นแยกด้วยตาไม่ออก',
+    seen40.legend.map(function (x) { return x.color }).filter(function (c, i, a) {
+      return a.indexOf(c) === i;
+    }).length, 4);
+
+  eq('ทุกใบมีสามเหลี่ยมได้ไม่เกินอันเดียว',
+    seen40.rows.map(function (r) { return r.flags }), [1, 1, 1, 1, 0]);
+  eq('ยังไม่ได้เงิน = น้ำเงิน (เรื่องเร่งที่สุด)', seen40.rows[0].color, 'rgb(21, 80, 200)');
+  eq('ได้เงินแล้วแต่บัญชียังไม่ได้เอกสาร = แดง', seen40.rows[1].color, 'rgb(239, 59, 44)');
+  eq('เอกสารครบ รอกดส่ง = เขียว', seen40.rows[2].color, 'rgb(122, 201, 67)');
+  eq('ส่งบัญชีแล้ว จบงาน = เหลือง', seen40.rows[3].color, 'rgb(245, 210, 10)');
+  truthy('ใบที่ตีกลับไม่มีงานให้ทำต่อ จึงไม่มีสามเหลี่ยม', seen40.rows[4].key === null);
+  truthy('สามเหลี่ยมอยู่หน้าชื่อลูกค้าในบรรทัดเดียวกัน',
+    seen40.rows.slice(0, 4).every(function (r) { return r.inline }));
+
+  eq('ใบที่ยังทำงานต่อได้มีปุ่มครบแปดอัน',
+    seen40.rows.slice(0, 4).map(function (r) { return r.btns }), [8, 8, 8, 8]);
+  eq('ทุกปุ่มเป็นรูปจริง ไม่มีปุ่มไหนตกกลับไปเป็นตัวอักษร',
+    seen40.rows.slice(0, 4).map(function (r) { return r.icons }), [8, 8, 8, 8]);
+  /* แปดปุ่มตกบรรทัด = ปุ่มสุดท้ายลอยเดี่ยวใต้แถว ดูเหมือนปุ่มแปลกที่ไม่เข้าพวก */
+  eq('ปุ่มทั้งแปดอยู่บรรทัดเดียวกันบนจอมือถือ',
+    seen40.rows.slice(0, 4).map(function (r) { return r.lines }), [1, 1, 1, 1]);
+  eq('รูปแปดอันต้องเป็นคนละรูปกันทั้งหมด ไม่มีปุ่มไหนใช้รูปซ้ำ',
+    seen40.rows[0].srcs.filter(function (s, i, a) { return a.indexOf(s) === i }).length, 8);
+  truthy('ไอคอนใหญ่พอให้เห็นว่าเป็นรูปอะไร ไม่ใช่จุดเล็ก ๆ',
+    seen40.rows[0].iconW >= 14);
+  eq('ใบที่ตีกลับไม่มีปุ่มให้กดเลย ของคืนสต๊อกไปแล้ว', seen40.rows[4].btns, 0);
+
+  await page.evaluate(function (raw) {
+    MOCK_ORDERS.length = 0;
+    JSON.parse(raw).forEach(function (o) { MOCK_ORDERS.push(o) });
+    ORDERS = []; SUM_CACHE = null;
+    loadOrders();
+  }, keep40);
+  await page.waitForTimeout(500);
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

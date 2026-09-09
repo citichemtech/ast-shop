@@ -687,6 +687,46 @@ function chanTag(chan){
   return '<span class="chan-shopee">' + ic + esc(c) + '</span>';
 }
 
+/* ไอคอนของปุ่มบนแถวออเดอร์ — ถ้าไฟล์รูปหายไป ยังตกกลับไปใช้อักขระเดิมได้
+   ปุ่มจึงไม่มีทางกลายเป็นปุ่มเปล่าที่เดาไม่ออกว่าทำอะไร */
+function rowIc(key, fallback){
+  var src = (typeof ROW_ICONS !== "undefined") && ROW_ICONS[key];
+  return src ? '<img class="sqic" src="' + src + '" alt="">' : fallback;
+}
+
+/* สีบอกว่า "ใบนี้ต้องทำอะไรต่อ" — เรียงตามลำดับความเร่งของงานจริง
+     🔵 รอชำระ        ยังไม่ได้เงิน เป็นเรื่องเร่งที่สุด งานบัญชียังไม่ต้องคิด
+     🔴 ยังไม่ส่งบัญชี  ได้เงินแล้วแต่บัญชียังไม่ได้เอกสาร
+     🟢 พร้อมส่งบัญชี  เอกสารครบแล้ว รอกดส่ง
+     🟡 ส่งบัญชีแล้ว   จบงานของใบนี้
+   หนึ่งแถวมีสามเหลี่ยมเดียว เพราะออเดอร์หนึ่งใบมีงานถัดไปได้ทีละอย่าง */
+var FLAG_LIST = [
+  { key:"pay",  label:"รอชำระ"        },
+  { key:"noac", label:"ยังไม่ส่งบัญชี" },
+  { key:"rdy",  label:"พร้อมส่งบัญชี"  },
+  { key:"sent", label:"ส่งบัญชีแล้ว"   }
+];
+
+function orderFlag(o){
+  if (isDead(o)) return null;
+  if (String((o&&o.status)||"").trim() !== "ชำระแล้ว") return FLAG_LIST[0];
+  var a = String((o&&o.acct)||"").trim();
+  if (a === "ส่งบัญชีแล้ว")  return FLAG_LIST[3];
+  if (a === "พร้อมส่งบัญชี") return FLAG_LIST[2];
+  return FLAG_LIST[1];
+}
+
+function flagTag(o){
+  var f = orderFlag(o);
+  return f ? '<span class="flag ' + f.key + '" title="' + esc(f.label) + '"></span>' : "";
+}
+
+function flagLegend(){
+  return '<div class="flagkey">' + FLAG_LIST.map(function(f){
+    return '<span><i class="flag ' + f.key + '"></i>' + esc(f.label) + '</span>';
+  }).join("") + '</div>';
+}
+
 function statusTag(s){
   if(s==="ส่งแล้ว") return "ok";
   if(s==="ยกเลิก"||s==="ตีกลับ") return "bad";
@@ -702,10 +742,10 @@ function isDead(o){ return DEAD_STATUS.indexOf(String((o&&o.status)||"").trim())
 function renderOrders(){
   if(!ORDERS) ORDERS = [];
   if(!ORDERS.length){ $("#list").innerHTML='<div class="empty"><b>ยังไม่มีออเดอร์</b>กดแท็บ “คีย์ออเดอร์” เพื่อบันทึกใบแรก</div>'; return }
-  $("#list").innerHTML = ORDERS.map(function(o,i){
+  $("#list").innerHTML = flagLegend() + ORDERS.map(function(o,i){
     var dead = isDead(o);
     return '<div class="row"><div class="i">'
-      +'<b>'+esc(o.cust||"ไม่ระบุชื่อ")+'</b>'
+      + '<b>'+flagTag(o)+esc(o.cust||"ไม่ระบุชื่อ")+'</b>'
       +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))+' · '+chanTag(o.channel)
       + (o.track?' · '+esc(o.track):'')+'</span><br>'
       +'<span style="color:var(--ink);font-weight:700">'+baht(o.net)+'</span> '
@@ -719,21 +759,21 @@ function renderOrders(){
          ถ้ายังพิมพ์ใบปะหน้าหรือออกเอกสารจากใบนี้ได้ วันหนึ่งจะมีคนส่งของตามใบที่ยกเลิก */
       + (dead ? '<span class="hint" style="text-align:right">'
           + esc(String(o.status||"ยกเลิก").trim()) + 'แล้ว<br>ของคืนสต๊อกแล้ว</span>'
-        : '<button class="sq" data-lb="'+i+'" title="ใบปะหน้า">🖨</button>'
-        +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
-        +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
-        +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">📄</button>'
+        : '<button class="sq" data-lb="'+i+'" title="ใบปะหน้า">'+rowIc("lb","🖨")+'</button>'
+        +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">'+rowIc("tk","📦")+'</button>'
+        +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">'+rowIc("sm","💬")+'</button>'
+        +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">'+rowIc("dc","📄")+'</button>'
         /* ส่งบัญชีเป็นคนละงานกับออกเอกสาร จึงเป็นคนละปุ่ม */
-        +'<button class="sq" data-ac="'+i+'" title="ส่งบัญชี">🧾</button>'
+        +'<button class="sq" data-ac="'+i+'" title="ส่งบัญชี">'+rowIc("ac","🧾")+'</button>'
         /* ลูกค้าทักมาขอเพิ่มของก่อนร้านแพ็คส่ง เป็นเรื่องปกติของหน้างาน
            ทางที่เคยทำได้มีแค่ยกเลิกใบเดิมแล้วคีย์ใหม่ทั้งใบ เสียเลขออเดอร์ไปหนึ่งใบทุกครั้ง */
-        +'<button class="sq" data-ed="'+i+'" title="แก้รายการสินค้า / เพิ่มสินค้า">✏️</button>'
+        +'<button class="sq" data-ed="'+i+'" title="แก้รายการสินค้า / เพิ่มสินค้า">'+rowIc("ed","✏️")+'</button>'
         /* ลูกค้าเปลี่ยนใจไม่รับของ เกิดขึ้นจริงทุกสัปดาห์ ก่อนหน้านี้ทำได้แค่
            เปลี่ยนสถานะเป็นยกเลิกด้วยมือในชีท ซึ่งของที่ตัดไปแล้วไม่เคยคืนกลับมา */
         /* ของส่งออกไปแล้วแต่เดินทางกลับมา เป็นคนละเรื่องกับยกเลิกก่อนแพ็ค
            แยกปุ่มเพราะสิ้นเดือนต้องตอบให้ได้ว่าเสียค่าส่งฟรีไปกี่ใบ เพราะอะไร */
-        +'<button class="sq" data-rt="'+i+'" title="ลูกค้าคืนของ / ของตีกลับ">↩️</button>'
-        +'<button class="sq red" data-cx="'+i+'" title="ยกเลิกออเดอร์ คืนของเข้าสต๊อก">✖</button>')
+        +'<button class="sq" data-rt="'+i+'" title="ลูกค้าคืนของ / ของตีกลับ">'+rowIc("rt","↩️")+'</button>'
+        +'<button class="sq red" data-cx="'+i+'" title="ยกเลิกออเดอร์ คืนของเข้าสต๊อก">'+rowIc("cx","✖")+'</button>')
       +'</div></div>';
   }).join("");
 }

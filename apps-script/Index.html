@@ -177,8 +177,34 @@ textarea{resize:vertical}
   border-radius:10px;background:#fff7f7}
 .vdbox input{margin:0}
 .row .i span+span{display:block;margin-top:2px}
+/* ป้ายสถานะเป็นชิปกลม ๆ ต้องอยู่ต่อท้ายยอดเงินในบรรทัดเดียวกัน
+   กฎ span+span ด้านบนมีไว้ให้ที่อยู่ขึ้นบรรทัดใหม่ ไม่ได้ตั้งใจให้ชิปยืดเต็มแถว */
+.row .i span+span.tag{display:inline-block;margin-top:0}
 .sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
 .sq.red{color:var(--red);border-color:#f0c9c9}
+/* ปุ่มบนแถวออเดอร์ใช้รูปจริง ขนาดผูกกับตัวอักษร ปุ่ม ก+ ก− จึงขยายไอคอนตามไปด้วย */
+.sq .sqic{width:1.5em;height:1.5em;object-fit:contain;display:block;margin:0 auto}
+.sq{display:flex;align-items:center;justify-content:center}
+/* แปดปุ่มต้องอยู่แถวเดียวกันเสมอ ถ้าตกบรรทัดหนึ่งปุ่มจะดูเหมือนปุ่มแปลกที่ไม่เข้าพวก
+   บนจอแคบจึงให้ปุ่มยืดหดเท่า ๆ กันเต็มความกว้างแถวแทนการขึ้นบรรทัดใหม่ */
+@media (max-width:520px){
+  .row .acts{flex-wrap:nowrap;gap:5px}
+  .row .acts .sq{flex:1 1 0;width:auto;min-width:0}
+}
+
+/* สามเหลี่ยมสีหน้าชื่อลูกค้า บอกว่าใบนี้ต้องทำอะไรต่อ — วาดด้วย border ไม่ใช้ไฟล์รูป
+   จึงคมทุกความละเอียดจอ และเปลี่ยนสีได้ทันทีโดยไม่ต้องโหลดอะไรเพิ่ม */
+.flag{display:inline-block;width:0;height:0;vertical-align:1px;margin-right:7px;
+  border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid #ccc}
+.flag.pay{border-bottom-color:#1550c8}
+.flag.noac{border-bottom-color:#ef3b2c}
+.flag.rdy{border-bottom-color:#7ac943}
+.flag.sent{border-bottom-color:#f5d20a}
+/* คำอธิบายสี วางไว้เหนือลิสต์ครั้งเดียว ไม่ใช่ซ้ำทุกแถว */
+.flagkey{display:flex;flex-wrap:wrap;gap:4px 14px;padding:2px 2px 10px;
+  font-size:0.74rem;color:var(--gray)}
+.flagkey span{display:flex;align-items:center;gap:5px}
+.flagkey i{margin:0}
 .tag{display:inline-block;font-size:0.8rem;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
 .tag.ok{background:#e6f5ec;color:var(--green)}
 .tag.wait{background:#fdf1e0;color:var(--amber)}
