@@ -403,6 +403,59 @@ function isoDate_(d) {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
 
+/** เลื่อนวันแบบไม่ยุ่งกับเขตเวลา — สร้าง Date จากตัวเลขล้วน ไม่ผ่านการอ่านสตริง
+    (new Date('2026-09-09') คือเที่ยงคืน UTC ซึ่งในไทยยังเป็นวันก่อนหน้าตอนเช้ามืด) */
+function isoShiftDays_(iso, n) {
+  var p = String(iso || '').split('-');
+  return isoDate_(new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) + Number(n || 0)));
+}
+
+/**
+ * สรุปยอดของวันเดียว — สำหรับหน้า "ปิดยอดวัน"
+ *
+ * หน้าสรุปยอดเดิมคิดจากออเดอร์ชุดที่โหลดมาไว้ในจอ (ล่าสุด 500 ใบ)
+ * พอขายมากขึ้น วันที่อยากย้อนไปปิดยอดจะหลุดออกจากชุดนั้นเงียบ ๆ
+ * แล้วยอดของวันนั้นขาดไปโดยไม่มีอะไรบอก — ตัวนี้จึงกรองด้วยวันที่ตั้งแต่ต้นทาง
+ * ได้ครบทุกใบของวันนั้นเสมอ ไม่ว่าจะย้อนไปไกลแค่ไหน
+ *
+ * แถม 7 วันย้อนหลังมาในคำตอบเดียวกัน เพื่อเทียบว่าวันนี้ดีกว่าหรือแย่กว่าวันก่อน
+ * โดยไม่ต้องยิงชีทอีกเจ็ดรอบ (ชีทเดียวกัน อ่านทีเดียวได้ทั้งหมด)
+ *
+ * ใบที่ยกเลิกไม่นับเข้ายอด แต่ยังส่งกลับไปให้หน้าจอเห็นว่าวันนั้นมีกี่ใบที่ยกเลิก
+ */
+function getDayReport(iso, days) {
+  var day = String(iso || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('วันที่ไม่ถูกต้อง: ' + day);
+  var back = Math.max(1, Math.min(31, Number(days) || 7));
+  var from = isoShiftDays_(day, -(back - 1));
+
+  var all = readOrders_({
+    limit: 0,
+    match: function (o) { return o.date >= from && o.date <= day; }
+  });
+
+  var trend = [], byDate = {};
+  for (var i = 0; i < back; i++) {
+    var d = isoShiftDays_(day, -(back - 1 - i));
+    byDate[d] = { date: d, n: 0, net: 0, profit: 0 };
+    trend.push(byDate[d]);
+  }
+
+  var orders = [];
+  for (var j = 0; j < all.length; j++) {
+    var o = all[j];
+    if (o.date === day) orders.push(o);
+    if (String(o.status || '').trim() === 'ยกเลิก') continue;
+    var t = byDate[o.date];
+    if (t) { t.n++; t.net += Number(o.net) || 0; t.profit += Number(o.profit) || 0; }
+  }
+
+  /* ใบแรกของวันขึ้นก่อน — ปิดยอดคือไล่ดูตามลำดับที่ขายจริง ไม่ใช่ย้อนจากใบล่าสุด */
+  orders.sort(function (a, b) { return a.no < b.no ? -1 : (a.no > b.no ? 1 : 0); });
+
+  return { date: day, orders: orders, trend: trend };
+}
+
 /**
  * ใส่เลขพัสดุและสถานะย้อนหลัง — งานที่เกิดหลังบันทึกออเดอร์เสมอ
  * แก้เฉพาะสองช่องนี้ ช่องอื่นของออเดอร์ไม่ถูกแตะ และลง Log ไว้ว่าใครแก้

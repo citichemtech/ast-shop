@@ -2654,6 +2654,179 @@ function drawSummary(all){
   $("#summary").innerHTML = h;
 }
 
+/* ------------------------------------------------------------------ ปิดยอดวัน
+
+   หน้าสรุปยอดตอบว่า "ช่วงนี้เป็นยังไง" — หน้านี้ตอบว่า "วันนั้นขายไปเท่าไร"
+   คนละงานกันจึงแยกหน้า ปิดยอดคือดูวันเดียวให้ครบทุกใบแล้วจบวัน
+
+   ตัวเลขไม่ได้คิดจากออเดอร์ที่โหลดค้างไว้ในจอ แต่ยิงถามชีทด้วยวันที่ตรง ๆ
+   ย้อนไปวันไหนก็ได้ครบทุกใบ ไม่ขาดหายเงียบ ๆ เมื่อออเดอร์สะสมมากขึ้น       */
+
+var DAY_ISO = "";
+var DAY_BACK = 7;
+
+function dayShift_(iso, n){
+  var p = String(iso||"").split("-");
+  var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]) + Number(n||0));
+  return isoOf(d.getTime());
+}
+
+function dayInit(){
+  if (!DAY_ISO) DAY_ISO = todayISO();
+  if (!$("#dy-quick").innerHTML){
+    $("#dy-quick").innerHTML =
+        '<button data-dq="0">วันนี้</button><button data-dq="-1">เมื่อวาน</button>';
+    $("#dy-quick").addEventListener("click", function(e){
+      var b = e.target.closest("button[data-dq]"); if(!b) return;
+      goDay(dayShift_(todayISO(), Number(b.dataset.dq)));
+    });
+    $("#dy-prev").onclick = function(){ goDay(dayShift_(DAY_ISO, -1)) };
+    $("#dy-next").onclick = function(){ goDay(dayShift_(DAY_ISO, +1)) };
+    $("#dy-date").onchange = function(){ if(this.value) goDay(this.value) };
+  }
+  goDay(DAY_ISO);
+}
+
+function goDay(iso){
+  DAY_ISO = iso;
+  $("#dy-date").value = iso;
+  $("#dy-date").max = todayISO();
+  $("#dy-when").textContent = thaiDate(iso)
+    + (iso === todayISO() ? " · วันนี้" : (iso === dayShift_(todayISO(),-1) ? " · เมื่อวาน" : ""));
+  /* ห้ามเดินไปวันข้างหน้า — ยังไม่มีของให้ปิดยอด กดแล้วได้หน้าว่างเปล่าเปล่า ๆ */
+  $("#dy-next").disabled = iso >= todayISO();
+  $$("#dy-quick button").forEach(function(b){
+    b.classList.toggle("on", dayShift_(todayISO(), Number(b.dataset.dq)) === iso);
+  });
+  $("#dy-body").innerHTML = '<div class="load">กำลังโหลด…</div>';
+  call("getDayReport", [iso, DAY_BACK], function(r){
+    /* กันคำตอบที่มาช้าของวันเก่ามาทับวันที่กำลังดูอยู่ตอนนี้ */
+    if (!r || r.date !== DAY_ISO) return;
+    drawDay(r);
+  }, function(m){
+    $("#dy-body").innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'
+      + esc(m) + '</div>';
+  });
+}
+
+/** ตัวเลขของวัน — คิดที่เดียวแล้วใช้ทั้งหน้าจอและข้อความที่คัดลอก จะได้ไม่มีทางไม่ตรงกัน */
+function dayTotals(rep){
+  var live = (rep.orders||[]).filter(function(o){ return !isDead(o) });
+  var t = { n:live.length, dead:(rep.orders||[]).length - live.length,
+            pieces:0, net:0, paid:0, due:0, profit:0, ship:0, cost:0 };
+  live.forEach(function(o){
+    var net = Number(o.net)||0;
+    t.net += net;
+    t.profit += Number(o.profit)||0;
+    t.ship += Number(o.ship)||0;
+    t.cost += Number(o.cost)||0;
+    /* ชีทมีช่องสถานะช่องเดียว บอกทั้ง "จ่ายหรือยัง" และ "ส่งหรือยัง" พร้อมกันไม่ได้
+       จึงนับเฉพาะ "ชำระแล้ว" ว่าเก็บเงินได้แล้ว เหมือนที่หน้าค้างชำระนับ ตัวเลขสองหน้าจะได้ตรงกัน */
+    if (String(o.status||"").trim() === "ชำระแล้ว") t.paid += net; else t.due += net;
+    (o.items||[]).forEach(function(it){ t.pieces += Number(it.qty)||0 });
+  });
+  return t;
+}
+
+function drawDay(rep){
+  var t = dayTotals(rep);
+  var live = (rep.orders||[]).filter(function(o){ return !isDead(o) });
+
+  var h = '<div class="kpis">'
+    + '<div class="kpi"><span>ออเดอร์</span><b>' + t.n + ' ใบ</b></div>'
+    + '<div class="kpi"><span>จำนวนชิ้น</span><b>' + t.pieces + '</b></div>'
+    + '<div class="kpi wide"><span>ยอดขายรวม</span><b>' + baht(t.net) + '</b></div>'
+    + '<div class="kpi good"><span>เก็บเงินแล้ว</span><b>' + baht(t.paid) + '</b></div>'
+    + '<div class="kpi"><span>ยังไม่เก็บ</span><b'
+    +   (t.due > 0 ? ' style="color:var(--amber)"' : '') + '>' + baht(t.due) + '</b></div>'
+    + '<div class="kpi good"><span>กำไรขั้นต้น</span><b>' + baht(t.profit) + '</b></div>'
+    + '<div class="kpi"><span>ค่าจัดส่ง</span><b>' + baht(t.ship) + '</b></div>'
+    + '</div>';
+
+  if (t.dead)
+    h += '<div class="hint" style="padding:0 2px 10px">มีใบที่ยกเลิกอีก ' + t.dead
+       + ' ใบ ไม่ได้นับรวมในยอดข้างบน</div>';
+
+  h += '<button class="btn ghost" id="dy-copy">คัดลอกสรุปวันนี้เป็นข้อความ</button>';
+
+  if (!t.n){
+    $("#dy-body").innerHTML = '<div class="empty"><b>วันนี้ยังไม่มีออเดอร์</b>'
+      + 'กดปุ่ม ◀ เพื่อย้อนไปดูวันก่อนหน้า</div>' + dayTrend(rep);
+    bindDayTrend();
+    return;
+  }
+
+  var byChan = group_(live, function(o){ return o.channel },
+    function(g,o){ g.v += Number(o.net)||0; g.extra += Number(o.profit)||0 });
+  var maxC = byChan.length ? byChan[0].v : 0;
+  h += section_("ตามช่องทางขาย", byChan.map(function(g){
+    return bar_(g.key, baht(g.v), g.n + " ใบ · กำไร " + baht(g.extra), maxC ? g.v/maxC : 0);
+  }).join(""));
+
+  /* ทุกใบของวันนั้น ไม่ตัดให้เหลือแค่บางส่วน — ปิดยอดคือต้องเห็นครบ ไม่งั้นปิดไม่ลง */
+  h += '<div class="card"><div class="subhd" style="margin-top:0">ออเดอร์ของวันนี้ '
+     + t.n + ' ใบ</div>'
+     + (rep.orders||[]).map(function(o){
+         var dead = isDead(o);
+         return '<div class="row"><div class="i">'
+           + '<b' + (dead ? ' style="text-decoration:line-through;color:var(--gray)"' : '') + '>'
+           + esc(o.cust||"ไม่ระบุชื่อ") + '</b>'
+           + '<span>' + esc(o.no) + (o.channel ? ' · ' + esc(o.channel) : '') + '</span>'
+           + '<span style="color:var(--ink);font-weight:700">' + baht(o.net) + '</span> '
+           + '<span class="tag ' + statusTag(o.status) + '">' + esc(o.status||"-") + '</span>'
+           + '</div></div>';
+       }).join("")
+     + '</div>';
+
+  h += dayTrend(rep);
+
+  $("#dy-body").innerHTML = h;
+  $("#dy-copy").onclick = function(){ copyText(dayText(rep), "คัดลอกสรุปวันแล้ว") };
+  bindDayTrend();
+}
+
+/** แท่ง 7 วันย้อนหลัง กดแท่งไหนก็เด้งไปปิดยอดวันนั้น */
+function dayTrend(rep){
+  var tr = rep.trend || [];
+  if (!tr.length) return "";
+  var max = 0;
+  tr.forEach(function(d){ var v = Number(d.net)||0; if (v > max) max = v });
+  return section_(tr.length + " วันย้อนหลัง", tr.slice().reverse().map(function(d){
+    return '<button class="tapbar' + (d.date===rep.date ? ' on' : '') + '" data-dy="'
+      + esc(d.date) + '">'
+      + bar_(thaiDate(d.date), baht(d.net),
+             d.n + " ใบ · กำไร " + baht(d.profit), max ? (Number(d.net)||0)/max : 0)
+      + '</button>';
+  }).join(""));
+}
+
+function bindDayTrend(){
+  $$("#dy-body [data-dy]").forEach(function(b){
+    b.onclick = function(){ goDay(b.getAttribute("data-dy")) };
+  });
+}
+
+/** ข้อความสรุปวันสำหรับส่งเข้าไลน์กลุ่ม — ตัวเลขชุดเดียวกับที่เห็นบนจอ */
+function dayText(rep){
+  var t = dayTotals(rep);
+  var L = ["สรุปยอดวัน " + thaiDate(rep.date),
+           "ออเดอร์ " + t.n + " ใบ · " + t.pieces + " ชิ้น",
+           "ยอดขายรวม " + baht(t.net),
+           "เก็บเงินแล้ว " + baht(t.paid),
+           "ยังไม่เก็บ " + baht(t.due),
+           "กำไรขั้นต้น " + baht(t.profit),
+           "ค่าจัดส่ง " + baht(t.ship)];
+  if (t.dead) L.push("ยกเลิก " + t.dead + " ใบ (ไม่นับรวม)");
+  var live = (rep.orders||[]).filter(function(o){ return !isDead(o) });
+  var byChan = group_(live, function(o){ return o.channel },
+    function(g,o){ g.v += Number(o.net)||0 });
+  if (byChan.length){
+    L.push("— ช่องทางขาย —");
+    byChan.forEach(function(g){ L.push(g.key + " " + g.n + " ใบ " + baht(g.v)) });
+  }
+  return L.join("\n");
+}
+
 /* ------------------------------------------------------------ ตั้งลายเซ็นร้าน */
 
 var SIG_KINDS = [
@@ -2888,7 +3061,7 @@ function curPage(){
 }
 
 function go(page){
-  ["new","list","recv","quote","sum","shop","help"].forEach(function(p){
+  ["new","list","recv","quote","day","sum","shop","help"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   /* หน้านำเข้า Shopee ไม่มีปุ่มของตัวเองบนแถบล่าง เข้ามาจากหน้าออเดอร์
@@ -2896,6 +3069,7 @@ function go(page){
   var tab = (page==="shop") ? "list" : page;
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===tab) });
   if(page==="list") loadOrders();
+  if(page==="day")  dayInit();
   if(page==="sum")  loadSummary();
   if(page==="quote") quoteInit();
   if(page==="recv") recvInit();

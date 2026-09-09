@@ -1770,6 +1770,104 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { window.MOCK_FAIL = null; closeModal() });
   await page.waitForTimeout(200);
 
+  /* ---------- 34. ปิดยอดวัน ---------- */
+  console.log('\n34. ปิดยอดวัน — แยกหน้าจากสรุปยอด');
+  await page.click('.tabs button[data-go="day"]');
+  await page.waitForTimeout(500);
+  truthy('เข้าหน้าปิดยอดวันจากแถบล่างได้',
+    await page.evaluate(function () { return $('#pg-day').style.display !== 'none' }));
+  truthy('หน้าสรุปยอดไม่โผล่ขึ้นมาพร้อมกัน — คนละหน้ากันจริง ๆ',
+    await page.evaluate(function () { return $('#pg-sum').style.display === 'none' }));
+  eq('เปิดมาที่วันนี้เสมอ ไม่ต้องเลือกเอง',
+    await page.evaluate(function () { return $('#dy-date').value }),
+    await page.evaluate(function () { return todayISO() }));
+  truthy('เดินไปวันข้างหน้าไม่ได้ ยังไม่มีของให้ปิดยอด',
+    await page.evaluate(function () { return $('#dy-next').disabled }));
+
+  /* วันที่ของออเดอร์จำลองคือ 2026-08-28 ทั้งสองใบ ตั้งไว้ตายตัวเพื่อให้ข้อสอบเชื่อได้
+     ตัวเลขที่คาดหวังคิดจากข้อมูลจำลองสด ๆ ไม่ใช่เลขที่พิมพ์ค้างไว้ —
+     หมวดก่อนหน้ามีการแก้ออเดอร์จำลองไปแล้ว เลขที่พิมพ์ค้างไว้จะกลายเป็นข้อสอบที่โกหก */
+  await page.evaluate(function () { goDay('2026-08-28') });
+  await page.waitForTimeout(500);
+  var dayTxt = await page.textContent('#dy-body');
+  var want34 = await page.evaluate(function () {
+    var live = MOCK_ORDERS.filter(function (o) {
+      return o.date === '2026-08-28' && String(o.status || '').trim() !== 'ยกเลิก';
+    });
+    var t = { n: live.length, net: 0, paid: 0, due: 0, profit: 0, ship: 0, pieces: 0 };
+    live.forEach(function (o) {
+      var net = Number(o.net) || 0;
+      t.net += net;
+      t.profit += Number(o.profit) || 0;
+      t.ship += Number(o.ship) || 0;
+      if (String(o.status || '').trim() === 'ชำระแล้ว') t.paid += net; else t.due += net;
+      (o.items || []).forEach(function (it) { t.pieces += Number(it.qty) || 0 });
+    });
+    var b = function (n) { return baht(n) };
+    return { n: t.n, net: b(t.net), paid: b(t.paid), due: b(t.due),
+             profit: b(t.profit), ship: b(t.ship), pieces: t.pieces };
+  });
+  truthy('นับใบของวันนั้นได้ครบ', dayTxt.indexOf(want34.n + ' ใบ') > -1);
+  truthy('ยอดขายรวมเท่ากับผลรวมของทุกใบในวันนั้น (' + want34.net + ')',
+    dayTxt.indexOf('ยอดขายรวม' + want34.net) > -1);
+  truthy('เก็บเงินแล้ว = เฉพาะใบที่สถานะ "ชำระแล้ว" (' + want34.paid + ')',
+    dayTxt.indexOf('เก็บเงินแล้ว' + want34.paid) > -1);
+  truthy('ยังไม่เก็บ = ที่เหลือ (' + want34.due + ')',
+    dayTxt.indexOf('ยังไม่เก็บ' + want34.due) > -1);
+  truthy('เก็บแล้ว + ยังไม่เก็บ ต้องเท่ากับยอดขายรวมพอดี ไม่มีเงินหายไประหว่างทาง',
+    await page.evaluate(function (w) {
+      var num = function (s) { return Number(String(s).replace(/[^\d.]/g, '')) };
+      return Math.abs((num(w.paid) + num(w.due)) - num(w.net)) < 0.005;
+    }, want34));
+  truthy('มีกำไรขั้นต้นของวัน (' + want34.profit + ')',
+    dayTxt.indexOf('กำไรขั้นต้น' + want34.profit) > -1);
+  truthy('มีค่าจัดส่งรวมของวัน (' + want34.ship + ')',
+    dayTxt.indexOf('ค่าจัดส่ง' + want34.ship) > -1);
+  truthy('นับจำนวนชิ้นจากรายการสินค้าในใบ (' + want34.pieces + ')',
+    dayTxt.indexOf('จำนวนชิ้น' + want34.pieces) > -1);
+  truthy('ลิสต์ออเดอร์ของวันให้เห็นทุกใบ',
+    await page.evaluate(function () { return $$('#dy-body .row').length }) === 2);
+  truthy('เดินไปวันข้างหน้าได้แล้ว เพราะไม่ได้ยืนอยู่ที่วันนี้',
+    await page.evaluate(function () { return !$('#dy-next').disabled }));
+
+  console.log('\n   ปุ่ม ◀ ▶ เดินทีละวัน');
+  await page.click('#dy-prev');
+  await page.waitForTimeout(400);
+  eq('กด ◀ ถอยไปหนึ่งวัน',
+    await page.evaluate(function () { return $('#dy-date').value }), '2026-08-27');
+  truthy('วันที่ไม่มีออเดอร์ต้องบอกให้รู้ ไม่ใช่หน้าว่างเปล่า',
+    /ยังไม่มีออเดอร์/.test(await page.textContent('#dy-body')));
+  truthy('วันที่ไม่มีออเดอร์ก็ยังเห็นแถบย้อนหลัง กดกลับไปวันที่มีของได้',
+    await page.evaluate(function () { return $$('#dy-body [data-dy]').length }) === 7);
+  await page.click('#dy-next');
+  await page.waitForTimeout(400);
+  eq('กด ▶ เดินกลับมาหนึ่งวัน',
+    await page.evaluate(function () { return $('#dy-date').value }), '2026-08-28');
+
+  console.log('\n   แถบ 7 วันย้อนหลัง กดแท่งแล้วเด้งไปวันนั้น');
+  truthy('แท่งของวันที่กำลังดูอยู่ถูกไฮไลต์ไว้', await page.evaluate(function () {
+    var b = $('#dy-body [data-dy="2026-08-28"]');
+    return !!b && b.classList.contains('on');
+  }));
+  await page.click('#dy-body [data-dy="2026-08-26"]');
+  await page.waitForTimeout(400);
+  eq('กดแท่งแล้วเด้งไปปิดยอดวันนั้นเลย',
+    await page.evaluate(function () { return $('#dy-date').value }), '2026-08-26');
+
+  console.log('\n   ข้อความสรุปวันสำหรับส่งเข้าไลน์กลุ่ม');
+  var dayCopy = await page.evaluate(function () {
+    return dayText({ date: '2026-08-28', trend: [],
+      orders: MOCK_ORDERS.filter(function (o) { return o.date === '2026-08-28' }) });
+  });
+  truthy('ขึ้นต้นด้วยวันที่แบบไทย', /^สรุปยอดวัน 28 ส\.ค\. 2569/.test(dayCopy));
+  truthy('มียอดขายรวมในข้อความ (' + want34.net + ')',
+    dayCopy.indexOf('ยอดขายรวม ' + want34.net) > -1);
+  truthy('มีกำไรในข้อความ (' + want34.profit + ')',
+    dayCopy.indexOf('กำไรขั้นต้น ' + want34.profit) > -1);
+  truthy('แยกช่องทางขายให้ด้วย', /เพจ Facebook 2 ใบ/.test(dayCopy));
+  truthy('ตัวเลขในข้อความตรงกับตัวเลขบนจอ ไม่ได้คิดคนละรอบ',
+    dayCopy.indexOf(want34.net) > -1 && dayTxt.indexOf(want34.net) > -1);
+
   /* ---------- 32. คู่มือใช้งาน ---------- */
   console.log('\n32. คู่มือใช้งาน');
   await page.click('.tabs button[data-go="recv"]');
@@ -1779,7 +1877,7 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('เปิดคู่มือจากปุ่ม ? บนหัวจอได้',
     await page.evaluate(function () { return $('#pg-help').style.display !== 'none' }));
   truthy('มีหัวข้อครบทุกงานหลัก', await page.evaluate(function () {
-    return $$('#pg-help details').length >= 7;
+    return $$('#pg-help details').length >= 8;
   }));
   truthy('มีเรื่องใบที่ตีกลับของ Shopee อยู่ในคู่มือ',
     /ตีกลับ/.test(await page.textContent('#pg-help')));

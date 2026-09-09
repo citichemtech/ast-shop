@@ -149,6 +149,35 @@ window.google = { script: { run: (function(){
         }))).slice(0, Number(limit)||30);
       });
     },
+    /* สรุปยอดรายวัน — ของจริงกรองในชีท ที่นี่กรองในรายการจำลอง */
+    getDayReport: function(iso, days){
+      reply(function(){
+        var day = String(iso||"").trim();
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("วันที่ไม่ถูกต้อง: " + day);
+        var back = Math.max(1, Math.min(31, Number(days)||7));
+        function shift(n){
+          var p = day.split("-");
+          var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2])+n);
+          var z = function(x){ return x<10?"0"+x:""+x };
+          return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate());
+        }
+        var trend=[], byDate={};
+        for(var i=0;i<back;i++){
+          var dd = shift(-(back-1-i));
+          byDate[dd] = { date:dd, n:0, net:0, profit:0 };
+          trend.push(byDate[dd]);
+        }
+        var orders=[];
+        MOCK_ORDERS.forEach(function(o){
+          if(o.date === day) orders.push(JSON.parse(JSON.stringify(o)));
+          if(String(o.status||"").trim() === "ยกเลิก") return;
+          var t = byDate[o.date];
+          if(t){ t.n++; t.net += Number(o.net)||0; t.profit += Number(o.profit)||0 }
+        });
+        orders.sort(function(a,b){ return a.no < b.no ? -1 : (a.no > b.no ? 1 : 0) });
+        return { date:day, orders:orders, trend:trend };
+      });
+    },
     setTracking: function(no,track,status,carrier){
       window.SENT.push({fn:"setTracking", no:no, track:track, status:status, carrier:carrier});
       reply(function(){

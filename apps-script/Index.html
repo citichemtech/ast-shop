@@ -145,6 +145,12 @@ textarea{resize:vertical}
   display:flex;flex-direction:column;align-items:center;gap:3px}
 .tabs button.on{color:var(--blue);font-weight:700}
 .tabs button em{font-style:normal;font-size:1.12rem;line-height:1}
+/* หกปุ่มบนจอแคบ ชื่อปุ่มจะตกไปบรรทัดที่สาม แถบล่างสูงขึ้นจนกินที่อ่านข้อมูล
+   ย่อลงนิดเดียวพอให้กลับมาสองบรรทัดเท่าเดิม ขนาดปุ่มที่นิ้วกดยังเท่าเดิม */
+@media (max-width:380px){
+  .tabs button{font-size:0.72rem;padding:10px 2px 12px;letter-spacing:-.02em}
+  .tabs button em{font-size:1.05rem}
+}
 
 .modal{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.42);display:none;align-items:flex-end}
 .modal.on{display:flex}
@@ -189,6 +195,22 @@ textarea{resize:vertical}
 .btrack{height:8px;background:var(--bg);border-radius:4px;margin-top:6px;overflow:hidden}
 .btrack i{display:block;height:100%;background:var(--blue);border-radius:0 4px 4px 0;min-width:3px}
 .bsub{font-size:0.8rem;color:var(--gray);margin-top:4px}
+
+/* ---------------- หน้าปิดยอดวัน ----------------
+   หน้าสรุปยอดตอบคำถาม "ช่วงนี้เป็นยังไง" ส่วนหน้านี้ตอบ "วันนั้นขายไปเท่าไร"
+   ซึ่งเป็นคนละงานกัน — ปิดยอดคือดูวันเดียวให้ครบทุกใบแล้วจบวัน
+   ปุ่ม ◀ ▶ จึงอยู่ติดกับวันที่ เพราะการใช้งานจริงคือเดินทีละวัน ไม่ใช่กระโดดหาช่วง */
+.daynav{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.daynav button{flex:none;width:44px;height:44px;border:1px solid var(--line);background:var(--card);
+  border-radius:11px;font-size:0.95rem;color:var(--ink);padding:0}
+.daynav button:disabled{color:#c9ced6}
+.dymid{flex:1;min-width:0;text-align:center}
+.dymid input{margin:0;text-align:center;font-weight:700}
+.dywhen{font-size:0.8rem;color:var(--gray);margin-top:4px}
+/* แท่งที่กดได้ — ใช้กับ 7 วันย้อนหลัง กดแล้วเด้งไปปิดยอดวันนั้นเลย */
+.tapbar{display:block;width:100%;text-align:left;border:0;background:none;padding:0}
+.tapbar.on .btrack i{background:var(--green)}
+.tapbar.on .bname{color:var(--ink);font-weight:700}
 /* รายการตำบล/อำเภอที่ค้นเจอ กดได้ทั้งแถว นิ้วโป้งกดง่ายบนมือถือ */
 .thhit{margin-top:6px}
 .thhit button{display:block;width:100%;text-align:left;padding:11px 12px;margin-top:6px;
@@ -413,7 +435,21 @@ textarea{resize:vertical}
         “เลขอ้างอิง SKU” ของสินค้านั้นใน Shopee ทำครั้งเดียว ใช้ได้ตลอดไป
       </div></details>
 
-      <details><summary>6. เวลาเจอปัญหา</summary><div class="bd">
+      <details><summary>6. ปิดยอดวัน (แท็บ 📅 ปิดยอดวัน)</summary><div class="bd">
+        ตอบคำถามเดียวคือ <b>วันนั้นขายไปเท่าไร</b> — กด ◀ ▶ เดินทีละวัน
+        หรือแตะช่องวันที่เพื่อเลือกวันย้อนหลังก็ได้
+        <ul>
+          <li><b>ยอดขายรวม</b> คือยอดชำระสุทธิของทุกใบในวันนั้น (ไม่นับใบที่ยกเลิก)</li>
+          <li><b>เก็บเงินแล้ว / ยังไม่เก็บ</b> แยกตามสถานะ — นับว่าเก็บได้เฉพาะใบที่สถานะ
+            <b>ชำระแล้ว</b> เหมือนที่หน้าค้างชำระนับ ตัวเลขสองหน้าจึงตรงกันเสมอ</li>
+          <li>กด <b>คัดลอกสรุปวันนี้เป็นข้อความ</b> แล้ววางส่งเข้าไลน์กลุ่มได้เลย</li>
+          <li>แถบ <b>7 วันย้อนหลัง</b> กดแท่งไหนก็เด้งไปปิดยอดวันนั้นทันที</li>
+        </ul>
+        หน้านี้ถามชีทด้วยวันที่ตรง ๆ จึงย้อนไปไกลแค่ไหนก็ได้ครบทุกใบ
+        ต่างจากแท็บ <b>สรุปยอด</b> ที่ดูภาพรวมเป็นช่วง (7 วัน / เดือนนี้) จากใบล่าสุดที่โหลดมา
+      </div></details>
+
+      <details><summary>7. เวลาเจอปัญหา</summary><div class="bd">
         <ul>
           <li><b>“ล็อตมีของไม่พอ”</b> — ไปแท็บ 📥 รับของ ลงล็อตที่เพิ่งซื้อเข้ามาก่อน</li>
           <li><b>“ช่องสูตรเสียในชีท”</b> ขึ้นแดงที่แถวออเดอร์ — เปิด Apps Script
@@ -428,7 +464,7 @@ textarea{resize:vertical}
         </ul>
       </div></details>
 
-      <details><summary>7. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
+      <details><summary>8. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
         <div class="stop"><b>ลบสินค้าออกจากฐานสินค้า ให้ลบ “ค่าในช่อง” ไม่ใช่ “ลบทั้งแถว”</b><br>
           ลบทั้งแถวทีไร สูตรของชีทอื่นที่ชี้มาจะพังเป็น #REF! ทั้งคอลัมน์ทุกที
           (เคยพังไป 38 แถว)</div>
@@ -630,6 +666,20 @@ textarea{resize:vertical}
     <div id="r-done"></div>
   </section>
 
+  <section id="pg-day" style="display:none">
+    <div class="sec-hd"><h2>ปิดยอดวัน</h2></div>
+    <div class="daynav">
+      <button id="dy-prev" title="วันก่อนหน้า">◀</button>
+      <div class="dymid">
+        <input type="date" id="dy-date">
+        <div class="dywhen" id="dy-when"></div>
+      </div>
+      <button id="dy-next" title="วันถัดไป">▶</button>
+    </div>
+    <div class="chips" id="dy-quick"></div>
+    <div id="dy-body"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
   <section id="pg-sum" style="display:none">
     <!-- สองกล่องนี้อยู่บนสุดโดยตั้งใจ เป็นเรื่องที่ต้องรู้ก่อนดูยอดขาย
          เงินที่ยังไม่ได้เก็บ และของที่กำลังจะหมด -->
@@ -654,6 +704,7 @@ textarea{resize:vertical}
   <button data-go="list"><em>▤</em>ออเดอร์</button>
   <button data-go="recv"><em>📥</em>รับของ</button>
   <button data-go="quote"><em>◇</em>เสนอราคา</button>
+  <button data-go="day"><em>📅</em>ปิดยอดวัน</button>
   <button data-go="sum"><em>▦</em>สรุปยอด</button>
 </div>
 

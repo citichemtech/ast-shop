@@ -2347,5 +2347,72 @@ for (var nm45 in fx45.sheets) over44 = over44.concat(fx45.sheets[nm45].overwritt
 for (var nm44 in fx44.sheets) over44 = over44.concat(fx44.sheets[nm44].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over44, []);
 
+/* ==================================== 46. ปิดยอดวัน — getDayReport
+
+   หน้าปิดยอดวันถามชีทด้วยวันที่ตรง ๆ ไม่ได้คิดจากใบล่าสุดที่จอโหลดไว้
+   สิ่งที่ต้องพิสูจน์คือ "ครบทุกใบของวันนั้น" และ "ใบที่ยกเลิกไม่เข้าไปปนในยอด" */
+console.log('\n46. ปิดยอดวัน (getDayReport)');
+var fx46 = FS.build();
+var api46 = FS.load(fx46);
+api46.setup();
+
+function ord46(date, status, qty, chan) {
+  return order({
+    date: date, status: status, channel: chan || 'หน้าร้าน', ship: 0,
+    items: [{ sku: 'SKU-141', qty: qty, price: 100 }]
+  });
+}
+api46.createOrder(ord46('2026-09-09', 'ชำระแล้ว', 2, 'Shopee'));
+api46.createOrder(ord46('2026-09-09', 'รอชำระ', 3, 'หน้าร้าน'));
+api46.createOrder(ord46('2026-09-09', 'ยกเลิก', 9, 'หน้าร้าน'));
+api46.createOrder(ord46('2026-09-08', 'ชำระแล้ว', 1, 'หน้าร้าน'));
+api46.createOrder(ord46('2026-08-20', 'ชำระแล้ว', 7, 'หน้าร้าน'));
+
+var rep46 = api46.getDayReport('2026-09-09', 7);
+eq('คืนวันที่ที่ถามกลับมาด้วย', rep46.date, '2026-09-09');
+eq('ได้ทุกใบของวันนั้น รวมใบที่ยกเลิก (ให้หน้าจอบอกได้ว่ามีกี่ใบ)', rep46.orders.length, 3);
+eq('ใบของวันอื่นไม่ติดมา',
+  rep46.orders.filter(function (o) { return o.date !== '2026-09-09' }).length, 0);
+eq('ใบแรกของวันขึ้นก่อน ไม่ใช่ย้อนจากใบล่าสุด',
+  rep46.orders.map(function (o) { return o.no }),
+  rep46.orders.map(function (o) { return o.no }).slice().sort());
+eq('รายการสินค้าติดมาด้วย เพื่อให้นับจำนวนชิ้นได้',
+  rep46.orders[0].items.length > 0, true);
+
+eq('แถบย้อนหลังยาว 7 วันเสมอ แม้วันที่ไม่มีออเดอร์', rep46.trend.length, 7);
+eq('เรียงจากเก่าไปใหม่ วันสุดท้ายคือวันที่ถาม',
+  [rep46.trend[0].date, rep46.trend[6].date], ['2026-09-03', '2026-09-09']);
+eq('วันที่ถาม นับเฉพาะใบที่ไม่ยกเลิก', rep46.trend[6].n, 2);
+eq('เมื่อวานนับแยกของมันเอง', rep46.trend[5].n, 1);
+eq('วันที่ไม่มีออเดอร์เป็นศูนย์ ไม่ใช่หายไปจากแถบ',
+  [rep46.trend[0].n, rep46.trend[0].net], [0, 0]);
+eq('ใบที่ยกเลิกไม่เข้าไปปนในยอดของวัน', rep46.trend[6].net, 500);
+eq('ยอดของวันที่ถาม เท่ากับผลรวมใบที่ไม่ยกเลิก',
+  rep46.trend[6].net,
+  rep46.orders.filter(function (o) { return o.status !== 'ยกเลิก' })
+    .reduce(function (a, o) { return a + Number(o.net || 0) }, 0));
+eq('ออเดอร์เดือนก่อนไม่หลุดเข้ามาในแถบ 7 วัน',
+  rep46.trend.reduce(function (a, d) { return a + d.n }, 0), 3);
+
+var rep46b = api46.getDayReport('2026-08-20', 7);
+eq('ย้อนไปวันไกล ๆ ก็ยังได้ใบของวันนั้นครบ', rep46b.orders.length, 1);
+eq('ย้อนไปวันไกล ๆ ยอดยังถูก', rep46b.trend[6].net, 700);
+
+var rep46c = api46.getDayReport('2026-09-10');
+eq('วันที่ไม่มีออเดอร์เลย ต้องได้ศูนย์ ไม่ใช่ error', rep46c.orders.length, 0);
+eq('ไม่ส่ง days มา ให้ถือว่า 7 วัน', rep46c.trend.length, 7);
+
+throws('วันที่มั่ว ๆ ต้องถูกปฏิเสธ ไม่ใช่ตอบยอดเปล่า ๆ กลับไป',
+  function () { api46.getDayReport('เมื่อวาน') }, 'วันที่ไม่ถูกต้อง');
+throws('ไม่ส่งวันที่มาเลยก็ต้องถูกปฏิเสธ',
+  function () { api46.getDayReport('') }, 'วันที่ไม่ถูกต้อง');
+throws('คนนอกบริษัทดูยอดขายรายวันไม่ได้', function () {
+  FS.load(fx46, { email: 'someone@gmail.com', canOpen: false }).getDayReport('2026-09-09');
+});
+
+var over46 = [];
+for (var nm46 in fx46.sheets) over46 = over46.concat(fx46.sheets[nm46].overwrittenFormulas);
+eq('อ่านยอดรายวันแล้วไม่มีช่องสูตรถูกแตะ', over46, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
