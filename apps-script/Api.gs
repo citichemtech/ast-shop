@@ -257,6 +257,40 @@ function getOrders(limit) {
  * ค้นได้ด้วยเลขออเดอร์ ชื่อลูกค้า เบอร์โทร เลขพัสดุ หรือช่องทางขาย
  * เบอร์โทรเทียบเฉพาะตัวเลข พิมพ์มีขีดหรือไม่มีขีดก็เจอเหมือนกัน
  */
+/**
+ * ประวัติคำสั่งซื้อของลูกค้ารายเดียว — เรียกจากปุ่มเขียวในหน้าค้างชำระ
+ *
+ * ตอนโทรทวงเงิน คำถามแรกที่ต้องตอบให้ได้คือ "ลูกค้ารายนี้ซื้อกับเราแค่ไหน"
+ * ค้างใบเดียวจากสิบใบ กับค้างใบเดียวเพราะเพิ่งซื้อครั้งแรก คนละเรื่องกันคนละทาง
+ * ถ้าไม่มีที่ดู คนทวงต้องไปไล่หาในชีทเองทีละหน้า ซึ่งไม่มีใครทำตอนถือสายอยู่
+ *
+ * เทียบชื่อแบบไม่ถือสาช่องว่างหัวท้ายกับตัวพิมพ์ เพราะชื่อบริษัทที่คีย์คนละครั้ง
+ * มักมีช่องว่างเกินมาโดยไม่รู้ตัว แล้วประวัติจะขาดเป็นสองก้อนทั้งที่เป็นรายเดียวกัน
+ */
+function getCustomerHistory(name, limit) {
+  var want = String(name || '').trim().toLowerCase();
+  if (!want) return { cust: '', orders: [], n: 0, total: 0, profit: 0, due: 0, dueN: 0 };
+
+  var list = readOrders_({
+    limit: Number(limit) || 60,
+    match: function (o) { return String(o.cust || '').trim().toLowerCase() === want; }
+  });
+
+  var t = { cust: String(name || '').trim(), orders: list, n: 0, total: 0, profit: 0, due: 0, dueN: 0 };
+  for (var i = 0; i < list.length; i++) {
+    var o = list[i];
+    if (isDeadStatus_(o.status)) continue;   /* ใบที่ยกเลิก/ตีกลับ ไม่ใช่ยอดซื้อ */
+    t.n++;
+    t.total += Number(o.net) || 0;
+    t.profit += Number(o.profit) || 0;
+    if (String(o.status || '').trim() !== 'ชำระแล้ว') {
+      t.dueN++;
+      t.due += Number(o.net) || 0;
+    }
+  }
+  return jsonSafe_(t);
+}
+
 function searchOrders(q, limit) {
   var want = String(q || '').trim().toLowerCase();
   if (want.length < 2) return [];

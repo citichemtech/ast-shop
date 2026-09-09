@@ -341,6 +341,25 @@ window.google = { script: { run: (function(){
         return { ok:true, no:o.no, cust:o.cust, netBefore:0, items:n, cuts:n, recv:0, lots:[] };
       });
     },
+    /* ประวัติคำสั่งซื้อของลูกค้ารายเดียว — ของจริงกรองในชีทด้วยชื่อลูกค้า */
+    getCustomerHistory: function(name, limit){
+      reply(function(){
+        var want = String(name||"").trim().toLowerCase();
+        if(!want) return { cust:"", orders:[], n:0, total:0, profit:0, due:0, dueN:0 };
+        var list = MOCK_ORDERS.filter(function(o){
+          return String(o.cust||"").trim().toLowerCase() === want;
+        }).slice(0, Number(limit)||60);
+        var t = { cust:String(name).trim(), orders:JSON.parse(JSON.stringify(list)),
+                  n:0, total:0, profit:0, due:0, dueN:0 };
+        list.forEach(function(o){
+          var st = String(o.status||"").trim();
+          if(["ยกเลิก","ตีกลับ"].indexOf(st) > -1) return;
+          t.n++; t.total += Number(o.net)||0; t.profit += Number(o.profit)||0;
+          if(st !== "ชำระแล้ว"){ t.dueN++; t.due += Number(o.net)||0 }
+        });
+        return t;
+      });
+    },
     /* ลูกค้าคืนของ / ของตีกลับ — ของจริงคืนของเข้าล็อตแล้ววางแผนใบใหม่ */
     returnOrder: function(p){
       reply(function(){

@@ -2527,79 +2527,215 @@ function loadSummary(){
    ของที่เก็บเงินปลายทางกับลูกค้าเครดิต ถ้าไม่มีที่รวมก็ตกหล่นได้ทั้งใบ
    เรียงใบเก่าสุดขึ้นก่อน เพราะใบที่ค้างนานที่สุดคือใบที่ต้องโทรก่อน   */
 
+/* สถานะการเงินของใบหนึ่ง — คิดที่เดียว ใช้ทั้งแถบกรอง ป้ายสี และข้อความทวง
+
+   ร้านมีเงื่อนไขจ่ายสองแบบเท่านั้น
+     เงินสด            ครบกำหนดวันที่ขายเลย ค้างข้ามวันคือเริ่มสาย
+     เครดิต 30 วัน     ครบกำหนดอีก 30 วัน ยังไม่ถึงกำหนดยังไม่ใช่ลูกหนี้ที่ต้องโทรตาม
+
+   แยกสองแบบนี้ให้ออกเป็นเรื่องสำคัญ ถ้าใบเครดิตขึ้นแดงตั้งแต่วันแรก
+   คนจะเลิกเชื่อสีแดงทั้งหน้า แล้วใบที่สายจริงก็จะถูกมองข้ามไปด้วย   */
+
+var CREDIT_STATUS = "รอชำระเครดิต 30วัน";
+var CREDIT_DAYS = 30;
+
+function payDays_(iso){
+  var a = new Date(String(iso)+"T00:00:00"), b = new Date(todayISO()+"T00:00:00");
+  var n = Math.round((b-a)/86400000);
+  return isNaN(n) ? 0 : n;
+}
+
+/** คืน {key, label, days, over} — key ใช้จับคู่กับแถบกรองและสีของป้าย */
+function payState(o){
+  var st = String((o&&o.status)||"").trim();
+  if (isDead(o))        return { key:"dead",  label:st || "ยกเลิก", days:0, over:0 };
+  if (st === "ชำระแล้ว") return { key:"paid",  label:"ชำระเรียบร้อย", days:0, over:0 };
+
+  var credit = st === CREDIT_STATUS;
+  var d = payDays_(o && o.date);
+  var over = credit ? d - CREDIT_DAYS : d;
+  if (over > 0) {
+    return { key:"over", label:"เกินกำหนดชำระ " + over + " วัน", days:d, over:over };
+  }
+  return credit
+    ? { key:"cr30", label:CREDIT_STATUS, days:d, over:over }
+    : { key:"due",  label:"รอชำระ",      days:d, over:over };
+}
+
+/* แถบกรองด้านบน — กดแล้วดูเฉพาะกลุ่มนั้น ค่าตั้งต้นคือใบที่ยังไม่ได้เงิน */
+var PAY_TABS = [
+  { key:"paid", label:"ชำระเรียบร้อย",  ic:"paid" },
+  { key:"due",  label:"ค้างชำระ",       ic:"due"  },
+  { key:"cr30", label:"เครดิต 30 วัน",  ic:"cr30" },
+  { key:"over", label:"เกินกำหนดชำระ",  ic:"over" }
+];
+var PAY_PICK = "due";
+
 function drawDue(all){
   var box = $("#sum-due");
   if(!box) return;
 
-  var due = (all||[]).filter(function(o){
-    var st = String(o.status||"").trim();
-    return st !== "ชำระแล้ว" && DEAD_STATUS.indexOf(st) < 0 && Number(o.net||0) > 0;
+  var live = (all||[]).filter(function(o){ return !isDead(o) && Number(o.net||0) > 0 });
+  var mine = live.filter(function(o){
+    var k = payState(o).key;
+    /* "ค้างชำระ" หมายถึงเงินที่ยังไม่ได้ทั้งหมด ไม่ว่าจะถึงกำหนดหรือยัง
+       ไม่งั้นกดดูค้างชำระแล้วยอดไม่ตรงกับที่ค้างจริง ซึ่งเป็นตัวเลขที่ใช้ตัดสินใจ */
+    return PAY_PICK === "due" ? k !== "paid" : k === PAY_PICK;
   });
-  if(!due.length){
-    box.innerHTML = '<div class="card"><div class="sum big" style="border:0;margin:0;padding:2px 0">'
-      + '<span>ค้างชำระ</span><b style="color:var(--green)">ไม่มี ✓</b></div></div>';
-    return;
-  }
 
-  /* เก่าสุดขึ้นก่อน — ใบที่ค้างนานที่สุดคือใบที่ต้องตามก่อน */
-  due.sort(function(a,b){ return String(a.date) < String(b.date) ? -1 : 1 });
   var total = 0;
-  due.forEach(function(o){ total += Number(o.net)||0 });
+  mine.forEach(function(o){ total += Number(o.net)||0 });
+  /* เก่าสุดขึ้นก่อน — ใบที่ค้างนานที่สุดคือใบที่ต้องโทรก่อน */
+  mine.sort(function(a,b){ return String(a.date) < String(b.date) ? -1 : 1 });
 
-  var today = todayISO();
-  function daysAgo(d){
-    var a = new Date(String(d)+"T00:00:00"), b = new Date(today+"T00:00:00");
-    var n = Math.round((b-a)/86400000);
-    return isNaN(n) ? 0 : n;
-  }
+  var count = {};
+  PAY_TABS.forEach(function(t){ count[t.key] = 0 });
+  /* ใบเครดิตกับใบเกินกำหนดก็คือเงินที่ยังไม่ได้เหมือนกัน จึงนับเข้า "ค้างชำระ" ด้วย
+     ตัวเลขบนแถบจึงบวกกันได้เกินจำนวนใบทั้งหมด ซึ่งถูกแล้ว เพราะเป็นการมองคนละมุม */
+  live.forEach(function(o){
+    var k = payState(o).key;
+    if (k === "paid") { count.paid++; return; }
+    count.due++;
+    if (k === "cr30" || k === "over") count[k]++;
+  });
 
-  box.innerHTML = '<div class="card">'
-    + '<div class="sum big" style="border:0;margin:0;padding:2px 0">'
-    +   '<span>ค้างชำระ ' + due.length + ' ใบ</span>'
-    +   '<b style="color:var(--amber)">' + baht(total) + '</b></div>'
-    + '<div id="due-list" style="margin-top:6px">'
-    + due.slice(0,8).map(function(o,i){
-        var d = daysAgo(o.date);
-        return '<div class="row"><div class="i">'
-          + '<b>' + esc(o.cust||"ไม่ระบุชื่อ") + '</b>'
-          + '<span>' + esc(o.no) + ' · ' + esc(thaiDate(o.date))
-          + (d > 0 ? ' · <span style="color:' + (d>=7?'var(--red)':'var(--amber)') + '">ค้าง '
-                     + d + ' วัน</span>' : '')
-          + '</span><br>'
-          + '<span style="color:var(--ink);font-weight:700">' + baht(o.net) + '</span> '
-          + '<span class="tag ' + statusTag(o.status) + '">' + esc(o.status||"-") + '</span>'
-          + '</div><div class="acts">'
-          + '<button class="sq" data-due-sm="' + esc(o.no) + '" title="ทวงถาม / ส่งข้อความ">💬</button>'
-          + '<button class="sq" data-due-pd="' + esc(o.no) + '" title="ทำเครื่องหมายว่าชำระแล้ว">✓</button>'
-          + '</div></div>';
+  var head = PAY_TABS.filter(function(t){ return t.key === PAY_PICK })[0] || PAY_TABS[1];
+  var money = PAY_PICK === "paid" ? "var(--green)"
+            : (PAY_PICK === "over" ? "var(--red)" : "var(--amber)");
+
+  box.innerHTML =
+      '<div class="paytabs" id="pay-tabs">'
+    + PAY_TABS.map(function(t){
+        return '<button data-pay="' + t.key + '"' + (t.key===PAY_PICK ? ' class="on"' : '') + '>'
+          + '<img alt="" data-payic="' + t.ic + '">'
+          + '<span>' + esc(t.label) + '</span>'
+          + '<i>' + (count[t.key]||0) + '</i></button>';
       }).join("")
     + '</div>'
-    + (due.length > 8 ? '<div class="hint">แสดง 8 ใบแรกจากทั้งหมด ' + due.length + ' ใบ</div>' : '')
+    + '<div class="card">'
+    + '<div class="sum big" style="border:0;margin:0;padding:2px 0">'
+    +   '<span>' + esc(head.label) + ' ' + mine.length + ' ใบ</span>'
+    +   '<b style="color:' + money + '">' + baht(total) + '</b></div>'
+    + (mine.length
+      ? '<div id="due-list" style="margin-top:6px">'
+        + mine.slice(0,12).map(function(o){
+            var p = payState(o);
+            return '<div class="row"><div class="i">'
+              + '<b>' + esc(o.cust||"ไม่ระบุชื่อ") + '</b>'
+              + '<span>' + esc(o.no) + ' · ' + esc(thaiDate(o.date))
+              + (p.key !== "paid" && p.days > 0
+                  ? ' · <span style="color:' + (p.over>0?'var(--red)':'var(--amber)') + '">ค้าง '
+                    + p.days + ' วัน</span>' : '')
+              + '</span>'
+              + '<span style="color:var(--ink);font-weight:700;font-size:1.02rem">'
+              + baht(o.net) + '</span>'
+              + '<span class="paybar ' + p.key + '">' + esc(p.label) + '</span>'
+              + '</div><div class="acts">'
+              + '<button class="sq" data-due-sm="' + esc(o.no) + '" title="ทวงถาม / ส่งข้อความ">💬</button>'
+              /* ปุ่มเขียว = เปิดประวัติของลูกค้ารายนี้ และปิดยอดจากในนั้นได้
+                 ตอนถือสายทวงเงิน ต้องรู้ก่อนว่ารายนี้ซื้อกับเรามาแค่ไหน
+                 ค้างใบเดียวจากสิบใบ กับค้างใบเดียวเพราะเพิ่งซื้อครั้งแรก คนละเรื่องกัน */
+              + '<button class="sq ok" data-due-cu="' + esc(o.cust||"") + '" '
+              + 'data-no="' + esc(o.no) + '" title="ประวัติคำสั่งซื้อ / ปิดยอด">✔</button>'
+              + '</div></div>';
+          }).join("")
+        + '</div>'
+        + (mine.length > 12 ? '<div class="hint">แสดง 12 ใบแรกจากทั้งหมด ' + mine.length + ' ใบ</div>' : '')
+      : '<div class="empty" style="padding:18px 8px"><b>ไม่มีใบในกลุ่มนี้</b>'
+        + 'กดแถบด้านบนเพื่อดูกลุ่มอื่น</div>')
     /* ชีทมีช่องสถานะช่องเดียว บอกทั้ง "จ่ายหรือยัง" และ "ส่งหรือยัง" พร้อมกันไม่ได้
-       ระบบจึงนับเฉพาะ "ชำระแล้ว" ว่าเก็บเงินได้แล้ว อย่างอื่นถือว่ายังค้าง
-       ใบที่เก็บเงินแล้วแต่ยังไม่ได้เปลี่ยนสถานะจะโผล่ตรงนี้ กด ✓ ปิดได้เลย */
+       ระบบจึงนับเฉพาะ "ชำระแล้ว" ว่าเก็บเงินได้แล้ว อย่างอื่นถือว่ายังค้าง */
     + '<div class="hint">นับเฉพาะใบที่สถานะยังไม่ใช่ “ชำระแล้ว” · '
-    + 'เก็บเงินแล้วกด ✓ เพื่อปิดยอด</div>'
+    + 'ใบเครดิตจะยังไม่ขึ้นแดงจนกว่าจะเกิน ' + CREDIT_DAYS + ' วันนับจากวันที่ขาย</div>'
     + '</div>';
+
+  $$("#pay-tabs [data-payic]").forEach(function(im){
+    var ic = (typeof PAY_ICONS !== "undefined") && PAY_ICONS[im.dataset.payic];
+    if (ic) im.src = ic; else im.remove();
+  });
+  $("#pay-tabs").onclick = function(e){
+    var b = e.target.closest("button[data-pay]");
+    if(!b) return;
+    PAY_PICK = b.dataset.pay;
+    drawDue(all);
+  };
 
   function find(no){ return (all||[]).filter(function(o){ return o.no === no })[0] }
   $$("#due-list [data-due-sm]").forEach(function(b){
     b.onclick = function(){ var o = find(b.getAttribute("data-due-sm")); if(o) openMsg(o) };
   });
-  $$("#due-list [data-due-pd]").forEach(function(b){
+  $$("#due-list [data-due-cu]").forEach(function(b){
     b.onclick = function(){
-      var no = b.getAttribute("data-due-pd");
+      openCustomer(b.getAttribute("data-due-cu"), b.getAttribute("data-no"));
+    };
+  });
+}
+
+/* --------------------------------------------- ประวัติคำสั่งซื้อของลูกค้ารายเดียว
+
+   เปิดจากปุ่มเขียวในหน้าค้างชำระ ตอนกำลังจะโทรทวง
+   บอกสามอย่างที่ต้องรู้ก่อนกดโทร: ซื้อมาแล้วกี่ใบ · รวมเท่าไร · ค้างอยู่กี่ใบ
+   แล้วปิดยอดใบที่กำลังดูอยู่ได้จากในนี้เลย ไม่ต้องย้อนออกไปหาใหม่           */
+
+function openCustomer(name, no){
+  var cust = String(name||"").trim();
+  if(!cust){ toast("ใบนี้ไม่ได้ระบุชื่อลูกค้า จึงไม่มีประวัติให้ดู"); return }
+
+  openModal("ประวัติคำสั่งซื้อ — " + cust,
+    '<div id="cu-body"><div class="load">กำลังโหลด…</div></div>');
+
+  call("getCustomerHistory", [cust, 60], function(r){
+    var box = $("#cu-body");
+    if(!box) return;
+    var list = (r && r.orders) || [];
+    box.innerHTML =
+        '<div class="kpis" style="margin-bottom:10px">'
+      + '<div class="kpi"><span>ซื้อไปแล้ว</span><b>' + (r.n||0) + ' ใบ</b></div>'
+      + '<div class="kpi"><span>ยอดรวม</span><b>' + baht(r.total||0) + '</b></div>'
+      + '<div class="kpi"><span>ค้างชำระ</span><b'
+      +   ((r.dueN||0) ? ' style="color:var(--amber)"' : '') + '>' + (r.dueN||0) + ' ใบ</b></div>'
+      + '<div class="kpi"><span>ยอดที่ค้าง</span><b'
+      +   ((r.due||0) ? ' style="color:var(--amber)"' : '') + '>' + baht(r.due||0) + '</b></div>'
+      + '</div>'
+      + (no ? '<button class="btn" id="cu-paid">ทำเครื่องหมายว่า ' + esc(no) + ' ชำระแล้ว</button>' : '')
+      + '<div id="cu-msg" style="margin:8px 0"></div>'
+      + '<div class="subhd">ทุกใบของลูกค้ารายนี้ (' + list.length + ')</div>'
+      + (list.length
+        ? list.map(function(o){
+            var p = payState(o);
+            return '<div class="row"><div class="i">'
+              + '<b' + (isDead(o) ? ' style="text-decoration:line-through;color:var(--gray)"' : '')
+              + '>' + esc(o.no) + '</b>'
+              + '<span>' + esc(thaiDate(o.date))
+              + (o.channel ? ' · ' + chanTag(o.channel) : '') + '</span>'
+              + '<span style="color:var(--ink);font-weight:700">' + baht(o.net) + '</span>'
+              + '<span class="paybar ' + p.key + '">' + esc(p.label) + '</span>'
+              + '</div></div>';
+          }).join("")
+        : '<div class="empty">ยังไม่มีใบอื่นของลูกค้ารายนี้</div>')
+      + '<div class="hint" style="margin-top:8px">ใบที่ยกเลิกหรือตีกลับขึ้นแบบขีดฆ่า '
+      + 'และไม่ถูกนับรวมในยอดด้านบน</div>';
+
+    var pd = $("#cu-paid");
+    if(pd) pd.onclick = function(){
       if(!confirm("ทำเครื่องหมายว่าออเดอร์ " + no + " ชำระแล้ว?")) return;
-      b.disabled = true;
+      pd.disabled = true; pd.textContent = "กำลังบันทึก…";
       api("setTracking", no, undefined, "ชำระแล้ว").then(function(){
-        toast("บันทึกว่า " + no + " ชำระแล้ว");
+        $("#cu-msg").innerHTML = '<div class="msg ok" style="display:block">บันทึกว่า <b>'
+          + esc(no) + '</b> ชำระแล้ว</div>';
+        pd.textContent = "ปิดยอดแล้ว";
         SUM_CACHE = null; ORDERS = [];
         loadSummary();
       }, function(e){
-        b.disabled = false;
-        toast("ไม่สำเร็จ: " + (e && e.message ? e.message : e));
+        pd.disabled = false; pd.textContent = "ทำเครื่องหมายว่า " + no + " ชำระแล้ว";
+        $("#cu-msg").innerHTML = '<div class="msg err" style="display:block">'
+          + esc(e && e.message ? e.message : e) + '</div>';
       });
     };
+  }, function(m){
+    var box = $("#cu-body");
+    if(box) box.innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'
+      + esc(m) + '</div>';
   });
 }
 

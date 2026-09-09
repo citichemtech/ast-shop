@@ -1317,12 +1317,18 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('สินค้าที่ไม่ได้ตั้งจุดสั่งซื้อ ใช้จุดสั่งซื้อกลาง 50',
     /\(จุดสั่งซื้อ 50\)/.test(alertTxt));
 
-  console.log('\n   เก็บเงินได้แล้วกด ✓ ต้องปิดยอดในชีทจริง');
+  console.log('\n   เก็บเงินได้แล้วกดปุ่มเขียว ต้องปิดยอดในชีทจริง');
+  /* ปุ่มเขียวเปิดประวัติของลูกค้ารายนั้นก่อน แล้วปิดยอดจากในนั้น
+     เพราะตอนจะปิดยอดคือตอนที่เพิ่งคุยกับลูกค้าเสร็จ ซึ่งเป็นจังหวะเดียวกับที่อยากดูประวัติ */
   await page.evaluate(function () { window.confirm = function () { return true } });
-  await page.locator('#due-list [data-due-pd]').first().click();
+  await page.locator('#due-list [data-due-cu]').first().click();
+  await page.waitForTimeout(700);
+  await page.click('#cu-paid');
   await page.waitForTimeout(900);
   eq('สถานะในชีทเปลี่ยนเป็นชำระแล้ว',
      await page.evaluate(function () { return MOCK_ORDERS[0].status }), 'ชำระแล้ว');
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
   eq('เหลือค้างใบเดียว', await page.locator('#due-list .row').count(), 1);
   truthy('ยอดค้างลดลงตาม', /303\.59/.test(await page.textContent('#sum-due')));
 
@@ -1867,6 +1873,146 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('แยกช่องทางขายให้ด้วย', /เพจ Facebook 2 ใบ/.test(dayCopy));
   truthy('ตัวเลขในข้อความตรงกับตัวเลขบนจอ ไม่ได้คิดคนละรอบ',
     dayCopy.indexOf(want34.net) > -1 && dayTxt.indexOf(want34.net) > -1);
+
+  /* ---------- 39. หน้าค้างชำระ — เครดิต 30 วัน กับประวัติลูกค้า ---------- */
+  console.log('\n39. หน้าค้างชำระ — เงินสด vs เครดิต 30 วัน');
+  var pay39 = await page.evaluate(function () {
+    /* วันนี้ในเครื่องทดสอบคือวันไหนก็ได้ ข้อสอบจึงคิดวันที่ย้อนหลังจาก todayISO() เอง
+       ไม่ใช่เขียนวันที่ตายตัวไว้ ซึ่งจะพังเองเมื่อเวลาผ่านไป */
+    function back(n) {
+      var d = new Date(todayISO() + 'T00:00:00');
+      d.setDate(d.getDate() - n);
+      return isoOf(d.getTime());
+    }
+    return {
+      cashFresh: payState({ status: 'รอชำระ', date: todayISO() }),
+      cashLate:  payState({ status: 'รอชำระ', date: back(5) }),
+      crFresh:   payState({ status: 'รอชำระเครดิต 30วัน', date: back(5) }),
+      crEdge:    payState({ status: 'รอชำระเครดิต 30วัน', date: back(30) }),
+      crOver:    payState({ status: 'รอชำระเครดิต 30วัน', date: back(51) }),
+      paid:      payState({ status: 'ชำระแล้ว', date: back(99) }),
+      dead:      payState({ status: 'ตีกลับ', date: back(9) })
+    };
+  });
+  eq('เงินสดวันนี้ ยังไม่สาย', pay39.cashFresh.key, 'due');
+  eq('เงินสดค้าง 5 วัน = เกินกำหนดแล้ว', pay39.cashLate.key, 'over');
+  eq('บอกด้วยว่าเกินมากี่วัน', pay39.cashLate.label, 'เกินกำหนดชำระ 5 วัน');
+  eq('เครดิต 30 วัน ผ่านไป 5 วัน ยังไม่ถึงกำหนด ต้องไม่ขึ้นแดง', pay39.crFresh.key, 'cr30');
+  eq('ครบ 30 วันพอดี ยังไม่ถือว่าเกิน', pay39.crEdge.key, 'cr30');
+  eq('เครดิต 30 วัน ผ่านไป 51 วัน = เกินมา 21 วัน', pay39.crOver.label, 'เกินกำหนดชำระ 21 วัน');
+  eq('ใบที่จ่ายแล้ว', pay39.paid.key, 'paid');
+  eq('ใบที่ตีกลับไม่ใช่ลูกหนี้', pay39.dead.key, 'dead');
+
+  console.log('\n   แถบกรองสี่กลุ่มบนหน้าสรุปยอด');
+  await page.evaluate(function () {
+    function back(n) {
+      var d = new Date(todayISO() + 'T00:00:00'); d.setDate(d.getDate() - n);
+      return isoOf(d.getTime());
+    }
+    MOCK_ORDERS.length = 0;
+    MOCK_ORDERS.push(
+      { no:'AST-26-0201', date:back(2), channel:'หน้าร้าน', cust:'คุณจ่ายแล้ว ทดสอบ',
+        tel:'0800000001', addr:'-', carrier:'', track:'', vat:'ไม่รับ VAT', discount:0, ship:0,
+        status:'ชำระแล้ว', staff:'x', note:'', subtotal:100, vatAmt:0, net:100, cost:40,
+        profit:60, check:'OK', items:[] },
+      { no:'AST-26-0202', date:back(5), channel:'หน้าร้าน', cust:'คุณเงินสด ค้างจ่าย',
+        tel:'0800000002', addr:'-', carrier:'', track:'', vat:'ไม่รับ VAT', discount:0, ship:0,
+        status:'รอชำระ', staff:'x', note:'', subtotal:200, vatAmt:0, net:200, cost:80,
+        profit:120, check:'OK', items:[] },
+      { no:'AST-26-0203', date:back(5), channel:'หน้าร้าน', cust:'คุณเครดิต ยังไม่ครบ',
+        tel:'0800000003', addr:'-', carrier:'', track:'', vat:'ไม่รับ VAT', discount:0, ship:0,
+        status:'รอชำระเครดิต 30วัน', staff:'x', note:'', subtotal:300, vatAmt:0, net:300,
+        cost:100, profit:200, check:'OK', items:[] },
+      { no:'AST-26-0204', date:back(51), channel:'หน้าร้าน', cust:'คุณเครดิต เกินแล้ว',
+        tel:'0800000004', addr:'-', carrier:'', track:'', vat:'ไม่รับ VAT', discount:0, ship:0,
+        status:'รอชำระเครดิต 30วัน', staff:'x', note:'', subtotal:400, vatAmt:0, net:400,
+        cost:150, profit:250, check:'OK', items:[] }
+    );
+    PAY_PICK = 'due'; SUM_CACHE = null; ORDERS = [];
+  });
+  /* ต้องยืนอยู่หน้าสรุปยอดจริง ๆ ไม่งั้นแถบกรองซ่อนอยู่แล้วกดไม่ได้ */
+  await page.click('.tabs button[data-go="sum"]');
+  await page.waitForTimeout(900);
+
+  var chips39 = await page.evaluate(function () {
+    return $$('#pay-tabs button').map(function (b) {
+      return { key: b.dataset.pay, n: b.querySelector('i').textContent,
+               ic: !!b.querySelector('img'), on: b.classList.contains('on') };
+    });
+  });
+  eq('มีสี่กลุ่มตามที่เจ้าของร้านวางไว้',
+    chips39.map(function (c) { return c.key }), ['paid', 'due', 'cr30', 'over']);
+  truthy('ทุกกลุ่มมีไอคอนรูปจริง', chips39.every(function (c) { return c.ic }));
+  eq('ชำระเรียบร้อยหนึ่งใบ', chips39[0].n, '1');
+  eq('ค้างชำระนับทุกใบที่ยังไม่ได้เงิน (เงินสด + เครดิต + เกินกำหนด)', chips39[1].n, '3');
+  eq('เครดิตที่ยังไม่ถึงกำหนดหนึ่งใบ', chips39[2].n, '1');
+  eq('เกินกำหนดสองใบ (เงินสดค้าง 5 วัน + เครดิตเกิน 21 วัน)', chips39[3].n, '2');
+  truthy('เปิดมาที่กลุ่มค้างชำระก่อน เพราะเป็นเงินที่ยังไม่ได้', chips39[1].on);
+
+  var due39 = await page.textContent('#sum-due');
+  truthy('หัวการ์ดบอกยอดรวมของกลุ่มที่เลือก (200+300+400)', /฿900\.00/.test(due39));
+  var bars39 = await page.evaluate(function () {
+    return $$('#due-list .paybar').map(function (b) {
+      return { cls: b.className.replace('paybar ', ''), txt: b.textContent };
+    });
+  });
+  eq('ใบเครดิตที่ยังไม่ครบกำหนดใช้สีของตัวเอง ไม่ใช่สีแดง',
+    bars39.filter(function (b) { return b.cls === 'cr30' }).length, 1);
+  eq('ใบที่เกินกำหนดสองใบขึ้นแถบแดงเข้ม',
+    bars39.filter(function (b) { return b.cls === 'over' }).length, 2);
+
+  console.log('\n   กดแถบอื่นแล้วลิสต์ต้องเปลี่ยนตาม');
+  await page.click('#pay-tabs button[data-pay="cr30"]');
+  await page.waitForTimeout(400);
+  var only39 = await page.evaluate(function () {
+    return $$('#due-list .row').map(function (r) { return r.textContent });
+  });
+  eq('กลุ่มเครดิต 30 วัน เหลือใบเดียว', only39.length, 1);
+  truthy('และเป็นใบที่ยังไม่ถึงกำหนดจริง ๆ', /AST-26-0203/.test(only39[0]));
+  await page.click('#pay-tabs button[data-pay="paid"]');
+  await page.waitForTimeout(400);
+  truthy('กลุ่มชำระเรียบร้อยขึ้นแถบเขียว',
+    await page.evaluate(function () {
+      var b = $('#due-list .paybar');
+      return !!b && b.className.indexOf('paid') > -1;
+    }));
+
+  console.log('\n   ปุ่มเขียว = เปิดประวัติคำสั่งซื้อของลูกค้ารายนั้น');
+  await page.click('#pay-tabs button[data-pay="due"]');
+  await page.waitForTimeout(400);
+  await page.click('#due-list [data-due-cu]');
+  await page.waitForTimeout(700);
+  truthy('เปิดหน้าประวัติของลูกค้ารายนั้น',
+    /ประวัติคำสั่งซื้อ/.test(await page.textContent('#m-title')));
+  var cu39 = await page.textContent('#cu-body');
+  truthy('บอกว่าซื้อไปแล้วกี่ใบ', /ซื้อไปแล้ว/.test(cu39));
+  truthy('บอกยอดรวมที่เคยซื้อ', /ยอดรวม/.test(cu39));
+  truthy('บอกว่าค้างอยู่กี่ใบ เป็นเงินเท่าไร', /ค้างชำระ/.test(cu39) && /ยอดที่ค้าง/.test(cu39));
+  truthy('ยังปิดยอดใบที่กำลังดูอยู่ได้จากในนี้ ไม่ได้เสียปุ่มเดิมไป',
+    await page.evaluate(function () { return !!$('#cu-paid') }));
+
+  console.log('\n   ปิดยอดจากหน้าประวัติ');
+  await page.evaluate(function () {
+    window.PAID39 = ($('#cu-paid').textContent.match(/AST-\d{2}-\d{4}/) || [''])[0];
+  });
+  page.once('dialog', function (d) { d.accept() });
+  await page.click('#cu-paid');
+  await page.waitForTimeout(800);
+  truthy('บอกว่าบันทึกแล้ว', /ชำระแล้ว/.test(await page.textContent('#cu-msg')));
+  /* ลิสต์เรียงใบเก่าสุดขึ้นก่อน ปุ่มแรกจึงไม่ใช่ใบแรกที่ใส่เข้าไป — อ่านจากปุ่มเอาว่าใบไหน */
+  eq('สถานะของใบที่กดปิดยอด เปลี่ยนจริง', await page.evaluate(function () {
+    var o = MOCK_ORDERS.filter(function (x) { return x.no === PAID39 })[0];
+    return o ? o.status : '(ไม่เจอ)';
+  }), 'ชำระแล้ว');
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
+
+  console.log('\n   ใบที่ไม่ระบุชื่อลูกค้า ต้องไม่เปิดหน้าเปล่า');
+  truthy('บอกว่าไม่มีประวัติให้ดู แทนที่จะเปิดหน้าว่าง', await page.evaluate(function () {
+    var before = $('#modal').classList.contains('on');
+    openCustomer('', 'AST-26-0299');
+    return !before && !$('#modal').classList.contains('on');
+  }));
 
   /* ---------- 38. หน้าตาใหม่ — แถบล่างเป็นรูป กับปุ่มเอกสารบนหัวฟอร์มที่เอาออก ---------- */
   console.log('\n38. หน้าตาใหม่ของแถบล่างกับหัวฟอร์ม');
