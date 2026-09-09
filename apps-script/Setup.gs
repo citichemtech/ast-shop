@@ -39,6 +39,7 @@ function setup() {
   made.push(setupItemLotColumn_(ss));
   made.push(setupAccounting_(ss));
   made.push(setupCarrierList_(ss));
+  made.push(setupStatusList_(ss));
   // ซ่อมให้อัตโนมัติ แต่ห้ามล้มทั้ง setup ถ้าซ่อมไม่ได้ — ส่วนอื่นติดตั้งไปแล้ว
   try { made.push(repairStockSheet()); }
   catch (e) { made.push('ซ่อมชีทสต๊อกไม่สำเร็จ: ' + e.message); }
@@ -1523,6 +1524,64 @@ function setupCarrierList_(ss) {
   return added.length
     ? 'เพิ่มขนส่ง ' + added.join(' · ') + ' ในชีท ' + SH.cfg.name + ' และขยายช่วงตัวเลือกให้แล้ว'
     : 'ขนส่งครบอยู่แล้ว (ขยายช่วงตัวเลือกให้เผื่อเติมเองภายหลัง)';
+}
+
+/* ------------------------------------------ สถานะ "ตีกลับ" ที่ ออเดอร์_หัวบิล */
+
+/**
+ * เพิ่มสถานะ "ตีกลับ" เข้าชุด dropdown ของสถานะออเดอร์ (ชีท ตั้งค่า คอลัมน์ G)
+ *
+ * ยกเลิก = ยังไม่ได้ส่ง ลูกค้าเปลี่ยนใจก่อนแพ็ค
+ * ตีกลับ = ส่งไปแล้วแต่ของเดินทางกลับมา (ที่อยู่ผิด · ลูกค้าไม่รับ · เก็บเงินปลายทางไม่ได้)
+ *
+ * ผลต่อสต๊อกและยอดขายเหมือนกันเป๊ะ แต่ในสายตาเจ้าของร้านคนละเรื่อง —
+ * ตีกลับคือเสียค่าส่งไปแล้วสองเที่ยวและของอาจบุบ ถ้านับรวมกับยกเลิกจะไม่มีวันรู้ว่า
+ * เดือนนี้เสียค่าส่งฟรีไปกี่ใบ เพราะอะไร
+ */
+var EXTRA_STATUS = ['ตีกลับ'];
+
+function setupStatusList_(ss) {
+  var cfg = sheet_('cfg');
+  var head = findSheet_(ss, SH.head.name);
+  if (!head) throw new Error('ไม่พบชีท ' + SH.head.name);
+
+  var TOP = DATA_ROW + 1;
+  var ROWS = 20;
+  if (cfg.getMaxRows() < TOP + ROWS - 1) {
+    cfg.insertRowsAfter(cfg.getMaxRows(), TOP + ROWS - 1 - cfg.getMaxRows());
+  }
+
+  var col = 7;                     // G = สถานะออเดอร์
+  var have = {}, firstFree = 0;
+  var v = cfg.getRange(TOP, col, ROWS, 1).getValues();
+  for (var i = 0; i < ROWS; i++) {
+    var x = String(v[i][0] || '').trim();
+    if (x) have[x] = true;
+    else if (!firstFree) firstFree = TOP + i;
+  }
+
+  var added = [];
+  for (var k = 0; k < EXTRA_STATUS.length; k++) {
+    var want = EXTRA_STATUS[k];
+    if (have[want]) continue;
+    if (!firstFree) break;         // เต็มช่วงแล้ว ไม่ไปเขียนทับของใคร
+    cfg.getRange(firstFree, col).setValue(want).setFontColor(C_IN_FG);
+    have[want] = true;
+    added.push(want);
+    firstFree = (firstFree - TOP + 1 < ROWS) ? firstFree + 1 : 0;
+  }
+
+  var last = formulaLimit_('head');
+  if (last >= DATA_ROW) {
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(cfg.getRange(TOP, col, ROWS, 1), true)
+      .setAllowInvalid(true).build();
+    head.getRange(DATA_ROW, SH.head.IN.status, last - DATA_ROW + 1, 1).setDataValidation(rule);
+  }
+
+  return added.length
+    ? 'เพิ่มสถานะ ' + added.join(' · ') + ' ในชีท ' + SH.cfg.name + ' และขยายช่วงตัวเลือกให้แล้ว'
+    : 'สถานะครบอยู่แล้ว (ขยายช่วงตัวเลือกให้เผื่อเติมเองภายหลัง)';
 }
 
 /* ----------------------------------------------- สถานะบัญชี ที่ ออเดอร์_หัวบิล */

@@ -1868,6 +1868,121 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ตัวเลขในข้อความตรงกับตัวเลขบนจอ ไม่ได้คิดคนละรอบ',
     dayCopy.indexOf(want34.net) > -1 && dayTxt.indexOf(want34.net) > -1);
 
+  /* ---------- 37. ลูกค้าคืนของ / ของตีกลับ ---------- */
+  console.log('\n37. ลูกค้าคืนของ / ของตีกลับ');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(400);
+  await page.evaluate(function () {
+    /* ใบสดใบใหม่ ไม่ให้ชนกับใบที่หมวดก่อน ๆ แก้ไปแล้ว */
+    MOCK_ORDERS.unshift({
+      no: 'AST-26-0090', date: '2026-08-28', channel: 'เพจ Facebook',
+      cust: 'คุณตีกลับ ทดสอบ', tel: '0800000009', addr: 'ที่อยู่ทดสอบ',
+      carrier: 'Flash Express', track: '', vat: 'ไม่รับ VAT',
+      discount: 0, ship: 50, status: 'ส่งแล้ว', staff: 'somchai@chem-inno-tech.com',
+      note: '', subtotal: 600, vatAmt: 0, net: 650, cost: 200, profit: 400, check: 'OK',
+      items: [{ sku: 'SKU-141', name: 'ดอกกัดทดสอบ', unit: 'ชิ้น',
+                qty: 6, price: 100, total: 600, lot: '' }]
+    });
+    ORDERS = []; SUM_CACHE = null; loadOrders();
+  });
+  await page.waitForTimeout(700);
+
+  truthy('มีปุ่มคืนของแยกจากปุ่มยกเลิกบนแถวออเดอร์', await page.evaluate(function () {
+    var row = $$('#list .row')[0];
+    return !!row.querySelector('[data-rt]') && !!row.querySelector('[data-cx]');
+  }));
+  await page.click('#list .row [data-rt]');
+  await page.waitForTimeout(400);
+  truthy('เปิดหน้าต่างคืนของได้', /ตีกลับ/.test(await page.textContent('#m-title')));
+  truthy('บอกว่าค่าจัดส่งจะถูกล้าง เพราะของไม่ได้อยู่กับลูกค้าแล้ว',
+    /ค่าจัดส่งจะถูกล้าง/.test(await page.textContent('#m-body')));
+  truthy('ช่องจำนวนตั้งต้นเป็น 0 ไม่ใช่คืนทั้งใบให้เอง',
+    await page.evaluate(function () { return $('#rt-q0').value }) === '0');
+
+  console.log('\n   ยังไม่ใส่จำนวน / ไม่บอกเหตุผล ต้องไม่ยอมให้บันทึก');
+  await page.click('#rt-go');
+  await page.waitForTimeout(300);
+  truthy('ไม่ใส่จำนวนแล้วเตือน', /ยังไม่ได้ใส่จำนวน/.test(await page.textContent('#rt-msg')));
+  await page.fill('#rt-q0', '2');
+  await page.click('#rt-go');
+  await page.waitForTimeout(300);
+  truthy('ใส่จำนวนแล้วแต่ไม่บอกเหตุผล ก็ยังเตือน',
+    /5 ตัวอักษร/.test(await page.textContent('#rt-msg')));
+  truthy('ยังไม่ได้ยิงขึ้นชีทเลยสักครั้ง', await page.evaluate(function () {
+    return (window.SENT || []).filter(function (x) { return x.fn === 'returnOrder' }).length === 0;
+  }));
+  await page.fill('#rt-q0', '9');
+  await page.fill('#rt-why', 'ที่อยู่ผิด ส่งไม่ถึง');
+  await page.click('#rt-go');
+  await page.waitForTimeout(300);
+  truthy('คืนมากกว่าที่ขายไป ต้องเตือนก่อนถึงชีท',
+    /มากกว่าที่ขายไป/.test(await page.textContent('#rt-msg')));
+
+  console.log('\n   คืนบางส่วน — ยอดเหลือเท่าที่ลูกค้าเก็บไว้');
+  page.once('dialog', function (d) { d.accept() });
+  await page.fill('#rt-q0', '2');
+  await page.click('#rt-go');
+  await page.waitForTimeout(700);
+  truthy('บอกว่าคืนอะไรเข้าสต๊อกไปบ้าง',
+    /SKU-141 x2/.test(await page.textContent('#rt-msg')));
+  var after37 = await page.evaluate(function () {
+    var o = MOCK_ORDERS.filter(function (x) { return x.no === 'AST-26-0090' })[0];
+    return { qty: o.items[0].qty, net: o.net, ship: o.ship, status: o.status, note: o.note };
+  });
+  eq('บรรทัดสินค้าเหลือจำนวนที่ลูกค้าเก็บไว้', after37.qty, 4);
+  eq('ค่าจัดส่งถูกล้าง', after37.ship, 0);
+  eq('ยอดเหลือเท่าของที่ลูกค้าเก็บไว้', after37.net, 400);
+  truthy('สถานะยังไม่ตาย เพราะลูกค้ายังเก็บของไว้', after37.status === 'ส่งแล้ว');
+  truthy('หมายเหตุจดว่าคืนอะไรเพราะอะไร',
+    /ตีกลับบางส่วน: SKU-141 x2/.test(after37.note) && /ที่อยู่ผิด/.test(after37.note));
+
+  console.log('\n   ปุ่ม "คืนทั้งใบ" แล้วบันทึก — ยอดเป็นศูนย์ สถานะกลายเป็นตีกลับ');
+  /* หน้าต่างค้างเปิดไว้โชว์ผลโดยตั้งใจ (เหมือนหน้ายกเลิก) ปิดเองก่อนเปิดใบต่อไป */
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
+  await page.click('#list .row [data-rt]');
+  await page.waitForTimeout(400);
+  await page.click('#rt-all');
+  await page.waitForTimeout(200);
+  eq('ปุ่มคืนทั้งใบเติมจำนวนเต็มให้',
+    await page.evaluate(function () { return $('#rt-q0').value }), '4');
+  await page.fill('#rt-why', 'เก็บเงินปลายทางไม่ได้');
+  page.once('dialog', function (d) { d.accept() });
+  await page.click('#rt-go');
+  await page.waitForTimeout(700);
+  var whole37 = await page.evaluate(function () {
+    var o = MOCK_ORDERS.filter(function (x) { return x.no === 'AST-26-0090' })[0];
+    return { net: o.net, status: o.status, items: o.items.length, note: o.note };
+  });
+  eq('ยอดเป็นศูนย์', whole37.net, 0);
+  eq('สถานะเป็น "ตีกลับ" ไม่ใช่ "ยกเลิก"', whole37.status, 'ตีกลับ');
+  eq('รายการสินค้าถูกรื้อออกหมด', whole37.items, 0);
+  truthy('หมายเหตุใช้คำว่าตีกลับ', /\[ตีกลับ: /.test(whole37.note));
+
+  console.log('\n   ใบที่ตีกลับแล้วต้องไม่มีปุ่มอะไรให้กดต่อ');
+  await page.evaluate(function () { closeModal(); ORDERS = []; SUM_CACHE = null; loadOrders() });
+  await page.waitForTimeout(700);
+  var deadRow = await page.evaluate(function () {
+    var rows = $$('#list .row');
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].textContent.indexOf('AST-26-0090') > -1) {
+        return { btns: rows[i].querySelectorAll('.acts button').length,
+                 txt: rows[i].textContent };
+      }
+    }
+    return null;
+  });
+  truthy('ไม่มีปุ่มเหลือให้กดเลย', deadRow && deadRow.btns === 0);
+  truthy('บอกว่าตีกลับแล้ว ไม่ใช่เขียนว่ายกเลิกแล้ว',
+    deadRow && /ตีกลับแล้ว/.test(deadRow.txt) && !/ยกเลิกแล้ว/.test(deadRow.txt));
+  truthy('ป้ายสถานะเป็นสีแดงเหมือนใบที่ยกเลิก',
+    await page.evaluate(function () { return statusTag('ตีกลับ') }) === 'bad');
+  truthy('ใบที่ตีกลับไม่ไปโผล่ในรายการค้างชำระ', await page.evaluate(function () {
+    return !$$('#due-list .row').filter(function (r) {
+      return r.textContent.indexOf('AST-26-0090') > -1;
+    }).length;
+  }));
+
   /* ---------- 36. ช่องทางขาย Shopee ต้องเด่นออกมาจากใบที่คีย์เอง ---------- */
   console.log('\n36. ช่องทางขาย Shopee — โลโก้ + สีส้ม');
   var chanFn = await page.evaluate(function () {
@@ -1975,12 +2090,16 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('เปิดคู่มือจากปุ่ม ? บนหัวจอได้',
     await page.evaluate(function () { return $('#pg-help').style.display !== 'none' }));
   truthy('มีหัวข้อครบทุกงานหลัก', await page.evaluate(function () {
-    return $$('#pg-help details').length >= 8;
+    return $$('#pg-help details').length >= 9;
   }));
   truthy('มีเรื่องใบที่ตีกลับของ Shopee อยู่ในคู่มือ',
     /ตีกลับ/.test(await page.textContent('#pg-help')));
   truthy('มีกฎห้ามลบทั้งแถวในชีท',
     /ลบทั้งแถว/.test(await page.textContent('#pg-help')));
+  truthy('คู่มือแยกให้ชัดว่ายกเลิกกับตีกลับไม่เหมือนกัน',
+    /ยกเลิก กับ ตีกลับ ไม่เหมือนกัน/.test(await page.textContent('#pg-help')));
+  truthy('คู่มือบอกว่าพิมพ์หมายเลขคำสั่งซื้อ Shopee ในช่องค้นหาได้',
+    /หมายเลขคำสั่งซื้อ Shopee ในช่องค้นหา/.test(await page.textContent('#pg-help')));
   await page.click('#hp-back');
   await page.waitForTimeout(300);
   truthy('กดกลับแล้วได้หน้าเดิมที่ยืนอยู่ก่อนเปิดคู่มือ',

@@ -1260,7 +1260,7 @@ truthy2('ตอบว่าเป็นการกดซ้ำ', !!dup31.duplic
 
 console.log('\n   ยกเลิกซ้ำใบเดิมด้วยกุญแจใหม่ ต้องปฏิเสธ');
 throws('ยกเลิกไปแล้ว', function () { api31.cancelOrder(c31.no, 'กดผิด กดซ้ำอีกที', 'บี', 'x3') },
-  'ถูกยกเลิกไปแล้ว');
+  'ขึ้นสถานะ ยกเลิก ไปแล้ว');
 
 console.log('\n   ของซื้อมาขายไป — ขารับต้องถูกรื้อพร้อมขาขาย');
 var f31 = api31.createOrder(order({
@@ -1300,7 +1300,7 @@ throws('ไม่มีเลขนี้ในชีท',
 console.log('\n   ใบที่ยกเลิกแล้วต้องไม่ถูกแก้รายการต่อ');
 throws('แก้ของในใบที่ยกเลิกไปแล้ว',
   function () { api31.editOrderItems(c31.no, [{ sku: 'SKU-141', qty: 1, price: 10 }], 'บี', 'x8') },
-  'ถูกยกเลิกไปแล้ว');
+  'ขึ้นสถานะ ยกเลิก ไปแล้ว');
 
 console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
 var over31 = [];
@@ -2577,6 +2577,195 @@ truthy2('หาไม่เจอก็สร้างแท็บตามช�
   !!fx49b.sheets['ตัดล็อต']);
 eq('สูตรที่เขียนออกมาอ้างแท็บที่สร้างใหม่นั้น',
   (fx49b.sheets['ล็อตสินค้า'].cell(DATA_ROW, 8).f || '').indexOf("'ตัดล็อต'!$I:$I") > -1, true);
+
+/* ================================ 50. ลูกค้าคืนของ / ของตีกลับ
+
+   ยกเลิก = ยังไม่ได้ส่ง · ตีกลับ = ส่งไปแล้วของเดินทางกลับมา
+   ผลต่อสต๊อกเหมือนกัน แต่ในสายตาเจ้าของร้านคนละเรื่อง เพราะตีกลับคือ
+   เสียค่าส่งไปแล้วสองเที่ยว ถ้านับรวมกันจะไม่มีวันรู้ว่าเดือนนี้เสียไปกี่ใบ
+
+   ข้อสอบสำคัญเหมือนหมวดยกเลิก: ของกลับเข้าล็อตจริงไหม ไม่ใช่แค่คำในช่องสถานะ */
+console.log('\n50. ลูกค้าคืนของ / ของตีกลับ');
+
+var fx50 = FS.build({
+  lots: [
+    { sku: 'CHEM-001', lotNo: 'R-A', exp: '2026-10-01', recv: '2026-08-01', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'R-B', exp: '2027-03-01', recv: '2026-08-01', qty: 10 }
+  ]
+});
+var api50 = FS.load(fx50, {});
+api50.setup();
+var hd50 = fx50.sheets['ออเดอร์_หัวบิล'];
+var it50 = fx50.sheets['ออเดอร์_รายการ'];
+var ct50 = fx50.sheets['ตัดล็อต'];
+var lt50 = fx50.sheets['ล็อตสินค้า'];
+
+truthy2('setup เพิ่มสถานะ "ตีกลับ" ลงชุดตัวเลือกให้แล้ว', (function () {
+  var cfg = fx50.sheets['ตั้งค่า'];
+  for (var r = DATA_ROW + 1; r <= DATA_ROW + 20; r++) {
+    if (String(cfg.cell(r, 7).v || '').trim() === 'ตีกลับ') return true;
+  }
+  return false;
+})());
+
+function lotLeft50(lotNo) {
+  var rows = rowsWith(lt50, 2);
+  for (var i = 0; i < rows.length; i++) {
+    if (lt50.cell(rows[i], 4).v === lotNo) return lt50.cell(rows[i], 9).v;
+  }
+  return null;
+}
+function headRow50(no) {
+  return rowsWith(hd50, 1).filter(function (r) { return hd50.cell(r, 1).v === no })[0] || 0;
+}
+function itemsOf50(no) {
+  return rowsWith(it50, 2).filter(function (r) { return it50.cell(r, 2).v === no });
+}
+
+console.log('\n   คืนบางส่วน — ยอดเหลือเท่าที่ลูกค้าเก็บไว้ ของที่คืนกลับเข้าล็อต');
+var o50 = api50.createOrder(order({
+  cust: 'คุณคืนของ บางส่วน', ship: 50, discount: 0,
+  items: [{ sku: 'CHEM-001', qty: 6, price: 1200 }]
+}));
+eq('ขายไปก่อน ตัดล็อตที่หมดอายุก่อน 6 ชิ้น', lotLeft50('R-A'), 4);
+
+var r50 = api50.returnOrder({
+  no: o50.no, why: 'ลูกค้าไม่รับของ ที่อยู่ผิด', by: 'น้องเอ', clientKey: 'rt-1',
+  lines: [{ sku: 'CHEM-001', qty: 2 }]
+});
+eq('บอกว่าคืนอะไรไปบ้าง', r50.returned, ['CHEM-001 x2']);
+eq('บอกจำนวนรวมที่คืน', r50.qtyBack, 2);
+eq('ไม่ใช่การคืนทั้งใบ', r50.whole, false);
+eq('ของที่คืนกลับเข้าล็อตจริง เหลือตัดอยู่ 4', lotLeft50('R-A'), 6);
+eq('บรรทัดสินค้าเหลือจำนวนที่ลูกค้าเก็บไว้', (function () {
+  var rows = itemsOf50(o50.no);
+  return rows.length === 1 ? it50.cell(rows[0], 7).v : rows.length;
+})(), 4);
+
+var row50 = headRow50(o50.no);
+truthy2('หมายเหตุบอกว่าตีกลับอะไรไป',
+  String(hd50.cell(row50, SH_HEAD_NOTE).v || '').indexOf('[ตีกลับบางส่วน: CHEM-001 x2') > -1);
+truthy2('เหตุผลติดอยู่ในหมายเหตุด้วย',
+  String(hd50.cell(row50, SH_HEAD_NOTE).v || '').indexOf('ที่อยู่ผิด') > -1);
+truthy2('สถานะยังไม่ตาย เพราะลูกค้ายังเก็บของที่เหลือไว้',
+  ['ยกเลิก', 'ตีกลับ'].indexOf(String(hd50.cell(row50, SH_HEAD_STATUS).v || '').trim()) < 0);
+eq('ค่าส่งถูกล้าง เพราะของเดินทางกลับมาแล้ว', hd50.cell(row50, 12).v, 0);
+truthy2('ลง Log ว่าตีกลับบางส่วน พร้อมของที่คืน', (function () {
+  var log = fx50.sheets['Log'];
+  var rows = rowsWith(log, 2);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(log.cell(rows[i], 4).v || '') === 'ตีกลับบางส่วน' &&
+        String(log.cell(rows[i], 10).v || '').indexOf('CHEM-001 x2') > -1) return true;
+  }
+  return false;
+})());
+
+console.log('\n   กดซ้ำด้วยกุญแจเดิม ต้องไม่คืนของสองรอบ');
+var again50 = api50.returnOrder({
+  no: o50.no, why: 'ลูกค้าไม่รับของ ที่อยู่ผิด', by: 'น้องเอ', clientKey: 'rt-1',
+  lines: [{ sku: 'CHEM-001', qty: 2 }]
+});
+truthy2('บอกว่าเป็นงานเดิม', !!again50.duplicate);
+eq('ล็อตไม่ขยับเพิ่มอีก', lotLeft50('R-A'), 6);
+
+console.log('\n   คืนหมดทั้งใบ — ยอดเป็นศูนย์ สถานะกลายเป็นตีกลับ');
+var o50b = api50.createOrder(order({
+  cust: 'คุณตีกลับ ทั้งใบ', ship: 50, discount: 0,
+  items: [{ sku: 'CHEM-001', qty: 3, price: 1200 }]
+}));
+var beforeB = lotLeft50('R-A');
+var r50b = api50.returnOrder({
+  no: o50b.no, why: 'เก็บเงินปลายทางไม่ได้ ลูกค้าไม่รับสาย', by: 'น้องบี', clientKey: 'rt-2'
+});
+truthy2('รู้ว่าเป็นการคืนทั้งใบ', r50b.whole);
+eq('เดินทางเดียวกับยกเลิก แต่ใช้คำว่าตีกลับ', r50b.kind, 'ตีกลับ');
+eq('ของกลับเข้าล็อตครบทุกชิ้น', lotLeft50('R-A'), beforeB + 3);
+eq('รายการสินค้าของใบนี้ถูกรื้อออกหมด', itemsOf50(o50b.no).length, 0);
+eq('แถวตัดล็อตของใบนี้ถูกรื้อออกหมด',
+  rowsWith(ct50, 2).filter(function (r) { return ct50.cell(r, 2).v === o50b.no }).length, 0);
+
+var row50b = headRow50(o50b.no);
+eq('สถานะในชีทเป็น "ตีกลับ" ไม่ใช่ "ยกเลิก"',
+  String(hd50.cell(row50b, SH_HEAD_STATUS).v || '').trim(), 'ตีกลับ');
+truthy2('หมายเหตุขึ้นคำว่าตีกลับ ไม่ใช่ยกเลิก',
+  String(hd50.cell(row50b, SH_HEAD_NOTE).v || '').indexOf('[ตีกลับ:') > -1);
+eq('ยอดสุทธิเป็นศูนย์', hd50.cell(row50b, SH_HEAD_NET).v, 0);
+eq('หัวบิลไม่ถูกลบทิ้ง ชื่อลูกค้ายังอยู่ให้ย้อนดู',
+  hd50.cell(row50b, SH_HEAD_CUST).v, 'คุณตีกลับ ทั้งใบ');
+truthy2('Log ใช้คำว่าตีกลับออเดอร์ ไม่ใช่ยกเลิกออเดอร์', (function () {
+  var log = fx50.sheets['Log'];
+  var rows = rowsWith(log, 2);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(log.cell(rows[i], 4).v || '') === 'ตีกลับออเดอร์' &&
+        String(log.cell(rows[i], 6).v || '') === o50b.no) return true;
+  }
+  return false;
+})());
+
+console.log('\n   ใบที่ตีกลับไปแล้ว ต้องแตะต่อไม่ได้');
+throws('คืนซ้ำใบเดิม', function () {
+  api50.returnOrder({ no: o50b.no, why: 'ลองคืนซ้ำดูว่าจะยอมไหม', clientKey: 'rt-3' });
+}, 'ขึ้นสถานะ ตีกลับ ไปแล้ว');
+throws('แก้รายการใบที่ตีกลับแล้ว', function () {
+  api50.editOrderItems(o50b.no, [{ sku: 'CHEM-001', qty: 1, price: 10 }], 'บี', 'rt-4');
+}, 'ขึ้นสถานะ ตีกลับ ไปแล้ว');
+throws('ยกเลิกใบที่ตีกลับแล้ว', function () {
+  api50.cancelOrder(o50b.no, 'ลองยกเลิกซ้ำดู', 'บี', 'rt-5');
+}, 'ขึ้นสถานะ ตีกลับ ไปแล้ว');
+
+console.log('\n   กรอกผิดต้องถูกปฏิเสธ ไม่ใช่ทำให้สต๊อกบวกลม');
+var o50c = api50.createOrder(order({
+  cust: 'คุณกรอกผิด ทดสอบ', ship: 0, discount: 0,
+  items: [{ sku: 'CHEM-001', qty: 2, price: 1200 }]
+}));
+var keep50 = lotLeft50('R-A');
+throws('คืนมากกว่าที่ขายไป', function () {
+  api50.returnOrder({ no: o50c.no, why: 'ลูกค้าคืนของเยอะกว่าที่ซื้อ',
+    lines: [{ sku: 'CHEM-001', qty: 5 }] });
+}, 'คืนกลับมา 5 ชิ้นไม่ได้');
+throws('คืนสินค้าที่ไม่ได้อยู่ในใบ', function () {
+  api50.returnOrder({ no: o50c.no, why: 'ลูกค้าคืนของที่ไม่ได้ซื้อจากใบนี้',
+    lines: [{ sku: 'SKU-141', qty: 1 }] });
+}, 'ไม่มีสินค้า SKU-141');
+throws('ไม่บอกเหตุผล', function () {
+  api50.returnOrder({ no: o50c.no, why: 'สั้น', lines: [{ sku: 'CHEM-001', qty: 1 }] });
+}, 'อย่างน้อย 5 ตัวอักษร');
+throws('เลือกจำนวนเป็นศูนย์ทุกบรรทัด', function () {
+  api50.returnOrder({ no: o50c.no, why: 'ลูกค้าโทรมาแต่ยังไม่ส่งกลับ',
+    lines: [{ sku: 'CHEM-001', qty: 0 }] });
+}, 'ยังไม่ได้เลือก');
+throws('จำนวนคืนเป็นเศษ', function () {
+  api50.returnOrder({ no: o50c.no, why: 'ลูกค้าคืนครึ่งชิ้น',
+    lines: [{ sku: 'CHEM-001', qty: 1.5 }] });
+}, 'จำนวนเต็ม');
+throws('ไม่มีออเดอร์นี้', function () {
+  api50.returnOrder({ no: 'AST-26-9999', why: 'ลองใบที่ไม่มีอยู่จริง' });
+}, 'ไม่พบออเดอร์');
+throws('ไม่บอกว่าใบไหน', function () {
+  api50.returnOrder({ why: 'ลืมใส่เลขออเดอร์มา' });
+}, 'ไม่ได้บอกว่าจะคืนของออเดอร์ไหน');
+eq('กรอกผิดทุกรอบแล้วล็อตต้องไม่ขยับเลย', lotLeft50('R-A'), keep50);
+eq('รายการสินค้าของใบนั้นยังอยู่ครบ', itemsOf50(o50c.no).length, 1);
+
+console.log('\n   คนนอกบริษัทคืนของแทนไม่ได้');
+throws('บัญชีนอกบริษัท', function () {
+  FS.load(fx50, { email: 'someone@gmail.com', canOpen: false })
+    .returnOrder({ no: o50c.no, why: 'ลองคืนของจากบัญชีนอกบริษัท' });
+});
+
+console.log('\n   ยอดขายรายวันต้องไม่นับใบที่ตีกลับ');
+var day50 = api50.getDayReport(order().date, 7);
+eq('ใบที่ตีกลับไม่เข้ายอดของวัน',
+  day50.trend[6].net,
+  day50.orders.filter(function (o) {
+    return ['ยกเลิก', 'ตีกลับ'].indexOf(String(o.status).trim()) < 0;
+  }).reduce(function (a, o) { return a + Number(o.net || 0) }, 0));
+truthy2('แต่ยังส่งใบที่ตีกลับกลับไปให้หน้าจอเห็นว่ามีอยู่',
+  day50.orders.filter(function (o) { return String(o.status).trim() === 'ตีกลับ' }).length > 0);
+
+var over50 = [];
+for (var nm50 in fx50.sheets) over50 = over50.concat(fx50.sheets[nm50].overwrittenFormulas);
+eq('ตลอดหมวดนี้ไม่มีช่องสูตรถูกเขียนทับ', over50, []);
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

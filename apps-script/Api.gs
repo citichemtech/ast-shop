@@ -453,7 +453,7 @@ function getDayReport(iso, days) {
   for (var j = 0; j < all.length; j++) {
     var o = all[j];
     if (o.date === day) orders.push(o);
-    if (String(o.status || '').trim() === 'ยกเลิก') continue;
+    if (isDeadStatus_(o.status)) continue;
     var t = byDate[o.date];
     if (t) { t.n++; t.net += Number(o.net) || 0; t.profit += Number(o.profit) || 0; }
   }
@@ -1479,8 +1479,9 @@ function editOrderItems(no, items, by, clientKey, opts) {
 
     var head = findOrder_(want);
     if (!head) throw new Error('ไม่พบออเดอร์ ' + want);
-    if (String(head.status || '').trim() === 'ยกเลิก') {
-      throw new Error('ออเดอร์ ' + want + ' ถูกยกเลิกไปแล้ว แก้รายการไม่ได้');
+    if (isDeadStatus_(head.status)) {
+      throw new Error('ออเดอร์ ' + want + ' ขึ้นสถานะ ' + String(head.status).trim() +
+        ' ไปแล้ว แก้รายการไม่ได้');
     }
 
     /* ใบที่ออกไปแล้วมีสองกรณี และตัดสินใจแทนเจ้าของร้านไม่ได้
@@ -1659,14 +1660,150 @@ function snapText_(snaps, fields, sep) {
  * ยกเลิกออเดอร์ที่ออกใบกำกับภาษี/ใบเสร็จไปแล้วไม่ได้ ต้องยกเลิกใบเดิมก่อน
  * ใบที่ลูกค้าถืออยู่กับของที่ส่งจริงต้องตรงกันเสมอ
  */
-function cancelOrder(no, why, by, clientKey) {
+/**
+ * ลูกค้าคืนของ / ของตีกลับ
+ *
+ * ต่างจาก "ยกเลิก" ตรงที่ของออกจากร้านไปแล้วจริง แล้วเดินทางกลับมา
+ * ในสายตาสต๊อกสองอย่างนี้เหมือนกัน (ของกลับขึ้นชั้น) แต่ในสายตาเจ้าของร้าน
+ * ไม่เหมือนกันเลย — ยกเลิกคือยังไม่ได้ส่ง ตีกลับคือเสียค่าส่งไปแล้วและของอาจบุบ
+ * จึงต้องแยกคำในหมายเหตุกับ Log ให้ย้อนอ่านได้ว่าเดือนนี้ตีกลับกี่ใบ เพราะอะไร
+ *
+ * คืนครบทุกชิ้น  → เดินทางเดียวกับยกเลิกทั้งใบ ยอดเป็นศูนย์ สถานะ "ตีกลับ"
+ * คืนบางส่วน     → ลดจำนวนบรรทัดนั้นแล้ววางแผนใบใหม่ ยอดเหลือเท่าที่ลูกค้าเก็บไว้
+ *
+ * ทั้งสองทางใช้ธุรกรรมเดิมที่พิสูจน์แล้วว่าถอยกลับได้ทั้งก้อน ไม่ได้เขียนขึ้นใหม่
+ */
+function returnOrder(p) {
+  requireStaff_();
+  p = p || {};
+  var want = String(p.no || '').trim();
+  if (!want) throw new Error('ไม่ได้บอกว่าจะคืนของออเดอร์ไหน');
+
+  var why = String(p.why || '').trim();
+  if (why.length < 5) {
+    throw new Error('ต้องบอกเหตุผลที่ของตีกลับอย่างน้อย 5 ตัวอักษร — ' +
+      'สิ้นเดือนย้อนมาดูจะได้รู้ว่าตีกลับเพราะที่อยู่ผิด ลูกค้าไม่รับ หรือของเสียหาย');
+  }
+
+  var head = findOrder_(want);
+  if (!head) throw new Error('ไม่พบออเดอร์ ' + want);
+  if (isDeadStatus_(head.status)) {
+    throw new Error('ออเดอร์ ' + want + ' ขึ้นสถานะ ' + String(head.status).trim() +
+      ' ไปแล้ว — ของคืนเข้าสต๊อกไปเรียบร้อยแล้ว ไม่ต้องคืนซ้ำ');
+  }
+
+  var sold = (head.items || []).filter(function (it) { return it.sku && Number(it.qty) > 0 });
+  if (!sold.length) throw new Error('ออเดอร์ ' + want + ' ไม่มีรายการสินค้าให้คืน');
+
+  /* จำนวนที่คืนส่งมาเป็น {sku: จำนวน} — ไม่ส่งมาเลยแปลว่าคืนทั้งใบ
+     ตีความให้ชัดตรงนี้ที่เดียว หน้าจอจะได้ไม่ต้องเดาเอง */
+  var askAll = !p.lines || !p.lines.length;
+  var byS = {};
+  if (!askAll) {
+    for (var i = 0; i < p.lines.length; i++) {
+      var ln = p.lines[i] || {};
+      var sk = String(ln.sku || '').trim();
+      var q = Number(ln.qty);
+      if (!sk) continue;
+      if (!(q > 0)) continue;
+      if (q !== Math.floor(q)) throw new Error('จำนวนที่คืนของ ' + sk + ' ต้องเป็นจำนวนเต็ม');
+      byS[sk] = (byS[sk] || 0) + q;
+    }
+    if (!Object.keys(byS).length) {
+      throw new Error('ยังไม่ได้เลือกว่าจะคืนสินค้าตัวไหนกี่ชิ้น');
+    }
+  }
+
+  /* สินค้าที่ไม่ได้อยู่ในใบนี้ ต้องบอกให้ตรงว่า "ใบนี้ไม่มีของตัวนั้น"
+     ถ้าปล่อยให้ไหลไปตกที่ข้อความ "ยังไม่ได้เลือกว่าจะคืนอะไร" คนกรอกจะงงว่าเลือกไปแล้วนี่ */
+  var sku2 = {};
+  for (var f0 = 0; f0 < sold.length; f0++) sku2[sold[f0].sku] = true;
+  for (var extra in byS) {
+    if (!sku2[extra]) {
+      throw new Error('ออเดอร์ ' + want + ' ไม่มีสินค้า ' + extra + ' อยู่ในใบ — คืนไม่ได้');
+    }
+  }
+
+  /* คืนเกินกว่าที่ขายไปคือกรอกผิด ไม่ใช่ของที่มีอยู่จริง ถ้าปล่อยผ่านสต๊อกจะบวกลม */
+  var left = [], backTxt = [], nBack = 0;
+  for (var k = 0; k < sold.length; k++) {
+    var it = sold[k];
+    var qty = Number(it.qty) || 0;
+    var ret = askAll ? qty : (byS[it.sku] || 0);
+    if (ret > qty) {
+      throw new Error(it.sku + ' ขายไป ' + qty + ' ชิ้น คืนกลับมา ' + ret +
+        ' ชิ้นไม่ได้ — ถ้าลูกค้าคืนของที่ไม่ได้ซื้อจากใบนี้ ให้ลงที่ชีท ' +
+        SH.recv.name + ' เป็นคืนจากลูกค้าแทน');
+    }
+    if (ret > 0) { nBack += ret; backTxt.push(it.sku + ' x' + ret); }
+    if (qty - ret > 0) {
+      left.push({ sku: it.sku, qty: qty - ret, price: it.price });
+    }
+  }
+  if (!nBack) throw new Error('ยังไม่ได้เลือกว่าจะคืนสินค้าตัวไหนกี่ชิ้น');
+
+  var ck = String(p.clientKey || '').trim();
+  var by = String(p.by || '').trim();
+
+  /* คืนหมดทั้งใบ = ยอดต้องเป็นศูนย์ ซึ่งเป็นสิ่งที่ทางยกเลิกทำอยู่แล้วทุกขั้น
+     ตัววางแผนออเดอร์ไม่ยอมรับใบที่ไม่มีสินค้าเลย จึงต้องไปทางนั้น ไม่ใช่ทางแก้รายการ */
+  if (!left.length) {
+    var res = cancelOrder(want, why, by, ck ? 'rt-' + ck : '', 'ตีกลับ');
+    res.returned = backTxt;
+    res.qtyBack = nBack;
+    res.whole = true;
+    return jsonSafe_(res);
+  }
+
+  var out = editOrderItems(want, left, by, ck ? 'rt-' + ck : '', {
+    ship: 0,   /* ของกลับมาแล้ว ค่าส่งที่เก็บลูกค้าไม่ควรค้างอยู่ในใบที่เหลือ */
+    reviseDocs: !!p.reviseDocs
+  });
+  if (out && out.duplicate) return jsonSafe_(out);
+
+  /* หมายเหตุกับ Log เขียนหลังยอดในชีทถูกต้องแล้ว ไม่งั้นจะได้ร่องรอยของงานที่ล้มไปแล้ว */
+  var row = headRow_(want);
+  var hs = sheet_('head');
+  var note = String(hs.getRange(row, SH.head.IN.note).getValue() || '').trim();
+  var who = by || Session.getActiveUser().getEmail();
+  note = (note ? note + ' ' : '') + '[ตีกลับบางส่วน: ' + backTxt.join(', ') +
+    ' — ' + why + ' โดย ' + who + ' ' + stampTime_() + ']';
+  writeRow_('head', row, { note: note.slice(0, 900) });
+  SpreadsheetApp.flush();
+
+  writeLog_(who, 'ตีกลับบางส่วน', SH.head.name, want, 'รายการสินค้า',
+    sold.map(function (x) { return x.sku + ' x' + x.qty }).join(', '),
+    left.map(function (x) { return x.sku + ' x' + x.qty }).join(', '),
+    'ของที่คืนเข้าสต๊อก ' + backTxt.join(', ') + ' · เหตุผล ' + why);
+
+  out.returned = backTxt;
+  out.qtyBack = nBack;
+  out.whole = false;
+  return jsonSafe_(out);
+}
+
+/* สถานะที่แปลว่า "ใบนี้ไม่นับเป็นยอดขายแล้ว" — ของกลับเข้าสต๊อกไปแล้วทั้งสองแบบ
+     ยกเลิก  = ไม่ได้ส่งของ ลูกค้าเปลี่ยนใจก่อนแพ็ค
+     ตีกลับ  = ส่งไปแล้วแต่ของกลับมา (ที่อยู่ผิด · ลูกค้าไม่รับ · เก็บเงินปลายทางไม่ได้)
+   สองอย่างนี้ต่างกันในสายตาเจ้าของร้าน แต่เหมือนกันหมดในสายตาสต๊อกและยอดขาย */
+var DEAD_STATUS = ['ยกเลิก', 'ตีกลับ'];
+
+function isDeadStatus_(s) {
+  return DEAD_STATUS.indexOf(String(s || '').trim()) > -1;
+}
+
+function cancelOrder(no, why, by, clientKey, kind) {
   var email = requireStaff_();
   var want = String(no || '').trim();
   if (!want) throw new Error('ไม่ได้บอกว่าจะยกเลิกออเดอร์ไหน');
 
+  /* ยกเลิก กับ ตีกลับ เดินทางเดียวกันทุกขั้น — ของคืนสต๊อก ยอดเป็นศูนย์
+     ต่างกันแค่คำที่เขียนลงชีทกับ Log ซึ่งเป็นคำที่เจ้าของร้านย้อนมาอ่านทีหลัง */
+  var what = String(kind || '').trim() === 'ตีกลับ' ? 'ตีกลับ' : 'ยกเลิก';
+
   var reason = String(why || '').trim();
   if (reason.length < 5) {
-    throw new Error('ต้องบอกเหตุผลที่ยกเลิกอย่างน้อย 5 ตัวอักษร — ' +
+    throw new Error('ต้องบอกเหตุผลที่' + what + 'อย่างน้อย 5 ตัวอักษร — ' +
       'เดือนหน้าย้อนมาดูจะได้รู้ว่าใบนี้หายไปเพราะอะไร');
   }
 
@@ -1692,16 +1829,17 @@ function cancelOrder(no, why, by, clientKey) {
       ship: hs.getRange(row, C.ship).getValue(),
       note: hs.getRange(row, C.note).getValue()
     };
-    if (String(back.status || '').trim() === 'ยกเลิก') {
-      throw new Error('ออเดอร์ ' + want + ' ถูกยกเลิกไปแล้ว — ของคืนเข้าสต๊อกไปเรียบร้อยแล้ว ' +
+    if (isDeadStatus_(back.status)) {
+      throw new Error('ออเดอร์ ' + want + ' ขึ้นสถานะ ' + String(back.status).trim() +
+        ' ไปแล้ว — ของคืนเข้าสต๊อกไปเรียบร้อยแล้ว ' +
         'ถ้าลูกค้ากลับมาสั่งใหม่ ให้คีย์เป็นใบใหม่');
     }
 
     var docs = liveDocsOf_(want);
     if (docs.length) {
       throw new Error('ออเดอร์ ' + want + ' ออกเอกสารไปแล้ว: ' + docs.join(', ') +
-        ' — ยกเลิกออเดอร์เฉย ๆ จะทำให้ใบที่ลูกค้าถืออยู่ไม่ตรงกับความจริง ' +
-        'ให้กดยกเลิกใบเดิมในหน้าเอกสารก่อน แล้วค่อยยกเลิกออเดอร์');
+        ' — ' + what + 'เฉย ๆ จะทำให้ใบที่ลูกค้าถืออยู่ไม่ตรงกับความจริง ' +
+        'ให้กดยกเลิกใบเดิมในหน้าเอกสารก่อน แล้วค่อย' + what);
     }
 
     var netBefore = Number(hs.getRange(row, SH.head.net).getValue() || 0);
@@ -1722,10 +1860,17 @@ function cancelOrder(no, why, by, clientKey) {
 
     var who = String(by || '').trim() || email;
     var note = String(back.note || '').trim();
-    note = (note ? note + ' ' : '') + '[ยกเลิก: ' + reason + ' โดย ' + who + ' ' + stampTime_() + ']';
+    note = (note ? note + ' ' : '') + '[' + what + ': ' + reason +
+      ' โดย ' + who + ' ' + stampTime_() + ']';
+
+    /* ชีทที่ยังไม่ได้เพิ่มสถานะ "ตีกลับ" ลงในตั้งค่า ต้องไม่ทำให้กดปุ่มแล้วล้มทั้งใบ
+       ตกลงมาใช้ "ยกเลิก" ซึ่งมีอยู่ทุกไฟล์ ผลต่อสต๊อกกับยอดขายเหมือนกันเป๊ะ
+       ส่วนคำว่าตีกลับยังอยู่ในหมายเหตุกับ Log ให้ย้อนอ่านได้เหมือนเดิม */
+    var stList = cfgLists_().status;
+    var stWant = (what === 'ตีกลับ' && stList.indexOf('ตีกลับ') < 0) ? 'ยกเลิก' : what;
 
     writeRow_('head', row, {
-      status: pickFrom_('ยกเลิก', cfgLists_().status, 'สถานะออเดอร์'),
+      status: pickFrom_(stWant, stList, 'สถานะออเดอร์'),
       discount: 0, ship: 0, note: note.slice(0, 900)
     });
     SpreadsheetApp.flush();
@@ -1735,13 +1880,13 @@ function cancelOrder(no, why, by, clientKey) {
     var subAfter = Number(hs.getRange(row, SH.head.subtotal).getValue() || 0);
     var netAfter = Number(hs.getRange(row, SH.head.net).getValue() || 0);
     if (Math.abs(subAfter) > 0.005 || Math.abs(netAfter) > 0.005) {
-      throw new Error('ยกเลิกแล้วแต่ยอดในชีทยังไม่เป็นศูนย์ (ยอดสินค้า ' + subAfter +
+      throw new Error(what + 'แล้วแต่ยอดในชีทยังไม่เป็นศูนย์ (ยอดสินค้า ' + subAfter +
         ' ยอดสุทธิ ' + netAfter + ') — ระบบคืนออเดอร์ใบนี้กลับเป็นเหมือนเดิมแล้ว');
     }
 
     if (ck) props.setProperty('xk_' + ck, want);
-    writeLog_(email, 'ยกเลิกออเดอร์', SH.head.name, want, 'สถานะ',
-      String(back.status || '') + ' ยอด ' + netBefore, 'ยกเลิก ยอด 0',
+    writeLog_(email, what + 'ออเดอร์', SH.head.name, want, 'สถานะ',
+      String(back.status || '') + ' ยอด ' + netBefore, what + ' ยอด 0',
       reason + ' · โดย ' + who + ' (บัญชี ' + email + ')' +
       ' · ลูกค้า ' + cust +
       ' · ของที่คืนเข้าสต๊อก ' + (hadItems.length ? hadItems.join(', ') : 'ไม่มีรายการ') +
@@ -1749,7 +1894,7 @@ function cancelOrder(no, why, by, clientKey) {
       ' · ส่วนลดเดิม ' + numOr0_(back.discount) + ' ค่าส่งเดิม ' + numOr0_(back.ship));
 
     return {
-      ok: true, no: want, cust: cust, netBefore: netBefore,
+      ok: true, no: want, kind: what, status: stWant, cust: cust, netBefore: netBefore,
       items: rows.item.length, cuts: rows.cut.length, recv: rows.recv.length,
       lots: backLots
     };

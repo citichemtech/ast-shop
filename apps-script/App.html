@@ -691,12 +691,15 @@ function chanTag(chan){
 
 function statusTag(s){
   if(s==="ส่งแล้ว") return "ok";
-  if(s==="ยกเลิก") return "bad";
+  if(s==="ยกเลิก"||s==="ตีกลับ") return "bad";
   if(s==="ชำระแล้ว"||s==="จัดของแล้ว") return "ok";
   return "wait";
 }
 
-function isDead(o){ return String((o&&o.status)||"").trim()==="ยกเลิก" }
+/* ยกเลิก = ยังไม่ได้ส่ง · ตีกลับ = ส่งไปแล้วของกลับมา — สองอย่างนี้ของคืนสต๊อกไปแล้วทั้งคู่
+   จึงไม่นับเป็นยอดขาย และไม่มีปุ่มอะไรให้กดต่อเหมือนกัน */
+var DEAD_STATUS = ["ยกเลิก", "ตีกลับ"];
+function isDead(o){ return DEAD_STATUS.indexOf(String((o&&o.status)||"").trim()) > -1 }
 
 function renderOrders(){
   if(!ORDERS) ORDERS = [];
@@ -716,7 +719,8 @@ function renderOrders(){
       +'</div><div class="acts">'
       /* ใบที่ยกเลิกแล้วไม่มีปุ่มอะไรให้กด — ของคืนสต๊อกไปแล้ว ยอดเป็นศูนย์แล้ว
          ถ้ายังพิมพ์ใบปะหน้าหรือออกเอกสารจากใบนี้ได้ วันหนึ่งจะมีคนส่งของตามใบที่ยกเลิก */
-      + (dead ? '<span class="hint" style="text-align:right">ยกเลิกแล้ว<br>ของคืนสต๊อกแล้ว</span>'
+      + (dead ? '<span class="hint" style="text-align:right">'
+          + esc(String(o.status||"ยกเลิก").trim()) + 'แล้ว<br>ของคืนสต๊อกแล้ว</span>'
         : '<button class="sq" data-lb="'+i+'" title="ใบปะหน้า">🖨</button>'
         +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
         +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
@@ -728,9 +732,126 @@ function renderOrders(){
         +'<button class="sq" data-ed="'+i+'" title="แก้รายการสินค้า / เพิ่มสินค้า">✏️</button>'
         /* ลูกค้าเปลี่ยนใจไม่รับของ เกิดขึ้นจริงทุกสัปดาห์ ก่อนหน้านี้ทำได้แค่
            เปลี่ยนสถานะเป็นยกเลิกด้วยมือในชีท ซึ่งของที่ตัดไปแล้วไม่เคยคืนกลับมา */
+        /* ของส่งออกไปแล้วแต่เดินทางกลับมา เป็นคนละเรื่องกับยกเลิกก่อนแพ็ค
+           แยกปุ่มเพราะสิ้นเดือนต้องตอบให้ได้ว่าเสียค่าส่งฟรีไปกี่ใบ เพราะอะไร */
+        +'<button class="sq" data-rt="'+i+'" title="ลูกค้าคืนของ / ของตีกลับ">↩️</button>'
         +'<button class="sq red" data-cx="'+i+'" title="ยกเลิกออเดอร์ คืนของเข้าสต๊อก">✖</button>')
       +'</div></div>';
   }).join("");
+}
+
+/* ------------------------------------------------ ลูกค้าคืนของ / ของตีกลับ
+
+   ยกเลิก = ยังไม่ได้ส่ง ลูกค้าเปลี่ยนใจก่อนแพ็ค
+   ตีกลับ = ส่งไปแล้วแต่ของเดินทางกลับมา (ที่อยู่ผิด · ไม่รับสาย · เก็บเงินปลายทางไม่ได้)
+
+   ผลต่อสต๊อกเหมือนกันเป๊ะ แต่คนละเรื่องกันสำหรับเจ้าของร้าน — ตีกลับคือเสียค่าส่ง
+   ไปแล้วสองเที่ยวและของอาจบุบ ถ้านับรวมกับยกเลิกจะไม่มีวันรู้ว่าเดือนนี้เสียไปกี่ใบ
+
+   คืนบางชิ้นก็ได้ เพราะลูกค้าสั่งสามตัวแล้วคืนตัวเดียวเป็นเรื่องปกติ            */
+
+var RT_WHY = ["ที่อยู่ผิด ส่งไม่ถึง", "ลูกค้าไม่รับสาย ติดต่อไม่ได้",
+              "เก็บเงินปลายทางไม่ได้", "ของเสียหายระหว่างส่ง", "ลูกค้าสั่งผิดรุ่น"];
+var RT_KEY = null;
+
+function openReturn(o){
+  RT_KEY = newKey();
+  var its = (o.items||[]).filter(function(it){ return Number(it.qty) > 0 });
+  if(!its.length){
+    openModal("ของตีกลับ — " + o.no,
+      '<div class="msg err" style="display:block">ใบนี้ไม่มีรายการสินค้าให้คืน</div>');
+    return;
+  }
+
+  openModal("ลูกค้าคืนของ / ของตีกลับ — " + o.no,
+     '<div class="hint" style="margin-bottom:10px">'
+    +'ใส่จำนวนที่<b>เดินทางกลับมาถึงร้านแล้ว</b> ของจะถูกคืนเข้าสต๊อกและล็อตทันที<br>'
+    +'คืนไม่ครบก็ได้ — ยอดของใบจะเหลือเท่าที่ลูกค้าเก็บไว้ · '
+    +'คืนครบทุกชิ้นจะกลายเป็นใบ <b>ตีกลับ</b> ยอดเป็น ฿0<br>'
+    +'<b>ค่าจัดส่งจะถูกล้าง</b> เพราะของไม่ได้อยู่กับลูกค้าแล้ว</div>'
+    +'<div class="sec-hd"><h2>คืนกี่ชิ้น</h2></div>'
+    + its.map(function(it,k){
+        return '<div class="fld" style="margin-bottom:8px">'
+          +'<label>'+esc(it.name||it.sku)+' <span class="hint" style="font-weight:400">· ขายไป '
+          + num_(it.qty) + ' ' + esc(it.unit||"ชิ้น") + '</span></label>'
+          +'<input type="number" inputmode="numeric" id="rt-q'+k+'" value="0" min="0" max="'
+          + Number(it.qty) + '" data-sku="'+esc(it.sku)+'" data-max="'+Number(it.qty)+'">'
+          +'</div>';
+      }).join("")
+    +'<button class="btn ghost" id="rt-all" style="margin-bottom:12px">คืนทั้งใบ '
+    +'(ใส่จำนวนเต็มให้ทุกบรรทัด)</button>'
+    +'<div class="chips" id="rt-quick">'
+    + RT_WHY.map(function(w){ return '<button type="button" data-w="'+esc(w)+'">'+esc(w)+'</button>' }).join("")
+    +'</div>'
+    +'<div class="fld"><label>ตีกลับเพราะอะไร</label>'
+    +'<input id="rt-why" placeholder="พิมพ์เอง หรือกดเลือกจากด้านบน"></div>'
+    +'<button class="btn" id="rt-go">บันทึกของตีกลับ</button>'
+    +'<div id="rt-msg" style="margin-top:10px"></div>');
+
+  $("#rt-all").onclick = function(){
+    its.forEach(function(it,k){ $("#rt-q"+k).value = Number(it.qty) });
+  };
+  $$("#rt-quick button").forEach(function(b){
+    b.onclick = function(){ $("#rt-why").value = b.getAttribute("data-w"); $("#rt-why").focus() };
+  });
+  $("#rt-go").onclick = function(){ rtSave(o, its, this) };
+}
+
+/** อ่านจำนวนที่คืนจากหน้าจอ — คืนทั้ง lines ที่จะส่งขึ้นชีท และสรุปให้คนอ่านก่อนกดยืนยัน */
+function rtRead(its){
+  var lines = [], back = 0, all = true, over = null;
+  its.forEach(function(it,k){
+    var el = $("#rt-q"+k);
+    var q = Math.floor(Number(el ? el.value : 0) || 0);
+    if(q < 0) q = 0;
+    if(q > Number(it.qty)) over = (it.name||it.sku);
+    if(q > 0){ lines.push({ sku: it.sku, qty: q }); back += q; }
+    if(q < Number(it.qty)) all = false;
+  });
+  return { lines: lines, back: back, all: all, over: over };
+}
+
+function rtSave(o, its, btn){
+  var r = rtRead(its);
+  var why = $("#rt-why").value.trim();
+  function err(m){
+    $("#rt-msg").innerHTML = '<div class="msg err" style="display:block">'+esc(m)+'</div>';
+  }
+  if(r.over) return err("คืน " + r.over + " มากกว่าที่ขายไปในใบนี้ไม่ได้");
+  if(!r.back) return err("ยังไม่ได้ใส่จำนวนที่คืน — ถ้าคืนทั้งใบ กดปุ่ม “คืนทั้งใบ” ได้เลย");
+  if(why.length < 5){
+    $("#rt-why").focus();
+    return err("ต้องบอกเหตุผลอย่างน้อย 5 ตัวอักษร — สิ้นเดือนย้อนมาดูจะได้รู้ว่าตีกลับเพราะอะไร");
+  }
+  if(!confirm((r.all ? "ตีกลับทั้งใบ " : "คืนของ " + r.back + " ชิ้นของใบ ") + o.no + " ?\n\n"
+    + "ของจะถูกคืนเข้าสต๊อกและล็อต\n"
+    + (r.all ? "ยอดของใบนี้จะเป็น ฿0\n" : "ยอดของใบจะเหลือเท่าที่ลูกค้าเก็บไว้\n")
+    + "ย้อนกลับไม่ได้")) return;
+
+  btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+  $("#rt-msg").innerHTML = "";
+  if(!RT_KEY) RT_KEY = newKey();
+  api("returnOrder", {
+    no: o.no, why: why, by: byName(),
+    clientKey: o.no + "-" + RT_KEY,
+    /* คืนครบทุกบรรทัด = ส่ง lines ว่างไป ฝั่งเซิร์ฟเวอร์จะได้เดินทางยกเลิกทั้งใบ
+       ซึ่งเป็นทางเดียวที่ทำให้ยอดเป็นศูนย์จริง (ใบที่ไม่มีสินค้าเลยบันทึกไม่ได้) */
+    lines: r.all ? [] : r.lines
+  }).then(function(res){
+    RT_KEY = newKey();
+    $("#rt-msg").innerHTML = '<div class="msg ok" style="display:block">'
+      + (res.whole ? 'ตีกลับทั้งใบ <b>' + esc(o.no) + '</b> แล้ว · ยอดเป็น ฿0'
+                   : 'คืนของใบ <b>' + esc(o.no) + '</b> แล้ว')
+      + (res.returned && res.returned.length
+          ? ' · ของที่คืนเข้าสต๊อก ' + esc(res.returned.join(" · ")) : '')
+      + '</div>';
+    btn.disabled = false; btn.textContent = "บันทึกแล้ว";
+    SUM_CACHE = null;
+    loadOrders(true);
+  }, function(e){
+    btn.disabled = false; btn.textContent = "บันทึกของตีกลับ";
+    err(e && e.message ? e.message : e);
+  });
 }
 
 /* -------------------------------------------------------- ยกเลิกทั้งออเดอร์
@@ -2443,7 +2564,7 @@ function drawDue(all){
 
   var due = (all||[]).filter(function(o){
     var st = String(o.status||"").trim();
-    return st !== "ชำระแล้ว" && st !== "ยกเลิก" && Number(o.net||0) > 0;
+    return st !== "ชำระแล้ว" && DEAD_STATUS.indexOf(st) < 0 && Number(o.net||0) > 0;
   });
   if(!due.length){
     box.innerHTML = '<div class="card"><div class="sum big" style="border:0;margin:0;padding:2px 0">'
@@ -2583,7 +2704,7 @@ function drawAlerts(){
 
 function drawSummary(all){
   var live = all.filter(function(o){
-    return o.status !== "ยกเลิก" && inRange_(o.date, SUM_RANGE);
+    return !isDead(o) && inRange_(o.date, SUM_RANGE);
   });
 
   if (!live.length){
@@ -3125,7 +3246,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
 
   $("#list").addEventListener("click", function(e){
-    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc],[data-ac],[data-ed],[data-cx]");
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc],[data-ac],[data-ed],[data-rt],[data-cx]");
     if(!b) return;
     if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
     else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
@@ -3133,6 +3254,7 @@ document.addEventListener("DOMContentLoaded", function(){
     else if(b.dataset.dc!==undefined) openDoc(ORDERS[+b.dataset.dc]);
     else if(b.dataset.ac!==undefined) openAcct(ORDERS[+b.dataset.ac]);
     else if(b.dataset.ed!==undefined) openEditItems(ORDERS[+b.dataset.ed]);
+    else if(b.dataset.rt!==undefined) openReturn(ORDERS[+b.dataset.rt]);
     else if(b.dataset.cx!==undefined) openCancel(ORDERS[+b.dataset.cx]);
   });
 

@@ -341,6 +341,58 @@ window.google = { script: { run: (function(){
         return { ok:true, no:o.no, cust:o.cust, netBefore:0, items:n, cuts:n, recv:0, lots:[] };
       });
     },
+    /* ลูกค้าคืนของ / ของตีกลับ — ของจริงคืนของเข้าล็อตแล้ววางแผนใบใหม่ */
+    returnOrder: function(p){
+      reply(function(){
+        p = p || {};
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === String(p.no||"") })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + p.no);
+        if(["ยกเลิก","ตีกลับ"].indexOf(String(o.status||"").trim()) > -1)
+          throw new Error("ออเดอร์ " + o.no + " ขึ้นสถานะ " + o.status + " ไปแล้ว");
+        if(String(p.why||"").trim().length < 5)
+          throw new Error("ต้องบอกเหตุผลที่ของตีกลับอย่างน้อย 5 ตัวอักษร");
+        var sold = (o.items||[]).filter(function(it){ return it.sku && Number(it.qty) > 0 });
+        if(!sold.length) throw new Error("ออเดอร์ " + o.no + " ไม่มีรายการสินค้าให้คืน");
+
+        var whole = !p.lines || !p.lines.length;
+        var byS = {};
+        (p.lines||[]).forEach(function(l){
+          if(l && l.sku && Number(l.qty) > 0) byS[l.sku] = (byS[l.sku]||0) + Number(l.qty);
+        });
+        for(var extra in byS){
+          if(!sold.filter(function(it){ return it.sku === extra }).length)
+            throw new Error("ออเดอร์ " + o.no + " ไม่มีสินค้า " + extra + " อยู่ในใบ — คืนไม่ได้");
+        }
+
+        var left = [], back = [], n = 0;
+        sold.forEach(function(it){
+          var q = Number(it.qty), ret = whole ? q : (byS[it.sku]||0);
+          if(ret > q) throw new Error(it.sku + " ขายไป " + q + " ชิ้น คืนกลับมา " + ret + " ชิ้นไม่ได้");
+          if(ret > 0){ back.push(it.sku + " x" + ret); n += ret }
+          if(q - ret > 0){
+            var c = JSON.parse(JSON.stringify(it));
+            c.qty = q - ret; c.total = c.qty * Number(c.price||0);
+            left.push(c);
+          }
+        });
+        if(!n) throw new Error("ยังไม่ได้เลือกว่าจะคืนสินค้าตัวไหนกี่ชิ้น");
+
+        o.items = left;
+        o.ship = 0;
+        o.subtotal = left.reduce(function(a,x){ return a + Number(x.total||0) }, 0);
+        o.net = o.subtotal + Number(o.vatAmt||0) - Number(o.discount||0);
+        if(!left.length){
+          o.subtotal = 0; o.vatAmt = 0; o.discount = 0; o.net = 0;
+          o.cost = 0; o.profit = 0; o.status = "ตีกลับ";
+          o.note = (o.note ? o.note + " " : "") + "[ตีกลับ: " + p.why + "]";
+        } else {
+          o.note = (o.note ? o.note + " " : "")
+            + "[ตีกลับบางส่วน: " + back.join(", ") + " — " + p.why + "]";
+        }
+        return { ok:true, no:o.no, whole:!left.length, kind:"ตีกลับ",
+                 returned:back, qtyBack:n, items:left.length };
+      });
+    },
     /* รายชื่อลูกค้าเก่า — ของจริงอ่านจากชีทหัวบิลกับชีทเอกสาร แล้วรวมชื่อซ้ำเป็นคนเดียว */
     getCustomers: function(limit){
       reply(function(){
