@@ -675,6 +675,20 @@ function runSearch(q, quiet){
   });
 }
 
+/* ช่องทางขายเป็นสีเทาเหมือนกันหมด ไล่หาใบของ Shopee ในลิสต์ยาว ๆ เลยตาลาย
+   Shopee เป็นช่องทางที่มาทีละหลายสิบใบพร้อมกันจากการนำเข้า ต้องแยกออกจากใบที่คีย์เอง
+   ได้ในแวบเดียว จึงติดโลโก้กับสีส้มประจำแบรนด์ให้ ช่องทางอื่นคงเดิมทุกอย่าง */
+var SHOPEE_ORANGE = "#ee4d2d";
+
+function chanTag(chan){
+  var c = String(chan || "").trim();
+  if (!c) return "-";
+  if (!/shopee|ช[้๊]อ?ปป?[ี้]/i.test(c)) return esc(c);
+  var ic = (typeof SHOPEE_ICON !== "undefined" && SHOPEE_ICON)
+    ? '<img src="' + SHOPEE_ICON + '" alt="" class="chan-ic">' : "";
+  return '<span class="chan-shopee">' + ic + esc(c) + '</span>';
+}
+
 function statusTag(s){
   if(s==="ส่งแล้ว") return "ok";
   if(s==="ยกเลิก") return "bad";
@@ -691,7 +705,7 @@ function renderOrders(){
     var dead = isDead(o);
     return '<div class="row"><div class="i">'
       +'<b>'+esc(o.cust||"ไม่ระบุชื่อ")+'</b>'
-      +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))+' · '+esc(o.channel||"-")
+      +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))+' · '+chanTag(o.channel)
       + (o.track?' · '+esc(o.track):'')+'</span><br>'
       +'<span style="color:var(--ink);font-weight:700">'+baht(o.net)+'</span> '
       +'<span class="tag '+statusTag(o.status)+'">'+esc(o.status||"-")+'</span>'
@@ -2771,7 +2785,7 @@ function drawDay(rep){
          return '<div class="row"><div class="i">'
            + '<b' + (dead ? ' style="text-decoration:line-through;color:var(--gray)"' : '') + '>'
            + esc(o.cust||"ไม่ระบุชื่อ") + '</b>'
-           + '<span>' + esc(o.no) + (o.channel ? ' · ' + esc(o.channel) : '') + '</span>'
+           + '<span>' + esc(o.no) + (o.channel ? ' · ' + chanTag(o.channel) : '') + '</span>'
            + '<span style="color:var(--ink);font-weight:700">' + baht(o.net) + '</span> '
            + '<span class="tag ' + statusTag(o.status) + '">' + esc(o.status||"-") + '</span>'
            + '</div></div>';

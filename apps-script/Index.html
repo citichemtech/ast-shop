@@ -125,6 +125,12 @@ textarea{resize:vertical}
 .tag.ok{background:#e6f5ec;color:var(--green)}
 .tag.wait{background:#fdf1e0;color:var(--amber)}
 .tag.bad{background:#fbe9e9;color:var(--red)}
+/* ช่องทางขาย Shopee — โลโก้เล็ก ๆ กับสีส้มประจำแบรนด์ ให้กวาดตาหาเจอในลิสต์ยาว ๆ
+   ไอคอนใช้ vertical-align กับ margin ให้นั่งพอดีกับบรรทัด ไม่ดันบรรทัดให้สูงขึ้น */
+/* ต้องเจาะจงกว่า ".row .i span" ที่ทาสีเทาไว้ทั้งบรรทัด ไม่งั้นสีส้มแพ้ */
+.chan-shopee,
+.row .i span.chan-shopee{color:#ee4d2d;font-weight:700;white-space:nowrap}
+.chan-ic{width:13px;height:13px;vertical-align:-2px;margin-right:3px;display:inline-block}
 
 .pv{border:1px solid var(--blue);border-radius:11px;padding:12px;margin:10px 0;background:#f7f9ff}
 .pv .r{display:flex;gap:8px;padding:5px 0;font-size:0.8rem;border-bottom:1px dashed #dfe4ee}

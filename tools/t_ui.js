@@ -1868,6 +1868,52 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ตัวเลขในข้อความตรงกับตัวเลขบนจอ ไม่ได้คิดคนละรอบ',
     dayCopy.indexOf(want34.net) > -1 && dayTxt.indexOf(want34.net) > -1);
 
+  /* ---------- 36. ช่องทางขาย Shopee ต้องเด่นออกมาจากใบที่คีย์เอง ---------- */
+  console.log('\n36. ช่องทางขาย Shopee — โลโก้ + สีส้ม');
+  var chanFn = await page.evaluate(function () {
+    return {
+      shopee:  chanTag('Shopee'),
+      thai:    chanTag('ช้อปปี้'),
+      lower:   chanTag('shopee'),
+      page:    chanTag('เพจ Facebook'),
+      shop:    chanTag('หน้าร้าน'),
+      blank:   chanTag(''),
+      inject:  chanTag('<img onerror=alert(1)>')
+    };
+  });
+  truthy('Shopee ได้คลาสสีส้ม', /chan-shopee/.test(chanFn.shopee));
+  truthy('Shopee ได้โลโก้ติดมาด้วย', /<img /.test(chanFn.shopee));
+  truthy('เขียนเป็นภาษาไทยว่า "ช้อปปี้" ก็จับได้', /chan-shopee/.test(chanFn.thai));
+  truthy('พิมพ์เล็กก็จับได้', /chan-shopee/.test(chanFn.lower));
+  eq('ช่องทางอื่นเขียนเหมือนเดิมทุกอย่าง', chanFn.page, 'เพจ Facebook');
+  eq('หน้าร้านก็เหมือนเดิม', chanFn.shop, 'หน้าร้าน');
+  eq('ไม่มีช่องทางขาย ขึ้นขีดเหมือนเดิม', chanFn.blank, '-');
+  /* ชื่อช่องทางมาจากชีท ซึ่งคนพิมพ์เองได้ ห้ามให้แท็กหลุดเข้าไปในหน้าเว็บ */
+  truthy('ชื่อช่องทางที่มีแท็ก html ต้องถูกกันไว้ ไม่หลุดเป็นแท็กจริง',
+    chanFn.inject.indexOf('&lt;img') > -1 && chanFn.inject.indexOf('<img onerror') < 0);
+
+  console.log('\n   ของจริงบนลิสต์ออเดอร์');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(400);
+  /* หมวดก่อนหน้าโหลดลิสต์ค้างไว้แล้ว ต้องล้างแล้วโหลดใหม่ ไม่งั้นได้ของเก่าที่ยังไม่มี Shopee */
+  await page.evaluate(function () {
+    MOCK_ORDERS[0].channel = 'Shopee';
+    MOCK_ORDERS[0].cust = 'ลูกค้า Shopee 260901UGWWV9E1';
+    ORDERS = []; SUM_CACHE = null;
+    loadOrders();
+  });
+  await page.waitForTimeout(700);
+  var chanSeen = await page.evaluate(function () {
+    var el = document.querySelector('#list .chan-shopee');
+    if (!el) return null;
+    var im = el.querySelector('img');
+    return { color: getComputedStyle(el).color, w: im ? Math.round(im.getBoundingClientRect().width) : 0 };
+  });
+  truthy('บนลิสต์จริงเป็นสีส้มของ Shopee ไม่ใช่สีเทาเหมือนช่องทางอื่น',
+    chanSeen && chanSeen.color === 'rgb(238, 77, 45)');
+  truthy('โลโก้ขึ้นจริงและมีขนาดพอดีบรรทัด ไม่ดันบรรทัดให้สูงขึ้น',
+    chanSeen && chanSeen.w > 8 && chanSeen.w < 20);
+
   /* ---------- 35. หน่วยที่ขึ้นต้นด้วยตัวเลข ---------- */
   console.log('\n35. จำนวนกับหน่วยต้องไม่อ่านติดกันเป็นเลขเดียว');
   var qu = await page.evaluate(function () {
