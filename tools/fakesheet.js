@@ -89,6 +89,7 @@ Range.prototype.getA1Notation = function () {
   return L(this.c) + this.r;
 };
 Range.prototype.getFormula = function () { return this.getFormulas()[0][0]; };
+Range.prototype.getDisplayValue = function () { return this.getDisplayValues()[0][0]; };
 Range.prototype.getFormulas = function () {
   var out = [];
   for (var i = 0; i < this.nr; i++) {

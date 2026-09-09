@@ -69,7 +69,11 @@ function checkSheets() {
     var sh = findSheet_(ss, names[i]);
     if (!sh) { out.push('✗ ไม่มีชีท ' + names[i]); bad++; continue; }
 
-    var size = names[i] + ' — ' + sh.getMaxRows() + ' แถว × ' + sh.getMaxColumns() + ' คอลัมน์';
+    /* แท็บที่สะกดต่างจากชื่อในโค้ดนิดเดียว โปรแกรมยังหาเจอ แต่สูตรในชีทหาไม่เจอ
+       เรื่องนี้ต้องขึ้นให้เห็นชัด ๆ เพราะมันคือสาเหตุที่ทำให้ช่องขึ้น #REF! โดยดูไม่ออก */
+    var real = sh.getName();
+    var size = names[i] + (real === names[i] ? '' : '  ⚠ ชื่อแท็บจริงคือ "' + real + '"') +
+      ' — ' + sh.getMaxRows() + ' แถว × ' + sh.getMaxColumns() + ' คอลัมน์';
     var rows = sh.getLastRow(), cols = sh.getLastColumn();
     if (rows < 1 || cols < 1) { out.push('· ' + size + ' (ยังไม่มีข้อมูล)'); continue; }
 
@@ -100,6 +104,88 @@ function checkSheets() {
   return msg;
 }
 
+/**
+ * ตรวจ + ซ่อมชีท ล็อตสินค้า ในการสั่งครั้งเดียว แล้วพิมพ์ออกมาว่าเจออะไร
+ *
+ * มีไว้เพราะ "สั่ง setup แล้วยังเหมือนเดิม" ไม่ได้บอกอะไรเลยว่าเหมือนเดิมตรงไหน
+ * ตัวนี้พิมพ์ของจริงที่อยู่ในช่องออกมาก่อนซ่อม แล้วซ่อม แล้วพิมพ์ผลหลังซ่อมให้ดู
+ * ในการรันครั้งเดียว — ถ้ายังไม่หาย ภาพหน้าจอของ Log จะบอกได้เองว่าติดตรงไหน
+ */
+function fixLotSheet() {
+  var ss = ss_();
+  var out = [];
+  var COLS = 'ABCDEFGHIJKLMNOP';
+
+  function dump(sh, rows, wide) {
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      for (var c = 1; c <= wide; c++) {
+        var cell = sh.getRange(r, c);
+        var f = cell.getFormula();
+        var v = String(cell.getDisplayValue());
+        if (!f && v === '') continue;
+        out.push('    ' + COLS.charAt(c - 1) + r + ' = ' + (v === '' ? '(ว่าง)' : v) +
+          (f ? '\n         สูตร: ' + f : ''));
+      }
+    }
+  }
+
+  var cut = findSheet_(ss, SH.cut.name);
+  var lot = findSheet_(ss, SH.lot.name);
+
+  out.push('===== ก่อนซ่อม =====');
+  if (!cut) {
+    out.push('  ✗ ไม่พบชีท ' + SH.cut.name + ' — นี่คือสาเหตุ');
+  } else {
+    out.push('  ชีท ' + SH.cut.name + ' : ' + cut.getMaxRows() + ' แถว × ' +
+      cut.getMaxColumns() + ' คอลัมน์');
+    out.push('    หัวตาราง: ' + cut.getRange(HEAD_ROW, 1, 1, cut.getMaxColumns())
+      .getDisplayValues()[0].join(' | '));
+  }
+
+  if (!lot) {
+    out.push('  ✗ ไม่พบชีท ' + SH.lot.name);
+  } else {
+    out.push('  ชีท ' + SH.lot.name + ' : ' + lot.getMaxRows() + ' แถว × ' +
+      lot.getMaxColumns() + ' คอลัมน์');
+    out.push('    หัวตาราง: ' + lot.getRange(HEAD_ROW, 1, 1, Math.min(16, lot.getMaxColumns()))
+      .getDisplayValues()[0].join(' | '));
+    /* แถว 3 คือช่องตรวจยอดบนหัวชีท · แถว 6 กับ 7 คือสองแถวข้อมูลแรก */
+    dump(lot, [3, DATA_ROW, DATA_ROW + 1], Math.min(16, lot.getMaxColumns()));
+  }
+
+  out.push('');
+  out.push('===== ซ่อม =====');
+  out.push('  ' + setupCutSheet_(ss));
+  out.push('  ' + setupLotSheet_(ss));
+  SpreadsheetApp.flush();
+
+  out.push('');
+  out.push('===== หลังซ่อม =====');
+  lot = findSheet_(ss, SH.lot.name);
+  dump(lot, [3, DATA_ROW, DATA_ROW + 1], Math.min(16, lot.getMaxColumns()));
+
+  /* คำตอบที่เจ้าของร้านอยากรู้จริง ๆ มีข้อเดียว: ตอนนี้ขายของที่คุมล็อตได้หรือยัง */
+  var bad = 0, rows = 0;
+  var last = Math.min(lot.getMaxRows(), LOT_LAST);
+  var vals = lot.getRange(DATA_ROW, 2, last - DATA_ROW + 1, 8).getDisplayValues();
+  for (var i = 0; i < vals.length; i++) {
+    if (!String(vals[i][0] || '').trim()) continue;   // B = SKU
+    rows++;
+    var remain = String(vals[i][7] || '');            // I = คงเหลือ
+    if (remain === '' || ERR_RE.test(remain) || isNaN(Number(remain.replace(/,/g, '')))) bad++;
+  }
+  out.push('');
+  out.push(bad
+    ? '✗ ยังเหลือ ' + bad + ' แถวจาก ' + rows + ' ที่ช่องคงเหลือไม่มีตัวเลข — ' +
+      'ส่งภาพ Log นี้มาให้ดูได้เลย บรรทัด "สูตร:" ข้างบนจะบอกว่าติดตรงไหน'
+    : '✓ ช่องคงเหลือมีตัวเลขครบทั้ง ' + rows + ' แถว — ระบบตัดล็อตใช้งานได้แล้ว');
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 /* ---------------------------------------------------------------- ล็อตสินค้า */
 
 /**
@@ -110,6 +196,24 @@ function checkSheets() {
  * ล็อตสินค้า คอลัมน์ "ตัดออกแล้ว" ขึ้น error ทุกแถว จนคอลัมน์ "คงเหลือ" ว่างหมด
  * ซึ่งแปลว่าระบบตัดล็อต FEFO ทำงานไม่ได้เลยทั้งชีท
  */
+/**
+ * ชื่อชีทที่จะเอาไปใส่ในสูตร — ต้องเป็นชื่อจริงของแท็บ ไม่ใช่ชื่อที่เขียนไว้ในโค้ด
+ *
+ * findSheet_ หาแท็บแบบไม่ถือสา — ช่องว่างหัวท้าย อักขระความกว้างศูนย์ และการสะกดต่าง
+ * เล็กน้อยอย่าง "สต๊อกคงเหลือ" กับ "สต๊อคคงเหลือ" ถือว่าเป็นชีทเดียวกัน
+ * แต่ "สูตรในชีท" ถือสาเป๊ะทุกตัวอักษร
+ *
+ * ถ้าเอาชื่อในโค้ดไปเขียนลงสูตรตรง ๆ สูตรจะชี้ไปที่แท็บที่ไม่มีอยู่จริง แล้วขึ้น #REF!
+ * ทั้งช่อง ทั้งที่โปรแกรมอ่านเขียนชีทนั้นได้ปกติดี — อาการที่เจอจริงคือช่องตรวจยอด
+ * บนหัวชีท ล็อตสินค้า ขึ้น #REF! ทั้งที่ checkSheets บอกว่าชีทสต๊อกไม่มีปัญหาอะไรเลย
+ */
+function sheetRef_(ss, name) {
+  var sh = findSheet_(ss, name);
+  var real = sh ? sh.getName() : name;
+  /* ชื่อชีทที่มีเครื่องหมายคำพูดเดี่ยวต้องคูณสอง ไม่งั้นสูตรขาดกลางคัน */
+  return "'" + String(real).replace(/'/g, "''") + "'";
+}
+
 function boundLast_(ss, name, want) {
   var s = findSheet_(ss, name);
   if (!s) return want;
@@ -134,10 +238,11 @@ function setupLotSheet_(ss) {
   s.getRange('H3').setValue('SKU ที่ยอดล็อตไม่ตรงกับสต๊อก').setFontColor(C_SUB_FG)
     .setHorizontalAlignment('right');
   var ST = boundLast_(ss, SH.stock.name, STOCK_LAST);
+  var SR = sheetRef_(ss, SH.stock.name);
   s.getRange('I3').setFormula(
-    '=SUMPRODUCT(--(COUNTIF($B$6:$B$' + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + ST + ')>0),' +
-    "--(ROUND(SUMIF($B$6:$B$" + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + ST +
-    ',$I$6:$I$' + LOT_LAST + "),3)<>ROUND('สต๊อกคงเหลือ'!$I$6:$I$" + ST + ',3)))'
+    '=SUMPRODUCT(--(COUNTIF($B$6:$B$' + LOT_LAST + ',' + SR + '!$B$6:$B$' + ST + ')>0),' +
+    '--(ROUND(SUMIF($B$6:$B$' + LOT_LAST + ',' + SR + '!$B$6:$B$' + ST +
+    ',$I$6:$I$' + LOT_LAST + '),3)<>ROUND(' + SR + '!$I$6:$I$' + ST + ',3)))'
   ).setFontWeight('bold');
   s.getRange('J3').setValue('← ถ้าไม่ใช่ 0 แปลว่ายอดล็อตกับยอดสต๊อกเริ่มเพี้ยน ต้องตรวจ')
     .setFontColor(C_SUB_FG);
@@ -154,13 +259,18 @@ function setupLotSheet_(ss) {
 
   fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
   fillFormula_(s, 3, n,
-    '=IF($B6="","",IFERROR(VLOOKUP($B6,\'ฐานสินค้า\'!$B$6:$D$200,3,FALSE),"ไม่พบ SKU"))');
-  /* ใช้ SUMIF ไม่ใช่ SUMIFS — SUMIFS บังคับว่าช่วงเงื่อนไขกับช่วงที่บวกต้องสูงเท่ากันเป๊ะ
-     ถ้าชีทปลายทางถูกหั่นแถวหรือคอลัมน์จนสองช่วงไม่เท่ากัน SUMIFS จะขึ้น #N/A ทั้งคอลัมน์
-     ส่วน SUMIF ยึดมุมซ้ายบนของช่วงที่บวกแล้วนับตามขนาดของช่วงเงื่อนไข จึงไม่พังเพราะเรื่องนี้
-     (ของจริง: ชีทใช้งานขึ้น #N/A ทุกแถว จนคอลัมน์คงเหลือว่างหมด ตัดล็อตไม่ได้ทั้งชีท) */
+    '=IF($B6="","",IFERROR(VLOOKUP($B6,' + sheetRef_(ss, SH.prod.name) +
+    '!$B$6:$D$200,3,FALSE),"ไม่พบ SKU"))');
+  /* อ้างทั้งคอลัมน์ ไม่ใส่เลขแถว — สองช่วงจึงสูงเท่ากันเสมอโดยไม่ต้องเชื่อว่าชีทปลายทาง
+     สูงเท่าไร ต่อให้มีคนไปลบแถวออก หรือชีทถูกสร้างมาคนละขนาด ก็ไม่มีทางเพี้ยน
+
+     ของจริงที่เจอ: คอลัมน์นี้ขึ้น #N/A ทุกแถวจนคอลัมน์คงเหลือว่างหมด ตัดล็อตไม่ได้ทั้งชีท
+     ทั้ง SUMIFS และ SUMIF แบบระบุแถวต่างก็ให้ #N/A เหมือนกัน เพราะช่วงที่อ้างไปไม่ถึง
+     ของจริงในชีทปลายทาง — แบบทั้งคอลัมน์ไม่มีทางอ้างพลาดแบบนั้น
+     (แถวหัวตารางไม่กวน เพราะกุญแจล็อตหน้าตาเป็น SKU|เลขล็อต ไม่มีทางไปตรงกับหัวตาราง) */
+  var CR = sheetRef_(ss, SH.cut.name);
   fillFormula_(s, 8, n,
-    '=IF($L6="","",SUMIF(\'' + SH.cut.name + '\'!$I$6:$I$' + C + ',$L6,\'' + SH.cut.name + '\'!$F$6:$F$' + C + '))');
+    '=IF($L6="","",SUMIF(' + CR + '!$I:$I,$L6,' + CR + '!$F:$F))');
   fillFormula_(s, 9, n, '=IF($B6="","",IFERROR($G6-$H6,""))');
   fillFormula_(s, 10, n,
     '=IF($B6="","",IF(NOT(ISNUMBER($I6)),"",IF($I6<=0,"หมดแล้ว",' +
@@ -1139,7 +1249,10 @@ function repairStockSheet() {
     col = Number(col);
     if (col > cols) continue;
     if (String(f[col - 1] || '').charAt(0) === '=') continue;
-    s.getRange(DATA_ROW, col).setFormula(STOCK_ROW6[col]);
+    /* สูตรต้นแบบเขียนชื่อ 'ฐานสินค้า' ไว้ตรง ๆ ถ้าแท็บจริงสะกดต่างไปนิดเดียว
+       สูตรที่เขียนลงไปจะกลายเป็น #REF! ทันที — ต้องสลับเป็นชื่อจริงก่อนเสมอ */
+    s.getRange(DATA_ROW, col).setFormula(
+      STOCK_ROW6[col].replace(/'ฐานสินค้า'/g, sheetRef_(ss_(), SH.prod.name)));
     fixed.push(s.getRange(DATA_ROW, col).getA1Notation());
   }
   if (fixed.length) {
@@ -1234,7 +1347,8 @@ function repairSummaryRange_() {
   var f = String(cell.getFormula() || '');
   var m = f.match(/COUNTA\('ฐานสินค้า'!\$B\$6:\$B\$(\d+)\)/);
   if (!m || Number(m[1]) >= STOCK_LAST) return '';
-  cell.setFormula("=COUNTA('ฐานสินค้า'!$B$6:$B$" + STOCK_LAST + ')');
+  cell.setFormula('=COUNTA(' + sheetRef_(ss_(), SH.prod.name) +
+    '!$B$6:$B$' + STOCK_LAST + ')');
   return ' · ขยายช่วงนับ SKU ในชีท สรุปยอดขาย จากแถว ' + m[1] + ' เป็น ' + STOCK_LAST;
 }
 
@@ -1512,10 +1626,11 @@ function setupItemLotColumn_(ss) {
   if (n < 1) throw new Error('ชีท ' + SH.item.name + ' ไม่มีสูตรในแถวข้อมูลเลย — ชีทอาจถูกแก้');
 
   var C = boundLast_(ss, SH.cut.name, CUT_LAST);
+  var CR2 = sheetRef_(ss, SH.cut.name);
   fillFormula_(s, col, n,
     '=IF($P6="","",IFERROR(TEXTJOIN(", ",TRUE,ARRAYFORMULA(' +
-    'IF(\'' + SH.cut.name + '\'!$H$6:$H$' + C + '=$P6,' +
-    '\'' + SH.cut.name + '\'!$E$6:$E$' + C + '&" x"&TEXT(\'' + SH.cut.name + '\'!$F$6:$F$' + C + ',"0"),""))),""))');
+    'IF(' + CR2 + '!$H$6:$H$' + C + '=$P6,' +
+    CR2 + '!$E$6:$E$' + C + '&" x"&TEXT(' + CR2 + '!$F$6:$F$' + C + ',"0"),""))),""))');
 
   s.getRange(DATA_ROW, col, n, 1).setBackground(C_CALC_BG);
   s.setColumnWidth(col, 200);
