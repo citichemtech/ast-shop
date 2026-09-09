@@ -30,8 +30,10 @@ var C_SUB_FG = '#555555';
 function setup() {
   var ss = ss_();
   var made = [];
-  made.push(setupLotSheet_(ss));
+  /* ตัดล็อต ต้องมีและต้องสูงครบก่อน เพราะสูตรคอลัมน์ "ตัดออกแล้ว" ของ ล็อตสินค้า
+     อ้างช่วงในชีทนี้ — อ้างเกินจำนวนแถวจริงเมื่อไร ทั้งคอลัมน์กลายเป็น error */
   made.push(setupCutSheet_(ss));
+  made.push(setupLotSheet_(ss));
   made.push(setupDocSheet_(ss));
   made.push(setupAppSheet_(ss));
   made.push(setupItemLotColumn_(ss));
@@ -46,7 +48,73 @@ function setup() {
   return msg;
 }
 
+/* ------------------------------------------------------- ตรวจสุขภาพของชีท */
+
+var ERR_RE = /^#(REF!|N\/A|VALUE!|DIV\/0!|NAME\?|NUM!|ERROR!)/;
+
+/**
+ * ตรวจว่าชีทไหนมีช่องที่ขึ้น error อยู่บ้าง — อ่านอย่างเดียว ไม่แก้ ไม่เขียนอะไรเลย
+ *
+ * ช่องสูตรที่พังไม่ได้ส่งเสียงร้อง มันแค่แสดง #N/A เงียบ ๆ อยู่ในคอลัมน์ที่ไม่มีใครดู
+ * แล้ววันหนึ่งระบบตัดล็อตก็ทำงานไม่ได้โดยไม่มีใครรู้ว่าเริ่มพังตั้งแต่เมื่อไร
+ * สั่งฟังก์ชันนี้แล้วดูใน Log จะได้รู้ทันทีว่าพังตรงไหนและสูตรในช่องนั้นเขียนว่าอะไร
+ */
+function checkSheets() {
+  var ss = ss_();
+  var names = [SH.lot.name, SH.cut.name, SH.stock.name, SH.prod.name,
+               SH.head.name, SH.item.name, SH.recv.name];
+  var out = [], bad = 0;
+
+  for (var i = 0; i < names.length; i++) {
+    var sh = findSheet_(ss, names[i]);
+    if (!sh) { out.push('✗ ไม่มีชีท ' + names[i]); bad++; continue; }
+
+    var size = names[i] + ' — ' + sh.getMaxRows() + ' แถว × ' + sh.getMaxColumns() + ' คอลัมน์';
+    var rows = sh.getLastRow(), cols = sh.getLastColumn();
+    if (rows < 1 || cols < 1) { out.push('· ' + size + ' (ยังไม่มีข้อมูล)'); continue; }
+
+    var dv = sh.getRange(1, 1, rows, cols).getDisplayValues();
+    var hits = [];
+    for (var r = 0; r < dv.length; r++) {
+      for (var c = 0; c < dv[r].length; c++) {
+        if (ERR_RE.test(String(dv[r][c] || ''))) hits.push([r + 1, c + 1, dv[r][c]]);
+      }
+    }
+    if (!hits.length) { out.push('✓ ' + size); continue; }
+
+    bad++;
+    var lines = ['✗ ' + size + ' — เจอ ' + hits.length + ' ช่องที่ขึ้น error'];
+    /* พอเห็นสามช่องแรกก็รู้แล้วว่าคอลัมน์ไหนพัง ไม่ต้องพ่นมาทั้งพันแถว */
+    for (var k = 0; k < Math.min(3, hits.length); k++) {
+      var cell = sh.getRange(hits[k][0], hits[k][1]);
+      lines.push('     ' + cell.getA1Notation() + ' = ' + hits[k][2] +
+        '   สูตร: ' + (cell.getFormula() || '(ไม่มีสูตร เป็นค่านิ่ง)'));
+    }
+    if (hits.length > 3) lines.push('     และอีก ' + (hits.length - 3) + ' ช่อง');
+    out.push(lines.join('\n'));
+  }
+
+  var msg = (bad ? 'เจอปัญหา ' + bad + ' ชีท — สั่ง setup อีกครั้งเพื่อเขียนสูตรใหม่'
+                 : 'ทุกชีทปกติดี ไม่มีช่องไหนขึ้น error') + '\n\n' + out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 /* ---------------------------------------------------------------- ล็อตสินค้า */
+
+/**
+ * ขอบล่างของช่วงที่อ้างข้ามชีท — ต้องไม่เกินจำนวนแถวจริงของชีทนั้น
+ *
+ * สูตรที่อ้างเลยขอบชีทปลายทางไปแม้แถวเดียว Google จะให้ทั้งช่องเป็น #REF!
+ * แล้วช่องอื่นที่อ้างต่อจากช่องนั้นพังตามไปทั้งแถบ — ของจริงที่เจอคือ
+ * ล็อตสินค้า คอลัมน์ "ตัดออกแล้ว" ขึ้น error ทุกแถว จนคอลัมน์ "คงเหลือ" ว่างหมด
+ * ซึ่งแปลว่าระบบตัดล็อต FEFO ทำงานไม่ได้เลยทั้งชีท
+ */
+function boundLast_(ss, name, want) {
+  var s = findSheet_(ss, name);
+  if (!s) return want;
+  return Math.max(DATA_ROW, Math.min(want, s.getMaxRows()));
+}
 
 function setupLotSheet_(ss) {
   var name = SH.lot.name;
@@ -65,10 +133,11 @@ function setupLotSheet_(ss) {
 
   s.getRange('H3').setValue('SKU ที่ยอดล็อตไม่ตรงกับสต๊อก').setFontColor(C_SUB_FG)
     .setHorizontalAlignment('right');
+  var ST = boundLast_(ss, SH.stock.name, STOCK_LAST);
   s.getRange('I3').setFormula(
-    '=SUMPRODUCT(--(COUNTIF($B$6:$B$' + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + STOCK_LAST + ')>0),' +
-    "--(ROUND(SUMIF($B$6:$B$" + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + STOCK_LAST +
-    ',$I$6:$I$' + LOT_LAST + "),3)<>ROUND('สต๊อกคงเหลือ'!$I$6:$I$" + STOCK_LAST + ',3)))'
+    '=SUMPRODUCT(--(COUNTIF($B$6:$B$' + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + ST + ')>0),' +
+    "--(ROUND(SUMIF($B$6:$B$" + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + ST +
+    ',$I$6:$I$' + LOT_LAST + "),3)<>ROUND('สต๊อกคงเหลือ'!$I$6:$I$" + ST + ',3)))'
   ).setFontWeight('bold');
   s.getRange('J3').setValue('← ถ้าไม่ใช่ 0 แปลว่ายอดล็อตกับยอดสต๊อกเริ่มเพี้ยน ต้องตรวจ')
     .setFontColor(C_SUB_FG);
@@ -81,7 +150,7 @@ function setupLotSheet_(ss) {
     .setVerticalAlignment('middle').setWrap(true);
 
   var n = LOT_LAST - DATA_ROW + 1;
-  var L = LOT_LAST, C = CUT_LAST;
+  var L = LOT_LAST, C = boundLast_(ss, SH.cut.name, CUT_LAST);
 
   fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
   fillFormula_(s, 3, n,
@@ -1435,7 +1504,7 @@ function setupItemLotColumn_(ss) {
   var n = last - DATA_ROW + 1;
   if (n < 1) throw new Error('ชีท ' + SH.item.name + ' ไม่มีสูตรในแถวข้อมูลเลย — ชีทอาจถูกแก้');
 
-  var C = CUT_LAST;
+  var C = boundLast_(ss, SH.cut.name, CUT_LAST);
   fillFormula_(s, col, n,
     '=IF($P6="","",IFERROR(TEXTJOIN(", ",TRUE,ARRAYFORMULA(' +
     'IF(\'' + SH.cut.name + '\'!$H$6:$H$' + C + '=$P6,' +

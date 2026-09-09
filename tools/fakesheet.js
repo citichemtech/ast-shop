@@ -77,6 +77,18 @@ Range.prototype.getValues = function () {
   return out;
 };
 Range.prototype.getValue = function () { return this.getValues()[0][0]; };
+/* ชีทจำลองไม่ได้คิดสูตรจริง ค่าที่เห็นจึงคือค่าที่เก็บไว้ตรง ๆ
+   ข้อสอบที่ต้องการ error จึงวางสตริง "#REF!" ลงช่องเอง ซึ่งตรงกับที่ตาคนเห็นในชีทจริง */
+Range.prototype.getDisplayValues = function () {
+  return this.getValues().map(function (row) {
+    return row.map(function (v) { return v === null || v === undefined ? '' : String(v) });
+  });
+};
+Range.prototype.getA1Notation = function () {
+  function L(n) { var s2 = ''; while (n > 0) { var m = (n - 1) % 26; s2 = String.fromCharCode(65 + m) + s2; n = (n - 1 - m) / 26; } return s2 }
+  return L(this.c) + this.r;
+};
+Range.prototype.getFormula = function () { return this.getFormulas()[0][0]; };
 Range.prototype.getFormulas = function () {
   var out = [];
   for (var i = 0; i < this.nr; i++) {
