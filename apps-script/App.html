@@ -72,7 +72,7 @@ function boot(){
   $("#btn-paste-open").onclick = function(){
     var b = $("#paste-box"), open = b.style.display === "";
     b.style.display = open ? "none" : "";
-    this.textContent = open ? "วางที่อยู่จากแชท" : "ซ่อนช่องวางข้อความ";
+    this.textContent = open ? "วางข้อมูล" : "ซ่อนช่อง";
     if (!open) $("#paste").focus();
   };
   /* โลโก้บนหัวจอ ใส่ก่อนโหลดชีทเลย จะได้ไม่วูบตอนเปิด

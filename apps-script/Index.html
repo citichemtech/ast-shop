@@ -27,11 +27,15 @@ body{margin:0;background:var(--bg);color:var(--ink);
   font:1rem/1.55 -apple-system,"Segoe UI",Roboto,"Noto Sans Thai","Prompt",sans-serif;
   padding-bottom:76px}
 
-/* ปุ่มปรับขนาดตัวอักษรบนแถบหัว */
-.fsz{margin-left:auto;display:flex;gap:6px;flex:none}
-.fsz button{width:38px;height:38px;border:1px solid rgba(255,255,255,.55);border-radius:9px;
-  background:rgba(255,255,255,.14);color:#fff;font-weight:700;font-size:0.85rem;padding:0;line-height:1}
-.fsz button:active{background:rgba(255,255,255,.3)}
+/* ปุ่มมุมขวาบน — มีคำกำกับใต้ปุ่ม เพราะ "?" กับ "ก−" ลำพังเดาหน้าที่ไม่ออก
+   คำกำกับวาดด้วย ::after จาก data-cap จึงไม่ต้องเพิ่ม element ให้ HTML รก */
+.fsz{margin-left:auto;display:flex;gap:7px;flex:none;align-items:flex-start}
+.fsz button{position:relative;width:40px;height:40px;border:1px solid rgba(255,255,255,.5);
+  border-radius:11px;background:rgba(255,255,255,.16);color:#fff;font-weight:800;
+  font-size:0.9rem;padding:0;line-height:1;display:block}
+.fsz button::after{content:attr(data-cap);position:absolute;left:50%;top:calc(100% + 3px);
+  transform:translateX(-50%);font-size:0.6rem;font-weight:400;opacity:.85;white-space:nowrap}
+.fsz button:active{background:rgba(255,255,255,.32)}
 h1,h2,h3{margin:0}
 button{font:inherit;cursor:pointer}
 input,select,textarea{font:inherit;width:100%;padding:13px 14px;border:1px solid var(--line);
@@ -39,19 +43,32 @@ input,select,textarea{font:inherit;width:100%;padding:13px 14px;border:1px solid
 input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
 textarea{resize:vertical}
 
-/* หัวเรื่อง — ทรงเดียวกับแอปเดิม: แถบน้ำเงินมุมล่างมน โลโก้กลมบนพื้นขาว */
-.top{background:var(--blue);color:#fff;padding:16px 18px 20px;border-radius:0 0 24px 24px;
-  display:flex;align-items:center;gap:12px}
-.top .logo{width:58px;height:58px;border-radius:50%;background:#fff;flex:none;overflow:hidden;
+/* หัวจอ — ไล่สีน้ำเงินกับแถบแสงเฉียง ให้ดูเป็นแอปของร้าน ไม่ใช่หน้าเว็บเปล่า ๆ
+   แถบแสงวาดด้วย gradient ไม่ใช่ไฟล์รูป จึงคมทุกความละเอียดจอและไม่กินที่เพิ่มเลย */
+.top{position:relative;overflow:hidden;color:#fff;padding:15px 16px 18px;
+  border-radius:0 0 26px 26px;display:flex;align-items:flex-start;gap:12px;
+  background:linear-gradient(115deg,#0b3fa8 0%,var(--blue) 45%,#1d63e6 78%,#0e49bd 100%)}
+.top::after{content:"";position:absolute;top:-40%;right:-6%;width:56%;height:190%;
+  background:linear-gradient(100deg,rgba(255,255,255,0) 38%,rgba(255,255,255,.15) 50%,
+    rgba(255,255,255,0) 57%,rgba(255,255,255,.09) 68%,rgba(255,255,255,0) 75%);
+  transform:rotate(9deg);pointer-events:none}
+.top>*{position:relative;z-index:1}
+.top .logo{width:62px;height:62px;border-radius:50%;background:#fff;flex:none;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
-  font-weight:700;color:var(--blue);font-size:0.82rem;box-shadow:0 2px 8px rgba(0,0,0,.16)}
+  font-weight:700;color:var(--blue);font-size:0.82rem;
+  box-shadow:0 0 0 3px rgba(255,255,255,.32),0 2px 10px rgba(0,0,0,.22)}
 .top .logo img{width:100%;height:100%;object-fit:cover}
-.top .ttl{min-width:0}
+.top .ttl{min-width:0;flex:1}
 /* ชื่อร้านมาจากชีท ยาวสั้นไม่แน่นอน — ปล่อยให้ตกบรรทัดได้ ห้ามตัดท้ายด้วยจุดสามจุด
    ชื่อร้านที่อ่านไม่ครบแย่กว่าหัวจอสูงขึ้นหนึ่งบรรทัด */
-.top b{display:block;font-size:1.1rem;font-weight:800;line-height:1.22;letter-spacing:-.012em}
-.top .who{display:block;margin-top:3px;font-size:0.8rem;opacity:.9;
+.top b{display:block;font-size:1.12rem;font-weight:800;line-height:1.2;letter-spacing:-.012em;
+  text-transform:uppercase}
+/* คำโปรยใต้ชื่อร้าน — เขียนไว้ในหน้าเว็บ ไม่ได้ดึงจากชีท เพราะเป็นคำของแบรนด์
+   ไม่ใช่ข้อมูลที่เปลี่ยนตามการใช้งาน */
+.top .tag-en{display:block;font-size:0.76rem;font-style:italic;opacity:.85;margin-top:1px}
+.top .who{display:block;margin-top:5px;font-size:0.8rem;opacity:.92;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top .who::before{content:"✉ ";opacity:.85}
 
 .wrap{padding:14px;max-width:720px;margin:0 auto}
 /* จอกว้าง (จอพับ แท็บเล็ต คอมออฟฟิศ) ใช้พื้นที่เต็ม ไม่เหลือขอบว่างสองข้าง */
@@ -59,7 +76,10 @@ textarea{resize:vertical}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
 .fld{margin-bottom:13px}
 .fld label{display:block;font-size:0.82rem;color:var(--gray);margin-bottom:5px;font-weight:600}
+/* สองช่องเรียงข้างกัน — พอป้ายเป็นสองภาษาพร้อมไอคอน ช่องละครึ่งจอแคบเกินไป
+   ชื่อป้ายจะตกบรรทัดจนสองช่องสูงไม่เท่ากันและอ่านยาก บนมือถือจึงเรียงลงมาแทน */
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:430px){ .two{grid-template-columns:1fr;gap:0} }
 .hint{font-size:0.8rem;color:var(--gray);margin-top:5px;line-height:1.5}
 .subhd{font-size:0.85rem;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
 /* หัวข้อย่อยในกล่อง — ใช้ในหน้ารับของ นำเข้า Shopee และช่องลายเซ็น */
@@ -91,6 +111,40 @@ textarea{resize:vertical}
   border-radius:999px;background:linear-gradient(180deg,#f2fbfd,#e8f4f8);
   color:var(--gray);font-size:1rem;font-weight:600;letter-spacing:.01em}
 .pastebtn:active{background:#dceaf0}
+
+/* แบนเนอร์หัวงาน — ไอคอนกลม · ชื่องานภาษาไทย · คำอธิบายบรรทัดเล็ก · ปุ่มลงมือทางขวา
+   ใช้ซ้ำได้ทั้งช่องวางที่อยู่จากแชทและหน้านำเข้า Shopee จะได้เป็นภาษาเดียวกันทั้งแอป */
+.banner{display:flex;align-items:center;gap:12px;padding:11px 12px;margin-bottom:12px;
+  border:1.5px solid #bcd6f5;border-radius:999px;
+  background:linear-gradient(100deg,#eaf3ff 0%,#dceaff 55%,#e9f1ff 100%);
+  box-shadow:0 2px 10px rgba(21,73,180,.10)}
+.banner .bn-ic{flex:none;width:46px;height:46px;border-radius:50%;background:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:1.35rem;
+  box-shadow:0 1px 5px rgba(21,73,180,.18)}
+.banner .bn-ic img{width:26px;height:26px;object-fit:contain}
+.banner .bn-tx{flex:1;min-width:0}
+.banner .bn-tx b{display:block;font-size:0.98rem;font-weight:800;color:#123a7a;line-height:1.25}
+.banner .bn-tx em{display:block;font-style:normal;font-size:0.74rem;color:#5a7196;
+  margin-top:2px;line-height:1.35}
+.banner .bn-go{flex:none;border:0;border-radius:999px;padding:11px 16px;color:#fff;
+  font-weight:800;font-size:0.86rem;background:linear-gradient(180deg,#2f7bf0,#1550c8);
+  box-shadow:0 2px 8px rgba(21,73,180,.35)}
+.banner .bn-go:active{background:#1246ad}
+@media (max-width:400px){
+  .banner{border-radius:20px;flex-wrap:wrap}
+  .banner .bn-go{width:100%;order:3}
+}
+
+/* ป้ายช่องกรอกสองภาษาพร้อมไอคอนกลม — ไทยตัวหนา อังกฤษบรรทัดเล็กใต้ลงมา
+   ป้ายไหนไม่ได้ใส่ data-en ก็ยังขึ้นไทยอย่างเดียวเหมือนเดิม ไม่ต้องแก้ทุกช่องพร้อมกัน */
+.fld label[data-en]{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+.fld label[data-en] .li{flex:none;width:34px;height:34px;border-radius:50%;background:#eaf1fd;
+  display:flex;align-items:center;justify-content:center;font-size:0.95rem}
+.fld label[data-en] .lt{min-width:0}
+.fld label[data-en] .lt b{display:block;font-size:0.9rem;color:var(--ink);font-weight:800}
+.fld label[data-en]::after{content:none}
+.fld label[data-en] .lt em{display:block;font-style:normal;font-size:0.72rem;color:var(--gray);
+  font-weight:500;margin-top:1px}
 
 .it{border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:9px;background:#fbfcfd}
 .it .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -151,10 +205,18 @@ textarea{resize:vertical}
 
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:var(--card);
   border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1;min-width:0;border:0;background:none;padding:9px 2px 11px;font-size:0.78rem;
-  color:var(--gray);display:flex;flex-direction:column;align-items:center;gap:3px;
-  line-height:1.25;text-align:center}
-.tabs button.on{color:var(--blue);font-weight:700}
+/* ปุ่มมีเส้นคั่นระหว่างกัน กวาดตาแล้วเห็นว่าเป็นหกช่องแยกกัน ไม่ใช่ข้อความยาวพืด
+   ปุ่มที่ยืนอยู่มีขีดสั้น ๆ ใต้ปุ่ม บอกตำแหน่งได้แม้มองแวบเดียว */
+.tabs button{position:relative;flex:1;min-width:0;border:0;background:none;padding:8px 2px 9px;
+  font-size:0.76rem;color:var(--gray);display:flex;flex-direction:column;align-items:center;
+  gap:2px;line-height:1.2;text-align:center}
+.tabs button+button::before{content:"";position:absolute;left:0;top:9px;bottom:9px;
+  width:1px;background:var(--line)}
+.tabs button b{font-weight:700;display:block}
+.tabs button em{font-style:normal;font-size:0.62rem;opacity:.75;display:block}
+.tabs button.on{color:var(--blue)}
+.tabs button.on::after{content:"";position:absolute;left:50%;transform:translateX(-50%);
+  bottom:2px;width:26px;height:3px;border-radius:99px;background:var(--blue)}
 /* ไอคอนเป็นรูปจริง ความสูงผูกกับขนาดตัวอักษร ปุ่ม ก+ ก− จึงขยายไอคอนตามไปด้วย
    ปุ่มที่เลือกอยู่ให้ไอคอนเข้มเต็มที่ ปุ่มอื่นหรี่ลงหน่อยเพื่อให้รู้ว่ายืนอยู่หน้าไหน */
 /* กำหนดความสูง ปล่อยความกว้างให้เต็มช่อง — ไอคอนแต่ละอันสัดส่วนไม่เท่ากัน
@@ -167,8 +229,19 @@ textarea{resize:vertical}
    หกปุ่มบนจอมือถือจึงตกสองบรรทัดแน่นอน ย่อตัวอักษรกับระยะบรรทัดลงให้แถบไม่สูงจน
    กินที่อ่านข้อมูล แต่พื้นที่ที่นิ้วกดยังเต็มความกว้างของปุ่มเหมือนเดิม */
 @media (max-width:460px){
-  .tabs button{font-size:0.68rem;padding:7px 1px 9px;letter-spacing:-.02em;line-height:1.2}
-  .tabs button img{height:1.45em}
+  .tabs button{font-size:0.66rem;padding:6px 1px 9px;letter-spacing:-.02em}
+  .tabs button em{font-size:0.56rem}
+  .tabs button img{height:1.5em}
+}
+/* ชื่อร้านกับคำโปรยบนจอแคบ ย่อลงหน่อยจะได้ไม่ตกสามบรรทัด */
+@media (max-width:430px){
+  .top{padding:13px 13px 16px;gap:10px}
+  .top .logo{width:54px;height:54px}
+  .top b{font-size:0.98rem}
+  /* คำโปรยเป็นคำของแบรนด์ ไม่ใช่ข้อมูล ตกบรรทัดแล้วดันหัวจอสูงโดยไม่ได้อะไรเพิ่ม */
+  .top .tag-en{font-size:0.66rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .top .who{font-size:0.74rem}
+  .fsz button{width:36px;height:36px;font-size:0.82rem}
 }
 
 .modal{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.42);display:none;align-items:flex-end}
@@ -308,12 +381,13 @@ textarea{resize:vertical}
   <div class="logo" id="logo">STOCK</div>
   <div class="ttl">
     <b id="brand">AST Chem-Tooling</b>
+    <span class="tag-en">Tools for a Better Tomorrow</span>
     <span class="who" id="who"></span>
   </div>
   <div class="fsz">
-    <button id="fs-help" title="คู่มือใช้งาน" aria-label="คู่มือใช้งาน">?</button>
-    <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง">ก−</button>
-    <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น">ก+</button>
+    <button id="fs-help" title="คู่มือใช้งาน" aria-label="คู่มือใช้งาน" data-cap="ช่วยเหลือ">?</button>
+    <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง" data-cap="ย่อ">ก−</button>
+    <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น" data-cap="ขยาย">ก+</button>
   </div>
 </div>
 
@@ -329,7 +403,12 @@ textarea{resize:vertical}
       <!-- ออเดอร์จากเพจ แอดมินเป็นคนสรุปเอง ไม่ได้อ่านจากข้อความลูกค้า
            กล่องนี้จึงย่อเก็บไว้ เปิดใช้เฉพาะตอนลูกค้าวางที่อยู่มาเป็นก้อน -->
       <div class="card" id="paste-card">
-        <button class="pastebtn" id="btn-paste-open">วางที่อยู่จากแชท</button>
+        <div class="banner">
+          <span class="bn-ic">🧾</span>
+          <span class="bn-tx"><b>วางที่อยู่จากแชท</b>
+            <em>วางที่อยู่ลูกค้าจากแชท Shopee / Lazada / Line ได้ที่นี่…</em></span>
+          <button class="bn-go" id="btn-paste-open">วางข้อมูล</button>
+        </div>
 
         <!-- เคยมีปุ่มขอเอกสารสามอันตรงนี้ (ใบกำกับภาษี · บิลเงินสด · ใบเสนอราคา) เอาออกแล้ว
              ใบกำกับภาษีกับบิลเงินสดออกก่อนบันทึกออเดอร์ไม่ได้อยู่ดี เพราะต้องอ้างเลขออเดอร์
@@ -348,19 +427,19 @@ textarea{resize:vertical}
 
       <div class="card">
         <div class="fld">
-          <label>ผู้คีย์ออเดอร์</label>
+          <label data-en="1"><span class="li">👤</span><span class="lt"><b>ผู้คีย์ออเดอร์</b><em>Order by</em></span></label>
           <select id="f-by"></select>
           <input id="f-by-new" placeholder="พิมพ์ชื่อคนคีย์" style="margin-top:8px;display:none">
           <div class="hint">ไม่มีชื่อในรายการ เลือก “✎ พิมพ์ชื่อเอง” แล้วพิมพ์ได้เลย · เครื่องนี้จะจำไว้ให้</div>
         </div>
         <div class="two">
-          <div class="fld"><label>วันที่</label><input id="f-date" type="date"></div>
-          <div class="fld"><label>ช่องทางขาย</label><select id="f-channel"></select></div>
+          <div class="fld"><label data-en="1"><span class="li">📅</span><span class="lt"><b>วันที่</b><em>Order Date</em></span></label><input id="f-date" type="date"></div>
+          <div class="fld"><label data-en="1"><span class="li">🏪</span><span class="lt"><b>ช่องทางขาย</b><em>Sales Channel</em></span></label><select id="f-channel"></select></div>
         </div>
-        <div class="fld"><label>ชื่อลูกค้า</label><input id="f-cust" placeholder="ชื่อผู้รับ" autocomplete="off">
+        <div class="fld"><label data-en="1"><span class="li">👥</span><span class="lt"><b>ชื่อลูกค้า</b><em>Customer Name</em></span></label><input id="f-cust" placeholder="ชื่อผู้รับ" autocomplete="off">
           <div id="f-cust-hit" class="thhit"></div>
           <div class="hint">พิมพ์ชื่อลูกค้าเก่า แล้วกดเลือก ระบบจะเติมเบอร์กับที่อยู่ครั้งล่าสุดให้</div></div>
-        <div class="fld"><label>เบอร์โทร</label><input id="f-tel" inputmode="tel"></div>
+        <div class="fld"><label data-en="1"><span class="li">📞</span><span class="lt"><b>เบอร์โทร</b><em>Phone</em></span></label><input id="f-tel" inputmode="tel"></div>
         <div class="fld"><label>ที่อยู่จัดส่ง</label><textarea id="f-addr" rows="3"></textarea>
           <input id="f-addr-find" placeholder="พิมพ์ตำบล อำเภอ จังหวัด หรือรหัสไปรษณีย์ แล้วเลือก">
           <div id="f-addr-hit" class="thhit"></div></div>
@@ -557,9 +636,11 @@ textarea{resize:vertical}
        และงานนี้ทำวันละครั้ง ไม่ใช่ของที่ต้องกดถึงตลอดวันเหมือนอีกห้าอัน -->
   <section id="pg-shop" style="display:none">
     <div class="card">
-      <div class="sec-hd"><h2>
-        <img id="sp-ic" alt="" style="height:1.25em;vertical-align:-0.2em;margin-right:8px">
-        นำเข้าออเดอร์จาก Shopee</h2></div>
+      <div class="banner">
+        <span class="bn-ic"><img id="sp-ic" alt=""></span>
+        <span class="bn-tx"><b>วางตาราง Shopee ทั้งแผ่นตรงนี้</b>
+          <em>Shopee Order Plan &amp; Import · จัดการออเดอร์จาก Shopee จบในที่เดียว</em></span>
+      </div>
       <div class="msg err" id="sp-warn" style="display:none"></div>
       <div class="hint" style="padding:0 2px 10px">
         <b>ขั้นที่ 1</b> เปิด Shopee Seller Centre → <b>คำสั่งซื้อของฉัน</b> → <b>ส่งออก</b>
@@ -770,12 +851,12 @@ textarea{resize:vertical}
 </div>
 
 <div class="tabs">
-  <button data-go="new" class="on"><img alt="">คีย์ออเดอร์</button>
-  <button data-go="list"><img alt="">ออเดอร์ทั้งหมด</button>
-  <button data-go="recv"><img alt="">รับเข้าสินค้า</button>
-  <button data-go="quote"><img alt="">ใบเสนอราคา</button>
-  <button data-go="day"><img alt="">ปิดยอดวัน</button>
-  <button data-go="sum"><img alt="">สรุปยอด</button>
+  <button data-go="new" class="on"><img alt=""><b>คีย์ออเดอร์</b><em>New Order</em></button>
+  <button data-go="list"><img alt=""><b>ออเดอร์ทั้งหมด</b><em>All Orders</em></button>
+  <button data-go="recv"><img alt=""><b>รับเข้าสินค้า</b><em>Stock In</em></button>
+  <button data-go="quote"><img alt=""><b>ใบเสนอราคา</b><em>Quotation</em></button>
+  <button data-go="day"><img alt=""><b>ปิดยอดวัน</b><em>Daily Report</em></button>
+  <button data-go="sum"><img alt=""><b>สรุปยอด</b><em>Summary</em></button>
 </div>
 
 <div class="modal" id="modal"><div class="sheet">

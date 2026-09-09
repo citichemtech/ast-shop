@@ -2020,13 +2020,19 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(400);
   truthy('เอาปุ่มขอเอกสารสามอันบนหัวฟอร์มออกแล้ว',
     await page.evaluate(function () { return !$('#docbar') }));
-  truthy('ปุ่มวางที่อยู่จากแชทยังอยู่ และเต็มความกว้าง',
-    await page.evaluate(function () {
-      var b = $('#btn-paste-open'), card = $('#paste-card');
-      if (!b) return false;
-      var r = b.getBoundingClientRect(), c = card.getBoundingClientRect();
-      return r.width > c.width - 40;
-    }));
+  var bn38 = await page.evaluate(function () {
+    var bn = $('#paste-card .banner');
+    if (!bn) return null;
+    return { th: bn.querySelector('.bn-tx b').textContent,
+             en: bn.querySelector('.bn-tx em').textContent,
+             btn: !!bn.querySelector('#btn-paste-open'),
+             ic: !!bn.querySelector('.bn-ic') };
+  });
+  truthy('ช่องวางที่อยู่เป็นแบนเนอร์ — ไอคอน ชื่องาน คำอธิบาย และปุ่มลงมือ',
+    bn38 && bn38.ic && bn38.btn);
+  eq('ชื่องานบนแบนเนอร์', bn38 && bn38.th, 'วางที่อยู่จากแชท');
+  truthy('มีคำอธิบายบอกว่าวางอะไรได้บ้าง',
+    bn38 && /Shopee/.test(bn38.en) && /Line/.test(bn38.en));
   /* ปุ่มนี้เป็นปุ่มสลับเปิด/ปิด หมวดก่อนหน้าอาจเปิดค้างไว้ จึงเทียบก่อน-หลังแทนที่จะเดาสถานะ */
   var pasteBefore = await page.evaluate(function () { return $('#paste-box').style.display });
   await page.click('#btn-paste-open');
@@ -2042,7 +2048,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   var bar38 = await page.evaluate(function () {
     var bs = $$('.tabs button');
     return {
-      labels: bs.map(function (b) { return b.textContent.trim() }),
+      labels: bs.map(function (b) { return b.querySelector('b').textContent.trim() }),
+      en: bs.map(function (b) { return b.querySelector('em').textContent.trim() }),
       gos: bs.map(function (b) { return b.dataset.go }),
       imgs: bs.map(function (b) {
         var im = b.querySelector('img');
@@ -2054,8 +2061,10 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       h: Math.round($('.tabs').getBoundingClientRect().height)
     };
   });
-  eq('ชื่อปุ่มตรงตามที่เจ้าของร้านวางไว้', bar38.labels,
+  eq('ชื่อปุ่มภาษาไทยตรงตามที่เจ้าของร้านวางไว้', bar38.labels,
     ['คีย์ออเดอร์', 'ออเดอร์ทั้งหมด', 'รับเข้าสินค้า', 'ใบเสนอราคา', 'ปิดยอดวัน', 'สรุปยอด']);
+  eq('และมีชื่ออังกฤษบรรทัดเล็กใต้ลงมา', bar38.en,
+    ['New Order', 'All Orders', 'Stock In', 'Quotation', 'Daily Report', 'Summary']);
   eq('หน้าที่ของแต่ละปุ่มไม่ได้สลับกัน', bar38.gos,
     ['new', 'list', 'recv', 'quote', 'day', 'sum']);
   truthy('ทุกปุ่มมีรูปไอคอนจริง ไม่ใช่ตัวอักษรสัญลักษณ์',
