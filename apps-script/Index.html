@@ -42,12 +42,14 @@ textarea{resize:vertical}
 /* หัวเรื่อง — ทรงเดียวกับแอปเดิม: แถบน้ำเงินมุมล่างมน โลโก้กลมบนพื้นขาว */
 .top{background:var(--blue);color:#fff;padding:16px 18px 20px;border-radius:0 0 24px 24px;
   display:flex;align-items:center;gap:12px}
-.top .logo{width:52px;height:52px;border-radius:50%;background:#fff;flex:none;overflow:hidden;
+.top .logo{width:58px;height:58px;border-radius:50%;background:#fff;flex:none;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
   font-weight:700;color:var(--blue);font-size:0.82rem;box-shadow:0 2px 8px rgba(0,0,0,.16)}
 .top .logo img{width:100%;height:100%;object-fit:cover}
 .top .ttl{min-width:0}
-.top b{display:block;font-size:1.18rem;font-weight:700;line-height:1.2;letter-spacing:-.01em}
+/* ชื่อร้านมาจากชีท ยาวสั้นไม่แน่นอน — ปล่อยให้ตกบรรทัดได้ ห้ามตัดท้ายด้วยจุดสามจุด
+   ชื่อร้านที่อ่านไม่ครบแย่กว่าหัวจอสูงขึ้นหนึ่งบรรทัด */
+.top b{display:block;font-size:1.1rem;font-weight:800;line-height:1.22;letter-spacing:-.012em}
 .top .who{display:block;margin-top:3px;font-size:0.8rem;opacity:.9;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -71,11 +73,6 @@ textarea{resize:vertical}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .btn.green{background:#00B900}
 /* แถวปุ่มขอเอกสารบนหัวฟอร์ม — เรียงสามปุ่มเท่ากัน กดง่ายด้วยนิ้วหัวแม่มือ */
-.docbar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
-.docbar button{padding:11px 6px;border:1px solid var(--line);background:#fff;border-radius:10px;
-  font-size:0.8rem;font-weight:600;color:var(--ink);line-height:1.35}
-.docbar button:active{background:#eef3fa}
-@media (max-width:430px){ .docbar button{font-size:0.8rem;padding:10px 3px;letter-spacing:-.01em} }
 
 /* ติ๊กชื่อเอกสารที่จะให้ขึ้นเข้มบนหัวใบ — สองคอลัมน์ กดด้วยนิ้วหัวแม่มือได้ */
 .fchk{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
@@ -87,6 +84,13 @@ textarea{resize:vertical}
 
 .mini{padding:9px 14px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.85rem}
 .mini.red{color:var(--red);border-color:#f0c9c9}
+
+/* ปุ่มวางที่อยู่จากแชท — ปุ่มเดียวที่เหลือบนหัวฟอร์ม จึงให้เต็มความกว้างและกดง่าย
+   ลูกค้าวางที่อยู่มาเป็นก้อนแทบทุกใบ ปุ่มนี้คือทางลัดที่ใช้บ่อยที่สุดของหน้านี้ */
+.pastebtn{display:block;width:100%;padding:15px 14px;border:1.5px solid #2f4858;
+  border-radius:999px;background:linear-gradient(180deg,#f2fbfd,#e8f4f8);
+  color:var(--gray);font-size:1rem;font-weight:600;letter-spacing:.01em}
+.pastebtn:active{background:#dceaf0}
 
 .it{border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:9px;background:#fbfcfd}
 .it .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -147,15 +151,24 @@ textarea{resize:vertical}
 
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:var(--card);
   border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1;border:0;background:none;padding:11px 4px 13px;font-size:0.8rem;color:var(--gray);
-  display:flex;flex-direction:column;align-items:center;gap:3px}
+.tabs button{flex:1;min-width:0;border:0;background:none;padding:9px 2px 11px;font-size:0.78rem;
+  color:var(--gray);display:flex;flex-direction:column;align-items:center;gap:3px;
+  line-height:1.25;text-align:center}
 .tabs button.on{color:var(--blue);font-weight:700}
-.tabs button em{font-style:normal;font-size:1.12rem;line-height:1}
-/* หกปุ่มบนจอแคบ ชื่อปุ่มจะตกไปบรรทัดที่สาม แถบล่างสูงขึ้นจนกินที่อ่านข้อมูล
-   ย่อลงนิดเดียวพอให้กลับมาสองบรรทัดเท่าเดิม ขนาดปุ่มที่นิ้วกดยังเท่าเดิม */
-@media (max-width:380px){
-  .tabs button{font-size:0.72rem;padding:10px 2px 12px;letter-spacing:-.02em}
-  .tabs button em{font-size:1.05rem}
+/* ไอคอนเป็นรูปจริง ความสูงผูกกับขนาดตัวอักษร ปุ่ม ก+ ก− จึงขยายไอคอนตามไปด้วย
+   ปุ่มที่เลือกอยู่ให้ไอคอนเข้มเต็มที่ ปุ่มอื่นหรี่ลงหน่อยเพื่อให้รู้ว่ายืนอยู่หน้าไหน */
+/* กำหนดความสูง ปล่อยความกว้างให้เต็มช่อง — ไอคอนแต่ละอันสัดส่วนไม่เท่ากัน
+   ป้าย ORDER เป็นแนวนอนยาว ถ้าบังคับให้เป็นสี่เหลี่ยมจัตุรัสมันจะลีบจนเล็กกว่าเพื่อน
+   แบบนี้ทุกอันสูงเท่ากันและกว้างตามธรรมชาติของรูป */
+.tabs button img{height:1.6em;width:100%;object-fit:contain;display:block;
+  opacity:.55;transition:opacity .15s}
+.tabs button.on img{opacity:1}
+/* ชื่อปุ่มยาวขึ้นตามที่เจ้าของร้านตั้ง (ออเดอร์ทั้งหมด · รับเข้าสินค้า · ใบเสนอราคา)
+   หกปุ่มบนจอมือถือจึงตกสองบรรทัดแน่นอน ย่อตัวอักษรกับระยะบรรทัดลงให้แถบไม่สูงจน
+   กินที่อ่านข้อมูล แต่พื้นที่ที่นิ้วกดยังเต็มความกว้างของปุ่มเหมือนเดิม */
+@media (max-width:460px){
+  .tabs button{font-size:0.68rem;padding:7px 1px 9px;letter-spacing:-.02em;line-height:1.2}
+  .tabs button img{height:1.45em}
 }
 
 .modal{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.42);display:none;align-items:flex-end}
@@ -288,16 +301,13 @@ textarea{resize:vertical}
       <!-- ออเดอร์จากเพจ แอดมินเป็นคนสรุปเอง ไม่ได้อ่านจากข้อความลูกค้า
            กล่องนี้จึงย่อเก็บไว้ เปิดใช้เฉพาะตอนลูกค้าวางที่อยู่มาเป็นก้อน -->
       <div class="card" id="paste-card">
-        <button class="mini" id="btn-paste-open" style="width:100%">วางที่อยู่จากแชท</button>
+        <button class="pastebtn" id="btn-paste-open">วางที่อยู่จากแชท</button>
 
-        <!-- ปุ่มขอเอกสาร วางไว้บนหัวฟอร์มตามที่เจ้าของร้านขอ — กรอก · ส่ง · ปริ้น จบในหน้าเดียว
-             กดก่อนบันทึกได้ ระบบจะถามแล้วบันทึกออเดอร์ให้ก่อนค่อยออกใบ
-             เพราะใบกำกับภาษีต้องมีเลขออเดอร์และยอดที่ชีทคำนวณแล้วจริง ๆ -->
-        <div class="docbar" id="docbar">
-          <button type="button" data-doc="rec">🧾 ใบกำกับภาษี</button>
-          <button type="button" data-doc="inv">📄 บิลเงินสด</button>
-          <button type="button" data-doc="quote">◇ ใบเสนอราคา</button>
-        </div>
+        <!-- เคยมีปุ่มขอเอกสารสามอันตรงนี้ (ใบกำกับภาษี · บิลเงินสด · ใบเสนอราคา) เอาออกแล้ว
+             ใบกำกับภาษีกับบิลเงินสดออกก่อนบันทึกออเดอร์ไม่ได้อยู่ดี เพราะต้องอ้างเลขออเดอร์
+             และยอดที่ชีทคำนวณจริง กดแล้วระบบก็แค่ถามให้บันทึกก่อน จึงไม่ได้ช่วยให้เร็วขึ้น
+             ทางที่ใช้จริงคือปุ่ม 📄 ที่แถวออเดอร์ ซึ่งมีใบครบกว่า (รวมใบรับเงินมัดจำ)
+             ส่วนใบเสนอราคามีแท็บของตัวเองอยู่ที่แถบล่างแล้ว ปุ่มนี้แค่กระโดดไปที่เดิม -->
         <div id="paste-box" style="display:none;margin-top:10px">
           <div class="fld">
             <textarea id="paste" rows="4" placeholder="วางข้อความที่ลูกค้าส่งมา เช่น ชื่อ เบอร์ ที่อยู่"></textarea>
@@ -399,7 +409,7 @@ textarea{resize:vertical}
           ถ้ายังไม่แน่ใจว่าลูกค้าเอาแน่ ให้ออกใบเสนอราคาแทน (ไม่ตัดสต๊อก)</div>
       </div></details>
 
-      <details><summary>2. รับของเข้าสต๊อก (แท็บ 📥 รับของ)</summary><div class="bd">
+      <details><summary>2. รับของเข้าสต๊อก (แท็บ รับเข้าสินค้า)</summary><div class="bd">
         เลือกสินค้า → ใส่จำนวนกับต้นทุน → ถ้าเป็นของที่คุมล็อต ต้องใส่เลขล็อตกับวันหมดอายุด้วย
         → กดบันทึก
         <div class="warn"><b>ของที่คุมล็อตต้องมีเลขล็อตเสมอ</b>
@@ -430,7 +440,7 @@ textarea{resize:vertical}
         <ol>
           <li>Seller Centre → คำสั่งซื้อของฉัน → <b>ส่งออก</b> แล้วเปิดไฟล์ด้วย Excel</li>
           <li><b>Ctrl+A</b> แล้ว <b>Ctrl+C</b> (ต้องคลุมแถวหัวตารางมาด้วย)</li>
-          <li>แท็บ <b>ออเดอร์</b> → 📦 นำเข้าออเดอร์จาก Shopee → วาง → อ่านข้อมูล</li>
+          <li>แท็บ <b>ออเดอร์ทั้งหมด</b> → 📦 นำเข้าออเดอร์จาก Shopee → วาง → อ่านข้อมูล</li>
           <li>ตรวจทีละใบแล้วกดนำเข้า</li>
         </ol>
         เอาเข้ามาแค่ <b>ชื่อ · สินค้า · จำนวน · ราคาขาย · สถานะ</b> เพราะงานเดียวที่ต้องการคือ
@@ -467,7 +477,7 @@ textarea{resize:vertical}
           แล้วเอาไปขายให้ลูกค้าคนต่อไปทั้งที่ของยังอยู่บนรถ</div>
       </div></details>
 
-      <details><summary>7. ปิดยอดวัน (แท็บ 📅 ปิดยอดวัน)</summary><div class="bd">
+      <details><summary>7. ปิดยอดวัน (แท็บ ปิดยอดวัน)</summary><div class="bd">
         ตอบคำถามเดียวคือ <b>วันนั้นขายไปเท่าไร</b> — กด ◀ ▶ เดินทีละวัน
         หรือแตะช่องวันที่เพื่อเลือกวันย้อนหลังก็ได้
         <ul>
@@ -483,7 +493,7 @@ textarea{resize:vertical}
 
       <details><summary>8. เวลาเจอปัญหา</summary><div class="bd">
         <ul>
-          <li><b>“ล็อตมีของไม่พอ”</b> — ไปแท็บ 📥 รับของ ลงล็อตที่เพิ่งซื้อเข้ามาก่อน</li>
+          <li><b>“ล็อตมีของไม่พอ”</b> — ไปแท็บ รับเข้าสินค้า ลงล็อตที่เพิ่งซื้อเข้ามาก่อน</li>
           <li><b>“ช่องสูตรเสียในชีท”</b> ขึ้นแดงที่แถวออเดอร์ — เปิด Apps Script
             สั่งฟังก์ชัน <b>repairOrderSheets</b> หนึ่งครั้ง</li>
           <li><b>บันทึกไม่สำเร็จ / เน็ตหลุด</b> — กดซ้ำได้เลย ระบบกันออเดอร์ซ้ำไว้แล้ว
@@ -732,12 +742,12 @@ textarea{resize:vertical}
 </div>
 
 <div class="tabs">
-  <button data-go="new" class="on"><em>＋</em>คีย์ออเดอร์</button>
-  <button data-go="list"><em>▤</em>ออเดอร์</button>
-  <button data-go="recv"><em>📥</em>รับของ</button>
-  <button data-go="quote"><em>◇</em>เสนอราคา</button>
-  <button data-go="day"><em>📅</em>ปิดยอดวัน</button>
-  <button data-go="sum"><em>▦</em>สรุปยอด</button>
+  <button data-go="new" class="on"><img alt="">คีย์ออเดอร์</button>
+  <button data-go="list"><img alt="">ออเดอร์ทั้งหมด</button>
+  <button data-go="recv"><img alt="">รับเข้าสินค้า</button>
+  <button data-go="quote"><img alt="">ใบเสนอราคา</button>
+  <button data-go="day"><img alt="">ปิดยอดวัน</button>
+  <button data-go="sum"><img alt="">สรุปยอด</button>
 </div>
 
 <div class="modal" id="modal"><div class="sheet">

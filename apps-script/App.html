@@ -464,8 +464,6 @@ function save(){
     $("#ok-lb").onclick = function(){ openLabel(LAST_SAVED) };
     $("#ok-mg").onclick = function(){ openMsg(LAST_SAVED) };
     $("#ok-dc").onclick = function(){ openDoc(LAST_SAVED) };
-    /* กดปุ่มขอเอกสารไว้ตั้งแต่ยังไม่บันทึก — บันทึกเสร็จแล้วต่อให้เลย ไม่ต้องกดซ้ำ */
-    if(PENDING_DOC){ var ty=PENDING_DOC; PENDING_DOC=null; openDoc(LAST_SAVED, ty); }
     CLIENT_KEY = newKey();
     resetForm();
     ORDERS = []; SUM_CACHE = null;
@@ -921,35 +919,6 @@ function cxSave(o, btn){
       + esc(e && e.message ? e.message : e) + '</div>';
   });
 }
-
-/* ------------------------------------------------- ปุ่มขอเอกสารบนหัวฟอร์ม
-
-   เจ้าของร้านอยากได้ กรอก → ส่ง → ปริ้น จบในหน้าเดียว จึงวางปุ่มไว้บนหัวฟอร์ม
-   แต่ใบกำกับภาษีอ้างเลขออเดอร์และยอดที่ชีทคำนวณจริง จะออกก่อนบันทึกไม่ได้
-   ปุ่มจึงบันทึกออเดอร์ให้ก่อน แล้วเปิดหน้าออกเอกสารต่อทันที โดยถามก่อนหนึ่งครั้ง
-   ไม่บันทึกเงียบ ๆ เพราะบันทึกแล้วสต๊อกถูกตัดจริง ถอยกลับไม่ได้ง่าย ๆ            */
-
-function docBarInit(){
-  $("#docbar").addEventListener("click", function(e){
-    var b = e.target.closest("button[data-doc]");
-    if(!b) return;
-    var type = b.dataset.doc;
-
-    /* ใบเสนอราคาไม่ผูกออเดอร์เลย ข้ามไปหน้าของมันได้ทันที ไม่ต้องบันทึกอะไร */
-    if(type === "quote"){ go("quote"); return; }
-
-    if(LAST_SAVED){ openDoc(LAST_SAVED, type); return; }
-    if(SAVING){ toast("กำลังบันทึกอยู่ รอสักครู่"); return; }
-
-    if(!confirm("ต้องบันทึกออเดอร์ลงชีทก่อนจึงออกเอกสารได้\n"
-              + "(บันทึกแล้วสต๊อกจะถูกตัดตามจริง)\n\nบันทึกแล้วออกเอกสารเลยไหม")) return;
-    PENDING_DOC = type;
-    save();
-  });
-}
-
-/* ชนิดเอกสารที่กดค้างไว้ก่อนบันทึก — พอบันทึกเสร็จให้เปิดหน้าออกเอกสารต่อเอง */
-var PENDING_DOC = null;
 
 /* ---------------------------------------------------------------- ใบเสนอราคา
 
@@ -3225,7 +3194,6 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#btn-add").onclick   = function(){ addItem(); recalc() };
   $("#btn-parse").onclick = doParse;
   $("#btn-save").onclick  = save;
-  docBarInit();
   $("#btn-shop").onclick = function(){ go("shop") };
   /* ไอคอนอยู่ใน Assets ซึ่งเป็นตัวแปรใน JS ไม่ใช่ไฟล์รูป จึงใส่ตอนเปิดแอป
      ไม่ใช่เขียนไว้ใน HTML — และถ้าวันไหนไอคอนหาย ปุ่มก็ยังอ่านออกเหมือนเดิม */
@@ -3233,6 +3201,14 @@ document.addEventListener("DOMContentLoaded", function(){
     var el = $(sel);
     if (el && typeof SHOPEE_ICON !== "undefined") el.src = SHOPEE_ICON;
     else if (el) el.remove();
+  });
+  /* ไอคอนแถบล่างก็มาจาก Assets เหมือนกัน ใส่ให้ตอนเปิดแอปทีเดียว
+     ไอคอนไหนหาย ปุ่มนั้นเหลือแต่ชื่อ ซึ่งยังกดได้และอ่านออกเหมือนเดิม */
+  $$(".tabs button").forEach(function(b){
+    var im = b.querySelector("img");
+    if (!im) return;
+    var ic = (typeof TAB_ICONS !== "undefined") && TAB_ICONS[b.dataset.go];
+    if (ic) im.src = ic; else im.remove();
   });
   /* คู่มืออยู่ปุ่ม ? บนหัวจอ เห็นได้จากทุกหน้า — กลับแล้วไปหน้าที่ยืนอยู่ก่อนเปิด */
   $("#fs-help").onclick = function(){ HELP_FROM = curPage(); go("help") };

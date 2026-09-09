@@ -1868,6 +1868,79 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ตัวเลขในข้อความตรงกับตัวเลขบนจอ ไม่ได้คิดคนละรอบ',
     dayCopy.indexOf(want34.net) > -1 && dayTxt.indexOf(want34.net) > -1);
 
+  /* ---------- 38. หน้าตาใหม่ — แถบล่างเป็นรูป กับปุ่มเอกสารบนหัวฟอร์มที่เอาออก ---------- */
+  console.log('\n38. หน้าตาใหม่ของแถบล่างกับหัวฟอร์ม');
+  await page.click('.tabs button[data-go="new"]');
+  await page.waitForTimeout(400);
+  truthy('เอาปุ่มขอเอกสารสามอันบนหัวฟอร์มออกแล้ว',
+    await page.evaluate(function () { return !$('#docbar') }));
+  truthy('ปุ่มวางที่อยู่จากแชทยังอยู่ และเต็มความกว้าง',
+    await page.evaluate(function () {
+      var b = $('#btn-paste-open'), card = $('#paste-card');
+      if (!b) return false;
+      var r = b.getBoundingClientRect(), c = card.getBoundingClientRect();
+      return r.width > c.width - 40;
+    }));
+  /* ปุ่มนี้เป็นปุ่มสลับเปิด/ปิด หมวดก่อนหน้าอาจเปิดค้างไว้ จึงเทียบก่อน-หลังแทนที่จะเดาสถานะ */
+  var pasteBefore = await page.evaluate(function () { return $('#paste-box').style.display });
+  await page.click('#btn-paste-open');
+  await page.waitForTimeout(250);
+  var pasteAfter = await page.evaluate(function () { return $('#paste-box').style.display });
+  truthy('กดแล้วช่องวางข้อความยังสลับเปิด/ปิดได้เหมือนเดิม', pasteBefore !== pasteAfter);
+  await page.click('#btn-paste-open');
+  await page.waitForTimeout(200);
+  eq('กดอีกทีกลับมาเป็นเหมือนเดิม',
+    await page.evaluate(function () { return $('#paste-box').style.display }), pasteBefore);
+
+  console.log('\n   แถบล่างหกปุ่ม ชื่อใหม่ + ไอคอนเป็นรูปจริง');
+  var bar38 = await page.evaluate(function () {
+    var bs = $$('.tabs button');
+    return {
+      labels: bs.map(function (b) { return b.textContent.trim() }),
+      gos: bs.map(function (b) { return b.dataset.go }),
+      imgs: bs.map(function (b) {
+        var im = b.querySelector('img');
+        if (!im) return null;
+        var r = im.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height),
+                 nat: im.naturalWidth, src: im.src.slice(0, 14) };
+      }),
+      h: Math.round($('.tabs').getBoundingClientRect().height)
+    };
+  });
+  eq('ชื่อปุ่มตรงตามที่เจ้าของร้านวางไว้', bar38.labels,
+    ['คีย์ออเดอร์', 'ออเดอร์ทั้งหมด', 'รับเข้าสินค้า', 'ใบเสนอราคา', 'ปิดยอดวัน', 'สรุปยอด']);
+  eq('หน้าที่ของแต่ละปุ่มไม่ได้สลับกัน', bar38.gos,
+    ['new', 'list', 'recv', 'quote', 'day', 'sum']);
+  truthy('ทุกปุ่มมีรูปไอคอนจริง ไม่ใช่ตัวอักษรสัญลักษณ์',
+    bar38.imgs.every(function (x) { return x && x.src === 'data:image/png' }));
+  truthy('รูปโหลดขึ้นจริงทุกอัน ไม่มีอันไหนเป็นรูปเสีย',
+    bar38.imgs.every(function (x) { return x.nat > 0 }));
+  truthy('ไอคอนสูงเท่ากันหมด ป้าย ORDER ที่เป็นแนวนอนก็ไม่ลีบกว่าเพื่อน',
+    (function () {
+      var hs = bar38.imgs.map(function (x) { return x.h });
+      return Math.max.apply(null, hs) - Math.min.apply(null, hs) <= 1;
+    })());
+  truthy('แถบล่างไม่สูงเกินไปจนกินที่อ่านข้อมูล (' + bar38.h + 'px)', bar38.h <= 92);
+
+  console.log('\n   ไอคอนของปุ่มที่ยืนอยู่ต้องเข้มกว่าปุ่มอื่น');
+  var dim38 = await page.evaluate(function () {
+    return $$('.tabs button').map(function (b) {
+      return { on: b.classList.contains('on'),
+               op: getComputedStyle(b.querySelector('img')).opacity };
+    });
+  });
+  truthy('ปุ่มที่เลือกอยู่ไอคอนทึบเต็มที่',
+    dim38.filter(function (x) { return x.on })[0].op === '1');
+  truthy('ปุ่มอื่นหรี่ลง จะได้รู้ว่ายืนอยู่หน้าไหน',
+    dim38.filter(function (x) { return !x.on }).every(function (x) { return Number(x.op) < 1 }));
+
+  console.log('\n   ชื่อร้านต้องไม่ถูกตัดท้ายด้วยจุดสามจุด');
+  truthy('ชื่อร้านแสดงครบทุกตัวอักษร', await page.evaluate(function () {
+    var b = $('#brand');
+    return b.scrollWidth <= b.clientWidth + 1;
+  }));
+
   /* ---------- 37. ลูกค้าคืนของ / ของตีกลับ ---------- */
   console.log('\n37. ลูกค้าคืนของ / ของตีกลับ');
   await page.click('.tabs button[data-go="list"]');
