@@ -149,10 +149,19 @@ window.google = { script: { run: (function(){
         }))).slice(0, Number(limit)||30);
       });
     },
-    setTracking: function(no,track,status){
+    setTracking: function(no,track,status,carrier){
+      window.SENT.push({fn:"setTracking", no:no, track:track, status:status, carrier:carrier});
       reply(function(){
-        MOCK_ORDERS.forEach(function(o){ if(o.no===no){ o.track=track; o.status=status } });
-        return {ok:true,no:no,changed:true};
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        MOCK_ORDERS.forEach(function(o){
+          if(o.no!==no) return;
+          /* null = ไม่ได้จะแก้ช่องนั้น · "" = แก้ให้เป็นค่าว่างจริง ๆ */
+          if(track!==null && track!==undefined) o.track = track;
+          if(status) o.status = status;
+          if(carrier!==null && carrier!==undefined) o.carrier = carrier;
+        });
+        var cur = MOCK_ORDERS.filter(function(o){ return o.no===no })[0] || {};
+        return {ok:true,no:no,changed:true,track:cur.track||"",carrier:cur.carrier||""};
       });
     },
     /* ออกเอกสารแบบจำลอง — คิดเงินด้วยตรรกะเดียวกับ Doc.gs ตัวจริง

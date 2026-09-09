@@ -1905,8 +1905,29 @@ function quoteToOrder(no, btn){
 function openLabel(o){
   /* ชีทไม่มีช่อง "เก็บเงินปลายทาง" จึงไม่เดาให้ — ให้คนพิมพ์ยืนยันเอง
      พิมพ์ผิดว่าเก็บเงินปลายทางเท่าไร คือเงินจริงที่หายไป */
+  var cars = (BOOT && BOOT.lists && BOOT.lists.carrier) || [];
   openModal("ใบปะหน้าพัสดุ — "+o.no,
-     '<div class="fld"><label><input type="checkbox" id="lb-cod" style="width:auto;margin-right:8px;transform:scale(1.25)">'
+    /* ลูกค้าเปลี่ยนใจขอรับส่งด่วนตอนจะแพ็คของ เป็นเรื่องที่เกิดจริงหน้างาน
+       ของเดิมต้องไปแก้ในชีทก่อนแล้วค่อยกลับมาพิมพ์ ซึ่งคนมักลืมแก้
+       ใบปะหน้าเลยพิมพ์โลโก้ขนส่งเจ้าเดิม แล้วข้อความแจ้งลูกค้าให้ลิงก์ผิดเจ้าตามไปด้วย */
+     '<div class="fld"><label>ขนส่ง</label><select id="lb-car">'
+    + '<option value="">— ไม่ระบุขนส่ง —</option>'
+    + cars.map(function(c){
+        return '<option value="'+esc(c)+'"'+(c===o.carrier?" selected":"")+'>'+esc(c)+'</option>';
+      }).join("")
+    +'</select>'
+    +'<div class="hint" id="lb-car-hint">เปลี่ยนตรงนี้แล้ว <b>บันทึกลงชีทให้ด้วย</b> '
+    +'ไม่ใช่เปลี่ยนแค่บนกระดาษ</div></div>'
+    /* เลขพัสดุของเจ้าเดิมใช้กับเจ้าใหม่ไม่ได้ ติดไปบนใบก็สแกนไม่ผ่าน
+       และลูกค้าเอาไปเช็คก็ไม่เจอ จึงถามให้ล้างทิ้ง โดยติ๊กไว้ให้เลย */
+    + (o.track
+       ? '<div class="fld" id="lb-clr-box" style="display:none">'
+         +'<label><input type="checkbox" id="lb-clr" checked '
+         +'style="width:auto;margin-right:8px;transform:scale(1.25)">'
+         +'ล้างเลขพัสดุเดิม (<b>'+esc(o.track)+'</b>) ทิ้งด้วย</label>'
+         +'<div class="hint">เลขของขนส่งเจ้าเดิม ใช้กับเจ้าใหม่ไม่ได้</div></div>'
+       : '')
+    +'<div class="fld"><label><input type="checkbox" id="lb-cod" style="width:auto;margin-right:8px;transform:scale(1.25)">'
     +'เก็บเงินปลายทาง '+baht(o.net)+'</label>'
     +'<div class="hint">ไม่ติ๊ก = ใบปะหน้าจะพิมพ์ว่า “ไม่ต้องเก็บเงิน”</div></div>'
     /* ที่อยู่ผู้ส่งมาจากชีท ตั้งค่าแอป ถ้าเว้นว่างไว้ ใบปะหน้าจะไม่มีที่อยู่ผู้ส่ง
@@ -1918,12 +1939,47 @@ function openLabel(o){
     +'<button class="btn" id="lb-make">สร้างใบปะหน้า</button>'
     +'<div id="lb-out" style="margin-top:12px"></div>');
 
+  /* ช่องล้างเลขพัสดุโผล่เฉพาะตอนที่เปลี่ยนขนส่งจริง ๆ ไม่งั้นรกเปล่า ๆ */
+  var carBox = $("#lb-clr-box");
+  $("#lb-car").onchange = function(){
+    if (carBox) carBox.style.display = ($("#lb-car").value === o.carrier) ? "none" : "";
+  };
+
   $("#lb-make").onclick = function(){
     var cod = $("#lb-cod").checked;
+    var car = $("#lb-car").value;
+    var clr = !!($("#lb-clr") && $("#lb-clr").checked && car !== o.carrier);
     $("#lb-out").innerHTML='<div class="load">กำลังสร้าง…</div>';
-    buildLabel(labelData(o, cod)).then(function(url){
-      $("#lb-out").innerHTML =
-        '<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+
+    /* บันทึกขนส่งใหม่ลงชีทก่อนวาดใบ ใบที่พิมพ์กับชีทจะได้ตรงกันเสมอ
+       บันทึกไม่สำเร็จก็ยังวาดใบให้ แต่บอกตรง ๆ ว่าชีทยังไม่ขยับ —
+       ของต้องส่งวันนี้ ห้ามให้ระบบขวางงานหน้าร้านเพราะเน็ตสะดุด */
+    var saved = (car === o.carrier && !clr)
+      ? Promise.resolve(null)
+      : api("setTracking", o.no, clr ? "" : null, null, car);
+
+    saved.then(function(r){
+      if (r) {
+        o.carrier = car;
+        if (clr) o.track = "";
+        for (var i=0;i<ORDERS.length;i++) if (ORDERS[i].no === o.no) {
+          ORDERS[i].carrier = o.carrier; ORDERS[i].track = o.track;
+        }
+        renderOrders();
+      }
+      return "";
+    }, function(e){
+      return '<div class="msg err" style="display:block">ใบปะหน้าใช้ขนส่งใหม่แล้ว '
+           + 'แต่<b>บันทึกลงชีทไม่สำเร็จ</b> — ต้องไปแก้ช่องขนส่งของใบ '+esc(o.no)
+           + ' ในชีทเอง<br>'+esc(e&&e.message?e.message:e)+'</div>';
+    }).then(function(warn){
+      o.carrier = car;
+      if (clr) o.track = "";
+      return buildLabel(labelData(o, cod)).then(function(url){ return [url, warn||""] });
+    }).then(function(pair){
+      var url = pair[0], warn = pair[1];
+      $("#lb-out").innerHTML = warn
+       +'<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
        +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
        +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'

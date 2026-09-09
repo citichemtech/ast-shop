@@ -1713,6 +1713,63 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('เห็นสถานะใหม่โดยไม่ต้องโหลดใหม่',
     /ส่งบัญชีแล้ว/.test(await page.textContent('#list')));
 
+  /* ---------- 33. ลูกค้าเปลี่ยนใจขอส่งด่วน ---------- */
+  console.log('\n33. ลูกค้าเปลี่ยนใจขอส่งด่วน — เปลี่ยนขนส่งจากหน้าใบปะหน้า');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(600);
+  await page.evaluate(function () {
+    ORDERS[0].carrier = 'Flash Express';
+    ORDERS[0].track = 'TH1111111111';
+    renderOrders();
+  });
+  var no33 = await page.evaluate(function () { return ORDERS[0].no });
+  await page.evaluate(function () { openLabel(ORDERS[0]) });
+  await page.waitForTimeout(400);
+  eq('ช่องขนส่งตั้งค่าเป็นเจ้าเดิมของใบนี้',
+    await page.evaluate(function () { return $('#lb-car').value }), 'Flash Express');
+  eq('ยังไม่เปลี่ยน จึงไม่ถามเรื่องล้างเลขพัสดุ',
+    await page.evaluate(function () { return $('#lb-clr-box').style.display }), 'none');
+
+  console.log('\n   เปลี่ยนเป็นส่งด่วน — ต้องถามเรื่องเลขพัสดุเดิมด้วย');
+  await page.selectOption('#lb-car', 'ส่งด่วน (ไรเดอร์)');
+  await page.waitForTimeout(200);
+  truthy('ช่องล้างเลขพัสดุโผล่ขึ้นมา',
+    await page.evaluate(function () { return $('#lb-clr-box').style.display !== 'none' }));
+  truthy('ติ๊กไว้ให้เลย เพราะเลขของเจ้าเดิมใช้กับเจ้าใหม่ไม่ได้',
+    await page.evaluate(function () { return $('#lb-clr').checked }));
+
+  var before33 = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#lb-make');
+  await page.waitForTimeout(2500);
+  var sent33 = await page.evaluate(function (n) {
+    return window.SENT.slice(n).filter(function (x) { return x && x.fn === 'setTracking' })[0];
+  }, before33);
+  truthy('บันทึกลงชีทให้ด้วย ไม่ใช่เปลี่ยนแค่บนกระดาษ', !!sent33);
+  eq('ส่งขนส่งใหม่ขึ้นไป', sent33.carrier, 'ส่งด่วน (ไรเดอร์)');
+  eq('ล้างเลขพัสดุเดิมด้วย', sent33.track, '');
+  eq('ไม่ไปแตะสถานะออเดอร์', sent33.status, null);
+  eq('แถวออเดอร์ในหน้าจอเปลี่ยนตามทันที',
+    await page.evaluate(function (no) {
+      var o = ORDERS.filter(function (x) { return x.no === no })[0];
+      return [o.carrier, o.track];
+    }, no33), ['ส่งด่วน (ไรเดอร์)', '']);
+  truthy('วาดใบปะหน้าออกมาให้จริง', await page.locator('#lb-out img').count() > 0);
+
+  console.log('\n   บันทึกลงชีทไม่สำเร็จ ต้องยังได้ใบปะหน้า แต่บอกให้รู้ว่าชีทยังไม่ขยับ');
+  await page.evaluate(function () { closeModal(); window.MOCK_FAIL = 'เน็ตหลุด' });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () { openLabel(ORDERS[0]) });
+  await page.waitForTimeout(300);
+  await page.selectOption('#lb-car', 'ไปรษณีย์ไทย');
+  await page.click('#lb-make');
+  await page.waitForTimeout(2500);
+  truthy('บอกว่าบันทึกลงชีทไม่สำเร็จ ต้องไปแก้เอง',
+    /บันทึกลงชีทไม่สำเร็จ/.test(await page.textContent('#lb-out')));
+  truthy('แต่ยังได้ใบปะหน้าออกมาใช้ ของต้องส่งวันนี้',
+    await page.locator('#lb-out img').count() > 0);
+  await page.evaluate(function () { window.MOCK_FAIL = null; closeModal() });
+  await page.waitForTimeout(200);
+
   /* ---------- 32. คู่มือใช้งาน ---------- */
   console.log('\n32. คู่มือใช้งาน');
   await page.click('.tabs button[data-go="recv"]');

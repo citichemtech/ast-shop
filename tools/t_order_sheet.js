@@ -2312,6 +2312,35 @@ var before45 = carr45.length;
 api45.setup();
 eq('สั่ง setup ซ้ำไม่เติมซ้ำ', api45.cfgLists_().carrier.length, before45);
 
+console.log('\n   ลูกค้าเปลี่ยนใจขอส่งด่วน — เปลี่ยนขนส่งของใบที่คีย์ไปแล้ว');
+var G45 = api45.SH.head.IN;
+var row45c = api45.findOrderRow_(no45b).row;
+api45.setTracking(no45b, 'TH123456', null, null);
+eq('ใส่เลขพัสดุอย่างเดียว ขนส่งไม่ขยับ',
+  [head45.cell(row45c, G45.track).v, head45.cell(row45c, G45.carrier).v],
+  ['TH123456', 'Kerry Express']);
+
+var r45d = api45.setTracking(no45b, '', null, 'ส่งด่วน (ไรเดอร์)');
+eq('เปลี่ยนขนส่งพร้อมล้างเลขพัสดุเดิมของเจ้าเก่า',
+  [head45.cell(row45c, G45.carrier).v, head45.cell(row45c, G45.track).v],
+  ['ส่งด่วน (ไรเดอร์)', '']);
+eq('คืนค่าที่ลงจริงกลับมาให้หน้าจอ', [r45d.carrier, r45d.track], ['ส่งด่วน (ไรเดอร์)', '']);
+truthy2('ลง Log ว่าเปลี่ยนขนส่งจากอะไรเป็นอะไร', (function () {
+  var log = fx45.sheets['Log'];
+  for (var r = DATA_ROW; r <= log.getMaxRows(); r++) {
+    if (String(log.cell(r, 4).v || '') === 'เปลี่ยนขนส่ง' &&
+        String(log.cell(r, 8).v || '') === 'Kerry Express' &&
+        String(log.cell(r, 9).v || '') === 'ส่งด่วน (ไรเดอร์)') return true;
+  }
+  return false;
+})());
+
+api45.setTracking(no45b, null, null, '');
+eq('ตั้งเป็นไม่ระบุขนส่งก็ได้ (ออเดอร์ที่แพลตฟอร์มส่งเอง)',
+  head45.cell(row45c, G45.carrier).v, '');
+throws('ขนส่งที่ไม่มีในรายการยังไม่ผ่านเหมือนเดิม',
+  function () { api45.setTracking(no45b, null, null, 'ขนส่งลุงสมชาย') }, 'ไม่มีในตัวเลือก');
+
 console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
 var over44 = [];
 for (var nm45 in fx45.sheets) over44 = over44.concat(fx45.sheets[nm45].overwrittenFormulas);

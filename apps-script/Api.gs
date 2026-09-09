@@ -407,7 +407,16 @@ function isoDate_(d) {
  * ใส่เลขพัสดุและสถานะย้อนหลัง — งานที่เกิดหลังบันทึกออเดอร์เสมอ
  * แก้เฉพาะสองช่องนี้ ช่องอื่นของออเดอร์ไม่ถูกแตะ และลง Log ไว้ว่าใครแก้
  */
-function setTracking(no, track, status) {
+/**
+ * แก้เลขพัสดุ / สถานะ / ขนส่ง ของออเดอร์ที่คีย์ไปแล้ว
+ *
+ * ขนส่งเพิ่มมาทีหลัง (9 ก.ย. 69) เพราะลูกค้าเปลี่ยนใจขอรับส่งด่วนตอนจะแพ็คของ
+ * เป็นเรื่องที่เกิดจริงหน้างาน ของเดิมต้องไปแก้ในชีทเอง แล้วคนมักลืมแก้
+ * ใบปะหน้าจึงพิมพ์โลโก้ขนส่งเจ้าเดิม และข้อความแจ้งลูกค้าให้ลิงก์ติดตามผิดเจ้า
+ *
+ * ส่งค่าที่ไม่อยากแก้มาเป็น null ได้ ช่องนั้นจะไม่ถูกแตะเลย
+ */
+function setTracking(no, track, status, carrier) {
   var email = requireStaff_();
   no = String(no || '').trim();
   if (!no) throw new Error('ไม่ได้บอกว่าจะแก้ออเดอร์ไหน');
@@ -424,9 +433,15 @@ function setTracking(no, track, status) {
 
     var before = String(s.getRange(row, SH.head.IN.track).getValue() || '');
     var beforeStatus = String(s.getRange(row, SH.head.IN.status).getValue() || '');
+    var beforeCar = String(s.getRange(row, SH.head.IN.carrier).getValue() || '');
     var patch = {};
     if (track !== undefined && track !== null) patch.track = String(track).trim();
     if (status) patch.status = pickFrom_(status, cfgLists_().status, 'สถานะออเดอร์');
+    /* ขนส่งเว้นว่างได้ (ออเดอร์ที่แพลตฟอร์มส่งเอง) จึงยอมรับค่าว่างเป็นการแก้จริง
+       ต่างจาก null ที่แปลว่า "ไม่ได้จะแก้ช่องนี้" */
+    if (carrier !== undefined && carrier !== null) {
+      patch.carrier = pickCarrier_(carrier, cfgLists_().carrier);
+    }
     if (!Object.keys(patch).length) return { ok: true, no: no, changed: false };
 
     writeRow_('head', row, patch);
@@ -440,7 +455,13 @@ function setTracking(no, track, status) {
       writeLog_(email, 'เปลี่ยนสถานะ', SH.head.name, no, 'สถานะ', beforeStatus, patch.status,
         'เปลี่ยนจากแอปโดย ' + email);
     }
-    return { ok: true, no: no, changed: true };
+    if (patch.carrier !== undefined && patch.carrier !== beforeCar) {
+      writeLog_(email, 'เปลี่ยนขนส่ง', SH.head.name, no, 'ช่องทางจัดส่ง',
+        beforeCar || '(ว่าง)', patch.carrier || '(ว่าง)', 'เปลี่ยนจากแอปโดย ' + email);
+    }
+    return { ok: true, no: no, changed: true,
+             track: patch.track === undefined ? before : patch.track,
+             carrier: patch.carrier === undefined ? beforeCar : patch.carrier };
   } finally {
     lock.releaseLock();
   }
