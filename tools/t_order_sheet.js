@@ -2435,11 +2435,15 @@ eq('ไม่มีที่ไหนในสูตรยังอ้างถ�
 var cut47 = lot47.cell(DATA_ROW, 8).f || '';
 truthy2('สูตร "ตัดออกแล้ว" อ้างชีท ตัดล็อต ในช่วงที่มีจริง',
   cut47.indexOf("'ตัดล็อต'!$F$6:$F$3005") > -1);
-truthy2('ช่วงเงื่อนไขกับช่วงที่บวก ต้องสูงเท่ากันเป๊ะ ไม่งั้น SUMIFS ขึ้น error ทั้งคอลัมน์',
+truthy2('ใช้ SUMIF ไม่ใช่ SUMIFS — SUMIFS พังทั้งคอลัมน์ถ้าสองช่วงสูงไม่เท่ากัน',
+  /SUMIF\(/.test(cut47) && !/SUMIFS\(/.test(cut47));
+truthy2('ถึงใช้ SUMIF ก็ยังเขียนสองช่วงให้สูงเท่ากันอยู่ดี',
   (function () {
-    var m = cut47.match(/\$F\$6:\$F\$(\d+)[\s\S]*\$I\$6:\$I\$(\d+)/);
+    var m = cut47.match(/\$I\$6:\$I\$(\d+)[\s\S]*\$F\$6:\$F\$(\d+)/);
     return !!m && m[1] === m[2];
   })());
+truthy2('ช่องตรวจสอบแปล error ของช่องตัดออกแล้วเป็นคำ ไม่ปล่อย #N/A ลอยไว้เฉย ๆ',
+  (lot47.cell(DATA_ROW, 13).f || '').indexOf('ISERROR($H6)') > -1);
 
 var it47 = fx47.sheets['ออเดอร์_รายการ'].cell(DATA_ROW, 17).f || '';
 truthy2('คอลัมน์ "ล็อตที่ตัด" ก็อ้างช่วงเดียวกัน ไม่หลุดขอบเหมือนกัน',
@@ -2477,6 +2481,55 @@ eq('ตรวจแล้วต้องไม่แก้อะไรในช�
     for (var nm in fx47c.sheets) over = over.concat(fx47c.sheets[nm].overwrittenFormulas);
     return over;
   })(), []);
+
+/* ======= 48. ช่องคงเหลือเสีย ต้องบอกว่าสูตรพัง ไม่ใช่บอกว่าของหมด
+
+   สองอย่างนี้คนละเรื่องกันคนละทาง: ของหมดคือไปสั่งของเข้ามาเพิ่ม
+   สูตรพังคือของเต็มชั้นอยู่แต่ระบบมองไม่เห็น ถ้าข้อความบอกผิด
+   คนจะไปนั่งหาของที่ไม่ได้หาย แทนที่จะไปซ่อมสูตร               */
+console.log('\n48. ช่องคงเหลือเสีย ต้องบอกว่าสูตรพัง ไม่ใช่บอกว่าของหมด');
+var fx48 = FS.build();
+var api48 = FS.load(fx48);
+api48.setup();
+api48.receiveStock({
+  clientKey: 'rs-48', sku: 'CHEM-001', qty: 40, cost: 100,
+  lotNo: 'L48-001', exp: '2027-12-31', by: 'น้องเอ', type: 'ซื้อเข้า'
+});
+
+var lot48 = fx48.sheets['ล็อตสินค้า'];
+var row48 = 0;
+for (var r48 = DATA_ROW; r48 <= lot48.getMaxRows(); r48++) {
+  if (String(lot48.cell(r48, 4).v || '') === 'L48-001') { row48 = r48; break }
+}
+truthy2('มีแถวล็อตให้ทดสอบ', row48 > 0);
+eq('ปกติแล้วขายได้', api48.createOrder(order({
+  items: [{ sku: 'CHEM-001', qty: 2, price: 100 }]
+})).ok, true);
+
+/* จำลองอาการที่เจอในชีทจริง — ช่องคงเหลือขึ้น error จนไม่มีตัวเลข */
+lot48.cell(row48, 9).v = '#N/A';
+var msg48 = throws('ต้องไม่บันทึกออเดอร์ทั้งที่อ่านยอดล็อตไม่ได้', function () {
+  api48.createOrder(order({ items: [{ sku: 'CHEM-001', qty: 2, price: 100 }] }));
+}, 'สูตรในชีทเสีย');
+truthy2('บอกด้วยว่าแถวไหนเสีย จะได้กดไปดูถูกที่', msg48.indexOf('แถว ' + row48) > -1);
+truthy2('บอกวิธีแก้ต่อ ไม่ใช่บอกแค่ว่าพัง', msg48.indexOf('checkSheets') > -1);
+truthy2('ห้ามพูดว่าของไม่พอ เพราะของยังอยู่ครบบนชั้น',
+  msg48.indexOf('ไม่พอ') < 0);
+
+lot48.cell(row48, 9).v = '';
+truthy2('ช่องว่างเปล่าก็ถือว่าเสียเหมือนกัน — แถวที่มีเลขล็อตต้องมีตัวเลขเสมอ',
+  throws('ช่องคงเหลือว่าง', function () {
+    api48.createOrder(order({ items: [{ sku: 'CHEM-001', qty: 1, price: 100 }] }));
+  }, 'สูตรในชีทเสีย') !== null);
+
+lot48.cell(row48, 9).v = 38;
+eq('ซ่อมสูตรแล้วกลับมาขายได้ตามเดิม', api48.createOrder(order({
+  items: [{ sku: 'CHEM-001', qty: 1, price: 100 }]
+})).ok, true);
+
+var over48 = [];
+for (var nm48 in fx48.sheets) over48 = over48.concat(fx48.sheets[nm48].overwrittenFormulas);
+eq('ตลอดหมวดนี้ไม่มีช่องสูตรถูกเขียนทับ', over48, []);
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

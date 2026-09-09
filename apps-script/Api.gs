@@ -195,12 +195,20 @@ function readLots_() {
     if (!sku || !lotNo) continue;
     var exp = v[i][SH.lot.IN.exp - 1];
     var recv = v[i][SH.lot.IN.recv - 1];
+    /* แถวที่มีทั้ง SKU และเลขล็อต ช่องคงเหลือต้องเป็นตัวเลขเสมอ
+       ว่างหรือขึ้น error = สูตรในชีทพัง ไม่ใช่ "ของหมด" — สองอย่างนี้ต่างกันคนละเรื่อง
+       ถ้าปล่อยให้กลายเป็น 0 เงียบ ๆ หน้าจอจะบอกว่า "ล็อตมีของไม่พอ" ทั้งที่ของเต็มชั้น
+       แล้วคนก็จะไปนั่งหาของที่ไม่ได้หาย แทนที่จะไปซ่อมสูตร */
+    var raw = v[i][SH.lot.remain - 1];
+    var num = Number(raw);
+    var ok = (raw !== '' && raw !== null && raw !== undefined && isFinite(num));
     (by[sku] = by[sku] || []).push({
       row: DATA_ROW + i,
       lotNo: lotNo,
       exp: exp instanceof Date ? exp.getTime() : null,
       recv: recv instanceof Date ? recv.getTime() : null,
-      remain: Number(v[i][SH.lot.remain - 1] || 0)
+      remain: ok ? num : 0,
+      broken: !ok
     });
   }
   return by;
@@ -1953,6 +1961,16 @@ function planOrder_(p, email) {
     var pool = (lotsBySku[sku] || []).map(function (l) {
       return { row: l.row, lotNo: l.lotNo, exp: l.exp, recv: l.recv, remain: l.remain - (used[l.row] || 0) };
     });
+    /* สูตรชีทพังต้องบอกตรง ๆ ก่อนจะไปสรุปว่าของไม่พอ — ไม่งั้นข้อความที่คนอ่านคือคำโกหก */
+    var sick = (lotsBySku[sku] || []).filter(function (l) { return l.broken });
+    if (sick.length) {
+      throw new Error('บรรทัดที่ ' + lineNo + ' (' + sku + ' — ' + prod.name + '): ' +
+        'ช่อง "คงเหลือ" ของชีท ' + SH.lot.name + ' แถว ' +
+        sick.map(function (l) { return l.row }).slice(0, 5).join(', ') +
+        ' ไม่มีตัวเลข แปลว่าสูตรในชีทเสีย ไม่ใช่ของหมด ' +
+        '— ยังไม่บันทึกออเดอร์นี้ ให้สั่งฟังก์ชัน checkSheets แล้ว setup ใน Apps Script ก่อน');
+    }
+
     var pick = fefoPick(pool, qty);
     if (!pick.ok) {
       if (pick.reason === 'short') {
