@@ -468,10 +468,13 @@ textarea{resize:vertical}
 .hp .bd b{color:var(--ink)}
 .hp .bd ol,.hp .bd ul{margin:6px 0;padding-left:20px}
 .hp .bd li{margin-bottom:5px}
-.hp .bd .warn{border-left:3px solid var(--amber);background:#fffaf1;
-  padding:9px 11px;border-radius:0 8px 8px 0;margin-top:9px}
-.hp .bd .stop{border-left:3px solid var(--red);background:#fff6f6;
-  padding:9px 11px;border-radius:0 8px 8px 0;margin-top:9px}
+/* กล่องเตือนสองแบบ เริ่มจากคู่มืออย่างเดียว แต่ที่อื่นก็ต้องเตือนคนเหมือนกัน
+   จึงถอดออกมาเป็นของกลาง ขนาดตัวหนังสือติดมาด้วย ไม่งั้นนอกคู่มือจะโตกว่าที่อื่นทั้งหน้า */
+.warn,.stop{padding:9px 11px;border-radius:0 8px 8px 0;margin-top:9px;
+  font-size:0.86rem;line-height:1.6}
+.warn{border-left:3px solid var(--amber);background:#fffaf1}
+.stop{border-left:3px solid var(--red);background:#fff6f6}
+.hp .bd .warn,.hp .bd .stop{font-size:inherit;line-height:inherit}
 </style>
 
 <div class="top">
@@ -772,7 +775,22 @@ textarea{resize:vertical}
             <b>การ์ดของแต่ละช่องทางขาย</b></li>
           <li>เดือนก่อนเริ่มใช้ระบบ กด <b>เพิ่มช่องทาง</b> → เลือก Shopee →
             กรอกยอดขาย ต้นทุน ค่าแอด จากไฟล์เดิม → <b>บันทึก</b></li>
+          <li>ไฟล์ Shopee ยาวเป็นพันบรรทัด ไม่ต้องบวกเอง — กด
+            <b>📋 วางตารางจาก Excel</b> → เปิดไฟล์ → <b>Ctrl+A</b> <b>Ctrl+C</b> →
+            วางลงช่อง → <b>คิดยอดให้</b> → <b>กรอกทั้งหมด</b></li>
         </ol>
+        <div class="warn"><b>แผ่นที่วางต้องมีทั้งช่อง “ราคาขาย” และช่อง “จำนวน”</b><br>
+          ขาดช่องจำนวน ใบที่ลูกค้าซื้อ 3 ชิ้นจะถูกคิดเป็นชิ้นเดียว ยอดหายไปเงียบ ๆ ·
+          ขาดช่องราคาขาย ก็ไม่มีทางรู้ยอด — สองกรณีนี้ระบบตอบว่าอ่านไม่ได้
+          พร้อมบอกชื่อคอลัมน์ที่ขาด ให้กลับไปส่งออกไฟล์ใหม่</div>
+        <ul>
+          <li><b>ยอดที่คิดได้จะไม่เท่ากับยอดรวมท้ายไฟล์ของ Shopee</b> — ยอดนั้นมัก
+            บวกใบที่ยกเลิกและใบที่คืนของเข้าไปด้วย ซึ่งเงินไม่เคยเข้าร้าน
+            หน้าจอจะบอกว่าตัดออกไปเท่าไร</li>
+          <li>วางทีละแผ่น หนึ่งไฟล์มีหลายเดือนก็คิดแยกให้เอง</li>
+          <li>กรอกแล้วทับเฉพาะ <b>ยอดขาย</b> ของช่องทาง Shopee ·
+            ต้นทุนกับค่าแอดที่เคยกรอกไว้ไม่ถูกแตะ</li>
+        </ul>
         <div class="stop"><b>ยอดจากไฟล์ Shopee ต้องลงที่ช่องทาง Shopee</b><br>
           ไฟล์รายเดือนที่ดาวน์โหลดจากแอปขายของ เป็นยอดของแพลตฟอร์มนั้นแพลตฟอร์มเดียว
           ไม่ใช่ยอดทั้งร้าน · ถ้ากรอกรวมกัน ยอดของช่องทางอื่นจะหายไปในตัวเลขก้อนเดียว
@@ -837,6 +855,33 @@ textarea{resize:vertical}
         เพราะบิลค่าโฆษณาไม่ได้ผ่านระบบออเดอร์ · เดือนก่อนเริ่มใช้ระบบ (ม.ค.–มี.ค.)
         กด <b>เพิ่มช่องทาง</b> แล้วกรอกยอดจากไฟล์เดิมได้เลย
       </div>
+      <button class="btn ghost" id="fl-paste-open" style="margin-bottom:10px">
+        📋 วางตารางจาก Excel — คิดยอด Shopee ให้ทั้งปี</button>
+
+      <!-- กล่องวางตาราง: ปิดไว้ก่อน หน้านี้เปิดมาเพื่อ "ดูยอด" ไม่ใช่ "กรอกยอด"
+           คนเปิดดูสิบครั้งจะกรอกจริงครั้งเดียว ช่องกรอกจึงไม่ควรกินที่ถาวร -->
+      <div id="fl-paste" style="display:none;margin-bottom:12px">
+        <div class="hint" style="padding:0 2px 8px">
+          <b>ขั้นที่ 1</b> เปิดไฟล์ยอดขายจาก Shopee ด้วย Excel หรือ Google ชีต
+          (แผ่นไหนก็ได้ ทีละแผ่น)<br>
+          <b>ขั้นที่ 2</b> <b>Ctrl+A</b> คลุมทั้งแผ่น <i>รวมแถวหัวตาราง</i> แล้ว <b>Ctrl+C</b><br>
+          <b>ขั้นที่ 3</b> วางลงข้างล่างนี้ แล้วกด <b>คิดยอดให้</b>
+        </div>
+        <div class="stop" style="margin-bottom:8px">
+          <b>แผ่นที่วางต้องมีทั้งช่อง “ราคาขาย” และช่อง “จำนวน”</b><br>
+          ขาดช่องจำนวน ใบที่ลูกค้าซื้อ 3 ชิ้นจะถูกคิดเป็นชิ้นเดียว ยอดหายไปเงียบ ๆ ·
+          ขาดช่องราคาขาย ก็ไม่มีทางรู้ยอด — ทั้งสองกรณีระบบจะบอกว่าอ่านไม่ได้
+          ไม่คิดเลขมั่วให้
+        </div>
+        <textarea id="fl-text" rows="5"
+          placeholder="วางตารางที่คัดลอกมาจากไฟล์ Shopee ทั้งแผ่นตรงนี้"></textarea>
+        <div class="two" style="margin-top:10px">
+          <button class="btn" id="fl-read">คิดยอดให้</button>
+          <button class="btn ghost" id="fl-paste-close">ปิด</button>
+        </div>
+        <div id="fl-paste-out" style="margin-top:10px"></div>
+      </div>
+
       <div id="fl-months"><div class="load">กำลังโหลด…</div></div>
     </div>
   </section>

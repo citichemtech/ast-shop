@@ -3065,6 +3065,7 @@ function fileInit(){
     q.dataset.bound = "1";
     q.oninput = function(){ drawOldDocs("", "#fl-docs", q.value.trim()) };
   }
+  pasteInit();
   fileDraw();
 }
 
@@ -3257,6 +3258,155 @@ function bindMonths(list){
       };
     });
   });
+}
+
+/* --------------------------------- วางตารางจาก Excel แล้วคิดยอดของทั้งปีให้
+
+   เดือนก่อนเริ่มใช้ระบบไม่มีออเดอร์ในชีทสักใบ ยอดอยู่ในไฟล์ที่โหลดจาก Shopee ล้วน ๆ
+   จะให้นั่งบวกเองทีละเดือนแล้วพิมพ์เข้ามาก็ได้ แต่ไฟล์เดือนละพันกว่าบรรทัด
+   บวกมือทีเดียวผิดคือกำไรทั้งเดือนผิด และไม่มีอะไรจับได้เลย
+
+   ใช้ตัวอ่านตารางชุดเดียวกับหน้านำเข้าออเดอร์ Shopee ต่างกันแค่ปลายทาง
+   อันนั้นลงเป็นออเดอร์รายใบเพื่อตัดสต๊อก อันนี้ลงเป็นยอดรวมของเดือน ไม่แตะสต๊อก */
+
+var PASTE_MONTHS = null;
+
+function pasteInit(){
+  var op = $("#fl-paste-open");
+  if(op && !op.dataset.bound){
+    op.dataset.bound = "1";
+    op.onclick = function(){
+      var box = $("#fl-paste");
+      var show = box.style.display === "none";
+      box.style.display = show ? "" : "none";
+      if(show) $("#fl-text").focus();
+    };
+  }
+  var cl = $("#fl-paste-close");
+  if(cl && !cl.dataset.bound){
+    cl.dataset.bound = "1";
+    cl.onclick = function(){ $("#fl-paste").style.display = "none" };
+  }
+  var rd = $("#fl-read");
+  if(rd && !rd.dataset.bound){
+    rd.dataset.bound = "1";
+    rd.onclick = pasteRead;
+  }
+}
+
+function pasteRead(){
+  var out = $("#fl-paste-out");
+  var txt = $("#fl-text").value;
+  if(!String(txt).trim()){
+    out.innerHTML = '<div class="msg err" style="display:block">ยังไม่ได้วางอะไรลงมา</div>';
+    return;
+  }
+  var chan = (typeof shopChannel === "function") ? shopChannel() : "";
+  if(!chan){
+    /* ไม่มีช่องทางชื่อ Shopee ในชีท ตั้งค่า = กรอกลงไปก็ไปอยู่ผิดช่องทาง
+       บอกตั้งแต่ก่อนคิดยอด ดีกว่าให้คิดเสร็จแล้วกดบันทึกไม่ได้ */
+    out.innerHTML = '<div class="msg err" style="display:block">'
+      + 'ยังไม่มีช่องทางขายชื่อ Shopee ในชีท <b>ตั้งค่า</b><br>'
+      + 'เติมคำว่า Shopee ลงในรายการช่องทางขายก่อน แล้วเปิดแอปใหม่</div>';
+    return;
+  }
+
+  var r = monthTotals(txt);
+  if(!r.ok){
+    /* บอกให้ตรงว่าขาดคอลัมน์ไหน คนจะได้กลับไปส่งออกไฟล์ใหม่ให้มีคอลัมน์นั้น
+       ไม่ใช่บอกลอย ๆ ว่า "อ่านไม่ได้" แล้วปล่อยให้เดาเอง */
+    out.innerHTML = '<div class="msg err" style="display:block">'
+      + '<b>อ่านตารางนี้ไม่ได้</b><br>ขาดคอลัมน์ ' + esc((r.missing || []).join(" · "))
+      + '<br><br>ในไฟล์ที่ส่งออกจาก Shopee ให้ติ๊กคอลัมน์นี้มาด้วย '
+      + 'แล้วค่อยคัดลอกมาวางใหม่ · ระบบไม่คิดยอดให้ทั้งที่ข้อมูลไม่ครบ '
+      + 'เพราะเลขที่ได้จะดูน่าเชื่อแต่ผิด'
+      + ((r.headers && r.headers.length)
+          ? '<br><br><span style="font-weight:400">คอลัมน์ที่เจอในตารางที่วางมา: '
+            + esc(r.headers.join(" · ")) + '</span>'
+          : '')
+      + '</div>';
+    return;
+  }
+  if(!r.months.length){
+    out.innerHTML = '<div class="msg err" style="display:block">'
+      + 'อ่านตารางได้ แต่ไม่มีแถวไหนมีวันที่ใช้ได้เลย — คลุมมาครบทั้งแผ่นหรือยัง</div>';
+    return;
+  }
+
+  PASTE_MONTHS = r.months;
+  pasteDraw(chan, r.noDate);
+}
+
+function pasteDraw(chan, noDate){
+  var list = PASTE_MONTHS || [];
+  var sum = list.reduce(function(a, m){ return a + m.sales }, 0);
+  var drop = list.reduce(function(a, m){ return a + m.dropSales }, 0);
+
+  $("#fl-paste-out").innerHTML =
+      '<div class="msg ok" style="display:block">อ่านได้ ' + list.length + ' เดือน '
+    + 'รวม ' + baht(sum) + ' — ยอดนี้จะลงที่ช่องทาง <b>' + esc(chan) + '</b></div>'
+    + (drop ? '<div class="hint" style="margin:8px 2px">ไม่นับใบที่ยกเลิกหรือคืนของ '
+        + baht(drop) + ' — ยอดรวมที่ Shopee โชว์ท้ายไฟล์มักบวกใบพวกนี้ด้วย '
+        + 'ตัวเลขจึงไม่เท่ากัน และตัวที่ถูกคือตัวที่ไม่บวก</div>' : '')
+    + (noDate ? '<div class="hint" style="margin:8px 2px">มี ' + noDate
+        + ' แถวที่ไม่มีวันที่ ไม่ได้นับ (มักเป็นแถวรวมยอดที่พิมพ์ไว้ท้ายแผ่น)</div>' : '')
+    + '<div class="mchans" style="margin-top:10px">'
+    + list.map(function(m, i){
+        return '<div class="mchan" data-pi="' + i + '">'
+          + '<div class="mchd"><b>' + esc(ymThai(m.ym)) + '</b>'
+          +   '<span>' + m.orders + ' ใบ · ' + m.lines + ' บรรทัด</span></div>'
+          + '<div class="mgrid">'
+          +   '<div>ยอดขาย<b>' + baht(m.sales) + '</b></div>'
+          +   '<div>ไม่นับ (ยกเลิก/คืน)<b>' + baht(m.dropSales) + '</b></div>'
+          + '</div>'
+          + '<div class="medit"><button class="mini p-one">กรอกลงเดือนนี้</button></div>'
+          + '<div class="m-msg"></div>'
+          + '</div>';
+      }).join("")
+    + '</div>'
+    + '<button class="btn" id="fl-all" style="margin-top:10px">กรอกทั้งหมด '
+    +   list.length + ' เดือน</button>'
+    + '<div class="hint" style="margin-top:8px">กรอกแล้วทับเฉพาะ <b>ยอดขาย</b> ของช่องทาง '
+    + esc(chan) + ' เท่านั้น · ต้นทุนกับค่าแอดที่เคยกรอกไว้ไม่ถูกแตะ</div>';
+
+  $$("#fl-paste-out .mchan").forEach(function(el){
+    var m = list[+el.dataset.pi];
+    el.querySelector(".p-one").onclick = function(){
+      pasteSave([m], chan, this, el.querySelector(".m-msg"));
+    };
+  });
+  $("#fl-all").onclick = function(){
+    pasteSave(list, chan, this, null);
+  };
+}
+
+/* บันทึกทีละเดือนเรียงกัน ไม่ยิงพร้อมกันทั้งกอง — ฝั่งชีทมี LockService อยู่
+   ยิงพร้อมกันสิบเดือนคือเก้าเดือนไปรอคิวจนหมดเวลา แล้วขึ้น "ระบบกำลังยุ่งอยู่" */
+function pasteSave(months, chan, btn, msgBox){
+  var was = btn.textContent, i = 0, done = 0, bad = [];
+  btn.disabled = true;
+
+  function step(){
+    if(i >= months.length){
+      btn.disabled = false; btn.textContent = was;
+      var t = bad.length
+        ? '<div class="msg err" style="display:block">กรอกได้ ' + done + ' เดือน · '
+          + 'ไม่ผ่าน ' + bad.length + ' เดือน<br>' + esc(bad.join(" · ")) + '</div>'
+        : '<div class="msg ok" style="display:block">กรอกยอด ' + chan + ' แล้ว '
+          + done + ' เดือน</div>';
+      if(msgBox) msgBox.innerHTML = t;
+      else $("#fl-paste-out").insertAdjacentHTML("afterbegin", t);
+      loadMonths(true);
+      return;
+    }
+    var m = months[i++];
+    btn.textContent = "กำลังกรอก " + ymThai(m.ym) + "…";
+    call("saveMonth", [{ ym: m.ym, chan: chan, sales: m.sales,
+                         by: byName(), clientKey: newKey() }],
+      function(){ done++; step() },
+      function(e){ bad.push(ymThai(m.ym) + " (" + e + ")"); step() });
+  }
+  step();
 }
 
 /* --------------------------------------------- ของใกล้หมด + ล็อตใกล้หมดอายุ

@@ -278,15 +278,113 @@ function shopeeRead(text) {
  * เช็ค "ไม่สำเร็จ" ก่อนคำว่า "สำเร็จ" เสมอ เพราะคำหลังเป็นส่วนหนึ่งของคำแรก
  */
 function shopeeBack(o) {
-  var t = (String(o.status || "") + " " + String(o.backWhy || "")).toLowerCase();
+  /* Shopee ต่อท้ายสถานะ "ผู้ซื้อได้รับสินค้าแล้ว" ด้วยประโยคบอกสิทธิ์ว่าผู้ซื้อ
+     "สามารถยื่นคำขอคืนเงิน/คืนสินค้าได้จนถึง <วันที่>" — นั่นคือสิทธิ์ที่ยังไม่ได้ใช้
+     ไม่ใช่ของที่กลับมาแล้ว ถ้าไม่ตัดประโยคนี้ทิ้งก่อน ใบที่ถึงมือลูกค้าเรียบร้อยแล้ว
+     จะถูกคัดออกเป็นใบตีกลับ ทั้งที่เงินเข้าร้านแล้วและของออกจากชั้นไปแล้ว
+
+     ตัดเฉพาะในช่องสถานะ ไม่แตะช่องเหตุผลการคืน — ใบที่คืนของจริงจะมีคำในช่องนั้น
+     ถ้าตัดรวดเดียวทั้งสองช่อง ใบที่คืนจริงจะเล็ดลอดเข้ามาแทน */
+  var st = String(o.status || "").toLowerCase()
+    .replace(/โปรดทราบ[\s\S]*$/, " ")
+    .replace(/สามารถ[\s\S]{0,40}?คืน[\s\S]{0,40}?ได้จนถึง[\s\S]*$/, " ");
+  var t = st + " " + String(o.backWhy || "").toLowerCase();
   return /ตีกลับ|คืนสินค้า|คืนเงิน|ยกเลิก|ไม่สำเร็จ|cancel|return|refund|failed|unsuccess/
     .test(t);
 }
 
-/** ของถึงมือลูกค้าแล้ว — ใบพวกนี้ลงชีทเป็น "ส่งแล้ว" ได้เลย ไม่ต้องมาไล่แก้ทีหลัง */
+/** ของถึงมือลูกค้าแล้ว — ใบพวกนี้ลงชีทเป็น "ส่งแล้ว" ได้เลย ไม่ต้องมาไล่แก้ทีหลัง
+
+   "ผู้ซื้อได้รับสินค้าแล้ว" คือถึงมือลูกค้าที่สุดเท่าที่สถานะจะบอกได้ ชัดกว่า "สำเร็จแล้ว"
+   ด้วยซ้ำ แต่ไม่มีคำว่าสำเร็จอยู่ในนั้น เคยตกหล่นไปทั้งที่เป็นใบที่จบสวยที่สุด */
 function shopeeDone(o) {
-  return /สำเร็จ|จัดส่งแล้ว|ส่งแล้ว|จัดส่งสำเร็จ|complete|delivered|shipped/
+  return /สำเร็จ|จัดส่งแล้ว|ส่งแล้ว|จัดส่งสำเร็จ|ได้รับสินค้าแล้ว|complete|delivered|shipped|received/
     .test(String(o.status || "").toLowerCase());
+}
+
+/* ============================================ ยอดรายเดือนจากไฟล์ Shopee
+
+   คนละงานกับการนำเข้าออเดอร์ข้างบน — อันนั้นเอาทีละใบลงชีทเพื่อตัดสต๊อก
+   อันนี้เอาแค่ "ยอดรวมของเดือน" ไปกรอกในชีท สรุปเดือน ช่องทาง Shopee
+   ใช้กับเดือนที่ผ่านไปแล้วและไม่เคยผ่านระบบนี้ ของถูกส่งไปหมดแล้ว
+   จะมาตัดสต๊อกย้อนหลังไม่ได้ ต้องการแค่ตัวเลขยอดขายเพื่อดูกำไรกับค่าแอด
+
+   ใช้ตัวอ่านตารางชุดเดียวกับข้างบนทั้งหมด จะได้ไม่มีวันตีความไฟล์เดียวกันคนละแบบ
+
+   สองอย่างที่ห้ามเดาเด็ดขาด เพราะเดาแล้วได้ตัวเลขที่ดูน่าเชื่อแต่ผิด
+     ไม่มีคอลัมน์จำนวน   ใบที่ซื้อ 3 ชิ้นจะถูกนับเป็นชิ้นเดียว ยอดขาดหายไปเงียบ ๆ
+     ไม่มีคอลัมน์ราคาขาย  ไม่มีทางรู้ยอดเลย
+   ทั้งสองกรณีตอบว่าอ่านไม่ได้ พร้อมบอกว่าขาดคอลัมน์ไหน ดีกว่าคืนเลขที่เชื่อไม่ได้ */
+/** แถวนี้มีตัวหนังสืออยู่บ้างไหม — แถวเปล่าล้วนไม่ต้องรายงานว่าอ่านไม่ได้ */
+function rowHasText_(row) {
+  for (var i = 0; i < row.length; i++) {
+    if (String(row[i] == null ? "" : row[i]).trim() !== "") return true;
+  }
+  return false;
+}
+
+function monthTotals(text) {
+  var rows = shopeeCells(text);
+  if (!rows.length) return { ok: false, missing: [], months: [], headers: [] };
+
+  var h = shopeeHeadRow(rows);
+  var headers = (rows[h.row] || []).filter(function (x) { return String(x).trim() !== "" });
+  var miss = h.missing.slice();
+  var c = h.cols;
+  if (c.price === undefined || c.price === null) miss.push("ราคาขาย");
+  if ((c.date === undefined || c.date === null) &&
+      (c.shipDate === undefined || c.shipDate === null)) miss.push("วันที่สั่งซื้อ");
+  if (miss.length) return { ok: false, missing: miss, months: [], headers: headers };
+
+  function cell(r, key) {
+    var i = c[key];
+    if (i === undefined || i === null) return "";
+    return String(r[i] == null ? "" : r[i]).replace(/^=/, "").replace(/^"|"$/g, "").trim();
+  }
+
+  var by = {}, noDate = 0, lastSn = "";
+  for (var r = h.row + 1; r < rows.length; r++) {
+    var row = rows[r];
+    var sn = cell(row, "sn");
+    var nm = cell(row, "name");
+    /* แถวรวมยอดที่คนขายพิมพ์ไว้ท้ายแผ่นมีแต่ตัวเลขในช่องราคา ไม่มีเลขออเดอร์ ไม่มีชื่อสินค้า
+       ถ้านับเข้าไปคือยอดของเดือนคูณสอง แต่เงียบ ๆ ทิ้งไปก็ไม่ได้ ต้องนับให้คนเห็นว่ามีกี่แถว
+       จะได้รู้ว่าที่วางมาไม่ได้ถูกอ่านครบทุกแถว */
+    if (!sn && !nm) { if (rowHasText_(row)) noDate++; continue }
+    if (!sn) sn = lastSn;
+    if (!sn) continue;
+    lastSn = sn;
+
+    var ym = (shopeeDate(cell(row, "shipDate")) || shopeeDate(cell(row, "date"))).slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(ym)) { noDate++; continue }
+
+    var m = by[ym] || (by[ym] = {
+      ym: ym, orders: {}, lines: 0, sales: 0, dropLines: 0, dropSales: 0
+    });
+    var amt = shopeeNum(cell(row, "qty")) * shopeeNum(cell(row, "price"));
+    /* ใบที่ยกเลิกหรือคืนของ เงินไม่เคยเข้าร้าน ไม่ใช่ยอดขาย
+       ยอดรวมท้ายไฟล์ที่ Shopee ให้มามักบวกใบพวกนี้ด้วย ตัวเลขจึงไม่เท่ากัน — ตั้งใจ */
+    if (shopeeBack({ status: cell(row, "status"), backWhy: cell(row, "back") })) {
+      m.dropLines++; m.dropSales += amt;
+      continue;
+    }
+    m.orders[sn] = 1; m.lines++; m.sales += amt;
+  }
+
+  var out = [];
+  for (var k in by) {
+    var v = by[k];
+    var n = 0;
+    for (var s in v.orders) n++;
+    out.push({
+      ym: v.ym, orders: n, lines: v.lines,
+      sales: Math.round(v.sales * 100) / 100,
+      dropLines: v.dropLines,
+      dropSales: Math.round(v.dropSales * 100) / 100
+    });
+  }
+  out.sort(function (a, b) { return a.ym < b.ym ? -1 : (a.ym > b.ym ? 1 : 0) });
+  return { ok: true, missing: [], months: out, noDate: noDate, headers: headers };
 }
 
 /* ------------------------------------------------------------------ หน้าจอ */

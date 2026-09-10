@@ -2976,6 +2976,110 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ยอดของเดือนที่มีออเดอร์จริงไม่ถูกยอดจากไฟล์ไปปน',
     old45.otherMonthSales, ads45.salesBefore);
 
+  console.log('\n   วางตารางจาก Excel แล้วคิดยอด Shopee ให้');
+  /* ไฟล์จริงของร้านเดือน มิ.ย. ไม่มีคอลัมน์ราคา เดือน ส.ค. ไม่มีคอลัมน์จำนวน
+     ทั้งสองแผ่นคิดยอดไม่ได้จริง ๆ และต้องบอกให้ตรงว่าขาดอะไร ไม่ใช่คิดเลขมั่วให้ */
+  var TSV_HEAD = ['หมายเลขคำสั่งซื้อ', 'ชื่อสินค้า', 'ชื่อผู้ใช้ (ผู้ซื้อ)',
+    'วันที่ทำการสั่งซื้อ', 'ชื่อตัวเลือก', 'ราคาขาย', 'สถานะการสั่งซื้อ', 'จำนวน'];
+  function tsv46(rows) {
+    return rows.map(function (r) { return r.join('\t') }).join('\n');
+  }
+  var NOQTY46 = tsv46([TSV_HEAD.slice(0, 7),
+    ['260601AA1', 'IPA 1000ml', 'somchai', '2026-06-03 10:00', '1000ml', '120.00', 'สำเร็จแล้ว']]);
+  var OK46 = tsv46([TSV_HEAD,
+    ['260601AA1', 'IPA 1000ml', 'somchai', '2026-06-03 10:00', '1000ml', '120.00', 'สำเร็จแล้ว', '2'],
+    ['260601AA1', 'อะซิโตน 1L', 'somchai', '2026-06-03 10:00', '1000ml', '149.00', 'สำเร็จแล้ว', '1'],
+    ['260620BB2', 'IPA 1000ml', 'malee', '2026-06-20 09:00', '1000ml', '120.00', 'สำเร็จแล้ว', '3'],
+    ['260620BB3', 'IPA 1000ml', 'nok', '2026-06-20 11:00', '1000ml', '120.00', 'ยกเลิกแล้ว', '5'],
+    ['260705CC4', 'ดอกกัด 3.175', 'wit', '2026-07-05 08:00', '3.175*22', '169.00',
+     'ผู้ซื้อได้รับสินค้าแล้ว โปรดทราบว่าผู้ซื้อสามารถยื่นคำขอคืนเงิน/คืนสินค้าได้จนถึง 2026-09-10', '1'],
+    ['', '', '', '', '', '99999', '', '']]);
+
+  await page.click('#fl-paste-open');
+  await page.waitForTimeout(250);
+  var op46 = await page.evaluate(function () {
+    return {
+      open: $('#fl-paste').style.display !== 'none',
+      hasBox: !!$('#fl-text'), hasBtn: !!$('#fl-read')
+    };
+  });
+  truthy('กดปุ่มแล้วกล่องวางตารางเปิดออกมา', op46.open && op46.hasBox && op46.hasBtn);
+
+  var miss46 = await page.evaluate(async function (t) {
+    $('#fl-text').value = t;
+    $('#fl-read').click();
+    await new Promise(function (r) { setTimeout(r, 500) });
+    var box = $('#fl-paste-out');
+    return {
+      txt: box.innerText,
+      err: !!box.querySelector('.msg.err'),
+      months: $$('#fl-paste-out .mchan').length
+    };
+  }, NOQTY46);
+  truthy('ตารางที่ขาดคอลัมน์จำนวน ต้องขึ้นว่าอ่านไม่ได้', miss46.err);
+  truthy('และบอกชื่อคอลัมน์ที่ขาด', miss46.txt.indexOf('จำนวน') > -1);
+  eq('ไม่คิดยอดให้สักเดือนทั้งที่ข้อมูลไม่ครบ', miss46.months, 0);
+
+  var ok46 = await page.evaluate(async function (t) {
+    $('#fl-text').value = t;
+    $('#fl-read').click();
+    await new Promise(function (r) { setTimeout(r, 500) });
+    function money(s) {
+      var m = /฿([\d,]+\.\d\d)/.exec(s.replace(/\n/g, ' '));
+      return m ? Number(m[1].replace(/,/g, '')) : null;
+    }
+    var cards = [].slice.call($$('#fl-paste-out .mchan'));
+    return {
+      txt: $('#fl-paste-out').innerText,
+      months: cards.map(function (c) { return c.querySelector('.mchd b').textContent }),
+      sales: cards.map(function (c) { return money(c.querySelector('.mgrid').innerText) }),
+      hasAll: !!$('#fl-all')
+    };
+  }, OK46);
+  eq('แยกได้สองเดือน', ok46.months.length, 2);
+  eq('ยอดเดือน มิ.ย. = ราคาคูณจำนวน ไม่นับใบที่ยกเลิก',
+    ok46.sales[0], 120 * 2 + 149 + 120 * 3);
+  eq('ใบที่ส่งถึงลูกค้าแล้วยังนับเป็นยอดขาย แม้สถานะจะมีคำว่าคืนเงิน', ok46.sales[1], 169);
+  truthy('บอกยอดที่ตัดออกเพราะยกเลิก', ok46.txt.indexOf('600') > -1);
+  truthy('บอกว่ามีแถวที่ไม่มีวันที่ (แถวรวมยอดท้ายแผ่น)',
+    ok46.txt.indexOf('ไม่มีวันที่') > -1);
+  truthy('บอกว่ายอดจะลงช่องทาง Shopee', ok46.txt.indexOf('Shopee') > -1);
+  truthy('มีปุ่มกรอกทั้งหมด', ok46.hasAll);
+
+  console.log('\n   กดกรอกทั้งหมด แล้วยอดต้องไปอยู่ที่ช่องทาง Shopee ของเดือนนั้น');
+  var saved46 = await page.evaluate(async function () {
+    $('#fl-all').click();
+    await new Promise(function (r) { setTimeout(r, 1800) });
+    function money(t, label) {
+      var m = new RegExp(label + '\\s*฿([\\d,]+\\.\\d\\d)').exec(t.replace(/\n/g, ' '));
+      return m ? Number(m[1].replace(/,/g, '')) : null;
+    }
+    var row = null;
+    $$('#fl-months .mrow').forEach(function (r) {
+      if (r.querySelector('.mhd b').textContent.indexOf('มิ.ย.') > -1) row = r;
+    });
+    if (!row) return { found: false };
+    var cards = [].slice.call(row.querySelectorAll('.mchan'));
+    var shop = cards.filter(function (c) {
+      return c.querySelector('.mchd b').textContent === 'Shopee';
+    })[0];
+    return {
+      found: true,
+      chans: cards.map(function (c) { return c.querySelector('.mchd b').textContent }),
+      shopSales: shop ? money(shop.innerText, 'ยอดขาย') : null,
+      typed: shop ? shop.innerText.indexOf('กรอกเอง') > -1 : false,
+      monthSales: money(row.querySelector('.mgrid').innerText, 'ยอดขาย')
+    };
+  });
+  truthy('เจอเดือน มิ.ย. ในตารางสรุป', saved46.found);
+  truthy('เดือนนั้นมีช่องทาง Shopee แล้ว', saved46.chans.indexOf('Shopee') > -1);
+  eq('ยอดที่กรอกตรงกับที่คิดได้', saved46.shopSales, 120 * 2 + 149 + 120 * 3);
+  truthy('ติดป้ายว่ากรอกเอง เพราะมาจากไฟล์ ไม่ใช่จากออเดอร์ในระบบ', saved46.typed);
+  eq('ยอดของเดือนเท่ากับผลรวมของช่องทาง', saved46.monthSales, saved46.shopSales);
+
+  await page.evaluate(function () { $('#fl-paste-close').click() });
+  await page.waitForTimeout(200);
+
   console.log('\n   กลับไปหน้าใบเสนอราคาได้');
   await page.click('#fl-back');
   await page.waitForTimeout(500);
