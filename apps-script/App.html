@@ -1310,17 +1310,46 @@ function drawOldDocs(orderNo, boxSel){
   /* ที่วางผลพิมพ์ซ้ำต้องเป็นคนละ id กันในแต่ละที่ ไม่งั้นตอนเปิดหน้าใบเสนอราคา
      ค้างไว้แล้วไปกดพิมพ์ซ้ำในหน้าออเดอร์ รูปจะไปโผล่ผิดที่ */
   var outId = "rp-out-" + sel.replace(/[^a-zA-Z0-9]/g, "");
-  box.innerHTML = '<div class="hint">กำลังดูว่าเคยออกใบให้ออเดอร์นี้ไว้หรือยัง…</div>';
+  var rfId  = "rp-again-" + sel.replace(/[^a-zA-Z0-9]/g, "");
+  /* ไม่ระบุออเดอร์ = หน้าใบเสนอราคา ซึ่งรายการนี้คือ "ประวัติใบที่เคยออก"
+     ไม่ใช่ "ใบของออเดอร์นี้" — คนละเรื่องกัน หัวข้อจึงต้องเขียนคนละอย่าง */
+  var isQuote = !String(orderNo || "").trim();
+  var title = isQuote ? "ใบเสนอราคาที่เคยออก" : "ใบที่ออกไปแล้ว — กดพิมพ์ซ้ำได้เลย";
+  /* หัวข้อกับปุ่มโหลดใหม่ต้องขึ้นทุกกรณี รวมทั้งตอนที่ยังไม่มีใบสักใบ
+     กล่องว่างเปล่าไม่มีอะไรเลย อ่านได้ทั้ง "ไม่มีใบ" และ "แอปพัง" ซึ่งคนละเรื่องกัน */
+  function shell(inner, n){
+    return '<div class="subhd">' + title + (n ? ' (' + n + ' ใบ)' : '') + '</div>'
+      + inner
+      + (isQuote ? '<button class="mini" id="' + rfId + '" style="margin-top:10px">'
+                 + 'โหลดรายการใหม่</button>' : '');
+  }
+  function bindAgain(){
+    var r = $("#" + rfId);
+    if(r) r.onclick = function(){ drawOldDocs(orderNo, sel) };
+  }
+  box.innerHTML = '<div class="hint">' + (isQuote
+      ? 'กำลังโหลดใบเสนอราคาที่เคยออก…' : 'กำลังดูว่าเคยออกใบให้ออเดอร์นี้ไว้หรือยัง…')
+    + '</div>';
   api("listDocs", orderNo || "").then(function(list){
-    if (!list || !list.length) { box.innerHTML = ""; return }
-    box.innerHTML = '<div class="subhd">ใบที่ออกไปแล้ว — กดพิมพ์ซ้ำได้เลย</div>'
-      + list.map(function(d){
+    if (!list || !list.length) {
+      box.innerHTML = shell(isQuote
+        ? '<div class="empty"><b>ยังไม่มีใบเสนอราคาที่เคยออก</b>'
+          + 'ใบที่ออกจากฟอร์มด้านบนจะมาขึ้นตรงนี้ พร้อมปุ่มพิมพ์ซ้ำและทำเป็นออเดอร์</div>'
+        : '<div class="hint">ยังไม่เคยออกเอกสารให้ออเดอร์นี้</div>', 0);
+      bindAgain();
+      return;
+    }
+    box.innerHTML = shell(list.map(function(d){
           var dead = !!d.voidWhy;
           /* ใบที่ยังไม่ได้ส่ง = ยังอยู่ในร้าน แก้ด้วยเลขเดิมได้ไม่จำกัด
              ใบที่กดส่งแล้ว = ลูกค้าถือกระดาษอยู่ ห้ามแก้ ต้องยกเลิกแล้วออกใหม่ */
           var sent = String(d.sentAt || "");
           return '<div class="row"><div class="i">'
             +'<b>'+esc(d.no)+'</b>'
+            /* ประวัติที่ไม่มีชื่อลูกค้า หาใบที่ต้องการไม่เจอ — เลขใบอย่างเดียว
+               ไม่มีใครจำได้ว่าใบไหนของใคร */
+            + (d.custName ? '<span style="color:var(--ink);font-weight:600">'
+                          + esc(d.custName) + '</span>' : '')
             +'<span>'+esc(d.type)+' · '+esc(d.date||"")+' · '+baht(d.total)
             + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
             + (!dead && sent ? ' · <span style="color:var(--green)">ส่งแล้ว</span>' : '')
@@ -1340,7 +1369,13 @@ function drawOldDocs(orderNo, boxSel){
             + (dead ? '' : '<button class="mini red" data-vd="'+esc(d.no)+'">ยกเลิก</button>')
             +'</div></div>';
         }).join("")
-      + '<div id="'+outId+'" style="margin-top:10px"></div>';
+      + '<div id="'+outId+'" style="margin-top:10px"></div>', list.length)
+      /* ชีทส่งมาให้ 20 ใบล่าสุด ใบเก่ากว่านั้นยังอยู่ในชีท เอกสาร ครบทุกใบ
+         ต้องบอกไว้ ไม่งั้นจะเข้าใจว่าใบเก่าหายไปแล้ว */
+      + (list.length >= 20 && isQuote
+         ? '<div class="hint" style="margin-top:8px">แสดง 20 ใบล่าสุด · '
+           + 'ใบเก่ากว่านี้ดูได้ในชีท <b>เอกสาร</b></div>' : '');
+    bindAgain();
     box.querySelectorAll("[data-rp]").forEach(function(b){
       b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
     });

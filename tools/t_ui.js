@@ -2653,6 +2653,72 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('โหลดเสร็จแล้วได้รายการครบทั้งสองช่อง',
     all42.after[0] > 1 && all42.after[1] > 1);
 
+  /* ---------- 43. ประวัติใบเสนอราคา ---------- */
+  console.log('\n43. ประวัติใบเสนอราคาที่เคยออก');
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(300);
+  /* ยังไม่เคยออกใบสักใบ — กล่องว่างเปล่าอ่านได้ทั้ง "ไม่มีใบ" และ "แอปพัง"
+     ซึ่งเป็นคนละเรื่องกัน ต้องเขียนออกมาให้ชัดว่าเป็นอันไหน */
+  var keep43 = await page.evaluate(function () { return JSON.stringify(MOCK_DOCS) });
+  await page.evaluate(function () { MOCK_DOCS.length = 0; drawOldDocs('', '#q-old') });
+  await page.waitForTimeout(700);
+  var none43 = await page.evaluate(function () {
+    var b = $('#q-old');
+    return { head: b.querySelector('.subhd') ? b.querySelector('.subhd').textContent : '',
+             txt: b.innerText, again: b.querySelectorAll('button').length };
+  });
+  eq('ยังมีหัวข้อบอกว่านี่คือประวัติใบเสนอราคา', none43.head, 'ใบเสนอราคาที่เคยออก');
+  truthy('บอกตรง ๆ ว่ายังไม่มีใบ ไม่ใช่กล่องเปล่า',
+    /ยังไม่มีใบเสนอราคาที่เคยออก/.test(none43.txt));
+  eq('มีปุ่มโหลดรายการใหม่ให้กดเองได้', none43.again, 1);
+
+  console.log('\n   ออกใบแล้วต้องขึ้นในประวัติ พร้อมชื่อลูกค้า');
+  await page.evaluate(function (raw) {
+    MOCK_DOCS.length = 0;
+    JSON.parse(raw).forEach(function (d) { MOCK_DOCS.push(d) });
+  }, keep43);
+  await page.evaluate(function () {
+    /* ใบเสนอราคาสองใบของคนละบริษัท — ประวัติต้องแยกออกว่าใบไหนของใคร */
+    MOCK_DOCS.push({
+      no: 'QO26-09001', type: 'ใบเสนอราคา', date: '2026-09-09',
+      cust: { name: 'บริษัท กอไก่ จำกัด' }, doc: { total: 1200 }, voidWhy: '', sentAt: ''
+    });
+    MOCK_DOCS.push({
+      no: 'QO26-09002', type: 'ใบเสนอราคา', date: '2026-09-10',
+      cust: { name: 'บริษัท ขอไข่ จำกัด' }, doc: { total: 3400 }, voidWhy: '', sentAt: ''
+    });
+    drawOldDocs('', '#q-old');
+  });
+  await page.waitForTimeout(700);
+  var his43 = await page.evaluate(function () {
+    var rows = [].slice.call(document.querySelectorAll('#q-old .row'));
+    return { head: document.querySelector('#q-old .subhd').textContent,
+             n: rows.length,
+             top: rows[0].innerText.replace(/\n+/g, ' | '),
+             names: rows.map(function (r) { return r.innerText }).join(' '),
+             q2o: document.querySelectorAll('#q-old [data-q2o]').length };
+  });
+  truthy('หัวข้อบอกจำนวนใบด้วย', /ใบเสนอราคาที่เคยออก \(\d+ ใบ\)/.test(his43.head));
+  truthy('ใบล่าสุดอยู่บนสุด', his43.top.indexOf('QO26-09002') === 0);
+  /* เลขใบอย่างเดียวไม่มีใครจำได้ว่าใบไหนของใคร */
+  truthy('มีชื่อลูกค้าทุกใบ',
+    /กอไก่/.test(his43.names) && /ขอไข่/.test(his43.names));
+  truthy('ทุกใบมีปุ่มทำเป็นออเดอร์', his43.q2o >= 2);
+
+  console.log('\n   โหลดใบเก่าไม่ได้ ต้องบอกว่าไม่ได้ ไม่ใช่ขึ้นกล่องว่าง');
+  var err43 = await page.evaluate(async function () {
+    var real = google.script.run.listDocs;
+    google.script.run.listDocs = function () { throw new Error('ชีทตอบไม่ได้') };
+    try { drawOldDocs('', '#q-old') } catch (e) {}
+    await new Promise(function (r) { setTimeout(r, 400) });
+    var t = $('#q-old').innerText;
+    google.script.run.listDocs = real;
+    return t;
+  });
+  truthy('ขึ้นข้อความว่าดูใบเก่าไม่ได้', /ดูใบเก่าไม่ได้|ชีทตอบไม่ได้/.test(err43));
+  await page.evaluate(function () { drawOldDocs('', '#q-old') });
+  await page.waitForTimeout(500);
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
