@@ -1003,6 +1003,57 @@ function listDocs(orderNo) {
 }
 
 /**
+ * ค้นเอกสารที่ออกไปแล้ว — ทุกชนิด ทั้งชีท ไม่ใช่แค่ใบล่าสุด
+ *
+ * ทำไมต้องมีตัวนี้ทั้งที่มี listDocs อยู่แล้ว: listDocs คืนเฉพาะใบที่ "ไม่มีเลขออเดอร์"
+ * ซึ่งแปลว่าใบเสนอราคาที่ยังไม่ได้ทำเป็นออเดอร์เท่านั้น
+ * แต่ใบเสร็จ/ใบกำกับภาษี ใบแจ้งหนี้ และใบมัดจำ ออกจากออเดอร์เสมอ จึงมีเลขออเดอร์ทุกใบ
+ * แปลว่าใบกำกับภาษีที่ออกไปแล้ว "ไม่เคยโผล่ในรายการนั้นเลยสักใบ" — หาไม่เจอทั้งที่อยู่ในชีท
+ *
+ * counts นับจากทั้งชีท (หลังกรองคำค้นแล้ว) ไม่ใช่นับจากที่ตัดมาโชว์
+ * จะได้ไม่เกิดกรณี "ชนิดนี้ 0 ใบ" ทั้งที่มีอยู่จริงแต่ตกหน้า
+ */
+function findDocs(p) {
+  requireStaff_();
+  p = p || {};
+  var want = String(p.q || '').trim().toLowerCase();
+  var type = String(p.type || '').trim();
+  var limit = Math.min(Math.max(Number(p.limit) || 30, 1), 200);
+
+  var s = sheet_('doc');
+  var last = formulaLimit_('doc');
+  if (last < DATA_ROW) return { rows: [], total: 0, counts: {} };
+  var n = last - DATA_ROW + 1;
+  var C = SH.doc.IN;
+  var v = s.getRange(DATA_ROW, C.no, n, C.sentAt - C.no + 1).getValues();
+  var at = function (col) { return col - C.no; };
+
+  var hit = [], counts = {};
+  for (var i = v.length - 1; i >= 0; i--) {   /* ใบล่าสุดอยู่บนสุด */
+    var no = String(v[i][0] || '').trim();
+    if (!no) continue;
+    var d = {
+      no: no, type: String(v[i][at(C.type)] || ''),
+      date: isoDate_(v[i][at(C.date)]),
+      orderNo: String(v[i][at(C.orderNo)] || '').trim(),
+      custName: String(v[i][at(C.custName)] || ''),
+      total: Number(v[i][at(C.total)] || 0),
+      voidWhy: String(v[i][at(C.voidWhy)] || '').trim(),
+      sentAt: String(v[i][at(C.sentAt)] || '').trim(),
+      hasSnap: !!String(v[i][at(C.snap)] || '').trim()
+    };
+    if (want) {
+      var hay = (d.no + ' ' + d.custName + ' ' + d.orderNo + ' ' + d.type).toLowerCase();
+      if (hay.indexOf(want) < 0) continue;
+    }
+    counts[d.type] = (counts[d.type] || 0) + 1;
+    if (type && d.type !== type) continue;
+    hit.push(d);
+  }
+  return jsonSafe_({ rows: hit.slice(0, limit), total: hit.length, counts: counts });
+}
+
+/**
  * ยกเลิกเอกสารที่ออกผิด
  *
  * ทำไมไม่ทำเป็น "ปุ่มแก้ไข" ที่เขียนทับใบเดิม: ใบที่ออกไปแล้วลูกค้าถืออยู่ในมือ

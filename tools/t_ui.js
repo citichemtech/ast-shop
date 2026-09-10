@@ -2832,6 +2832,106 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('แท็บใบเสนอราคายังติดไฟไว้', fl45.tab, 'quote');
   truthy('เปิดมาเจอเอกสารที่ออกแล้วก่อน', fl45.docCard && !fl45.monthCard);
 
+  console.log('\n   แฟ้มเอกสาร — ใบคนละชนิดอยู่คนละแฟ้ม');
+  /* ของเดิมหน้านี้เรียก listDocs ซึ่งคืนเฉพาะใบที่ไม่มีเลขออเดอร์
+     ใบเสร็จ/ใบกำกับภาษีออกจากออเดอร์เสมอ จึงมีเลขออเดอร์ทุกใบ และไม่เคยโผล่ที่นี่เลยสักใบ
+     ทั้งที่อยู่ในชีทครบ — เจ้าของร้านถามตรง ๆ ว่า "ใบกำกับภาษีที่ออกแล้วอยู่ไหน" */
+  /* ข้อสอบก่อนหน้าล้างทะเบียนเอกสารทิ้งไปแล้ว ออกใบใหม่หนึ่งใบก่อน
+     ออกจากออเดอร์จริงตามทางเดินปกติ ไม่ยัดแถวเข้าทะเบียนเอง
+     ไม่งั้นที่ทดสอบคือทะเบียนที่เราปั้นเอง ไม่ใช่ใบที่ระบบออกจริง */
+  await page.evaluate(function () { go('list') });
+  await page.waitForTimeout(500);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec') });
+  await page.waitForTimeout(400);
+  await page.click('#dc-make');
+  /* หน้านี้มีปุ่ม #dc-copy อยู่สองที่ (ในกล่องออกเอกสาร กับในหน้าใบเสนอราคา)
+     จึงรอที่ทะเบียนเอกสารแทน ชัดกว่าและไม่ขึ้นกับว่าปุ่มไหนโผล่ก่อน */
+  await page.waitForFunction(function () { return MOCK_DOCS.length > 0 }, { timeout: 20000 });
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
+  await page.evaluate(function () { go('quote') });
+  await page.waitForTimeout(300);
+  await page.click('#btn-file');
+  await page.waitForTimeout(900);
+  var fd45 = await page.evaluate(function () {
+    return {
+      folders: $$('#fl-docs .fold').map(function (f) {
+        return f.querySelector('b').textContent;
+      }),
+      counts: $$('#fl-docs .fold').map(function (f) {
+        return f.querySelector('.fold-n').textContent;
+      }),
+      rows: $$('#fl-docs .row').length
+    };
+  });
+  eq('มีสี่แฟ้ม ชนิดละแฟ้ม', fd45.folders.length, 4);
+  truthy('แฟ้มใบเสร็จ/ใบกำกับภาษีมาก่อน เพราะเป็นใบที่ต้องใช้ยื่นภาษี',
+    fd45.folders[0].indexOf('ใบกำกับภาษี') > -1);
+  truthy('แฟ้มใบเสนอราคาแยกออกไปต่างหาก', fd45.folders.indexOf('ใบเสนอราคา') > -1);
+  eq('หน้าแรกของแฟ้มยังไม่โชว์ใบสักใบ ต้องกดเข้าไปก่อน', fd45.rows, 0);
+  truthy('แฟ้มใบกำกับภาษีมีใบอยู่จริง (ใบที่ออกไปตอนต้นข้อสอบ)',
+    /\d+ ใบ/.test(fd45.counts[0]));
+
+  var open45 = await page.evaluate(async function () {
+    $('#fl-docs [data-fk="ใบเสร็จรับเงิน"]').click();
+    await new Promise(function (r) { setTimeout(r, 700) });
+    var rows = $$('#fl-docs .row');
+    return {
+      rows: rows.length,
+      /* ในบรรทัดมีหลาย span (ชื่อลูกค้า / ชนิด·วันที่·ยอด) จึงต่อทั้งบรรทัดแล้วค่อยดู
+         ชนิดใบอื่นต้องไม่โผล่ในแฟ้มนี้เลยแม้แต่คำเดียว */
+      onlyThisKind: rows.map(function (r) {
+        var t = r.querySelector('.i').textContent;
+        return /ใบเสร็จรับเงิน/.test(t) && !/ใบเสนอราคา|ใบแจ้งหนี้|ใบรับเงินมัดจำ/.test(t);
+      }),
+      hasBack: !!$('#fl-docs .fold-back'),
+      hasPrint: !!$('#fl-docs [data-rp]'),
+      folders: $$('#fl-docs .fold').length
+    };
+  });
+  truthy('กดแฟ้มแล้วเจอใบข้างใน', open45.rows > 0);
+  truthy('ข้างในมีแต่ใบชนิดนั้นชนิดเดียว',
+    open45.onlyThisKind.length > 0 && open45.onlyThisKind.every(Boolean));
+  eq('ไม่มีแฟ้มอื่นปนอยู่ในนั้น', open45.folders, 0);
+  truthy('ใบข้างในกดพิมพ์ซ้ำได้', open45.hasPrint);
+  truthy('มีปุ่มกลับไปหน้าแฟ้ม', open45.hasBack);
+
+  var back45 = await page.evaluate(async function () {
+    $('#fl-docs .fold-back').click();
+    await new Promise(function (r) { setTimeout(r, 600) });
+    return { folders: $$('#fl-docs .fold').length, rows: $$('#fl-docs .row').length };
+  });
+  eq('กดกลับแล้วได้หน้าแฟ้มเหมือนเดิม', back45.folders, 4);
+  eq('และไม่เหลือใบค้างอยู่', back45.rows, 0);
+
+  console.log('\n   ค้นหาต้องเจอใบกำกับภาษี ทั้งที่ใบพวกนี้ผูกกับออเดอร์');
+  var find45 = await page.evaluate(async function () {
+    /* หาเลขใบจริงจากในแฟ้มก่อน แล้วค่อยเอาไปค้น จะได้ไม่ผูกกับเลขที่ตายตัว */
+    $('#fl-docs [data-fk="ใบเสร็จรับเงิน"]').click();
+    await new Promise(function (r) { setTimeout(r, 700) });
+    var no = $('#fl-docs .row .i b').textContent.trim();
+    $('#fl-docs .fold-back').click();
+    await new Promise(function (r) { setTimeout(r, 500) });
+    $('#fl-q').value = no;
+    $('#fl-q').dispatchEvent(new Event('input'));
+    await new Promise(function (r) { setTimeout(r, 800) });
+    var out = {
+      no: no, rows: $$('#fl-docs .row').length,
+      first: ($('#fl-docs .row .i b') || {}).textContent,
+      heads: $$('#fl-docs .subhd').map(function (h) { return h.textContent }),
+      folders: $$('#fl-docs .fold').length
+    };
+    $('#fl-q').value = '';
+    $('#fl-q').dispatchEvent(new Event('input'));
+    await new Promise(function (r) { setTimeout(r, 700) });
+    return out;
+  });
+  eq('ค้นด้วยเลขใบกำกับภาษีแล้วเจอ', find45.rows, 1);
+  eq('และเป็นใบที่ค้นจริง ๆ', String(find45.first || '').trim(), find45.no);
+  eq('ผลค้นหาข้ามแฟ้ม ไม่ต้องเดาก่อนว่าใบชนิดไหน', find45.folders, 0);
+  truthy('ผลค้นหายังแยกหัวข้อตามชนิดใบ ไม่เทรวมกัน',
+    find45.heads.length === 1 && find45.heads[0].indexOf('ใบกำกับภาษี') > -1);
+
   console.log('\n   สลับไปดูสรุปรายเดือน');
   await page.click('#fl-tabs button[data-fl="month"]');
   await page.waitForTimeout(1000);

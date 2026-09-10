@@ -235,6 +235,30 @@ window.google = { script: { run: (function(){
         }).reverse();
       });
     },
+    /* ค้นเอกสารทั้งชีท ทุกชนิด — ของจริงคือ findDocs ใน Api.gs
+       ต่างจาก listDocs ตรงที่ไม่กรองใบที่มีเลขออเดอร์ทิ้ง (ใบกำกับภาษีมีเลขออเดอร์ทุกใบ) */
+    findDocs: function(p){
+      reply(function(){
+        p = p || {};
+        var want = String(p.q||"").trim().toLowerCase();
+        var type = String(p.type||"").trim();
+        var limit = Math.min(Math.max(Number(p.limit)||30, 1), 200);
+        var hit = [], counts = {};
+        MOCK_DOCS.slice().reverse().forEach(function(d){
+          var row = { no:d.no, type:d.type, date:d.date, orderNo:d.orderNo||"",
+                      custName:d.cust.name, total:d.doc.total, voidWhy:d.voidWhy||"",
+                      sentAt:d.sentAt||"", hasSnap:true };
+          if(want){
+            var hay = (row.no+" "+row.custName+" "+row.orderNo+" "+row.type).toLowerCase();
+            if(hay.indexOf(want) < 0) return;
+          }
+          counts[row.type] = (counts[row.type]||0) + 1;
+          if(type && row.type !== type) return;
+          hit.push(row);
+        });
+        return { rows: hit.slice(0, limit), total: hit.length, counts: counts };
+      });
+    },
     editOrderItems: function(no, items, by, ck, opts){
       reply(function(){
         var o = MOCK_ORDERS.filter(function(x){ return x.no === String(no) })[0];

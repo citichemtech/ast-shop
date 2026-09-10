@@ -1317,6 +1317,76 @@ function custToast(kept){
 /* ------------------------------------------------------- พิมพ์เอกสารซ้ำ */
 
 /* พิมพ์ซ้ำไม่ออกเลขใหม่ ไม่แตะสต๊อก ไม่เขียนอะไรลงชีท — แค่วาดใบเดิมออกมาอีกครั้ง */
+/** หนึ่งบรรทัดของเอกสารหนึ่งใบ
+
+    ใช้ร่วมกันทั้งในหน้าออเดอร์ หน้าใบเสนอราคา และแฟ้มเอกสาร — ปุ่มไหนกดได้กดไม่ได้
+    ต้องตัดสินด้วยกฎเดียวกันทุกที่ ถ้าเขียนแยกกันสามที่ วันหนึ่งจะมีที่หนึ่งที่ยอมให้แก้
+    ใบที่ส่งลูกค้าไปแล้ว */
+function docRowHtml(d){
+
+      var dead = !!d.voidWhy;
+      /* ใบที่ยังไม่ได้ส่ง = ยังอยู่ในร้าน แก้ด้วยเลขเดิมได้ไม่จำกัด
+         ใบที่กดส่งแล้ว = ลูกค้าถือกระดาษอยู่ ห้ามแก้ ต้องยกเลิกแล้วออกใหม่ */
+      var sent = String(d.sentAt || "");
+      return '<div class="row"><div class="i">'
+        +'<b>'+esc(d.no)+'</b>'
+        /* ประวัติที่ไม่มีชื่อลูกค้า หาใบที่ต้องการไม่เจอ — เลขใบอย่างเดียว
+           ไม่มีใครจำได้ว่าใบไหนของใคร */
+        + (d.custName ? '<span style="color:var(--ink);font-weight:600">'
+                      + esc(d.custName) + '</span>' : '')
+        +'<span>'+esc(d.type)+' · '+esc(d.date||"")+' · '+baht(d.total)
+        + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
+        + (!dead && sent ? ' · <span style="color:var(--green)">ส่งแล้ว</span>' : '')
+        + (!dead && !sent ? ' · <span style="color:var(--amber)">ยังไม่ได้ส่ง</span>' : '')
+        +'</span>'
+        + (dead ? '<span style="color:var(--red)">'+esc(d.voidWhy)+'</span>' : '')
+        + (!dead && sent ? '<span style="color:var(--gray)">ส่งเมื่อ '+esc(sent)+'</span>' : '')
+        +'</div><div class="acts">'
+        +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
+        /* ใบเสนอราคาที่ลูกค้าตอบตกลงแล้ว ของเดิมต้องคีย์รายการใหม่ทั้งชุด
+           ทั้งที่ข้อมูลอยู่ในใบครบแล้ว — พิมพ์ใหม่ทีคือพิมพ์ผิดได้ที */
+        + (!dead && !d.orderNo && d.type === "ใบเสนอราคา"
+           ? '<button class="mini" data-q2o="'+esc(d.no)+'">ทำเป็นออเดอร์</button>' : '')
+        /* ใบที่ยกเลิกไปแล้วไม่มีปุ่มให้กดซ้ำ เหตุผลครั้งแรกจะได้ไม่ถูกทับหาย */
+        + (dead || sent ? '' : '<button class="mini" data-rv="'+esc(d.no)+'">แก้ไขใบ</button>')
+        + (dead || sent ? '' : '<button class="mini" data-sd="'+esc(d.no)+'">ส่งแล้ว</button>')
+        + (dead ? '' : '<button class="mini red" data-vd="'+esc(d.no)+'">ยกเลิก</button>')
+        +'</div></div>';
+}
+
+/** ผูกปุ่มในรายการเอกสาร — redraw คือวิธีวาดรายการนั้นใหม่หลังข้อมูลเปลี่ยน
+    ต่างที่กันวาดคนละแบบ (บางที่เป็นรายการของออเดอร์ บางที่เป็นแฟ้มทั้งชนิด)
+    จึงส่งวิธีวาดเข้ามา แทนที่จะให้ตัวนี้เดาเอาเองว่าอยู่หน้าไหน */
+function bindDocRows(box, outId, redraw){
+  box.querySelectorAll("[data-rp]").forEach(function(b){
+    b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
+  });
+  box.querySelectorAll("[data-q2o]").forEach(function(b){
+    b.onclick = function(){ quoteToOrder(b.getAttribute("data-q2o"), b) };
+  });
+  box.querySelectorAll("[data-rv]").forEach(function(b){
+    b.onclick = function(){ askRevise(b.getAttribute("data-rv"), b, redraw) };
+  });
+  box.querySelectorAll("[data-sd]").forEach(function(b){
+    b.onclick = function(){
+      var no = b.getAttribute("data-sd");
+      if(!confirm("ทำเครื่องหมายว่าส่งใบ "+no+" ให้ลูกค้าแล้ว?\n\n"
+                + "หลังจากนี้จะแก้ใบนี้ไม่ได้อีก ต้องยกเลิกแล้วออกใบใหม่แทน")) return;
+      b.disabled = true; b.textContent = "กำลังบันทึก…";
+      api("markSent", no, byName()).then(function(){
+        toast("บันทึกว่าส่งใบ "+no+" แล้ว");
+        redraw();
+      }, function(e){
+        b.disabled = false; b.textContent = "ส่งแล้ว";
+        toast("ไม่สำเร็จ: " + (e && e.message ? e.message : e));
+      });
+    };
+  });
+  box.querySelectorAll("[data-vd]").forEach(function(b){
+    b.onclick = function(){ askVoid(b.getAttribute("data-vd"), b, redraw) };
+  });
+}
+
 function drawOldDocs(orderNo, boxSel, query){
   var sel = boxSel || "#dc-old", box = $(sel);
   if (!box) return;
@@ -1361,36 +1431,7 @@ function drawOldDocs(orderNo, boxSel, query){
       bindAgain();
       return;
     }
-    box.innerHTML = shell(list.map(function(d){
-          var dead = !!d.voidWhy;
-          /* ใบที่ยังไม่ได้ส่ง = ยังอยู่ในร้าน แก้ด้วยเลขเดิมได้ไม่จำกัด
-             ใบที่กดส่งแล้ว = ลูกค้าถือกระดาษอยู่ ห้ามแก้ ต้องยกเลิกแล้วออกใหม่ */
-          var sent = String(d.sentAt || "");
-          return '<div class="row"><div class="i">'
-            +'<b>'+esc(d.no)+'</b>'
-            /* ประวัติที่ไม่มีชื่อลูกค้า หาใบที่ต้องการไม่เจอ — เลขใบอย่างเดียว
-               ไม่มีใครจำได้ว่าใบไหนของใคร */
-            + (d.custName ? '<span style="color:var(--ink);font-weight:600">'
-                          + esc(d.custName) + '</span>' : '')
-            +'<span>'+esc(d.type)+' · '+esc(d.date||"")+' · '+baht(d.total)
-            + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
-            + (!dead && sent ? ' · <span style="color:var(--green)">ส่งแล้ว</span>' : '')
-            + (!dead && !sent ? ' · <span style="color:var(--amber)">ยังไม่ได้ส่ง</span>' : '')
-            +'</span>'
-            + (dead ? '<span style="color:var(--red)">'+esc(d.voidWhy)+'</span>' : '')
-            + (!dead && sent ? '<span style="color:var(--gray)">ส่งเมื่อ '+esc(sent)+'</span>' : '')
-            +'</div><div class="acts">'
-            +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
-            /* ใบเสนอราคาที่ลูกค้าตอบตกลงแล้ว ของเดิมต้องคีย์รายการใหม่ทั้งชุด
-               ทั้งที่ข้อมูลอยู่ในใบครบแล้ว — พิมพ์ใหม่ทีคือพิมพ์ผิดได้ที */
-            + (!dead && !d.orderNo && d.type === "ใบเสนอราคา"
-               ? '<button class="mini" data-q2o="'+esc(d.no)+'">ทำเป็นออเดอร์</button>' : '')
-            /* ใบที่ยกเลิกไปแล้วไม่มีปุ่มให้กดซ้ำ เหตุผลครั้งแรกจะได้ไม่ถูกทับหาย */
-            + (dead || sent ? '' : '<button class="mini" data-rv="'+esc(d.no)+'">แก้ไขใบ</button>')
-            + (dead || sent ? '' : '<button class="mini" data-sd="'+esc(d.no)+'">ส่งแล้ว</button>')
-            + (dead ? '' : '<button class="mini red" data-vd="'+esc(d.no)+'">ยกเลิก</button>')
-            +'</div></div>';
-        }).join("")
+    box.innerHTML = shell(list.map(docRowHtml).join("")
       + '<div id="'+outId+'" style="margin-top:10px"></div>', list.length)
       /* ชีทส่งมาให้ 20 ใบล่าสุด ใบเก่ากว่านั้นยังอยู่ในชีท เอกสาร ครบทุกใบ
          ต้องบอกไว้ ไม่งั้นจะเข้าใจว่าใบเก่าหายไปแล้ว */
@@ -1398,33 +1439,7 @@ function drawOldDocs(orderNo, boxSel, query){
          ? '<div class="hint" style="margin-top:8px">แสดง 20 ใบล่าสุด · '
            + 'ใบเก่ากว่านี้ดูได้ในชีท <b>เอกสาร</b></div>' : '');
     bindAgain();
-    box.querySelectorAll("[data-rp]").forEach(function(b){
-      b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
-    });
-    box.querySelectorAll("[data-q2o]").forEach(function(b){
-      b.onclick = function(){ quoteToOrder(b.getAttribute("data-q2o"), b) };
-    });
-    box.querySelectorAll("[data-rv]").forEach(function(b){
-      b.onclick = function(){ askRevise(b.getAttribute("data-rv"), b, orderNo, sel) };
-    });
-    box.querySelectorAll("[data-sd]").forEach(function(b){
-      b.onclick = function(){
-        var no = b.getAttribute("data-sd");
-        if(!confirm("ทำเครื่องหมายว่าส่งใบ "+no+" ให้ลูกค้าแล้ว?\n\n"
-                  + "หลังจากนี้จะแก้ใบนี้ไม่ได้อีก ต้องยกเลิกแล้วออกใบใหม่แทน")) return;
-        b.disabled = true; b.textContent = "กำลังบันทึก…";
-        api("markSent", no, byName()).then(function(){
-          toast("บันทึกว่าส่งใบ "+no+" แล้ว");
-          drawOldDocs(orderNo, sel);
-        }, function(e){
-          b.disabled = false; b.textContent = "ส่งแล้ว";
-          toast("ไม่สำเร็จ: " + (e && e.message ? e.message : e));
-        });
-      };
-    });
-    box.querySelectorAll("[data-vd]").forEach(function(b){
-      b.onclick = function(){ askVoid(b.getAttribute("data-vd"), b, orderNo, sel) };
-    });
+    bindDocRows(box, outId, function(){ drawOldDocs(orderNo, sel) });
   }, function(e){
     box.innerHTML = '<div class="hint" style="color:var(--red)">ดูใบเก่าไม่ได้: '
       + esc(e && e.message ? e.message : e) + '</div>';
@@ -1442,7 +1457,7 @@ function drawOldDocs(orderNo, boxSel, query){
    แต่ถ้าใบยังไม่ออกจากร้าน มันแค่เผาเลขทิ้งใบหนึ่งทุกครั้งที่พิมพ์ผิด
 
    ปุ่มนี้จึงถามยืนยันเรื่องเดียวที่ตัดสินว่าทำได้ไหม: ใบถึงมือลูกค้าหรือยัง */
-function askRevise(no, btn, orderNo, boxSel){
+function askRevise(no, btn, redraw){
   var row = btn.closest(".row");
   if (row.querySelector(".rvbox")) { row.querySelector(".rv-why").focus(); return }
 
@@ -1501,7 +1516,7 @@ function askRevise(no, btn, orderNo, boxSel){
       clientKey: "rv-" + no + "-" + rvKey
     }).then(function(res){
       toast("แก้ใบ " + no + " แล้ว · ยอดใหม่ " + baht(res.doc ? res.doc.total : 0));
-      drawOldDocs(orderNo, boxSel);
+      redraw();
     }, function(e){
       go.disabled = false; go.textContent = "ยืนยันแก้ใบนี้";
       msg.style.color = "var(--red)";
@@ -1510,7 +1525,7 @@ function askRevise(no, btn, orderNo, boxSel){
   };
 }
 
-function askVoid(no, btn, orderNo, boxSel){
+function askVoid(no, btn, redraw){
   var row = btn.closest(".row");
   if (row.querySelector(".vdbox")) { row.querySelector(".vd-why").focus(); return }
 
@@ -1546,7 +1561,7 @@ function askVoid(no, btn, orderNo, boxSel){
     msg.style.color = ""; msg.textContent = "";
     api("voidDoc", no, r, byName()).then(function(){
       toast("ยกเลิกใบ " + no + " แล้ว ออกใบใหม่ได้เลย");
-      drawOldDocs(orderNo, boxSel);
+      redraw();
     }, function(e){
       go.disabled = false; go.textContent = "ยืนยันยกเลิก";
       msg.style.color = "var(--red)";
@@ -1797,11 +1812,19 @@ function readFormTicks(){
 }
 
 function drawDoc(r, o, cust, type, form){
+  /* กล่องออกเอกสารปิดไปแล้วก็ไม่มีที่ให้วาง
+
+     ทั้งการยิงไปลงทะเบียนในชีทและการวาดใบ A4 ใช้เวลาเป็นวินาที คนกดปิดกล่อง
+     ระหว่างนั้นได้ตลอด (และจะกดจริง ๆ เวลาเน็ตร้านช้า)
+     ใบยังลงทะเบียนในชีทเรียบร้อยแล้ว ไม่ได้หายไปไหน กดพิมพ์ซ้ำจากแฟ้มเอกสารได้เลย
+     จึงเงียบไปเฉย ๆ ดีกว่าโยน error ใส่หน้าจอที่ไม่มีใครดูอยู่แล้ว */
+  if(!$("#dc-out")) return;
   var m = { no:r.no, date:o.date, cust:cust, po:$("#dc-po")?$("#dc-po").value.trim():"",
             terms:$("#dc-terms")?$("#dc-terms").value:"", seller:CFG.docSeller||"",
             sellerEmail:CFG.docSellerEmail||"", note:"", form:form||[] };
   $("#dc-out").innerHTML='<div class="load">กำลังวาดเอกสาร…</div>';
   buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+    if(!$("#dc-out")) return;
     $("#dc-out").innerHTML =
        '<div class="msg ok" style="display:block">ออกใบ <b>'+esc(r.no)+'</b> แล้ว '
       +'ลงทะเบียนในชีท เอกสาร เรียบร้อย</div>'
@@ -3030,6 +3053,126 @@ function repeatOrder(o){
     : ("คีย์ซ้ำจาก " + o.no + " แล้ว ตรวจอีกครั้งก่อนบันทึก"));
 }
 
+/* ------------------------------------------- แฟ้มเอกสาร: แยกเป็นแฟ้มตามชนิดใบ
+
+   เดิมหน้านี้เรียก listDocs ซึ่งคืนเฉพาะใบที่ "ไม่มีเลขออเดอร์"
+   แต่ใบเสร็จ/ใบกำกับภาษี ใบแจ้งหนี้ และใบมัดจำ ออกจากออเดอร์เสมอ จึงมีเลขออเดอร์ทุกใบ
+   แปลว่าใบกำกับภาษีที่ออกไปแล้ว ไม่เคยโผล่ในหน้านี้เลยสักใบ ทั้งที่อยู่ในชีทครบ
+   และช่องค้นหายังเขียนว่าค้นด้วย "เลขออเดอร์" ได้ ทั้งที่ไม่มีทางเจอ
+
+   ของใหม่เข้าแฟ้มก่อน ใบคนละชนิดไม่ปนกัน — ใบเสนอราคาคือใบที่ยัง "อาจจะขาย"
+   ใบกำกับภาษีคือใบที่ "ขายไปแล้วและแจ้งสรรพากรแล้ว" คนละเรื่องกันคนละความสำคัญ */
+
+var FILE_KIND = "";
+var DOC_KINDS = [
+  { th: "ใบเสร็จรับเงิน", label: "ใบเสร็จ / ใบกำกับภาษี", ic: "🧾",
+    note: "ใบที่ขายจบแล้ว ใช้ยื่นภาษี" },
+  { th: "ใบแจ้งหนี้",     label: "ใบแจ้งหนี้",            ic: "📃",
+    note: "วางบิลแล้วรอเก็บเงิน" },
+  { th: "ใบเสนอราคา",    label: "ใบเสนอราคา",           ic: "📝",
+    note: "ยังไม่ได้ขาย รอลูกค้าตอบ" },
+  { th: "ใบรับเงินมัดจำ", label: "ใบรับเงินมัดจำ",        ic: "💰",
+    note: "รับมัดจำไว้ก่อนส่งของ" }
+];
+
+function docKind(th){
+  for(var i = 0; i < DOC_KINDS.length; i++) if(DOC_KINDS[i].th === th) return DOC_KINDS[i];
+  return { th: th, label: th, ic: "📄", note: "" };
+}
+
+function drawFileDocs(){
+  var box = $("#fl-docs");
+  if(!box) return;
+  var q = ($("#fl-q") && $("#fl-q").value.trim()) || "";
+  box.innerHTML = '<div class="load">กำลังเปิดแฟ้ม…</div>';
+  /* ค้นหาแล้วไม่ต้องเข้าแฟ้ม — คนที่พิมพ์เลขใบมาคือคนที่รู้อยู่แล้วว่าจะหาใบไหน
+     บังคับให้เดาก่อนว่าใบนั้นชนิดอะไรคือทำให้ช่องค้นหาไร้ประโยชน์ */
+  api("findDocs", { q: q, type: q ? "" : FILE_KIND, limit: 60 }).then(function(res){
+    var rows = (res && res.rows) || [], counts = (res && res.counts) || {};
+    if(q) drawDocHits(box, rows, q);
+    else if(!FILE_KIND) drawDocFolders(box, counts);
+    else drawDocOne(box, rows, counts, res.total || rows.length);
+  }, function(e){
+    box.innerHTML = '<div class="empty" style="color:var(--red)"><b>เปิดแฟ้มไม่ได้</b>'
+      + esc(e && e.message ? e.message : e) + '</div>';
+  });
+}
+
+/** หน้าแรกของแฟ้ม — สี่แฟ้มเรียงกัน พร้อมจำนวนใบข้างใน */
+function drawDocFolders(box, counts){
+  box.innerHTML = '<div class="hint" style="padding:0 2px 8px">'
+      + 'กดที่แฟ้มเพื่อดูใบข้างใน · หรือพิมพ์ค้นหาข้างบนถ้ารู้เลขใบอยู่แล้ว</div>'
+    + DOC_KINDS.map(function(k){
+        var n = Number(counts[k.th]) || 0;
+        return '<div class="fold' + (n ? '' : ' none') + '" data-fk="' + esc(k.th) + '">'
+          + '<span class="fold-ic">' + k.ic + '</span>'
+          + '<span class="fold-tx"><b>' + esc(k.label) + '</b>'
+          +   '<em>' + esc(k.note) + '</em></span>'
+          + '<span class="fold-n">' + (n ? n + ' ใบ' : 'ยังไม่มี') + '</span>'
+          + '</div>';
+      }).join("");
+  box.querySelectorAll("[data-fk]").forEach(function(el){
+    el.onclick = function(){
+      if(el.classList.contains("none")) return;
+      FILE_KIND = el.getAttribute("data-fk");
+      drawFileDocs();
+    };
+  });
+}
+
+/** ข้างในแฟ้มหนึ่งใบ */
+function drawDocOne(box, rows, counts, total){
+  var k = docKind(FILE_KIND);
+  var outId = "rp-out-fold";
+  if(!rows.length){
+    box.innerHTML = docBackBar()
+      + '<div class="empty"><b>ยังไม่มี' + esc(k.label) + '</b>'
+      + 'ใบที่ออกจากนี้ไปจะมาอยู่ในแฟ้มนี้</div>';
+  } else {
+    box.innerHTML = docBackBar()
+      + '<div class="subhd">' + esc(k.label) + ' · ' + rows.length + ' ใบ</div>'
+      + rows.map(docRowHtml).join("")
+      + '<div id="' + outId + '" style="margin-top:10px"></div>'
+      + (total > rows.length
+          ? '<div class="hint" style="margin-top:8px">แสดง ' + rows.length + ' ใบล่าสุด '
+            + 'จากทั้งหมด ' + total + ' ใบ · พิมพ์เลขใบหรือชื่อลูกค้าในช่องค้นหาข้างบน '
+            + 'เพื่อหาใบที่เก่ากว่านี้</div>'
+          : '');
+    bindDocRows(box, outId, drawFileDocs);
+  }
+  var b = box.querySelector(".fold-back");
+  if(b) b.onclick = function(){ FILE_KIND = ""; drawFileDocs() };
+}
+
+function docBackBar(){
+  return '<button class="mini fold-back" style="margin-bottom:10px">← ทุกแฟ้ม</button>';
+}
+
+/** ผลค้นหา — ยังแยกหัวข้อตามชนิดใบ ไม่เทรวมกันเป็นกองเดียว */
+function drawDocHits(box, rows, q){
+  if(!rows.length){
+    box.innerHTML = '<div class="empty"><b>ไม่พบเอกสารที่ค้นหา</b>'
+      + 'พิมพ์เลขที่เอกสาร ชื่อลูกค้า หรือเลขออเดอร์บางส่วนก็ได้</div>';
+    return;
+  }
+  var by = {};
+  rows.forEach(function(d){ (by[d.type] || (by[d.type] = [])).push(d) });
+  var order = DOC_KINDS.map(function(k){ return k.th });
+  for(var t in by) if(order.indexOf(t) < 0) order.push(t);
+
+  var outId = "rp-out-hits";
+  box.innerHTML = '<div class="hint" style="padding:0 2px 8px">ผลค้นหา “' + esc(q) + '” · '
+      + rows.length + ' ใบ</div>'
+    + order.filter(function(t){ return by[t] }).map(function(t){
+        var k = docKind(t);
+        return '<div class="subhd">' + k.ic + ' ' + esc(k.label)
+          + ' · ' + by[t].length + ' ใบ</div>'
+          + by[t].map(docRowHtml).join("");
+      }).join("")
+    + '<div id="' + outId + '" style="margin-top:10px"></div>';
+  bindDocRows(box, outId, drawFileDocs);
+}
+
 /* ------------------------------------------------------------- แฟ้มเอกสาร
 
    สองเรื่องที่เคยตามหายาก มาอยู่หน้าเดียวกัน
@@ -3063,7 +3206,7 @@ function fileInit(){
   var q = $("#fl-q");
   if(q && !q.dataset.bound){
     q.dataset.bound = "1";
-    q.oninput = function(){ drawOldDocs("", "#fl-docs", q.value.trim()) };
+    q.oninput = function(){ FILE_KIND = ""; drawFileDocs() };
   }
   pasteInit();
   fileDraw();
@@ -3075,7 +3218,7 @@ function fileDraw(){
   });
   $("#fl-doc-card").style.display   = FILE_TAB === "doc"   ? "" : "none";
   $("#fl-month-card").style.display = FILE_TAB === "month" ? "" : "none";
-  if(FILE_TAB === "doc") drawOldDocs("", "#fl-docs", ($("#fl-q") && $("#fl-q").value.trim()) || "");
+  if(FILE_TAB === "doc") drawFileDocs();
   else loadMonths();
 }
 
