@@ -90,6 +90,21 @@ function load(drive, props) {
     Number: Number, Object: Object, Array: Array, isNaN: isNaN, RegExp: RegExp,
     DriveApp: drive,
     Logger: { log: function () {} },
+    /* เวลาที่โชว์ให้คนอ่านต้องเป็นเวลาไทย ของจริงใช้ Utilities.formatDate
+       ที่นี่จำลองแบบง่าย ๆ ให้ครบพอที่โค้ดจะเดินได้และตรวจรูปแบบได้ */
+    Session: { getScriptTimeZone: function () { return 'Asia/Bangkok' } },
+    Utilities: {
+      formatDate: function (d, tz, fmt) {
+        var t = new Date(d.getTime() + 7 * 3600 * 1000);   /* Asia/Bangkok = UTC+7 */
+        var p = function (n) { return n < 10 ? '0' + n : '' + n };
+        return fmt
+          .replace('yyyy', t.getUTCFullYear())
+          .replace('MM', p(t.getUTCMonth() + 1))
+          .replace('dd', p(t.getUTCDate()))
+          .replace('HH', p(t.getUTCHours()))
+          .replace('mm', p(t.getUTCMinutes()));
+      }
+    },
     PropertiesService: {
       getScriptProperties: function () {
         return {
@@ -244,6 +259,24 @@ var st6 = api6.backupStatus();
 truthy('ตั้งแล้วบอกว่าเปิดอยู่', /สำรองอัตโนมัติ: เปิดอยู่/.test(st6));
 truthy('บอกว่ามีไฟล์สำรองกี่ไฟล์', /ไฟล์สำรองที่มีอยู่: 1 ไฟล์/.test(st6));
 truthy('บอกด้วยว่ากำลังสำรองไฟล์ไหน', st6.indexOf(REAL_ID) > -1);
+
+/* ====== เวลาที่โชว์ ต้องเป็นเวลาที่นาฬิกาบนผนังบอก */
+console.log('\nเวลาสำรองที่โชว์ให้คนอ่าน');
+var dv = makeDrive();
+var pv = {};
+var av = load(dv, pv);
+av.backupNow();
+truthy('เก็บเวลาเป็นเวลาไทย ไม่ใช่ ISO แบบ UTC',
+  /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} น\.$/.test(pv.BACKUP_LAST_OK));
+truthy('หน้าสถานะโชว์เวลาเดียวกัน',
+  av.backupStatus().indexOf(pv.BACKUP_LAST_OK) > -1);
+
+/* ของที่เคยเก็บเป็น ISO ไว้ก่อนหน้านี้ ต้องอ่านให้เป็นเวลาไทยตอนโชว์
+   ไม่ใช่รอให้สำรองรอบใหม่มาทับก่อนถึงจะอ่านรู้เรื่อง
+   ของจริง: 2026-09-09T18:09Z คือตีหนึ่งของวันที่ 10 ตามเวลาไทย */
+pv.BACKUP_LAST_OK = '2026-09-09T18:09:49.407Z';
+truthy('ค่าเก่าแบบ ISO ถูกแปลงเป็นเวลาไทยตอนโชว์',
+  av.backupStatus().indexOf('2026-09-10 01:09 น.') > -1);
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

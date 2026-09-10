@@ -38,6 +38,14 @@ var KEEP_MIN = 7;
 
 function pad2_(n) { return n < 10 ? '0' + n : '' + n; }
 
+/* เวลาที่คนอ่าน ต้องเป็นเวลาที่นาฬิกาบนผนังบอก ไม่ใช่เวลา UTC
+   toISOString() เขียน 2026-09-09T18:09Z ทั้งที่สำรองตอนตีหนึ่งวันที่ 10
+   คนอ่านแล้วนึกว่าสำรองตอนหกโมงเย็นของอีกวัน ซึ่งผิดทั้งวันและทั้งเวลา */
+function localStamp_(d) {
+  var tz = Session.getScriptTimeZone() || 'Asia/Bangkok';
+  return Utilities.formatDate(d, tz, 'yyyy-MM-dd HH:mm') + ' น.';
+}
+
 /** ชื่อไฟล์สำรอง — เรียงตามเวลาได้ด้วยการเรียงชื่อ และอ่านออกด้วยตาเปล่า */
 function backupName_(d) {
   return BACKUP_PREFIX + d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' +
@@ -129,13 +137,13 @@ function backupNow() {
       '\nเก็บไว้ในโฟลเดอร์ ' + BACKUP_FOLDER +
       '\nลิงก์: ' + copy.getUrl() +
       (trashed ? '\nย้ายของเก่ากว่า ' + KEEP_DAYS + ' วันลงถังขยะ ' + trashed + ' ไฟล์' : '');
-    props.setProperty('BACKUP_LAST_OK', now.toISOString());
+    props.setProperty('BACKUP_LAST_OK', localStamp_(now));
     props.setProperty('BACKUP_LAST_MSG', msg);
     props.deleteProperty('BACKUP_LAST_ERR');
     Logger.log(msg);
     return msg;
   } catch (e) {
-    var err = 'สำรองไม่สำเร็จ (' + now.toISOString() + '): ' + e.message;
+    var err = 'สำรองไม่สำเร็จ (' + localStamp_(now) + '): ' + e.message;
     props.setProperty('BACKUP_LAST_ERR', err);
     Logger.log(err);
     throw e;   /* โยนต่อ เพื่อให้ Apps Script ส่งอีเมลแจ้งว่าทริกเกอร์ล้ม */
@@ -173,6 +181,12 @@ function backupStatus() {
   out.push(on ? 'สำรองอัตโนมัติ: เปิดอยู่' : 'สำรองอัตโนมัติ: ยังไม่ได้ตั้ง — สั่ง setupBackup หนึ่งครั้ง');
 
   var ok = props.getProperty('BACKUP_LAST_OK');
+  /* ค่าที่เก็บไว้ก่อนหน้านี้เป็นเวลา UTC แบบ ISO อ่านให้เป็นเวลาไทยก่อนโชว์
+     ไม่ต้องรอให้สำรองรอบใหม่มาทับ ถึงจะอ่านรู้เรื่อง */
+  if (ok && /^\d{4}-\d{2}-\d{2}T/.test(ok)) {
+    var d = new Date(ok);
+    if (!isNaN(d.getTime())) ok = localStamp_(d);
+  }
   out.push('สำเร็จล่าสุด: ' + (ok || 'ยังไม่เคย'));
   var err = props.getProperty('BACKUP_LAST_ERR');
   if (err) out.push('ล้มครั้งล่าสุด: ' + err);
