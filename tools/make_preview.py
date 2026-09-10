@@ -420,8 +420,18 @@ window.google = { script: { run: (function(){
           var k = String(o.cust||"").trim();
           if(!k) return;
           var c = by[k] || (by[k] = { name:k, tel:"", addr:"", taxAddr:"", taxId:"",
-                                      branch:"", email:"", last:"", n:0 });
+                                      branch:"", email:"", last:"", n:0,
+                                      okN:0, deadN:0, total:0, profit:0, due:0, dueN:0 });
           c.n++;
+          /* ใบที่ยกเลิก/ตีกลับไม่ใช่ยอดซื้อ — ของจริงคิดแบบเดียวกันในชีท */
+          var st = String(o.status||"").trim();
+          if(st==="ยกเลิก" || st==="ตีกลับ") c.deadN++;
+          else {
+            c.okN++;
+            c.total  += Number(o.net)||0;
+            c.profit += Number(o.profit)||0;
+            if(st !== "ชำระแล้ว"){ c.dueN++; c.due += Number(o.net)||0 }
+          }
           if(String(o.date||"") >= c.last){
             c.last = String(o.date||"");
             if(o.tel) c.tel = o.tel;
@@ -432,7 +442,8 @@ window.google = { script: { run: (function(){
           var k = String((d.cust||{}).name||"").trim();
           if(!k) return;
           var c = by[k] || (by[k] = { name:k, tel:"", addr:"", taxAddr:"", taxId:"",
-                                      branch:"", email:"", last:"", n:0 });
+                                      branch:"", email:"", last:"", n:0,
+                                      okN:0, deadN:0, total:0, profit:0, due:0, dueN:0 });
           if(d.cust.taxId) c.taxId = d.cust.taxId;
           if(d.cust.addr)  c.taxAddr = d.cust.addr;
           if(d.cust.tel)   c.tel = d.cust.tel;

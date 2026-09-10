@@ -2732,6 +2732,11 @@ function openCustomer(name, no){
         '<div class="kpis" style="margin-bottom:10px">'
       + '<div class="kpi"><span>ซื้อไปแล้ว</span><b>' + (r.n||0) + ' ใบ</b></div>'
       + '<div class="kpi"><span>ยอดรวม</span><b>' + baht(r.total||0) + '</b></div>'
+      /* กำไรคือเหตุผลที่ต้องรู้ว่าใครเป็นลูกค้าประจำ — ลูกค้าที่ซื้อเยอะแต่ต่อราคา
+         จนแทบไม่เหลือกำไร กับลูกค้าที่ซื้อน้อยกว่าแต่ได้กำไรเต็ม เป็นคนละเรื่องกัน */
+      + '<div class="kpi"><span>กำไรจากลูกค้ารายนี้</span><b>' + baht(r.profit||0) + '</b></div>'
+      + '<div class="kpi"><span>เฉลี่ยต่อใบ</span><b>'
+      +   baht((r.n||0) ? (r.total||0)/(r.n||1) : 0) + '</b></div>'
       + '<div class="kpi"><span>ค้างชำระ</span><b'
       +   ((r.dueN||0) ? ' style="color:var(--amber)"' : '') + '>' + (r.dueN||0) + ' ใบ</b></div>'
       + '<div class="kpi"><span>ยอดที่ค้าง</span><b'
@@ -2750,11 +2755,24 @@ function openCustomer(name, no){
               + (o.channel ? ' · ' + chanTag(o.channel) : '') + '</span>'
               + '<span style="color:var(--ink);font-weight:700">' + baht(o.net) + '</span>'
               + '<span class="paybar ' + p.key + '">' + esc(p.label) + '</span>'
-              + '</div></div>';
+              + '</div>'
+              /* ใบที่ยกเลิกไปแล้วยังคีย์ซ้ำได้ — ลูกค้าเคยสั่งของชุดนี้จริง
+                 สิ่งที่ยกเลิกคือใบ ไม่ใช่ความต้องการซื้อของลูกค้า */
+              + '<div class="acts"><button class="btn ghost mini-w" data-rp="' + esc(o.no)
+              + '">คีย์ออเดอร์ซ้ำ</button></div>'
+              + '</div>';
           }).join("")
         : '<div class="empty">ยังไม่มีใบอื่นของลูกค้ารายนี้</div>')
       + '<div class="hint" style="margin-top:8px">ใบที่ยกเลิกหรือตีกลับขึ้นแบบขีดฆ่า '
       + 'และไม่ถูกนับรวมในยอดด้านบน</div>';
+
+    /* ปุ่มคีย์ซ้ำผูกกับใบที่โหลดมาแล้ว ไม่ต้องยิงชีทอีกรอบตอนกด */
+    $$("#cu-body [data-rp]").forEach(function(b){
+      b.onclick = function(){
+        var pick = list.filter(function(x){ return String(x.no) === b.dataset.rp })[0];
+        repeatOrder(pick);
+      };
+    });
 
     var pd = $("#cu-paid");
     if(pd) pd.onclick = function(){
@@ -2777,6 +2795,151 @@ function openCustomer(name, no){
     if(box) box.innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'
       + esc(m) + '</div>';
   });
+}
+
+/* ------------------------------------------------------------- หน้าลูกค้า
+
+   ลูกค้าประจำคือคนที่ทำเงินให้ร้านจริง ๆ แต่ระบบเดิมไม่มีที่ไหนตอบได้เลยว่า
+   ใครซื้อไปเท่าไร กำไรเท่าไร และค้างอยู่กี่ใบ — ต้องเปิดชีทแล้วไล่กรองเอง
+
+   ไม่ทำเป็นแท็บ เพราะแถบล่างเต็มแล้ว เข้าจากปุ่มบนหน้าออเดอร์ทั้งหมด
+   แบบเดียวกับหน้านำเข้า Shopee แท็บ "ออเดอร์" จึงยังติดไฟค้างไว้     */
+
+var CUST_SORT = "last";
+var CUST_SORTS = [
+  { key:"last",  label:"ซื้อล่าสุด"  },
+  { key:"total", label:"ยอดสูงสุด"   },
+  { key:"due",   label:"ค้างชำระ"    }
+];
+
+function custPageInit(){
+  var q = $("#cu-q");
+  if(q && !q.dataset.bound){
+    q.dataset.bound = "1";
+    q.oninput = drawCustPage;
+  }
+  var bk = $("#cu-back");
+  if(bk && !bk.dataset.bound){
+    bk.dataset.bound = "1";
+    bk.onclick = function(){ go("list") };
+  }
+  var box = $("#cu-list");
+  if(box) box.innerHTML = '<div class="load">กำลังโหลดรายชื่อลูกค้า…</div>';
+  /* custList เก็บรายชื่อไว้ในเครื่องแล้ว การค้นจึงไม่ยิงชีทซ้ำทุกตัวอักษร */
+  custList(function(){ drawCustPage() });
+}
+
+/* คัดตามคำค้น แล้วเรียงตามที่เลือก — เงียบ ๆ ในเครื่อง ไม่ยิงเซิร์ฟเวอร์ */
+function custPick(list, q, sort){
+  var want = String(q||"").trim().toLowerCase();
+  var qd = want.replace(/\D/g,"");
+  var out = (list||[]).filter(function(c){
+    if(!want) return true;
+    if(String(c.name||"").toLowerCase().indexOf(want) > -1) return true;
+    if(qd.length >= 3 && String(c.tel||"").replace(/\D/g,"").indexOf(qd) > -1) return true;
+    return false;
+  });
+  var num = function(v){ return Number(v) || 0 };
+  out.sort(function(a,b){
+    if(sort === "total") return num(b.total) - num(a.total) || (a.name < b.name ? -1 : 1);
+    if(sort === "due")   return num(b.due)   - num(a.due)   || (a.name < b.name ? -1 : 1);
+    /* ค่าตั้งต้นคือคนที่เพิ่งซื้อล่าสุด ซึ่งเป็นลำดับที่ชีทส่งมาอยู่แล้ว */
+    return String(b.last||"").localeCompare(String(a.last||"")) || (a.name < b.name ? -1 : 1);
+  });
+  return out;
+}
+
+function drawCustPage(){
+  var box = $("#cu-list");
+  if(!box) return;
+  var q = ($("#cu-q") && $("#cu-q").value) || "";
+  var all = CUSTS || [];
+  var list = custPick(all, q, CUST_SORT);
+
+  var chips = '<div class="sorts">' + CUST_SORTS.map(function(s){
+    return '<button type="button" data-cs="' + s.key + '"'
+         + (s.key === CUST_SORT ? ' class="on"' : '') + '>' + esc(s.label) + '</button>';
+  }).join("") + '</div>';
+
+  var head = '<div class="hint" style="padding:0 2px 8px">ลูกค้าทั้งหมด <b>' + all.length
+    + '</b> ราย' + (q ? ' · ตรงกับที่ค้น <b>' + list.length + '</b> ราย' : '') + '</div>';
+
+  box.innerHTML = chips + head + (list.length
+    ? list.slice(0, 200).map(function(c, i){
+        var due = Number(c.due) || 0;
+        return '<div class="row cu-row" data-cu="' + i + '"><div class="i">'
+          + '<b>' + esc(c.name || "ไม่ระบุชื่อ") + '</b>'
+          + '<span>' + (c.tel ? esc(c.tel) + ' · ' : '')
+          + 'ซื้อ ' + (Number(c.okN) || 0) + ' ใบ'
+          + (c.last ? ' · ล่าสุด ' + esc(thaiDate(c.last)) : '') + '</span>'
+          + '<span style="color:var(--ink);font-weight:700">' + baht(c.total || 0) + '</span>'
+          /* ค้างชำระเป็นเรื่องที่ต้องเห็นตั้งแต่ยังไม่กดเข้าไปดู
+             ไม่งั้นต้องเปิดทีละรายเพื่อรู้ว่าใครติดเงินอยู่ */
+          + (due ? '<span class="paybar due">ค้าง ' + (Number(c.dueN)||0) + ' ใบ · '
+                 + baht(due) + '</span>' : '')
+          + '</div></div>';
+      }).join("")
+    : '<div class="empty"><b>ไม่พบลูกค้าที่ค้นหา</b>พิมพ์ชื่อหรือเบอร์โทรบางส่วนก็ได้</div>');
+
+  $$("#cu-list .sorts button").forEach(function(b){
+    b.onclick = function(){ CUST_SORT = b.dataset.cs; drawCustPage() };
+  });
+  $$("#cu-list .cu-row").forEach(function(r){
+    r.onclick = function(){
+      var c = list[+r.dataset.cu];
+      if(c) openCustomer(c.name);
+    };
+  });
+}
+
+/* ------------------------------------------------------ คีย์ออเดอร์ซ้ำ
+
+   ลูกค้าประจำสั่งของชุดเดิมซ้ำทุกเดือน ทางเดียวที่เคยทำได้คือเปิดใบเก่าดู
+   แล้วพิมพ์ใหม่ทั้งใบ ทั้งที่อยู่สามบรรทัดและรายการสินค้าทุกบรรทัด
+
+   ใส่ให้เฉพาะของที่ยังมีอยู่ในฐานสินค้าจริง ตัวไหนหายไปแล้วบอกให้รู้
+   ไม่ใช่เงียบ ๆ แล้วปล่อยให้บันทึกใบที่ขาดของไป                        */
+
+function repeatOrder(o){
+  if(!o){ toast("ไม่มีข้อมูลใบนี้ให้คีย์ซ้ำ"); return }
+  closeModal();
+  go("new");
+
+  var set = function(id, v){
+    if(v !== undefined && v !== null && String(v) !== "") $("#"+id).value = v;
+  };
+  /* วันที่ต้องเป็นวันนี้เสมอ ไม่ใช่วันของใบเก่า ไม่งั้นยอดจะไปลงเดือนที่ปิดไปแล้ว */
+  $("#f-date").value = todayISO();
+  set("f-cust", o.cust);
+  set("f-tel",  o.tel);
+  set("f-addr", o.addr);
+  /* เลขพัสดุกับหมายเหตุของใบเก่าไม่เกี่ยวกับใบใหม่ ต้องไม่ติดมาด้วย */
+  $("#f-track").value = "";
+  $("#f-note").value  = "";
+  if(o.channel) pickOption("#f-channel", o.channel);
+  if(o.carrier) pickOption("#f-carrier", o.carrier);
+  if(o.vat)     pickOption("#f-vat", o.vat);
+  if(o.ship !== undefined && o.ship !== null && o.ship !== ""){
+    $("#f-ship").value = o.ship;
+    $("#f-ship").dataset.touched = "1";
+  }
+  $("#f-disc").value = Number(o.discount) || 0;
+
+  var raw  = (o.items || []).filter(function(it){ return Number(it.qty) > 0 });
+  var its  = raw.filter(function(it){ return it.sku && prodBySku(it.sku) });
+  if(its.length){
+    $("#items").innerHTML = "";
+    its.forEach(function(it){
+      addItem({ sku: it.sku, qty: it.qty, price: it.price, gift: Number(it.price) === 0 });
+    });
+  }
+  recalc();
+  window.scrollTo(0, 0);
+
+  var miss = raw.length - its.length;
+  toast(miss
+    ? ("คีย์ซ้ำจาก " + o.no + " แล้ว · มี " + miss + " รายการที่ไม่มีในฐานสินค้าแล้ว ต้องเลือกเอง")
+    : ("คีย์ซ้ำจาก " + o.no + " แล้ว ตรวจอีกครั้งก่อนบันทึก"));
 }
 
 /* --------------------------------------------- ของใกล้หมด + ล็อตใกล้หมดอายุ
@@ -3342,12 +3505,12 @@ function curPage(){
 }
 
 function go(page){
-  ["new","list","recv","quote","day","sum","shop","help"].forEach(function(p){
+  ["new","list","recv","quote","day","sum","shop","cust","help"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   /* หน้านำเข้า Shopee ไม่มีปุ่มของตัวเองบนแถบล่าง เข้ามาจากหน้าออเดอร์
      จึงให้แท็บ "ออเดอร์" ยังติดไฟค้างไว้ ไม่ใช่ดับหมดทั้งแถบจนไม่รู้ว่าอยู่ตรงไหน */
-  var tab = (page==="shop") ? "list" : page;
+  var tab = (page==="shop" || page==="cust") ? "list" : page;
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===tab) });
   if(page==="list") loadOrders();
   if(page==="day")  dayInit();
@@ -3355,6 +3518,7 @@ function go(page){
   if(page==="quote") quoteInit();
   if(page==="recv") recvInit();
   if(page==="shop") shopInit();
+  if(page==="cust") custPageInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){
@@ -3371,6 +3535,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#btn-parse").onclick = doParse;
   $("#btn-save").onclick  = save;
   $("#btn-shop").onclick = function(){ go("shop") };
+  $("#btn-cust").onclick = function(){ go("cust") };
   /* ไอคอนอยู่ใน Assets ซึ่งเป็นตัวแปรใน JS ไม่ใช่ไฟล์รูป จึงใส่ตอนเปิดแอป
      ไม่ใช่เขียนไว้ใน HTML — และถ้าวันไหนไอคอนหาย ปุ่มก็ยังอ่านออกเหมือนเดิม */
   ["#btn-shop-ic", "#sp-ic"].forEach(function(sel){

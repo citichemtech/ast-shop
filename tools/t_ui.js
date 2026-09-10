@@ -2318,7 +2318,7 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('เปิดคู่มือจากปุ่ม ? บนหัวจอได้',
     await page.evaluate(function () { return $('#pg-help').style.display !== 'none' }));
   truthy('มีหัวข้อครบทุกงานหลัก', await page.evaluate(function () {
-    return $$('#pg-help details').length >= 9;
+    return $$('#pg-help details').length >= 10;
   }));
   truthy('มีเรื่องใบที่ตีกลับของ Shopee อยู่ในคู่มือ',
     /ตีกลับ/.test(await page.textContent('#pg-help')));
@@ -2328,6 +2328,11 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     /ยกเลิก กับ ตีกลับ ไม่เหมือนกัน/.test(await page.textContent('#pg-help')));
   truthy('คู่มือบอกว่าพิมพ์หมายเลขคำสั่งซื้อ Shopee ในช่องค้นหาได้',
     /หมายเลขคำสั่งซื้อ Shopee ในช่องค้นหา/.test(await page.textContent('#pg-help')));
+  truthy('คู่มือมีวิธีคีย์ออเดอร์ซ้ำให้ลูกค้าประจำ',
+    /คีย์ออเดอร์ซ้ำ/.test(await page.textContent('#pg-help')));
+  /* ใบที่คีย์ซ้ำเป็นใบใหม่ ไม่ใช่ใบเดิม — ถ้าเข้าใจผิดจะกลายเป็นส่งของสองรอบ */
+  truthy('คู่มือเตือนว่าใบที่คีย์ซ้ำเป็นใบใหม่ ต้องกดบันทึกเอง',
+    /ใบที่คีย์ซ้ำเป็นใบใหม่เสมอ/.test(await page.textContent('#pg-help')));
   await page.click('#hp-back');
   await page.waitForTimeout(300);
   truthy('กดกลับแล้วได้หน้าเดิมที่ยืนอยู่ก่อนเปิดคู่มือ',
@@ -2428,6 +2433,146 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     loadOrders();
   }, keep40);
   await page.waitForTimeout(500);
+
+  /* ---------- 41. หน้าลูกค้า + คีย์ออเดอร์ซ้ำ ---------- */
+  console.log('\n41. หน้าลูกค้า — ใครซื้อเท่าไร ค้างเท่าไร และคีย์ซ้ำจากใบเก่า');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(300);
+  await page.evaluate(function () {
+    /* ตั้งข้อมูลลูกค้าให้ครบสามแบบ: ซื้อเยอะ · ซื้อน้อยแต่จ่ายแล้ว · สั่งแล้วยกเลิก */
+    function mk(no, cust, tel, date, net, status) {
+      return { no: no, date: date, channel: 'เพจ Facebook', cust: cust, tel: tel,
+               addr: 'ที่อยู่ ' + cust, carrier: 'Flash Express', track: '', vat: 'ไม่รับ VAT',
+               discount: 0, ship: 50, status: status, acct: '', staff: '', note: '',
+               subtotal: net - 50, vatAmt: 0, net: net, cost: 0, profit: net / 2, check: 'OK',
+               items: [{ sku: 'SKU-141', name: 'ของทดสอบ', unit: 'ชิ้น',
+                         qty: 2, price: (net - 50) / 2, total: net - 50, lot: '' }] };
+    }
+    MOCK_ORDERS.length = 0;
+    MOCK_ORDERS.push(
+      mk('CU-1', 'ลูกค้าประจำ',  '0811111111', '2026-09-05', 5050, 'ส่งแล้ว'),
+      mk('CU-2', 'ลูกค้าประจำ',  '0811111111', '2026-09-06', 3050, 'ชำระแล้ว'),
+      mk('CU-3', 'ลูกค้าขาจร',   '0822222222', '2026-09-07',  550, 'ชำระแล้ว'),
+      mk('CU-4', 'ลูกค้ายกเลิก', '0833333333', '2026-09-08', 9050, 'ยกเลิก')
+    );
+    /* หมวดก่อนหน้าออกเอกสารไว้ ซึ่งของจริงก็นับเป็นลูกค้าเหมือนกัน
+       หมวดนี้จะวัดเฉพาะลูกค้าที่ตั้งไว้เอง จึงล้างทะเบียนเอกสารด้วย */
+    MOCK_DOCS.length = 0;
+    CUSTS = null;              /* รายชื่อที่ cache ไว้ต้องโหลดใหม่ ไม่ใช่ใช้ของเก่า */
+    ORDERS = []; SUM_CACHE = null;
+  });
+  await page.click('#btn-cust');
+  await page.waitForTimeout(900);
+
+  var cu41 = await page.evaluate(function () {
+    var rows = [].slice.call(document.querySelectorAll('#cu-list .cu-row'));
+    return {
+      shown: $('#pg-cust').style.display !== 'none',
+      /* เข้ามาจากหน้าออเดอร์ แท็บออเดอร์จึงต้องยังติดไฟอยู่ ไม่ใช่ดับทั้งแถบ */
+      tab: (document.querySelector('.tabs button.on') || {}).dataset.go,
+      n: rows.length,
+      names: rows.map(function (r) { return r.querySelector('b').textContent }),
+      first: rows[0].innerText.replace(/\n/g, ' | ')
+    };
+  });
+  truthy('เปิดหน้าลูกค้าจากปุ่มบนหน้าออเดอร์ได้', cu41.shown);
+  eq('แท็บออเดอร์ยังติดไฟไว้ ไม่ใช่ดับทั้งแถบจนไม่รู้ว่าอยู่ตรงไหน', cu41.tab, 'list');
+  eq('รวมใบของคนเดียวกันเป็นบรรทัดเดียว', cu41.n, 3);
+  eq('เรียงคนที่ซื้อล่าสุดขึ้นก่อน',
+    cu41.names, ['ลูกค้ายกเลิก', 'ลูกค้าขาจร', 'ลูกค้าประจำ']);
+
+  var sort41 = await page.evaluate(function () {
+    function names() {
+      return [].slice.call(document.querySelectorAll('#cu-list .cu-row b'))
+        .map(function (b) { return b.textContent });
+    }
+    function tap(k) {
+      document.querySelector('#cu-list .sorts button[data-cs="' + k + '"]').click();
+      return names();
+    }
+    return { total: tap('total'), due: tap('due'), last: tap('last') };
+  });
+  /* คนที่สั่งแล้วยกเลิกทุกใบ ต้องไม่ขึ้นเป็นลูกค้าอันดับหนึ่งของร้าน */
+  eq('เรียงตามยอดซื้อ ใบที่ยกเลิกไม่ถูกนับ',
+    sort41.total, ['ลูกค้าประจำ', 'ลูกค้าขาจร', 'ลูกค้ายกเลิก']);
+  eq('เรียงตามยอดค้าง คนที่ยังไม่จ่ายขึ้นก่อน', sort41.due[0], 'ลูกค้าประจำ');
+  eq('กดกลับมาเรียงตามล่าสุดได้เหมือนเดิม', sort41.last[0], 'ลูกค้ายกเลิก');
+
+  var find41 = await page.evaluate(function () {
+    var q = $('#cu-q');
+    function type(v) {
+      q.value = v; q.oninput();
+      return [].slice.call(document.querySelectorAll('#cu-list .cu-row b'))
+        .map(function (b) { return b.textContent });
+    }
+    var byName = type('ขาจร');
+    var byTel  = type('0811111111');
+    var none   = type('ไม่มีคนนี้');
+    var back   = type('');
+    return { byName: byName, byTel: byTel, none: none, back: back.length };
+  });
+  eq('ค้นด้วยชื่อบางส่วน', find41.byName, ['ลูกค้าขาจร']);
+  eq('ค้นด้วยเบอร์โทรก็ได้', find41.byTel, ['ลูกค้าประจำ']);
+  eq('ไม่เจอก็บอกตรง ๆ ไม่ใช่โชว์ทุกคน', find41.none, []);
+  eq('ล้างคำค้นแล้วกลับมาครบ', find41.back, 3);
+
+  console.log('\n   กดชื่อลูกค้าแล้วได้ประวัติทุกใบ');
+  await page.evaluate(function () { $('#cu-q').value = ''; $('#cu-q').oninput(); });
+  /* เลือกจากชื่อ ไม่ใช่ลำดับที่เท่าไร ข้อสอบจะได้ไม่พังตอนเพิ่มบรรทัดหัวตาราง */
+  await page.evaluate(function () {
+    [].slice.call(document.querySelectorAll('#cu-list .cu-row')).filter(function (r) {
+      return r.querySelector('b').textContent === 'ลูกค้าประจำ';
+    })[0].click();
+  });
+  await page.waitForTimeout(800);
+  var his41 = await page.evaluate(function () {
+    var kpi = {};
+    $$('#cu-body .kpi').forEach(function (k) {
+      kpi[k.querySelector('span').textContent] = k.querySelector('b').textContent;
+    });
+    return { title: $('#m-head') ? $('#m-head').textContent : document.title,
+             kpi: kpi, rows: $$('#cu-body .row').length,
+             repeats: $$('#cu-body [data-rp]').length };
+  });
+  eq('ซื้อไปแล้วสองใบ', his41.kpi['ซื้อไปแล้ว'], '2 ใบ');
+  eq('ยอดรวมสองใบ', his41.kpi['ยอดรวม'], '฿8,100.00');
+  eq('กำไรจากลูกค้ารายนี้', his41.kpi['กำไรจากลูกค้ารายนี้'], '฿4,050.00');
+  eq('เฉลี่ยต่อใบ', his41.kpi['เฉลี่ยต่อใบ'], '฿4,050.00');
+  eq('ค้างใบเดียว เพราะอีกใบเก็บเงินแล้ว', his41.kpi['ค้างชำระ'], '1 ใบ');
+  eq('ยอดที่ค้าง', his41.kpi['ยอดที่ค้าง'], '฿5,050.00');
+  eq('ขึ้นทุกใบของลูกค้ารายนี้', his41.rows, 2);
+  eq('ทุกใบมีปุ่มคีย์ออเดอร์ซ้ำ', his41.repeats, 2);
+
+  console.log('\n   คีย์ออเดอร์ซ้ำจากใบเก่า');
+  await page.click('#cu-body [data-rp="CU-1"]');
+  await page.waitForTimeout(600);
+  var rp41 = await page.evaluate(function () {
+    return {
+      page: $('#pg-new').style.display !== 'none',
+      closed: !$('#modal').classList.contains('on'),
+      cust: $('#f-cust').value, tel: $('#f-tel').value, addr: $('#f-addr').value,
+      date: $('#f-date').value, track: $('#f-track').value, note: $('#f-note').value,
+      ship: $('#f-ship').value,
+      items: $$('#items .it').map(function (it) {
+        return [it.querySelector('.i-sku').value, it.querySelector('.i-qty').value,
+                it.querySelector('.i-price').value];
+      })
+    };
+  });
+  truthy('เด้งไปหน้าคีย์ออเดอร์ให้เลย', rp41.page);
+  truthy('ปิดหน้าประวัติให้ด้วย ไม่ค้างทับฟอร์ม', rp41.closed);
+  eq('ชื่อลูกค้ามาให้', rp41.cust, 'ลูกค้าประจำ');
+  eq('เบอร์มาให้', rp41.tel, '0811111111');
+  eq('ที่อยู่สามบรรทัดมาให้ ไม่ต้องพิมพ์ใหม่', rp41.addr, 'ที่อยู่ ลูกค้าประจำ');
+  eq('ค่าส่งเดิมมาให้', rp41.ship, '50');
+  eq('รายการสินค้ามาครบ พร้อมราคาที่เคยขายจริง',
+    rp41.items, [['SKU-141', '2', '2500']]);
+  /* เลขพัสดุกับหมายเหตุของใบเก่าติดมาด้วยไม่ได้เด็ดขาด — ใบใหม่ยังไม่ได้ส่ง
+     ถ้าติดมา จะมีวันที่พิมพ์ใบปะหน้าออกมาด้วยเลขพัสดุของใบเมื่อเดือนก่อน */
+  eq('เลขพัสดุของใบเก่าไม่ติดมา', rp41.track, '');
+  eq('หมายเหตุของใบเก่าไม่ติดมา', rp41.note, '');
+  var today41 = await page.evaluate(function () { return todayISO() });
+  eq('วันที่เป็นวันนี้ ไม่ใช่วันของใบเก่า', rp41.date, today41);
 
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');

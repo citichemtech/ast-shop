@@ -1987,7 +1987,9 @@ function getCustomers(limit) {
     var c = by[k];
     if (!c) {
       c = by[k] = { name: String(name).trim(), tel: '', addr: '', taxAddr: '',
-                    taxId: '', branch: '', email: '', last: '', n: 0 };
+                    taxId: '', branch: '', email: '', last: '', n: 0,
+                    /* n = ใบทั้งหมดที่เจอชื่อนี้ · okN = ใบที่นับเป็นยอดขายจริง */
+                    okN: 0, deadN: 0, total: 0, profit: 0, due: 0, dueN: 0 };
     }
     /* ครั้งที่ใหม่กว่าเป็นคนกำหนดทั้งชื่อที่สะกดและข้อมูลติดต่อ */
     if (when && when >= (c.last || '')) { c.last = when; c.name = String(name).trim(); c.fresh = true; }
@@ -2004,7 +2006,10 @@ function getCustomers(limit) {
   var hLast = formulaLimit_('head');
   if (hLast >= DATA_ROW) {
     var H = SH.head.IN;
-    var hv = hs.getRange(DATA_ROW, 1, hLast - DATA_ROW + 1, H.addr).getValues();
+    /* อ่านถึงช่องสถานะ (Q) ไม่ใช่แค่ที่อยู่ เพราะหน้าลูกค้าต้องตอบให้ได้ว่า
+       ใครซื้อไปเท่าไร กำไรเท่าไร และค้างอยู่กี่ใบ — ถ้าไม่อ่านทีเดียวตรงนี้
+       ต้องยิงชีทซ้ำอีกรอบต่อลูกค้าหนึ่งคน ซึ่งช้ากว่ากันมาก */
+    var hv = hs.getRange(DATA_ROW, 1, hLast - DATA_ROW + 1, H.status).getValues();
     for (var i = 0; i < hv.length; i++) {
       var name = String(hv[i][H.cust - 1] || '').trim();
       if (!name) continue;
@@ -2014,6 +2019,18 @@ function getCustomers(limit) {
       c.n++;
       put(c, 'tel', tel_(hv[i][H.tel - 1]));
       put(c, 'addr', hv[i][H.addr - 1]);
+
+      /* ใบที่ยกเลิกหรือตีกลับ ของกลับเข้าสต๊อกไปแล้ว ไม่ใช่ยอดซื้อของลูกค้า
+         ถ้านับรวม ลูกค้าที่สั่งแล้วยกเลิกทุกใบจะขึ้นเป็นลูกค้าชั้นดี */
+      var st = String(hv[i][H.status - 1] || '').trim();
+      if (isDeadStatus_(st)) { c.deadN++; continue; }
+      c.okN++;
+      c.total += Number(hv[i][SH.head.net - 1]) || 0;
+      c.profit += Number(hv[i][SH.head.profit - 1]) || 0;
+      if (st !== 'ชำระแล้ว') {
+        c.dueN++;
+        c.due += Number(hv[i][SH.head.net - 1]) || 0;
+      }
     }
   }
 

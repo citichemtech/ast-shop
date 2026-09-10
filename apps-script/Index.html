@@ -323,6 +323,16 @@ textarea{resize:vertical}
 /* สถานะเงินของแถว — เส้นบาง ๆ กับตัวหนังสือสี ไม่ใช่แถบสีเต็มแท่ง
    แถบสีทึบเต็มความกว้างทุกแถวทำให้ทั้งหน้าแดงไปหมด แล้วสีแดงก็หมดความหมาย
    เส้นบางพอให้กวาดตาเห็นว่าแถวไหนเป็นสีอะไร โดยไม่กลบข้อมูลที่ต้องอ่านจริง ๆ */
+/* แถบเรียงลำดับหน้าลูกค้า — ตัวหนังสือล้วน ไม่มีไอคอน เพราะสามปุ่มนี้
+   เป็นการ "เรียง" ไม่ใช่ "ไปที่ไหน" รูปจะทำให้ดูเหมือนเมนูอีกชั้น */
+.sorts{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.sorts button{border:1px solid var(--line);background:var(--card);border-radius:99px;
+  padding:6px 14px;font-size:0.83rem;color:var(--gray)}
+.sorts button.on{border-color:var(--blue);background:#f4f8ff;color:var(--ink);font-weight:700}
+/* ทั้งแถวกดได้ ไม่ใช่แค่ชื่อ — นิ้วบนมือถือเล็งตัวหนังสือบรรทัดเดียวยาก */
+.cu-row{cursor:pointer}
+.cu-row:active{background:#f4f8ff}
+.mini-w{width:auto;padding:7px 14px;font-size:0.83rem}
 .paybar{display:block;margin-top:7px;font-size:0.8rem;font-weight:700;line-height:1.3}
 .paybar::after{content:"";display:block;height:3px;border-radius:99px;margin-top:4px;
   background:currentColor;opacity:.85}
@@ -515,8 +525,23 @@ textarea{resize:vertical}
       <button class="btn ghost" id="btn-shop" style="margin-top:10px">
         <img id="btn-shop-ic" alt="" style="height:1.15em;vertical-align:-0.18em;margin-right:7px">
         นำเข้าออเดอร์จาก Shopee</button>
+      <button class="btn ghost" id="btn-cust" style="margin-top:8px">👥 ลูกค้าทั้งหมด</button>
     </div>
     <div class="card" id="list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <!-- ------------------------------------------------------------- หน้าลูกค้า
+       ไม่ทำเป็นแท็บ แถบล่างเต็มแล้ว เข้าจากปุ่มบนหน้าออเดอร์ทั้งหมด
+       เหมือนหน้านำเข้า Shopee แท็บ "ออเดอร์" จึงยังติดไฟค้างไว้ -->
+  <section id="pg-cust" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>ลูกค้าทั้งหมด</h2></div>
+      <input id="cu-q" placeholder="ค้นหาลูกค้า — ชื่อ หรือเบอร์โทร" autocomplete="off">
+      <div class="hint" id="cu-hint">กดที่ชื่อเพื่อดูประวัติการซื้อทั้งหมด
+        และคีย์ออเดอร์ซ้ำจากใบเก่าได้เลย</div>
+      <button class="btn ghost" id="cu-back" style="margin-top:10px">← กลับไปหน้าออเดอร์</button>
+    </div>
+    <div class="card" id="cu-list"><div class="load">กำลังโหลด…</div></div>
   </section>
 
   <!-- ---------------------------------------------------------- คู่มือใช้งาน
@@ -639,7 +664,28 @@ textarea{resize:vertical}
         </ul>
       </div></details>
 
-      <details><summary>9. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
+      <details><summary>9. ลูกค้าประจำ และการคีย์ออเดอร์ซ้ำ</summary><div class="bd">
+        <ol>
+          <li>แท็บ <b>ออเดอร์ทั้งหมด</b> → ปุ่ม <b>👥 ลูกค้าทั้งหมด</b></li>
+          <li>เรียงได้สามแบบ — <b>ซื้อล่าสุด</b> · <b>ยอดสูงสุด</b> · <b>ค้างชำระ</b>
+            (ใครติดเงินร้านอยู่ กดปุ่มเดียวก็เห็นทั้งหมด)</li>
+          <li>กดที่ชื่อ → เห็นทุกใบของลูกค้ารายนั้น พร้อมยอดรวม กำไร
+            เฉลี่ยต่อใบ และยอดที่ยังค้าง</li>
+          <li>ในใบเก่าแต่ละใบมีปุ่ม <b>คีย์ออเดอร์ซ้ำ</b> — กดแล้วชื่อ เบอร์ ที่อยู่
+            รายการสินค้าและราคาที่เคยขาย เด้งเข้าฟอร์มให้ครบ</li>
+        </ol>
+        <div class="stop"><b>ใบที่คีย์ซ้ำเป็นใบใหม่เสมอ</b><br>
+          วันที่ตั้งเป็นวันนี้ให้ · เลขพัสดุกับหมายเหตุของใบเก่าไม่ติดมาด้วย ·
+          ยังต้องกดบันทึกเอง ตรวจของให้ครบก่อน</div>
+        <ul>
+          <li>ใบที่ยกเลิกหรือตีกลับ ไม่ถูกนับเป็นยอดซื้อของลูกค้า
+            (แต่ยังคีย์ซ้ำจากใบนั้นได้ ลูกค้าเคยอยากได้ของชุดนั้นจริง)</li>
+          <li>ชื่อลูกค้าที่สะกดต่างกันนิดเดียวจะถือเป็นคนละคน ถ้าเห็นชื่อซ้ำสองบรรทัด
+            ให้แก้ให้สะกดเหมือนกันในชีท <b>ออเดอร์_หัวบิล</b></li>
+        </ul>
+      </div></details>
+
+      <details><summary>10. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
         <div class="stop"><b>ลบสินค้าออกจากฐานสินค้า ให้ลบ “ค่าในช่อง” ไม่ใช่ “ลบทั้งแถว”</b><br>
           ลบทั้งแถวทีไร สูตรของชีทอื่นที่ชี้มาจะพังเป็น #REF! ทั้งคอลัมน์ทุกที
           (เคยพังไป 38 แถว)</div>
