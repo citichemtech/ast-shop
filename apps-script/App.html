@@ -698,13 +698,26 @@ function runSearch(q, quiet){
    ได้ในแวบเดียว จึงติดโลโก้กับสีส้มประจำแบรนด์ให้ ช่องทางอื่นคงเดิมทุกอย่าง */
 var SHOPEE_ORANGE = "#ee4d2d";
 
+/* ช่องทางที่มีตราของตัวเอง — ชื่อช่องทางมาจากชีท คนพิมพ์เองได้ จึงจับด้วยคำ
+   ไม่ใช่เทียบตรงตัว ("เพจ Facebook" · "Facebook" · "เฟซบุ๊ก" ต้องเจอหมด)
+   ตัวไหนไม่อยู่ในนี้ เขียนเหมือนเดิมทุกอย่าง ไม่ต้องมีตราให้รกตา */
+var CHAN_MARK = [
+  { key:"shopee", re:/shopee|ช[้๊]อ?ปป?[ี้]/i,        icon:"SHOPEE_ICON"   },
+  { key:"fb",     re:/facebook|เฟ[ซส]บุ[๊ก]?ก|เพจ\s*fb/i, icon:"FACEBOOK_ICON" }
+];
+
 function chanTag(chan){
   var c = String(chan || "").trim();
   if (!c) return "-";
-  if (!/shopee|ช[้๊]อ?ปป?[ี้]/i.test(c)) return esc(c);
-  var ic = (typeof SHOPEE_ICON !== "undefined" && SHOPEE_ICON)
-    ? '<img src="' + SHOPEE_ICON + '" alt="" class="chan-ic">' : "";
-  return '<span class="chan-shopee">' + ic + esc(c) + '</span>';
+  for (var i = 0; i < CHAN_MARK.length; i++) {
+    var m = CHAN_MARK[i];
+    if (!m.re.test(c)) continue;
+    /* ไฟล์รูปหายไปก็ยังต้องอ่านชื่อช่องทางออกเหมือนเดิม แค่ไม่มีตรา */
+    var src = (typeof window[m.icon] !== "undefined") ? window[m.icon] : "";
+    var ic = src ? '<img src="' + src + '" alt="" class="chan-ic">' : "";
+    return '<span class="chan-' + m.key + '">' + ic + esc(c) + '</span>';
+  }
+  return esc(c);
 }
 
 /* ไอคอนของปุ่มบนแถวออเดอร์ — ถ้าไฟล์รูปหายไป ยังตกกลับไปใช้อักขระเดิมได้

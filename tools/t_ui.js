@@ -2230,15 +2230,18 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     }).length;
   }));
 
-  /* ---------- 36. ช่องทางขาย Shopee ต้องเด่นออกมาจากใบที่คีย์เอง ---------- */
-  console.log('\n36. ช่องทางขาย Shopee — โลโก้ + สีส้ม');
+  /* ---------- 36. ช่องทางขายที่มีตราของตัวเอง ต้องเด่นออกมาจากใบที่คีย์เอง ---------- */
+  console.log('\n36. ช่องทางขาย Shopee กับ Facebook — โลโก้ + สีประจำแบรนด์');
   var chanFn = await page.evaluate(function () {
     return {
       shopee:  chanTag('Shopee'),
       thai:    chanTag('ช้อปปี้'),
       lower:   chanTag('shopee'),
       page:    chanTag('เพจ Facebook'),
+      fbEn:    chanTag('Facebook'),
+      fbTh:    chanTag('เฟซบุ๊ก'),
       shop:    chanTag('หน้าร้าน'),
+      line:    chanTag('LINE OA'),
       blank:   chanTag(''),
       inject:  chanTag('<img onerror=alert(1)>')
     };
@@ -2247,8 +2250,16 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('Shopee ได้โลโก้ติดมาด้วย', /<img /.test(chanFn.shopee));
   truthy('เขียนเป็นภาษาไทยว่า "ช้อปปี้" ก็จับได้', /chan-shopee/.test(chanFn.thai));
   truthy('พิมพ์เล็กก็จับได้', /chan-shopee/.test(chanFn.lower));
-  eq('ช่องทางอื่นเขียนเหมือนเดิมทุกอย่าง', chanFn.page, 'เพจ Facebook');
-  eq('หน้าร้านก็เหมือนเดิม', chanFn.shop, 'หน้าร้าน');
+  /* ชื่อช่องทางมาจากชีท คนพิมพ์เองได้ ต้องจับได้ทุกแบบที่ร้านเขียนจริง */
+  truthy('เพจ Facebook ได้คลาสสีน้ำเงิน', /chan-fb/.test(chanFn.page));
+  truthy('เพจ Facebook ได้โลโก้ติดมาด้วย', /<img /.test(chanFn.fbEn));
+  truthy('เขียนว่า Facebook เฉย ๆ ก็จับได้', /chan-fb/.test(chanFn.fbEn));
+  truthy('เขียนเป็นภาษาไทยว่า "เฟซบุ๊ก" ก็จับได้', /chan-fb/.test(chanFn.fbTh));
+  /* สองตราต้องไม่ปนกัน ใบ Shopee ห้ามได้คลาสของ Facebook */
+  truthy('Shopee ไม่ได้คลาสของ Facebook', !/chan-fb/.test(chanFn.shopee));
+  truthy('Facebook ไม่ได้คลาสของ Shopee', !/chan-shopee/.test(chanFn.page));
+  eq('ช่องทางที่ไม่มีตรา เขียนเหมือนเดิมทุกอย่าง', chanFn.shop, 'หน้าร้าน');
+  eq('LINE ก็เหมือนเดิม ยังไม่มีตรา', chanFn.line, 'LINE OA');
   eq('ไม่มีช่องทางขาย ขึ้นขีดเหมือนเดิม', chanFn.blank, '-');
   /* ชื่อช่องทางมาจากชีท ซึ่งคนพิมพ์เองได้ ห้ามให้แท็กหลุดเข้าไปในหน้าเว็บ */
   truthy('ชื่อช่องทางที่มีแท็ก html ต้องถูกกันไว้ ไม่หลุดเป็นแท็กจริง',
@@ -2261,6 +2272,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () {
     MOCK_ORDERS[0].channel = 'Shopee';
     MOCK_ORDERS[0].cust = 'ลูกค้า Shopee 260901UGWWV9E1';
+    /* ใบที่สองเป็น Facebook — สองตราต้องอยู่ในลิสต์เดียวกันได้โดยไม่ปนกัน */
+    MOCK_ORDERS[1].channel = 'เพจ Facebook';
     ORDERS = []; SUM_CACHE = null;
     loadOrders();
   });
@@ -2275,6 +2288,21 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     chanSeen && chanSeen.color === 'rgb(238, 77, 45)');
   truthy('โลโก้ขึ้นจริงและมีขนาดพอดีบรรทัด ไม่ดันบรรทัดให้สูงขึ้น',
     chanSeen && chanSeen.w > 8 && chanSeen.w < 20);
+
+  var fbSeen = await page.evaluate(function () {
+    var el = document.querySelector('#list .chan-fb');
+    if (!el) return null;
+    var im = el.querySelector('img');
+    return { color: getComputedStyle(el).color,
+             w: im ? Math.round(im.getBoundingClientRect().width) : 0,
+             /* ทั้งสองตราต้องอยู่ในลิสต์พร้อมกันได้ ไม่ใช่มีได้ทีละอัน */
+             both: !!document.querySelector('#list .chan-shopee') };
+  });
+  truthy('บนลิสต์จริงเป็นสีน้ำเงินของ Facebook',
+    fbSeen && fbSeen.color === 'rgb(24, 119, 242)');
+  truthy('โลโก้ Facebook ขึ้นจริงและขนาดเท่ากับของ Shopee',
+    fbSeen && fbSeen.w > 8 && fbSeen.w < 20);
+  truthy('สองช่องทางอยู่ในลิสต์เดียวกันได้ ไม่ทับกัน', fbSeen && fbSeen.both);
 
   /* ---------- 35. หน่วยที่ขึ้นต้นด้วยตัวเลข ---------- */
   console.log('\n35. จำนวนกับหน่วยต้องไม่อ่านติดกันเป็นเลขเดียว');
