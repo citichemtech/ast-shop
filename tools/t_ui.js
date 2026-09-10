@@ -1416,7 +1416,26 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     var q = MOCK_DOCS.filter(function (d) { return d.type === 'ใบเสนอราคา' });
     return q[q.length - 1].no;
   });
-  await page.evaluate(function (no) { quoteToOrder(no) }, qNo2);
+  /* ลูกค้าตอบตกลงทันทีหลังออกใบเป็นเรื่องปกติ ปุ่มทำเป็นออเดอร์จึงต้องอยู่ในกล่อง
+     ผลลัพธ์ตรงที่เพิ่งกดออกใบ ไม่ใช่ให้เลื่อนผ่านใบ A4 ทั้งใบไปหาข้างล่าง */
+  var q2o = await page.evaluate(function () {
+    var b = $('#q2o-now');
+    if (!b) return null;
+    var img = $('#q-out .docimg');
+    return { text: b.textContent,
+             /* อยู่ในกล่องเดียวกับใบที่เพิ่งออก ไม่ใช่คนละการ์ดที่ต้องเลื่อนไปหา */
+             inBox: !!$('#q-out #q2o-now'),
+             /* ต้องเจอปุ่มนี้ก่อนรายการ "ใบที่ออกไปแล้ว" ซึ่งอยู่คนละการ์ดข้างล่าง
+                (ปุ่มเดิมอยู่ในรายการนั้น เจ้าของร้านเลื่อนไม่ถึงจนหาไม่เจอ) */
+             before: !!$('#q-old') &&
+               b.getBoundingClientRect().top < $('#q-old').getBoundingClientRect().top,
+             hasImg: !!img };
+  });
+  truthy('มีปุ่มทำเป็นออเดอร์อยู่ในกล่องผลลัพธ์ทันทีที่ออกใบเสร็จ', q2o && q2o.inBox);
+  truthy('เขียนให้รู้ว่ากดเมื่อลูกค้าตกลงสั่ง', /ลูกค้าสั่งแล้ว/.test(q2o.text));
+  truthy('เจอปุ่มก่อนรายการใบที่ออกไปแล้ว ไม่ต้องเลื่อนลงไปหาข้างล่างสุด',
+    q2o.hasImg && q2o.before);
+  await page.click('#q2o-now');
   await page.waitForTimeout(900);
   var net2 = await page.evaluate(function () {
     return Number(String($('#s-net').textContent).replace(/[^\d.]/g, ''));
@@ -2318,7 +2337,7 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('เปิดคู่มือจากปุ่ม ? บนหัวจอได้',
     await page.evaluate(function () { return $('#pg-help').style.display !== 'none' }));
   truthy('มีหัวข้อครบทุกงานหลัก', await page.evaluate(function () {
-    return $$('#pg-help details').length >= 10;
+    return $$('#pg-help details').length >= 11;
   }));
   truthy('มีเรื่องใบที่ตีกลับของ Shopee อยู่ในคู่มือ',
     /ตีกลับ/.test(await page.textContent('#pg-help')));
@@ -2328,6 +2347,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     /ยกเลิก กับ ตีกลับ ไม่เหมือนกัน/.test(await page.textContent('#pg-help')));
   truthy('คู่มือบอกว่าพิมพ์หมายเลขคำสั่งซื้อ Shopee ในช่องค้นหาได้',
     /หมายเลขคำสั่งซื้อ Shopee ในช่องค้นหา/.test(await page.textContent('#pg-help')));
+  truthy('คู่มือบอกว่าลูกค้าตกลงตามใบเสนอราคาแล้วต้องกดตรงไหน',
+    /ลูกค้าสั่งแล้ว → ทำเป็นออเดอร์/.test(await page.textContent('#pg-help')));
   truthy('คู่มือมีวิธีคีย์ออเดอร์ซ้ำให้ลูกค้าประจำ',
     /คีย์ออเดอร์ซ้ำ/.test(await page.textContent('#pg-help')));
   /* ใบที่คีย์ซ้ำเป็นใบใหม่ ไม่ใช่ใบเดิม — ถ้าเข้าใจผิดจะกลายเป็นส่งของสองรอบ */
