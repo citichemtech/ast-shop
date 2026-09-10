@@ -22,9 +22,15 @@
 <body>
 
 <style>
+/* ชุดสีดูดมาจากภาพตัวอย่างที่เจ้าของร้านส่งมา (10 ก.ย.) — ของเดิมเป็นโทนเทากลาง
+   ซึ่งบนจอมือถือกลางแดดอ่านแล้ว "จืด" ชุดนี้เปลี่ยนสองเรื่องพร้อมกัน
+     พื้นหลังกับเส้นขอบ เปลี่ยนจากเทาเป็นฟ้าจาง ทั้งหน้าจึงมีโทนเดียวกับหัวจอ
+     ตัวหนังสือเข้มขึ้นทั้งชุด ตัวหลักเกือบดำ ตัวรองเข้มกว่าเดิมสองระดับ
+   ค่าที่วัดได้จากภาพ: ปุ่ม #014dd6 · ตัวหนังสือ #000 · ตัวรอง #525d78 ·
+   พื้น #f1f7fe · เส้น #dfeaf9 */
 :root{
-  --ink:#15181d; --gray:#6b7280; --line:#e3e6ea; --bg:#f5f6f8; --card:#fff;
-  --blue:#1449C4; --green:#0a8f4d; --red:#c02626; --amber:#b06a00;
+  --ink:#0b0f18; --gray:#525d78; --line:#d7e5f8; --bg:#eef5fe; --card:#fff;
+  --blue:#0b4bd2; --green:#08814a; --red:#c40215; --amber:#a35c00;
   --r:12px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -56,7 +62,7 @@ textarea{resize:vertical}
    แถบแสงวาดด้วย gradient ไม่ใช่ไฟล์รูป จึงคมทุกความละเอียดจอและไม่กินที่เพิ่มเลย */
 .top{position:relative;overflow:hidden;color:#fff;padding:15px 16px 18px;
   border-radius:0 0 26px 26px;display:flex;align-items:flex-start;gap:12px;
-  background:linear-gradient(115deg,#0b3fa8 0%,var(--blue) 45%,#1d63e6 78%,#0e49bd 100%)}
+  background:linear-gradient(115deg,#013690 0%,#032c7d 32%,#014eb2 62%,#0350bb 100%)}
 .top::after{content:"";position:absolute;top:-40%;right:-6%;width:56%;height:190%;
   background:linear-gradient(100deg,rgba(255,255,255,0) 38%,rgba(255,255,255,.15) 50%,
     rgba(255,255,255,0) 57%,rgba(255,255,255,.09) 68%,rgba(255,255,255,0) 75%);
@@ -209,10 +215,10 @@ textarea{resize:vertical}
    จึงคมทุกความละเอียดจอ และเปลี่ยนสีได้ทันทีโดยไม่ต้องโหลดอะไรเพิ่ม */
 .flag{display:inline-block;width:0;height:0;vertical-align:1px;margin-right:7px;
   border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid #ccc}
-.flag.pay{border-bottom-color:#1550c8}
-.flag.noac{border-bottom-color:#ef3b2c}
-.flag.rdy{border-bottom-color:#7ac943}
-.flag.sent{border-bottom-color:#f5d20a}
+.flag.pay{border-bottom-color:#0047c2}
+.flag.noac{border-bottom-color:#c40215}
+.flag.rdy{border-bottom-color:#86d76d}
+.flag.sent{border-bottom-color:#fedb04}
 /* คำอธิบายสี วางไว้เหนือลิสต์ครั้งเดียว ไม่ใช่ซ้ำทุกแถว */
 .flagkey{display:flex;flex-wrap:wrap;gap:4px 14px;padding:2px 2px 10px;
   font-size:0.74rem;color:var(--gray)}
@@ -353,11 +359,14 @@ textarea{resize:vertical}
 .paybar{display:block;margin-top:7px;font-size:0.8rem;font-weight:700;line-height:1.3}
 .paybar::after{content:"";display:block;height:3px;border-radius:99px;margin-top:4px;
   background:currentColor;opacity:.85}
-.paybar.paid{color:#12b76a}
-.paybar.due{color:#f04438}
-.paybar.cr30{color:#dd8000}
-.paybar.over{color:#b42318}
-.paybar.dead{color:#9aa1ab}
+/* ต้องเจาะจงกว่า ".row .i span" ที่ทาสีเทาไว้ทั้งบรรทัด (เรื่องเดียวกับ .chan-shopee)
+   ไม่งั้นแถบบอกสถานะเงินจะเป็นสีเทาหมดทุกอัน — ซึ่งเป็นอย่างนั้นมาตลอด
+   ทั้งที่ทั้งแถบมีไว้เพื่อให้ใบที่เกินกำหนดชำระสะดุดตาโดยเฉพาะ */
+.paybar.paid, .row .i span.paybar.paid{color:#0b9a5b}
+.paybar.due,  .row .i span.paybar.due {color:#c40215}
+.paybar.cr30, .row .i span.paybar.cr30{color:#a35c00}
+.paybar.over, .row .i span.paybar.over{color:#8f0110}
+.paybar.dead, .row .i span.paybar.dead{color:#8a93a6}
 .sq.ok{color:var(--green);border-color:#bfe6cd;font-size:1.05rem}
 
 .brow{margin:12px 0 0}

@@ -1923,6 +1923,36 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ใบที่จ่ายแล้ว', pay39.paid.key, 'paid');
   eq('ใบที่ตีกลับไม่ใช่ลูกหนี้', pay39.dead.key, 'dead');
 
+  console.log('\n   แถบบอกสถานะเงินต้องขึ้นสีจริง ไม่ใช่โดนสีเทาของบรรทัดทับ');
+  /* ".row .i span" ทาสีเทาไว้ทั้งบรรทัด และเจาะจงกว่า ".paybar.over" อยู่หนึ่งขั้น
+     แถบทั้งหมดจึงเคยเป็นสีเทาหมดทุกอัน ทั้งที่ทั้งแถบมีไว้ให้ใบที่เกินกำหนด
+     สะดุดตาโดยเฉพาะ — สีที่ไม่ต่างกันเลยคือสีที่ไม่ได้ทำงาน */
+  await page.click('.tabs button[data-go="sum"]');
+  await page.waitForTimeout(900);
+  var bar39 = await page.evaluate(function () {
+    var gray = getComputedStyle(document.documentElement)
+      .getPropertyValue('--gray').trim();
+    function hex(c) {
+      var m = /rgb\((\d+), (\d+), (\d+)\)/.exec(c);
+      return m ? '#' + [1,2,3].map(function (i) {
+        return ('0' + Number(m[i]).toString(16)).slice(-2);
+      }).join('') : c;
+    }
+    var out = {};
+    $$('#sum-due .paybar').forEach(function (e) {
+      var k = e.className.replace('paybar', '').trim();
+      if (k && !out[k]) out[k] = hex(getComputedStyle(e).color);
+    });
+    return { bars: out, gray: gray };
+  });
+  truthy('มีแถบสถานะเงินให้ตรวจ', Object.keys(bar39.bars).length > 0);
+  Object.keys(bar39.bars).forEach(function (k) {
+    truthy('แถบ "' + k + '" ไม่ใช่สีเทาของบรรทัด (ได้ ' + bar39.bars[k] + ')',
+      bar39.bars[k].toLowerCase() !== bar39.gray.toLowerCase());
+  });
+  if (bar39.bars.over)
+    truthy('ใบที่เกินกำหนดชำระเป็นสีแดง', /^#[89abc]/.test(bar39.bars.over));
+
   console.log('\n   แถบกรองสี่กลุ่มบนหน้าสรุปยอด');
   await page.evaluate(function () {
     function back(n) {
@@ -2455,10 +2485,10 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
 
   eq('ทุกใบมีสามเหลี่ยมได้ไม่เกินอันเดียว',
     seen40.rows.map(function (r) { return r.flags }), [1, 1, 1, 1, 0]);
-  eq('ยังไม่ได้เงิน = น้ำเงิน (เรื่องเร่งที่สุด)', seen40.rows[0].color, 'rgb(21, 80, 200)');
-  eq('ได้เงินแล้วแต่บัญชียังไม่ได้เอกสาร = แดง', seen40.rows[1].color, 'rgb(239, 59, 44)');
-  eq('เอกสารครบ รอกดส่ง = เขียว', seen40.rows[2].color, 'rgb(122, 201, 67)');
-  eq('ส่งบัญชีแล้ว จบงาน = เหลือง', seen40.rows[3].color, 'rgb(245, 210, 10)');
+  eq('ยังไม่ได้เงิน = น้ำเงิน (เรื่องเร่งที่สุด)', seen40.rows[0].color, 'rgb(0, 71, 194)');
+  eq('ได้เงินแล้วแต่บัญชียังไม่ได้เอกสาร = แดง', seen40.rows[1].color, 'rgb(196, 2, 21)');
+  eq('เอกสารครบ รอกดส่ง = เขียว', seen40.rows[2].color, 'rgb(134, 215, 109)');
+  eq('ส่งบัญชีแล้ว จบงาน = เหลือง', seen40.rows[3].color, 'rgb(254, 219, 4)');
   truthy('ใบที่ตีกลับไม่มีงานให้ทำต่อ จึงไม่มีสามเหลี่ยม', seen40.rows[4].key === null);
   truthy('สามเหลี่ยมอยู่หน้าชื่อลูกค้าในบรรทัดเดียวกัน',
     seen40.rows.slice(0, 4).every(function (r) { return r.inline }));
