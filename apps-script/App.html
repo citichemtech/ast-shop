@@ -164,7 +164,10 @@ function boot(){
     $("#booting").style.display="none";
     $("#form").style.display="";
     if(!itemRows().length) addItem();
+    /* หน้าที่เปิดค้างไว้ก่อนสินค้าจะมาถึง ต้องได้รายการสินค้าด้วย */
+    refreshProdOptions();
     recalc();
+    if(typeof qCalc === "function" && Q_READY) qCalc();
   }, function(m){
     $("#booting").innerHTML='<div style="color:var(--red);line-height:1.7">โหลดข้อมูลจากชีทไม่สำเร็จ<br>'
       +esc(m)+'<br><br><button class="mini" onclick="location.reload()">ลองใหม่</button></div>';
@@ -184,6 +187,10 @@ function todayISO(){
 /* --------------------------------------------------------- รายการสินค้าหลายแถว */
 
 function prodOptions(sel){
+  /* ช่องเลือกสินค้าที่ว่างเปล่า อ่านได้ว่า "ร้านไม่มีสินค้าเลย" ซึ่งไม่จริง
+     ความจริงคือรายการยังโหลดมาไม่ถึง ต้องเขียนให้ตรงกับที่เป็นอยู่จริง */
+  if(!CFG.products || !CFG.products.length)
+    return '<option value="">— ยังโหลดรายการสินค้าไม่เสร็จ รอสักครู่ —</option>';
   return '<option value="">— เลือกสินค้า —</option>' + CFG.products.map(function(p){
     var left = (p.remain===null||p.remain===undefined) ? "" : "  (เหลือ "+p.remain+")";
     return '<option value="'+esc(p.sku)+'"'+(sel===p.sku?" selected":"")+'>'
@@ -191,6 +198,19 @@ function prodOptions(sel){
   }).join("");
 }
 function itemRows(){ return $$("#items .it") }
+
+/* รายการสินค้ามาจากชีท ซึ่งโหลดเสร็จหลังหน้าจอขึ้นเสมอ ใครกดเข้าหน้าใบเสนอราคา
+   ระหว่างนั้น ช่องเลือกสินค้าจะถูกสร้างตอนที่ยังไม่มีสินค้าสักตัว แล้วค้างว่าง
+   อยู่อย่างนั้นตลอด เพราะหน้านั้นสร้างแถวแรกครั้งเดียวจบ
+   โหลดเสร็จเมื่อไรจึงต้องเติมตัวเลือกให้ช่องที่สร้างไปแล้วด้วย
+   ของที่เลือกค้างไว้ต้องไม่หาย — คนอาจกำลังกรอกใบอยู่ตอนที่รายการมาถึงพอดี */
+function refreshProdOptions(){
+  $$(".i-sku, .q-sku, #r-sku").forEach(function(sel){
+    var keep = sel.value;
+    sel.innerHTML = prodOptions(keep);
+    if(keep) sel.value = keep;
+  });
+}
 
 function addItem(v){
   v = v || {};
@@ -3477,15 +3497,8 @@ function recvDone(res){
                unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
                reorder:p.reorder };
     });
-    var keep = $("#r-sku").value;
-    $("#r-sku").innerHTML = prodOptions(keep);
-    $("#r-sku").value = keep;
-    itemRows().forEach(function(r){
-      var sel = r.querySelector(".i-sku");
-      var v = sel.value;
-      sel.innerHTML = prodOptions(v);
-      sel.value = v;
-    });
+    /* ยอดคงเหลือที่ติดมากับชื่อสินค้าเปลี่ยนไปแล้ว ทุกช่องที่เปิดค้างอยู่ต้องเห็นเลขใหม่ */
+    refreshProdOptions();
     recvSkuChanged();
   }, function(){ /* โหลดยอดใหม่ไม่ได้ไม่ใช่เรื่องใหญ่ ของลงชีทไปแล้ว */ });
 

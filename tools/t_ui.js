@@ -2574,6 +2574,64 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   var today41 = await page.evaluate(function () { return todayISO() });
   eq('วันที่เป็นวันนี้ ไม่ใช่วันของใบเก่า', rp41.date, today41);
 
+  /* ---------- 42. เปิดหน้าอื่นก่อนสินค้าโหลดเสร็จ ---------- */
+  console.log('\n42. กดเข้าหน้าอื่นก่อนรายการสินค้าจะโหลดเสร็จ');
+  /* ของจริงที่เจ้าของร้านเจอ: เปิดแอปบนแท็บเล็ตแล้วกด "ใบเสนอราคา" ทันที
+     ช่องเลือกสินค้าขึ้นแต่ "— เลือกสินค้า —" ว่างเปล่าค้างอยู่อย่างนั้นตลอด
+     เพราะหน้านั้นสร้างแถวแรกครั้งเดียว แล้วสินค้ามาถึงทีหลัง */
+  var slow42 = await page.evaluate(function () {
+    var real = CFG.products;
+    var out = {};
+    CFG.products = [];                      /* จำลองว่าชีทยังตอบไม่ถึง */
+
+    out.empty = prodOptions("");
+    /* หน้าใบเสนอราคาถูกเปิดตอนนี้ — แถวแรกจึงเกิดตอนที่ยังไม่มีสินค้าสักตัว */
+    $("#q-items").innerHTML = "";
+    qAdd();
+    var sel = $("#q-items .q-sku");
+    out.before = sel.options.length;
+
+    CFG.products = real;                    /* ชีทตอบกลับมาแล้ว */
+    refreshProdOptions();
+    out.after = sel.options.length;
+    out.first = sel.options[0].value;
+    return out;
+  });
+  truthy('ตอนยังโหลดไม่เสร็จ ต้องบอกว่ากำลังโหลด ไม่ใช่ปล่อยว่างให้เข้าใจว่าไม่มีสินค้า',
+    /ยังโหลดรายการสินค้าไม่เสร็จ/.test(slow42.empty));
+  eq('ช่องที่สร้างตอนนั้นมีแต่บรรทัดบอกสถานะ', slow42.before, 1);
+  truthy('พอสินค้ามาถึง ช่องที่เปิดค้างไว้ต้องได้รายการครบ ไม่ใช่ค้างว่าง',
+    slow42.after > 1);
+  eq('บรรทัดแรกกลับมาเป็น “เลือกสินค้า” ตามปกติ', slow42.first, '');
+
+  console.log('\n   ของที่เลือกค้างไว้ต้องไม่หายตอนเติมรายการให้');
+  var keep42 = await page.evaluate(function () {
+    var sku = CFG.products[0].sku;
+    $("#q-items").innerHTML = "";
+    qAdd();
+    var sel = $("#q-items .q-sku");
+    sel.value = sku;
+    refreshProdOptions();
+    return { want: sku, got: sel.value };
+  });
+  eq('สินค้าที่เลือกไว้ยังอยู่', keep42.got, keep42.want);
+
+  console.log('\n   ช่องรับเข้าสินค้ากับหน้าคีย์ออเดอร์ก็ต้องได้ครบเหมือนกัน');
+  var all42 = await page.evaluate(function () {
+    var real = CFG.products;
+    CFG.products = [];
+    $("#r-sku").innerHTML = prodOptions("");
+    $("#items").innerHTML = ""; addItem();
+    var r = $("#r-sku"), i = $("#items .i-sku");
+    var before = [r.options.length, i.options.length];
+    CFG.products = real;
+    refreshProdOptions();
+    return { before: before, after: [r.options.length, i.options.length] };
+  });
+  eq('ก่อนโหลดเสร็จ ทั้งสองช่องมีแต่บรรทัดบอกสถานะ', all42.before, [1, 1]);
+  truthy('โหลดเสร็จแล้วได้รายการครบทั้งสองช่อง',
+    all42.after[0] > 1 && all42.after[1] > 1);
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
