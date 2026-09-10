@@ -3050,5 +3050,76 @@ var over53 = [];
 for (var nm53 in fx53.sheets) over53 = over53.concat(fx53.sheets[nm53].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over53, []);
 
+/* ====== 54. ค้นเอกสารทุกชนิด และแยกใบที่แก้/ใบที่ยกเลิกออกจากใบปกติ
+
+   listDocs คืนเฉพาะใบที่ไม่มีเลขออเดอร์ ตั้งใจไว้ให้เป็นรายการใบเสนอราคาที่ยังไม่ได้ขาย
+   แต่ใบเสร็จ/ใบกำกับภาษี ใบแจ้งหนี้ ใบมัดจำ ออกจากออเดอร์เสมอ จึงมีเลขออเดอร์ทุกใบ
+   แปลว่าใบกำกับภาษีที่ออกไปแล้วไม่เคยโผล่ในรายการนั้นเลยสักใบ ทั้งที่อยู่ในชีทครบ
+
+   และใบที่เคยแก้ยอด กับใบที่ยกเลิกไปแล้ว ต้องแยกออกจากใบที่ใช้ได้ตามปกติ
+   สามอย่างนี้หน้าตาเหมือนกันหมด หยิบผิดไปส่งลูกค้าหรือส่งบัญชีคือปัญหาที่รู้ตัวตอนสาย */
+console.log('\n54. ค้นเอกสารทุกชนิด · แยกใบแก้ไข/ใบยกเลิก');
+
+var fx54 = FS.build();
+var api54 = FS.load(fx54, {});
+api54.setup();
+
+var o54 = api54.createOrder(order({ cust: 'บริษัท ค้นเอกสาร จำกัด',
+  items: [{ sku: 'SKU-141', qty: 2, price: 100 }] }));
+var rec54 = api54.issueDoc({ type: 'rec', orderNo: o54.no,
+  cust: { name: 'บริษัท ค้นเอกสาร จำกัด' }, by: 'AEY', clientKey: 'dk-54-1' });
+var inv54 = api54.issueDoc({ type: 'inv', orderNo: o54.no,
+  cust: { name: 'บริษัท ค้นเอกสาร จำกัด' }, by: 'AEY', clientKey: 'dk-54-2' });
+var qo54 = api54.issueDoc({ type: 'quote', cust: { name: 'ลูกค้าถามราคา' },
+  items: [{ sku: 'SKU-141', qty: 1, price: 120 }], by: 'AEY', clientKey: 'dk-54-3' });
+
+console.log('\n   ใบที่ผูกกับออเดอร์ต้องค้นเจอ (ของเดิมหายไปทั้งกอง)');
+eq('listDocs แบบเดิมเห็นแต่ใบเสนอราคา',
+  api54.listDocs('').map(function (d) { return d.no }), [qo54.no]);
+var all54 = api54.findDocs({});
+eq('findDocs เห็นครบทั้งสามใบ', all54.rows.length, 3);
+truthy2('ใบกำกับภาษีอยู่ในนั้นด้วย',
+  all54.rows.filter(function (d) { return d.no === rec54.no }).length === 1);
+eq('ใบล่าสุดขึ้นก่อน', all54.rows[0].no, qo54.no);
+
+console.log('\n   กรองตามชนิด และค้นด้วยเลขออเดอร์');
+eq('ขอเฉพาะใบแจ้งหนี้',
+  api54.findDocs({ type: 'ใบแจ้งหนี้' }).rows.map(function (d) { return d.no }), [inv54.no]);
+eq('ค้นด้วยเลขออเดอร์แล้วได้ใบที่ผูกกับออเดอร์นั้น',
+  api54.findDocs({ q: o54.no }).rows.length, 2);
+eq('ค้นด้วยเลขใบตรง ๆ', api54.findDocs({ q: rec54.no }).rows.length, 1);
+eq('ค้นด้วยชื่อลูกค้า', api54.findDocs({ q: 'ค้นเอกสาร' }).rows.length, 2);
+eq('คำที่ไม่มีจริง ต้องได้ศูนย์ใบ ไม่ใช่คืนทั้งกอง',
+  api54.findDocs({ q: 'ไม่มีใบนี้แน่นอน' }).rows.length, 0);
+
+console.log('\n   แก้ใบหนึ่ง ยกเลิกอีกใบ แล้วต้องแยกกองได้');
+api54.reviseDoc({ no: rec54.no, why: 'ลูกค้าขอแก้ชื่อบนใบ', by: 'AEY', clientKey: 'rk-54-1' });
+api54.voidDoc(inv54.no, 'ออกผิดออเดอร์', 'AEY');
+var after54 = api54.findDocs({});
+function d54(no) {
+  return after54.rows.filter(function (d) { return d.no === no })[0];
+}
+eq('ใบที่แก้แล้วบอกว่าแก้ไปกี่ครั้ง', d54(rec54.no).revised, 1);
+truthy2('และบอกเหตุผลล่าสุดที่แก้',
+  d54(rec54.no).lastRevise.indexOf('ลูกค้าขอแก้ชื่อบนใบ') > -1);
+eq('ใบที่ไม่เคยแก้ ต้องเป็นศูนย์ ไม่ใช่ค่าว่าง', d54(qo54.no).revised, 0);
+eq('ใบที่ยกเลิกยังอยู่ในรายการ ไม่ได้หายไป', !!d54(inv54.no), true);
+truthy2('พร้อมเหตุผลที่ยกเลิก', d54(inv54.no).voidWhy.indexOf('ออกผิดออเดอร์') > -1);
+eq('ใบที่ยกเลิกไม่ถูกนับว่าเคยแก้', d54(inv54.no).revised, 0);
+
+console.log('\n   จำนวนต่อชนิดต้องแยกสามกอง ใบยกเลิกไม่นับว่ามีอยู่');
+var c54 = after54.counts;
+eq('ใบเสร็จ: หนึ่งใบ อยู่ในกองเคยแก้', [c54['ใบเสร็จรับเงิน'].live,
+  c54['ใบเสร็จรับเงิน'].revised, c54['ใบเสร็จรับเงิน'].dead], [0, 1, 0]);
+eq('ใบแจ้งหนี้: หนึ่งใบ อยู่ในกองยกเลิก', [c54['ใบแจ้งหนี้'].live,
+  c54['ใบแจ้งหนี้'].revised, c54['ใบแจ้งหนี้'].dead], [0, 0, 1]);
+eq('ใบเสนอราคา: ใช้ได้ตามปกติ', [c54['ใบเสนอราคา'].live,
+  c54['ใบเสนอราคา'].revised, c54['ใบเสนอราคา'].dead], [1, 0, 0]);
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over54 = [];
+for (var nm54 in fx54.sheets) over54 = over54.concat(fx54.sheets[nm54].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over54, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

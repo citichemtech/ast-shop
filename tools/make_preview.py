@@ -229,9 +229,11 @@ window.google = { script: { run: (function(){
         return MOCK_DOCS.filter(function(d){
           return want ? d.orderNo === want : !d.orderNo;
         }).map(function(d){
+          var rv = (String(d.note||"").match(/\[แก้ไขครั้งที่ [^\]]*\]/g) || []);
           return { no:d.no, type:d.type, date:d.date, orderNo:d.orderNo,
                    custName:d.cust.name, total:d.doc.total, voidWhy:d.voidWhy||"",
-                   sentAt:d.sentAt||"", hasSnap:true };
+                   sentAt:d.sentAt||"", hasSnap:true, revised:rv.length,
+                   lastRevise: rv.length ? rv[rv.length-1].replace(/^\[|\]$/g,"") : "" };
         }).reverse();
       });
     },
@@ -245,14 +247,19 @@ window.google = { script: { run: (function(){
         var limit = Math.min(Math.max(Number(p.limit)||30, 1), 200);
         var hit = [], counts = {};
         MOCK_DOCS.slice().reverse().forEach(function(d){
+          var rv = (String(d.note||"").match(/\[แก้ไขครั้งที่ [^\]]*\]/g) || []);
           var row = { no:d.no, type:d.type, date:d.date, orderNo:d.orderNo||"",
                       custName:d.cust.name, total:d.doc.total, voidWhy:d.voidWhy||"",
-                      sentAt:d.sentAt||"", hasSnap:true };
+                      sentAt:d.sentAt||"", hasSnap:true,
+                      revised: rv.length,
+                      lastRevise: rv.length ? rv[rv.length-1].replace(/^\[|\]$/g,"") : "" };
           if(want){
             var hay = (row.no+" "+row.custName+" "+row.orderNo+" "+row.type).toLowerCase();
             if(hay.indexOf(want) < 0) return;
           }
-          counts[row.type] = (counts[row.type]||0) + 1;
+          var c = counts[row.type] || (counts[row.type] = {n:0,live:0,revised:0,dead:0});
+          c.n++;
+          if(row.voidWhy) c.dead++; else if(row.revised) c.revised++; else c.live++;
           if(type && row.type !== type) return;
           hit.push(row);
         });

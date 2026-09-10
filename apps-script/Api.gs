@@ -986,12 +986,14 @@ function listDocs(orderNo) {
     var ord = String(v[i][at(C.orderNo)] || '').trim();
     if (want) { if (ord !== want) continue; }
     else if (ord) continue;
+    var rvl = reviseInfo_(v[i][at(C.note)]);
     out.push({
       no: no, type: String(v[i][at(C.type)] || ''),
       date: isoDate_(v[i][at(C.date)]), orderNo: ord,
       custName: String(v[i][at(C.custName)] || ''),
       total: Number(v[i][at(C.total)] || 0),
       voidWhy: String(v[i][at(C.voidWhy)] || '').trim(),
+      revised: rvl.n, lastRevise: rvl.last,
       /* ส่งไปแล้วหรือยัง เป็นตัวตัดสินว่าหน้าจอจะโชว์ปุ่มแก้ใบให้ไหม */
       sentAt: String(v[i][at(C.sentAt)] || '').trim(),
       hasSnap: !!String(v[i][at(C.snap)] || '').trim()
@@ -1013,6 +1015,18 @@ function listDocs(orderNo) {
  * counts นับจากทั้งชีท (หลังกรองคำค้นแล้ว) ไม่ใช่นับจากที่ตัดมาโชว์
  * จะได้ไม่เกิดกรณี "ชนิดนี้ 0 ใบ" ทั้งที่มีอยู่จริงแต่ตกหน้า
  */
+/**
+ * ร่องรอยการแก้ใบ — reviseRow_ จดไว้ในช่องหมายเหตุเป็น [แก้ไขครั้งที่ N: เหตุผล · ยอดเดิม …]
+ *
+ * ใบที่เคยถูกแก้กับใบที่ออกมาแล้วไม่เคยแตะ ไม่ควรอยู่ปนกันเวลาไล่ดูย้อนหลัง
+ * แต่ร่องรอยนี้ฝังอยู่ในข้อความยาว ๆ ที่หน้าจอไม่เคยได้รับ จึงไม่มีทางแยกได้เลย
+ */
+function reviseInfo_(note) {
+  var hits = String(note || '').match(/\[แก้ไขครั้งที่ [^\]]*\]/g);
+  if (!hits || !hits.length) return { n: 0, last: '' };
+  return { n: hits.length, last: hits[hits.length - 1].replace(/^\[|\]$/g, '') };
+}
+
 function findDocs(p) {
   requireStaff_();
   p = p || {};
@@ -1032,6 +1046,7 @@ function findDocs(p) {
   for (var i = v.length - 1; i >= 0; i--) {   /* ใบล่าสุดอยู่บนสุด */
     var no = String(v[i][0] || '').trim();
     if (!no) continue;
+    var rv = reviseInfo_(v[i][at(C.note)]);
     var d = {
       no: no, type: String(v[i][at(C.type)] || ''),
       date: isoDate_(v[i][at(C.date)]),
@@ -1040,13 +1055,20 @@ function findDocs(p) {
       total: Number(v[i][at(C.total)] || 0),
       voidWhy: String(v[i][at(C.voidWhy)] || '').trim(),
       sentAt: String(v[i][at(C.sentAt)] || '').trim(),
+      revised: rv.n, lastRevise: rv.last,
       hasSnap: !!String(v[i][at(C.snap)] || '').trim()
     };
     if (want) {
       var hay = (d.no + ' ' + d.custName + ' ' + d.orderNo + ' ' + d.type).toLowerCase();
       if (hay.indexOf(want) < 0) continue;
     }
-    counts[d.type] = (counts[d.type] || 0) + 1;
+    /* นับแยกสามกอง ใบที่ยกเลิกแล้วไม่ควรถูกนับรวมเป็น "มีอยู่กี่ใบ"
+       เพราะใบที่ยกเลิกคือใบที่ใช้ไม่ได้ ไม่ใช่ใบที่มี */
+    var c = counts[d.type] || (counts[d.type] = { n: 0, live: 0, revised: 0, dead: 0 });
+    c.n++;
+    if (d.voidWhy) c.dead++;
+    else if (d.revised) c.revised++;
+    else c.live++;
     if (type && d.type !== type) continue;
     hit.push(d);
   }

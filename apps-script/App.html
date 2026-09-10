@@ -1338,8 +1338,14 @@ function docRowHtml(d){
         + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
         + (!dead && sent ? ' · <span style="color:var(--green)">ส่งแล้ว</span>' : '')
         + (!dead && !sent ? ' · <span style="color:var(--amber)">ยังไม่ได้ส่ง</span>' : '')
+        /* ใบที่เคยแก้ยอด กระดาษที่พิมพ์ไปครั้งแรกกับตัวเลขในระบบไม่เหมือนกันแล้ว
+           ต้องเห็นตั้งแต่ในรายการ ไม่ใช่รู้ตอนเปิดใบมาเทียบทีละใบ */
+        + (!dead && Number(d.revised) ? ' · <span style="color:var(--blue)">แก้ไขแล้ว '
+            + Number(d.revised) + ' ครั้ง</span>' : '')
         +'</span>'
         + (dead ? '<span style="color:var(--red)">'+esc(d.voidWhy)+'</span>' : '')
+        + (!dead && d.lastRevise
+           ? '<span style="color:var(--blue)">'+esc(d.lastRevise)+'</span>' : '')
         + (!dead && sent ? '<span style="color:var(--gray)">ส่งเมื่อ '+esc(sent)+'</span>' : '')
         +'</div><div class="acts">'
         +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
@@ -3080,6 +3086,17 @@ function docKind(th){
   return { th: th, label: th, ic: "📄", note: "" };
 }
 
+/** จำนวนใบในแฟ้ม — ฝั่งชีทส่งมาเป็นก้อนแยกสามกอง
+    เผื่อไฟล์หลังบ้านเป็นรุ่นเก่าที่ส่งมาเป็นตัวเลขเดี่ยว ก็ยังอ่านได้ ไม่พังทั้งหน้า */
+function docCount(v){
+  if(v && typeof v === "object"){
+    return { n: Number(v.n)||0, live: Number(v.live)||0,
+             revised: Number(v.revised)||0, dead: Number(v.dead)||0 };
+  }
+  var n = Number(v) || 0;
+  return { n: n, live: n, revised: 0, dead: 0 };
+}
+
 function drawFileDocs(){
   var box = $("#fl-docs");
   if(!box) return;
@@ -3103,12 +3120,19 @@ function drawDocFolders(box, counts){
   box.innerHTML = '<div class="hint" style="padding:0 2px 8px">'
       + 'กดที่แฟ้มเพื่อดูใบข้างใน · หรือพิมพ์ค้นหาข้างบนถ้ารู้เลขใบอยู่แล้ว</div>'
     + DOC_KINDS.map(function(k){
-        var n = Number(counts[k.th]) || 0;
-        return '<div class="fold' + (n ? '' : ' none') + '" data-fk="' + esc(k.th) + '">'
+        var c = docCount(counts[k.th]);
+        /* จำนวนบนแฟ้มนับเฉพาะใบที่ใช้ได้ — ใบที่ยกเลิกแล้วคือใบที่ใช้ไม่ได้
+           นับรวมเข้าไปคือหลอกตัวเองว่ามีใบอยู่มากกว่าที่มีจริง
+           แต่ก็ไม่ซ่อน บอกต่อท้ายว่าข้างในมีใบแก้ไข/ใบยกเลิกอยู่กี่ใบ */
+        var side = [];
+        if(c.revised) side.push("แก้ไข " + c.revised);
+        if(c.dead) side.push("ยกเลิก " + c.dead);
+        return '<div class="fold' + (c.n ? '' : ' none') + '" data-fk="' + esc(k.th) + '">'
           + '<span class="fold-ic">' + k.ic + '</span>'
           + '<span class="fold-tx"><b>' + esc(k.label) + '</b>'
-          +   '<em>' + esc(k.note) + '</em></span>'
-          + '<span class="fold-n">' + (n ? n + ' ใบ' : 'ยังไม่มี') + '</span>'
+          +   '<em>' + esc(side.length ? side.join(" · ") : k.note) + '</em></span>'
+          + '<span class="fold-n">'
+          +   (c.n ? (c.live + c.revised) + ' ใบ' : 'ยังไม่มี') + '</span>'
           + '</div>';
       }).join("");
   box.querySelectorAll("[data-fk]").forEach(function(el){
@@ -3120,6 +3144,20 @@ function drawDocFolders(box, counts){
   });
 }
 
+/** แบ่งใบในแฟ้มเป็นสามกอง — ใช้ได้ตามปกติ · เคยแก้ไข · ยกเลิกแล้ว
+
+    สามอย่างนี้หน้าตาเหมือนกันหมด ต่างกันแค่ตัวหนังสือเล็ก ๆ ท้ายบรรทัด
+    ปนกันอยู่ในรายการเดียวเมื่อไร วันหนึ่งจะมีคนหยิบใบที่ยกเลิกแล้วไปส่งลูกค้า
+    หรือส่งให้บัญชี แล้วรู้ตัวตอนที่แก้ยากไปแล้ว */
+var DOC_GROUPS = [
+  { key: "live", hd: "ใช้ได้ตามปกติ",
+    pick: function(d){ return !d.voidWhy && !Number(d.revised) } },
+  { key: "revised", hd: "เคยแก้ไข — ยอดในระบบไม่เท่ากับใบที่พิมพ์ครั้งแรก",
+    pick: function(d){ return !d.voidWhy && Number(d.revised) > 0 } },
+  { key: "dead", hd: "ยกเลิกแล้ว — ห้ามส่งลูกค้า ห้ามส่งบัญชี",
+    pick: function(d){ return !!d.voidWhy } }
+];
+
 /** ข้างในแฟ้มหนึ่งใบ */
 function drawDocOne(box, rows, counts, total){
   var k = docKind(FILE_KIND);
@@ -3130,8 +3168,13 @@ function drawDocOne(box, rows, counts, total){
       + 'ใบที่ออกจากนี้ไปจะมาอยู่ในแฟ้มนี้</div>';
   } else {
     box.innerHTML = docBackBar()
-      + '<div class="subhd">' + esc(k.label) + ' · ' + rows.length + ' ใบ</div>'
-      + rows.map(docRowHtml).join("")
+      + DOC_GROUPS.map(function(g){
+          var part = rows.filter(g.pick);
+          if(!part.length) return "";
+          return '<div class="subhd grp-' + g.key + '">' + esc(g.hd)
+            + ' · ' + part.length + ' ใบ</div>'
+            + part.map(docRowHtml).join("");
+        }).join("")
       + '<div id="' + outId + '" style="margin-top:10px"></div>'
       + (total > rows.length
           ? '<div class="hint" style="margin-top:8px">แสดง ' + rows.length + ' ใบล่าสุด '

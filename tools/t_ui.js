@@ -2932,6 +2932,99 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ผลค้นหายังแยกหัวข้อตามชนิดใบ ไม่เทรวมกัน',
     find45.heads.length === 1 && find45.heads[0].indexOf('ใบกำกับภาษี') > -1);
 
+  console.log('\n   ใบที่แก้ไขและใบที่ยกเลิก ต้องแยกกองออกจากใบปกติ');
+  /* สามอย่างนี้หน้าตาเหมือนกันหมด ต่างกันแค่ตัวหนังสือเล็ก ๆ ท้ายบรรทัด
+     ปนกันเมื่อไร วันหนึ่งจะมีคนหยิบใบที่ยกเลิกแล้วไปส่งลูกค้าหรือส่งบัญชี */
+  await page.evaluate(function () { go('list') });
+  await page.waitForTimeout(500);
+  await page.evaluate(function () { openDoc((ORDERS || [])[1], 'rec') });
+  await page.waitForTimeout(400);
+  await page.click('#dc-make');
+  var before45 = await page.evaluate(function () { return MOCK_DOCS.length });
+  await page.waitForFunction(function (n) { return MOCK_DOCS.length > n }, before45,
+    { timeout: 20000 });
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
+  /* ใบหนึ่งแก้ อีกใบยกเลิก — ยิงผ่านทางเดินปกติของแอป ไม่แก้ทะเบียนเอง
+     เลือกใบด้วยเลขจริงที่หยิบมาจากทะเบียน ไม่ใช่ตำแหน่งที่ 0 กับ 1
+     เพราะข้อสอบข้อก่อน ๆ ทิ้งใบไว้ในทะเบียนไม่เท่ากันทุกรอบ */
+  var made = await page.evaluate(async function () {
+    var use = MOCK_DOCS.filter(function (d) {
+      return d.type === 'ใบเสร็จรับเงิน' && !d.voidWhy && !d.sentAt;
+    });
+    var live = use[use.length - 2], gone = use[use.length - 1];
+    if (!live || !gone) return { skip: true, have: use.length };
+    var r1 = await new Promise(function (r) {
+      google.script.run.withSuccessHandler(r).withFailureHandler(function (e) { r('ERR ' + e) })
+        .reviseDoc({ no: live.no, why: 'ลูกค้าขอแก้ที่อยู่บนใบ', by: 'test' });
+    });
+    var r2 = await new Promise(function (r) {
+      google.script.run.withSuccessHandler(r).withFailureHandler(function (e) { r('ERR ' + e) })
+        .voidDoc(gone.no, 'ออกผิดออเดอร์ ต้องออกใหม่', 'test');
+    });
+    return { revised: live.no, dead: gone.no,
+             ok1: !!(r1 && r1.ok), ok2: !!(r2 && r2.ok), r1: String(r1), r2: String(r2) };
+  });
+  truthy('มีใบให้ทดสอบสองใบ', !made.skip);
+  truthy('แก้ใบผ่าน', made.ok1);
+  truthy('ยกเลิกใบผ่าน', made.ok2);
+  await page.evaluate(function () { go('quote') });
+  await page.waitForTimeout(300);
+  await page.click('#btn-file');
+  await page.waitForTimeout(900);
+
+  var grp45 = await page.evaluate(async function () {
+    var f = $('#fl-docs [data-fk="ใบเสร็จรับเงิน"]');
+    return {
+      /* จำนวนบนหน้าแฟ้มต้องไม่นับใบที่ยกเลิกแล้ว */
+      n: f.querySelector('.fold-n').textContent,
+      side: f.querySelector('em').textContent
+    };
+  });
+  truthy('จำนวนบนแฟ้มไม่นับใบที่ยกเลิกแล้ว', grp45.n.indexOf('1 ใบ') > -1);
+  truthy('แต่บอกไว้ว่าข้างในมีใบแก้ไขกี่ใบ ใบยกเลิกกี่ใบ',
+    /แก้ไข 1/.test(grp45.side) && /ยกเลิก 1/.test(grp45.side));
+
+  var in45 = await page.evaluate(async function (made) {
+    $('#fl-docs [data-fk="ใบเสร็จรับเงิน"]').click();
+    await new Promise(function (r) { setTimeout(r, 800) });
+    var heads = $$('#fl-docs .subhd').map(function (h) { return h.className });
+    /* ใบแต่ละใบต้องอยู่ใต้หัวข้อของกองตัวเอง ไม่ใช่แค่มีหัวข้อครบ */
+    function groupOf(no){
+      var cur = '', found = '';
+      [].slice.call($('#fl-docs').children).forEach(function (el) {
+        if(el.classList.contains('subhd')) cur = el.className;
+        if(el.classList.contains('row') && el.textContent.indexOf(no) > -1) found = cur;
+      });
+      return found;
+    }
+    return {
+      heads: heads,
+      revisedIn: groupOf(made.revised),
+      deadIn: groupOf(made.dead),
+      revisedTxt: ($$('#fl-docs .row').filter(function (r) {
+        return r.textContent.indexOf(made.revised) > -1;
+      })[0] || {}).textContent || ''
+    };
+  }, made);
+  truthy('มีหัวข้อกอง "เคยแก้ไข"', in45.heads.join('|').indexOf('grp-revised') > -1);
+  truthy('มีหัวข้อกอง "ยกเลิกแล้ว"', in45.heads.join('|').indexOf('grp-dead') > -1);
+  truthy('ใบที่แก้ไปอยู่ในกองเคยแก้ไข', in45.revisedIn.indexOf('grp-revised') > -1);
+  truthy('ใบที่ยกเลิกไปอยู่ในกองยกเลิกแล้ว', in45.deadIn.indexOf('grp-dead') > -1);
+  truthy('บรรทัดของใบที่แก้บอกว่าแก้ไปกี่ครั้ง',
+    /แก้ไขแล้ว 1 ครั้ง/.test(in45.revisedTxt));
+  truthy('และบอกเหตุผลที่แก้ ไม่ใช่แค่บอกว่าเคยแก้',
+    in45.revisedTxt.indexOf('ลูกค้าขอแก้ที่อยู่บนใบ') > -1);
+  truthy('ใบที่ยกเลิกแล้วไม่มีปุ่มยกเลิกซ้ำ', await page.evaluate(function () {
+    var rows = $$('#fl-docs .row').filter(function (r) {
+      return r.textContent.indexOf('ยกเลิกแล้ว') > -1;
+    });
+    return rows.length > 0 && rows.every(function (r) { return !r.querySelector('[data-vd]') });
+  }));
+
+  await page.evaluate(function () { $('#fl-docs .fold-back').click() });
+  await page.waitForTimeout(500);
+
   console.log('\n   สลับไปดูสรุปรายเดือน');
   await page.click('#fl-tabs button[data-fl="month"]');
   await page.waitForTimeout(1000);
