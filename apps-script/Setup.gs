@@ -187,6 +187,132 @@ function fixLotSheet() {
   return msg;
 }
 
+/* ------------------------------------------------- ช่องสูตรที่ถูกพิมพ์ทับ
+
+   กฎข้อเดียวที่ห้ามลืมเวลาแก้ชีทเองคือ "ช่องพื้นเทาคือสูตร ห้ามพิมพ์ทับ"
+   แต่กฎนี้ไม่มีอะไรบังคับ พิมพ์ทับได้เงียบ ๆ ไม่มีอะไรเตือน และผลที่ตามมา
+   ก็เงียบเหมือนกัน — เลขในช่องนั้นนิ่งอยู่อย่างนั้นตลอดไป ไม่อัปเดตตามอีกเลย
+   คนที่มาอ่านทีหลังแยกไม่ออกเลยว่าเลขไหนคำนวณมาจริง เลขไหนเป็นเลขนิ่ง
+
+   ของจริงที่เจอ: ชีท รับเข้า แถว 401 มีเลขนิ่งค้างอยู่ในคอลัมน์สูตร
+
+   ตัวนี้เดินหาให้ทั้งชีท แล้วซ่อมสองแบบตามสิ่งที่เจอจริง
+     - แถวนั้นมีข้อมูลอยู่ → เอาสูตรจากแถวที่ยังดีมาวางคืน (copyTo ปรับแถวให้เอง)
+     - แถวนั้นว่างทั้งแถว เหลือแต่ช่องนี้ → เป็นเศษที่ค้างไว้ ล้างทิ้ง
+   ค่าเดิมทุกช่องถูกเขียนลง Log ก่อนเสมอ ไม่มีอะไรหายไปเงียบ ๆ            */
+
+/** อ่านอย่างเดียว — บอกว่ามีช่องสูตรไหนถูกพิมพ์ทับบ้าง ไม่แตะอะไรทั้งนั้น */
+function checkStaticCells() { return staticCells_(false); }
+
+/** ซ่อมจริง — เอาสูตรกลับมา หรือล้างเศษที่ค้างไว้ พร้อมลง Log ทุกช่อง */
+function fixStaticCells() { return staticCells_(true); }
+
+function staticCells_(doFix) {
+  var ss = ss_();
+  var COLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  var keys = ['lot', 'cut', 'stock', 'head', 'item', 'recv'];
+  /* สต๊อกคงเหลือเป็นสูตรทั้งแผ่น (CALC_ALL) ไม่มีช่องกรอกสักช่อง
+     ช่องไหนไม่มีสูตรแต่มีค่า = ถูกพิมพ์ทับแน่นอน ไม่ต้องเดา */
+  function calcCols(cfg, wide) {
+    if (cfg.CALC && cfg.CALC.length) return cfg.CALC;
+    if (!cfg.CALC_ALL) return [];
+    var all = [];
+    for (var i = 1; i <= wide; i++) all.push(i);
+    return all;
+  }
+  var out = [], found = 0, fixed = 0, cleared = 0;
+
+  for (var k = 0; k < keys.length; k++) {
+    var cfg = SH[keys[k]];
+    if (!cfg) continue;
+    var sh = findSheet_(ss, cfg.name);
+    if (!sh) { out.push('✗ ไม่มีชีท ' + cfg.name); continue; }
+
+    /* สูตรมักลากไว้ยาวกว่าแถวที่มีข้อมูลจริง ต้องดูให้ถึงแถวสุดท้ายที่ยังมีสูตร
+       ไม่งั้นแถวที่ถูกพิมพ์ทับจนไม่เหลือสูตร จะหาสูตรต้นแบบมาวางคืนไม่เจอ */
+    var lim = formulaLimit_(keys[k]);
+    var last = Math.min(sh.getMaxRows(), Math.max(sh.getLastRow(), lim));
+    if (last < DATA_ROW) { out.push('· ' + cfg.name + ' — ยังไม่มีข้อมูล'); continue; }
+    var n = last - DATA_ROW + 1;
+    var wide = sh.getLastColumn();
+    var cols = calcCols(cfg, wide);
+    if (!cols.length) continue;
+    var hits = [];
+
+    for (var c = 0; c < cols.length; c++) {
+      var col = cols[c];
+      if (col > wide) continue;
+      var rng = sh.getRange(DATA_ROW, col, n, 1);
+      var fs = rng.getFormulas();
+      var vs = rng.getDisplayValues();
+      /* แถวที่ยังมีสูตรดีอยู่ ไว้เป็นต้นแบบตอนวางคืน */
+      var good = -1;
+      for (var i = 0; i < fs.length; i++) if (fs[i][0]) { good = i; break; }
+
+      for (var j = 0; j < fs.length; j++) {
+        if (fs[j][0]) continue;                                  /* มีสูตร = ปกติ */
+        if (String(vs[j][0] || '').trim() === '') continue;       /* ว่าง = ปกติ */
+        hits.push({ col: col, i: j, row: DATA_ROW + j, val: vs[j][0], good: good });
+      }
+    }
+
+    if (!hits.length) { out.push('✓ ' + cfg.name + ' — ไม่มีช่องสูตรถูกพิมพ์ทับ'); continue; }
+
+    found += hits.length;
+    out.push((doFix ? '⚙ ' : '✗ ') + cfg.name + ' — เจอ ' + hits.length + ' ช่อง');
+
+    for (var h = 0; h < hits.length; h++) {
+      var t = hits[h];
+      var a1 = COLS.charAt(t.col - 1) + t.row;
+      /* แถวนี้มีของอยู่จริงไหม ดูจากช่องกรอกทั้งแถว ไม่ใช่จากช่องที่กำลังซ่อม */
+      var alive = true;
+      if (cfg.IN) {
+        var rowVals = sh.getRange(t.row, 1, 1, wide).getDisplayValues()[0];
+        alive = false;
+        for (var q in cfg.IN) {
+          var cc = cfg.IN[q];
+          if (cc <= wide && String(rowVals[cc - 1] || '').trim() !== '') { alive = true; break; }
+        }
+      }
+
+      var how;
+      if (!alive) how = 'แถวว่างทั้งแถว เหลือแต่ช่องนี้ — เป็นเศษที่ค้างไว้ ล้างทิ้ง';
+      else if (t.good < 0) how = 'ทั้งคอลัมน์ไม่เหลือสูตรให้ก๊อปเลย — ต้องสั่ง setup เขียนสูตรใหม่';
+      else how = 'เอาสูตรจากแถว ' + (DATA_ROW + t.good) + ' มาวางคืน';
+      out.push('    ' + a1 + ' = ' + t.val + '   ' + (doFix ? '→ ' : '') + how);
+
+      if (!doFix) continue;
+      if (!alive) {
+        sh.getRange(t.row, t.col).clearContent();
+        cleared++;
+      } else if (t.good >= 0) {
+        sh.getRange(DATA_ROW + t.good, t.col).copyTo(sh.getRange(t.row, t.col));
+        fixed++;
+      } else {
+        continue;   /* ซ่อมเองไม่ได้ ไม่ต้องลง Log ว่าซ่อมแล้ว */
+      }
+      /* ค่าเดิมต้องอยู่ใน Log เสมอ เผื่อวันหนึ่งมีคนถามว่าเลขนั้นหายไปไหน */
+      writeLog_('ระบบ', 'ซ่อมช่องสูตร', cfg.name, a1, 'ค่าเดิม',
+        t.val, alive ? '(คืนสูตร)' : '(ล้างทิ้ง)',
+        'ช่องสูตรถูกพิมพ์ทับ ซ่อมด้วย fixStaticCells');
+    }
+  }
+
+  if (doFix) SpreadsheetApp.flush();
+
+  var head;
+  if (!found) head = '✓ ไม่มีช่องสูตรไหนถูกพิมพ์ทับเลย ทุกชีทปกติดี';
+  else if (!doFix) head = 'เจอ ' + found + ' ช่องที่ถูกพิมพ์ทับ — สั่ง fixStaticCells เพื่อซ่อม';
+  else head = '✓ ซ่อมแล้ว ' + fixed + ' ช่อง · ล้างเศษทิ้ง ' + cleared + ' ช่อง' +
+    (found > fixed + cleared
+      ? ' · เหลือ ' + (found - fixed - cleared) + ' ช่องที่ต้องสั่ง setup ก่อน' : '') +
+    '\nค่าเดิมทุกช่องถูกบันทึกไว้ในชีท Log แล้ว';
+
+  var msg = head + '\n\n' + out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 /* ---------------------------------------------------------------- ล็อตสินค้า */
 
 /**

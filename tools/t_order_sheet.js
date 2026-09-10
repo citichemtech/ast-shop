@@ -2877,5 +2877,78 @@ var over51 = [];
 for (var nm51 in fx51.sheets) over51 = over51.concat(fx51.sheets[nm51].overwrittenFormulas);
 eq('อ่านอย่างเดียว ไม่มีช่องสูตรถูกแตะ', over51, []);
 
+/* ====== 52. ช่องสูตรที่ถูกพิมพ์ทับ — หาให้เจอ แล้วเอาสูตรกลับมา
+
+   กฎ "ช่องพื้นเทาคือสูตร ห้ามพิมพ์ทับ" ไม่มีอะไรบังคับ พิมพ์ทับได้เงียบ ๆ
+   แล้วเลขในช่องนั้นก็นิ่งอยู่อย่างนั้นตลอดไป ไม่มีอะไรเตือนสักอย่าง
+   ของจริง: ชีท รับเข้า แถว 401 มีเลขนิ่งค้างอยู่ในคอลัมน์สูตร              */
+console.log('\n52. ช่องสูตรที่ถูกพิมพ์ทับ');
+
+var fx52 = FS.build();
+var api52 = FS.load(fx52, {});
+api52.setup();
+api52.createOrder(order({ items: [{ sku: 'SKU-141', qty: 2, price: 100 }] }));
+
+var recv52 = fx52.sheets['รับเข้า'];
+var head52 = fx52.sheets['ออเดอร์_หัวบิล'];
+
+/* แบบที่ 1 — แถวที่มีข้อมูลจริง แต่ช่องสูตรถูกพิมพ์ทับด้วยเลขนิ่ง */
+var liveRow52 = DATA_ROW;
+head52.cell(liveRow52, 14).f = '';       /* N = ยอดสุทธิ เป็นสูตร */
+head52.cell(liveRow52, 14).v = 9999;     /* คนพิมพ์ทับ */
+
+/* แบบที่ 2 — เศษที่ค้างอยู่ในแถวว่าง แบบเดียวกับ รับเข้า แถว 401 */
+var junkRow52 = DATA_ROW + 20;
+recv52.cell(junkRow52, 7).f = '';
+recv52.cell(junkRow52, 7).v = 123;
+
+console.log('\n   ตรวจอย่างเดียวต้องไม่แตะอะไรเลย');
+var rep52 = api52.checkStaticCells();
+truthy2('บอกว่าเจอช่องที่ถูกพิมพ์ทับ', /เจอ \d+ ช่องที่ถูกพิมพ์ทับ/.test(rep52));
+truthy2('บอกชื่อชีทกับช่องที่เจอ', /ออเดอร์_หัวบิล/.test(rep52) && /N6/.test(rep52));
+truthy2('เจอเศษในชีทรับเข้าด้วย', /รับเข้า/.test(rep52) && /G26/.test(rep52));
+eq('ตรวจแล้วเลขนิ่งยังอยู่ ไม่ได้ถูกแก้', head52.cell(liveRow52, 14).v, 9999);
+eq('เศษก็ยังอยู่', recv52.cell(junkRow52, 7).v, 123);
+
+console.log('\n   สั่งซ่อมแล้วต้องได้สูตรกลับมา และเศษต้องหายไป');
+var logRows52 = function () {
+  var lg = fx52.sheets['Log'], n = 0;
+  for (var r = DATA_ROW; r <= lg.maxRows; r++) if (String(lg.cell(r, 2).v || '')) n++;
+  return n;
+};
+var before52 = logRows52();
+var fix52 = api52.fixStaticCells();
+
+truthy2('บอกว่าซ่อมไปกี่ช่อง ล้างทิ้งกี่ช่อง',
+  /ซ่อมแล้ว \d+ ช่อง · ล้างเศษทิ้ง \d+ ช่อง/.test(fix52));
+truthy2('ช่องที่ถูกพิมพ์ทับในแถวที่มีข้อมูล ได้สูตรกลับมา',
+  !!head52.cell(liveRow52, 14).f);
+/* สูตรที่วางคืนต้องเป็นสูตรเดียวกับที่แถวอื่นใช้ ไม่ใช่สูตรที่คิดขึ้นใหม่ */
+eq('เป็นสูตรชุดเดียวกับแถวที่ยังดีอยู่',
+  head52.cell(liveRow52, 14).f, head52.cell(DATA_ROW + 1, 14).f);
+eq('เศษในแถวว่างถูกล้างทิ้ง', String(recv52.cell(junkRow52, 7).v || ''), '');
+truthy2('ไม่ไปใส่สูตรให้แถวว่าง', !recv52.cell(junkRow52, 7).f);
+
+/* ค่าเดิมต้องตามกลับได้ ไม่ใช่หายไปเงียบ ๆ */
+eq('ลง Log ครบทั้งสองช่อง', logRows52() - before52, 2);
+var lg52 = fx52.sheets['Log'], seen52 = [];
+for (var r52 = DATA_ROW; r52 <= lg52.maxRows; r52++) {
+  if (String(lg52.cell(r52, 4).v || '') === 'ซ่อมช่องสูตร') {
+    seen52.push([String(lg52.cell(r52, 5).v), String(lg52.cell(r52, 6).v),
+                 String(lg52.cell(r52, 8).v)]);
+  }
+}
+eq('Log บอกชีท ช่อง และค่าเดิมที่ถูกทับ', seen52,
+  [['ออเดอร์_หัวบิล', 'N6', '9999'], ['รับเข้า', 'G26', '123']]);
+
+console.log('\n   ซ่อมเสร็จแล้วตรวจซ้ำต้องสะอาด');
+truthy2('ตรวจซ้ำแล้วไม่เหลือช่องไหนถูกพิมพ์ทับ',
+  /ไม่มีช่องสูตรไหนถูกพิมพ์ทับเลย/.test(api52.checkStaticCells()));
+
+/* ตัวซ่อมเองห้ามไปเขียนทับสูตรที่ยังดีอยู่ ไม่งั้นซ่อมทีก็พังเพิ่มที */
+var over52 = [];
+for (var nm52 in fx52.sheets) over52 = over52.concat(fx52.sheets[nm52].overwrittenFormulas);
+eq('ตลอดการซ่อม ไม่มีช่องสูตรดี ๆ ถูกแตะ', over52, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
