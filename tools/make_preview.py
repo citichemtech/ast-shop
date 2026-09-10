@@ -123,7 +123,7 @@ MOCK = """
 var MOCK_BOOT = __BOOT__;
 var MOCK_ORDERS = __ORDERS__;
 var MOCK_DOCS = [];       /* ทะเบียนเอกสารที่ออกไปแล้วในรอบนี้ */
-var MOCK_MONTHS = {};     /* ยอดที่กรอกเองในชีท สรุปเดือน (ค่าแอด + เดือนเก่า) */
+var MOCK_MONTHS = {};     /* ยอดที่กรอกเองในชีท สรุปเดือน คีย์เป็น "ปี-เดือน|ช่องทาง" */
 var MOCK_SIGN = {};       /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ (ของจริงอยู่ในชีท ตั้งค่าแอป) */
 window.SENT = [];
 window.google = { script: { run: (function(){
@@ -413,7 +413,8 @@ window.google = { script: { run: (function(){
                  returned:back, qtyBack:n, items:left.length };
       });
     },
-    /* สรุปรายเดือน — ของจริงคิดจากชีทหัวบิลแล้วผสมกับที่กรอกไว้ในชีท สรุปเดือน */
+    /* สรุปรายเดือน — ของจริงคิดจากชีทหัวบิลแล้วผสมกับที่กรอกไว้ในชีท สรุปเดือน
+       แยกตามช่องทางขาย ยอดของเดือนคือผลรวมของช่องทาง ไม่ได้เก็บซ้ำอีกที่ */
     getMonthReport: function(months){
       reply(function(){
         var typed = MOCK_MONTHS, calc = {};
@@ -422,29 +423,43 @@ window.google = { script: { run: (function(){
           if(st==="ยกเลิก" || st==="ตีกลับ") return;
           var m = /^(\d{4})-(\d{2})/.exec(String(o.date||""));
           if(!m) return;
-          var ym = m[1]+"-"+m[2];
-          var c = calc[ym] || (calc[ym] = { n:0, sales:0, cost:0 });
+          var k = m[1]+"-"+m[2]+"|"+(String(o.channel||"").trim() || "อื่น ๆ");
+          var c = calc[k] || (calc[k] = { n:0, sales:0, cost:0 });
           c.n++; c.sales += Number(o.net)||0; c.cost += Number(o.cost)||0;
         });
-        var keys = {};
-        for(var a in typed) keys[a]=1;
-        for(var b in calc) keys[b]=1;
+        var byMonth = {};
+        function slot(ym, chan){
+          var m = byMonth[ym] || (byMonth[ym] = { ym:ym, chans:{} });
+          return m.chans[chan] || (m.chans[chan] = 1);
+        }
+        for(var a in typed){ var pa = a.split("|"); slot(pa[0], pa[1]) }
+        for(var b in calc){  var pb = b.split("|"); slot(pb[0], pb[1]) }
         var want = Number(months)||0, now = new Date();
         for(var i=0;i<want;i++){
           var d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-          keys[d.getFullYear()+"-"+(d.getMonth()<9?"0":"")+(d.getMonth()+1)] = 1;
+          var y = d.getFullYear()+"-"+(d.getMonth()<9?"0":"")+(d.getMonth()+1);
+          if(!byMonth[y]) byMonth[y] = { ym:y, chans:{} };
         }
         var out = [];
-        for(var ym in keys){
-          var t = typed[ym] || {}, g = calc[ym] || { n:0, sales:0, cost:0 };
-          var sales = (t.sales===null||t.sales===undefined) ? g.sales : t.sales;
-          var cost  = (t.cost===null ||t.cost===undefined)  ? g.cost  : t.cost;
-          var ads   = Number(t.ads)||0;
-          out.push({ ym:ym, orders:g.n, sales:sales, cost:cost, ads:ads,
-                     gross:sales-cost, net:sales-cost-ads,
-                     typedSales:t.sales!==null&&t.sales!==undefined,
-                     typedCost:t.cost!==null&&t.cost!==undefined,
-                     note:t.note||"" });
+        for(var ym in byMonth){
+          var chans = [], tot = { orders:0, sales:0, cost:0, ads:0 };
+          for(var chan in byMonth[ym].chans){
+            var key = ym+"|"+chan;
+            var t = typed[key] || {}, g = calc[key] || { n:0, sales:0, cost:0 };
+            var sales = (t.sales===null||t.sales===undefined) ? g.sales : t.sales;
+            var cost  = (t.cost===null ||t.cost===undefined)  ? g.cost  : t.cost;
+            var ads   = Number(t.ads)||0;
+            tot.orders += g.n; tot.sales += sales; tot.cost += cost; tot.ads += ads;
+            chans.push({ chan:chan, orders:g.n, sales:sales, cost:cost, ads:ads,
+                         gross:sales-cost, net:sales-cost-ads,
+                         typedSales:t.sales!==null&&t.sales!==undefined,
+                         typedCost:t.cost!==null&&t.cost!==undefined,
+                         note:t.note||"" });
+          }
+          chans.sort(function(a,b){ return b.sales-a.sales || (a.chan<b.chan?-1:1) });
+          out.push({ ym:ym, orders:tot.orders, sales:tot.sales, cost:tot.cost, ads:tot.ads,
+                     gross:tot.sales-tot.cost, net:tot.sales-tot.cost-tot.ads,
+                     chans:chans });
         }
         out.sort(function(a,b){ return a.ym<b.ym?1:(a.ym>b.ym?-1:0) });
         return out;
@@ -455,14 +470,15 @@ window.google = { script: { run: (function(){
         p = p || {};
         var m = /^(\d{4})-(\d{2})/.exec(String(p.ym||""));
         if(!m) throw new Error("ยังไม่ได้บอกว่าเดือนไหน (ต้องเป็นแบบ 2026-01)");
-        var ym = m[1]+"-"+m[2];
-        var cur = MOCK_MONTHS[ym] || (MOCK_MONTHS[ym] = { sales:null, cost:null, ads:null, note:"" });
+        var key = m[1]+"-"+m[2]+"|"+(String(p.chan||"").trim() || "อื่น ๆ");
+        var cur = MOCK_MONTHS[key]
+          || (MOCK_MONTHS[key] = { sales:null, cost:null, ads:null, note:"" });
         ["sales","cost","ads"].forEach(function(f){
           if(!Object.prototype.hasOwnProperty.call(p,f)) return;
           cur[f] = (p[f]===""||p[f]===null||p[f]===undefined) ? null : Number(p[f])||0;
         });
         if(Object.prototype.hasOwnProperty.call(p,"note")) cur.note = String(p.note||"");
-        return { ok:true, ym:ym };
+        return { ok:true, ym:m[1]+"-"+m[2], chan:key.split("|")[1] };
       });
     },
     /* รายชื่อลูกค้าเก่า — ของจริงอ่านจากชีทหัวบิลกับชีทเอกสาร แล้วรวมชื่อซ้ำเป็นคนเดียว */

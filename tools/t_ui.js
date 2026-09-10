@@ -2845,41 +2845,136 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   });
   truthy('ซ่อนการ์ดเอกสาร โชว์การ์ดเดือนแทน', mn45.docHidden);
   eq('ขึ้นย้อนหลัง 12 เดือน แม้เดือนที่ยังไม่มีข้อมูล', mn45.rows, 12);
-  truthy('มีช่องกรอกค่าแอดทุกเดือน', mn45.hasAds);
+  truthy('มีช่องกรอกค่าแอด', mn45.hasAds);
   truthy('สรุปหัวตารางมีทั้งยอดขาย ต้นทุน ค่าแอด และกำไรสุทธิ',
     mn45.kpis.join('|').indexOf('ค่าแอดรวม') > -1 &&
     mn45.kpis.join('|').indexOf('กำไรสุทธิรวม') > -1);
 
+  console.log('\n   ยอดของเดือนต้องแยกตามช่องทางขาย');
+  /* ไฟล์รายเดือนที่ร้านมีเป็นยอดของ Shopee ล้วน ถ้าการ์ดเดือนโชว์ยอดเดียวโดยไม่บอกช่องทาง
+     คนอ่านจะเข้าใจว่าเป็นยอดทั้งร้านทันที — ผิดตั้งแต่ตัวเลขแรก */
+  var ch45 = await page.evaluate(function () {
+    function money(t, label) {
+      var m = new RegExp(label + '\\s*฿([\\d,]+\\.\\d\\d)').exec(t.replace(/\n/g, ' '));
+      return m ? Number(m[1].replace(/,/g, '')) : null;
+    }
+    var rows = $$('#fl-months .mrow');
+    var el = null;
+    for (var i = 0; i < rows.length; i++)
+      if (rows[i].innerText.indexOf('ใบในระบบ') > -1) { el = rows[i]; break }
+    if (!el) return { skip: true };
+    var cards = [].slice.call(el.querySelectorAll('.mchan'));
+    var head = el.querySelector('.mgrid').innerText;
+    return {
+      chans: cards.map(function (c) { return c.querySelector('.mchd b').textContent }),
+      chanSales: cards.map(function (c) { return money(c.innerText, 'ยอดขาย') }),
+      monthSales: money(head, 'ยอดขาย'),
+      headSaysChan: el.querySelector('.mhd span').textContent.indexOf('ช่องทาง') > -1,
+      fields: cards.length
+        ? [].slice.call(cards[0].querySelectorAll('.mfld span')).map(function (s) { return s.textContent })
+        : [],
+      canAdd: !!el.querySelector('.m-add')
+    };
+  });
+  truthy('มีเดือนที่มีออเดอร์ให้ทดสอบ', !ch45.skip);
+  truthy('เดือนที่มีออเดอร์แตกเป็นการ์ดช่องทาง', ch45.chans.length >= 1);
+  truthy('การ์ดช่องทางบอกชื่อช่องทางจริง', ch45.chans.indexOf('เพจ Facebook') > -1);
+  truthy('หัวเดือนบอกว่ามีกี่ช่องทาง', ch45.headSaysChan);
+  eq('ยอดของเดือนเท่ากับผลรวมของทุกช่องทาง', ch45.monthSales,
+    ch45.chanSales.reduce(function (a, b) { return a + (b || 0) }, 0));
+  truthy('กรอกได้ทั้งยอดขาย ต้นทุน และค่าแอด ไม่ใช่แค่ค่าแอด',
+    ch45.fields.join('|') === 'ยอดขาย|ต้นทุน|ค่าแอด');
+  truthy('เพิ่มช่องทางที่ยังไม่มีในเดือนนั้นได้', ch45.canAdd);
+
   console.log('\n   กรอกค่าแอดแล้วกำไรสุทธิต้องลดลงตามทันที');
   /* ค่าแอดคือเหตุผลเดียวที่ต้องมีหน้านี้ — กำไรที่ไม่หักค่าแอดไม่ใช่กำไรจริง */
   var ads45 = await page.evaluate(async function () {
+    function money(t, label) {
+      var m = new RegExp(label + '\\s*฿([\\d,]+\\.\\d\\d)').exec(t.replace(/\n/g, ' '));
+      return m ? Number(m[1].replace(/,/g, '')) : null;
+    }
     /* เลือกเดือนที่มีออเดอร์อยู่จริง จะได้เห็นว่ายอดขายมาจากระบบ ไม่ใช่ที่กรอก */
     var rows = $$('#fl-months .mrow');
     var idx = -1;
     for (var i = 0; i < rows.length; i++)
       if (rows[i].innerText.indexOf('ใบในระบบ') > -1) { idx = i; break; }
     if (idx < 0) return { skip: true };
-    var before = rows[idx].innerText;
-    rows[idx].querySelector('.m-ads').value = '250';
-    rows[idx].querySelector('.m-save').click();
+    var card = rows[idx].querySelector('.mchan');
+    var before = card.innerText, monthBefore = rows[idx].querySelector('.mgrid').innerText;
+    card.querySelector('.m-ads').value = '250';
+    card.querySelector('.m-save').click();
     await new Promise(function (r) { setTimeout(r, 900) });
-    var after = $$('#fl-months .mrow')[idx].innerText;
-    function money(t, label) {
-      var m = new RegExp(label + '\\s*฿([\\d,]+\\.\\d\\d)').exec(t.replace(/\n/g, ' '));
-      return m ? Number(m[1].replace(/,/g, '')) : null;
-    }
+    var row2 = $$('#fl-months .mrow')[idx];
+    var after = row2.querySelector('.mchan').innerText;
     return {
       salesBefore: money(before, 'ยอดขาย'), salesAfter: money(after, 'ยอดขาย'),
       netBefore: money(before, 'กำไรสุทธิ'), netAfter: money(after, 'กำไรสุทธิ'),
       adsAfter: money(after, 'ค่าแอด'),
+      monthNetBefore: money(monthBefore, 'กำไรสุทธิ'),
+      monthNetAfter: money(row2.querySelector('.mgrid').innerText, 'กำไรสุทธิ'),
       typed: after.indexOf('กรอกเอง') > -1
     };
   });
   truthy('มีเดือนที่มีออเดอร์ให้ทดสอบ', !ads45.skip);
-  eq('ค่าแอดถูกบันทึก', ads45.adsAfter, 250);
-  eq('กำไรสุทธิลดลงเท่ากับค่าแอดที่กรอก', ads45.netBefore - ads45.netAfter, 250);
+  eq('ค่าแอดถูกบันทึกที่ช่องทางนั้น', ads45.adsAfter, 250);
+  eq('กำไรสุทธิของช่องทางลดลงเท่ากับค่าแอดที่กรอก', ads45.netBefore - ads45.netAfter, 250);
+  eq('กำไรสุทธิของเดือนลดลงตามด้วย', ads45.monthNetBefore - ads45.monthNetAfter, 250);
   eq('ยอดขายยังเป็นตัวเลขจากระบบ ไม่ถูกแตะ', ads45.salesAfter, ads45.salesBefore);
   truthy('ยอดขายไม่ถูกติดป้ายว่ากรอกเอง เพราะไม่ได้กรอก', !ads45.typed);
+
+  console.log('\n   เดือนเก่าที่ไม่มีออเดอร์ — เปิดช่องทาง Shopee แล้วกรอกยอดจากไฟล์');
+  /* เดือน ม.ค.–มี.ค. ไม่มีออเดอร์ในระบบเลย ยอดมาจากไฟล์ของ Shopee อย่างเดียว
+     ถ้ากรอกไม่ได้เพราะยังไม่มีช่องทาง หน้านี้ก็ไม่มีประโยชน์กับเดือนที่ต้องใช้จริง */
+  var old45 = await page.evaluate(async function () {
+    function money(t, label) {
+      var m = new RegExp(label + '\\s*฿([\\d,]+\\.\\d\\d)').exec(t.replace(/\n/g, ' '));
+      return m ? Number(m[1].replace(/,/g, '')) : null;
+    }
+    var rows = $$('#fl-months .mrow');
+    var idx = -1;
+    for (var i = 0; i < rows.length; i++)
+      if (rows[i].innerText.indexOf('ยังไม่มีช่องทาง') > -1) { idx = i; break }
+    if (idx < 0) return { skip: true };
+    var ym = rows[idx].querySelector('.mhd b').textContent;
+    var sel = rows[idx].querySelector('.m-newchan');
+    sel.value = 'Shopee';
+    rows[idx].querySelector('.m-add').click();
+    await new Promise(function (r) { setTimeout(r, 200) });
+    var card = $$('#fl-months .mrow')[idx].querySelector('.mchan');
+    if (!card) return { added: false };
+    card.querySelector('.m-sales').value = '12000';
+    card.querySelector('.m-cost').value = '7000';
+    card.querySelector('.m-ads').value = '1500';
+    card.querySelector('.m-save').click();
+    await new Promise(function (r) { setTimeout(r, 900) });
+    var row2 = $$('#fl-months .mrow')[idx];
+    var c2 = row2.querySelector('.mchan');
+    /* เดือนที่มีออเดอร์อยู่แล้วต้องไม่ถูกยอดจากไฟล์ไปปน */
+    var other = null;
+    $$('#fl-months .mrow').forEach(function (r) {
+      if (r.innerText.indexOf('ใบในระบบ') > -1 && other === null)
+        other = money(r.querySelector('.mgrid').innerText, 'ยอดขาย');
+    });
+    return {
+      added: true, ym: ym, sameMonth: row2.querySelector('.mhd b').textContent === ym,
+      chan: c2 ? c2.querySelector('.mchd b').textContent : '',
+      sales: c2 ? money(c2.innerText, 'ยอดขาย') : null,
+      net: c2 ? money(c2.innerText, 'กำไรสุทธิ') : null,
+      monthSales: money(row2.querySelector('.mgrid').innerText, 'ยอดขาย'),
+      typed: c2 ? (c2.innerText.match(/กรอกเอง/g) || []).length : 0,
+      otherMonthSales: other
+    };
+  });
+  truthy('มีเดือนเปล่าให้ทดสอบ', !old45.skip);
+  truthy('กดเพิ่มช่องทางแล้วได้การ์ดใหม่', old45.added);
+  eq('การ์ดใหม่เป็นช่องทางที่เลือก', old45.chan, 'Shopee');
+  truthy('ยังเป็นเดือนเดิม ไม่เด้งไปเดือนอื่น', old45.sameMonth);
+  eq('ยอดขายที่กรอกจากไฟล์ถูกเก็บ', old45.sales, 12000);
+  eq('กำไรสุทธิ = ขาย − ทุน − ค่าแอด', old45.net, 12000 - 7000 - 1500);
+  eq('ยอดของเดือนเท่ากับช่องทางเดียวที่มี', old45.monthSales, 12000);
+  eq('ทั้งยอดขายและต้นทุนติดป้ายว่ากรอกเอง', old45.typed, 2);
+  eq('ยอดของเดือนที่มีออเดอร์จริงไม่ถูกยอดจากไฟล์ไปปน',
+    old45.otherMonthSales, ads45.salesBefore);
 
   console.log('\n   กลับไปหน้าใบเสนอราคาได้');
   await page.click('#fl-back');

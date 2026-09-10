@@ -358,10 +358,28 @@ textarea{resize:vertical}
 .mgrid div.net b{color:var(--green)}
 .mgrid div.neg b{color:var(--red)}
 /* ตัวเลขที่คนกรอกเองต้องแยกออกจากตัวเลขที่ระบบคิด ไม่งั้นจะเถียงกันเองว่าเลขไหนจริง */
-.mtyped{font-size:0.68rem;color:var(--blue);font-weight:700;margin-left:5px}
-.mrow .medit{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.mrow .medit input{width:auto;flex:1 1 120px;padding:9px 11px}
+.mtyped{display:block;font-size:0.68rem;color:var(--blue);font-weight:700;
+  white-space:nowrap;margin-top:1px}
+.mrow .medit{margin-top:10px;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.mrow .medit input{width:auto;flex:1 1 100%;padding:9px 11px}
 .mrow .medit button{flex:0 0 auto}
+/* ยอดของเดือนแยกตามช่องทางขาย — ไฟล์รายเดือนที่ร้านมีเป็นยอดของ Shopee ล้วน
+   ถ้าวางรวมกันในการ์ดเดียวจะอ่านเป็นยอดทั้งร้านทันที การ์ดซ้อนจึงต้องเห็นชัดว่าซ้อน */
+.mchans{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.mchan{border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:10px;
+  padding:10px 11px;background:var(--bg)}
+.mchan .mchd{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.mchan .mchd b{font-size:0.95rem}
+.mchan .mchd span{font-size:0.76rem;color:var(--gray)}
+.mchan .medit{margin-top:9px}
+.mchan .medit input{background:var(--card)}
+/* ป้ายบนช่องกรอก — สามช่องเรียงกันโดยไม่มีป้าย เดาไม่ออกว่าช่องไหนคืออะไร */
+.mfld{flex:1 1 120px;display:flex;flex-direction:column;gap:3px}
+.mfld>span{font-size:0.74rem;color:var(--gray)}
+.mrow .medit .mfld input{flex:0 0 auto;width:100%}
+.madd{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.madd select{width:auto;flex:1 1 160px;padding:8px 10px;font-size:0.85rem}
+.madd button{flex:0 0 auto}
 
 /* แถบเรียงลำดับหน้าลูกค้า — ตัวหนังสือล้วน ไม่มีไอคอน เพราะสามปุ่มนี้
    เป็นการ "เรียง" ไม่ใช่ "ไปที่ไหน" รูปจะทำให้ดูเหมือนเมนูอีกชั้น */
@@ -745,7 +763,34 @@ textarea{resize:vertical}
         </ul>
       </div></details>
 
-      <details><summary>11. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
+      <details><summary>11. แฟ้มเอกสาร &amp; สรุปรายเดือน</summary><div class="bd">
+        <ol>
+          <li>แท็บ <b>ใบเสนอราคา</b> → ปุ่ม <b>📂 แฟ้มเอกสาร &amp; สรุปรายเดือน</b></li>
+          <li>แท็บ <b>เอกสารที่ออกแล้ว</b> — ค้นใบเก่าด้วยเลขที่เอกสาร ชื่อลูกค้า
+            หรือเลขออเดอร์</li>
+          <li>แท็บ <b>สรุปรายเดือน</b> — ย้อนหลัง 12 เดือน ทุกเดือนแตกเป็น
+            <b>การ์ดของแต่ละช่องทางขาย</b></li>
+          <li>เดือนก่อนเริ่มใช้ระบบ กด <b>เพิ่มช่องทาง</b> → เลือก Shopee →
+            กรอกยอดขาย ต้นทุน ค่าแอด จากไฟล์เดิม → <b>บันทึก</b></li>
+        </ol>
+        <div class="stop"><b>ยอดจากไฟล์ Shopee ต้องลงที่ช่องทาง Shopee</b><br>
+          ไฟล์รายเดือนที่ดาวน์โหลดจากแอปขายของ เป็นยอดของแพลตฟอร์มนั้นแพลตฟอร์มเดียว
+          ไม่ใช่ยอดทั้งร้าน · ถ้ากรอกรวมกัน ยอดของช่องทางอื่นจะหายไปในตัวเลขก้อนเดียว
+          แล้วไม่มีทางแยกกลับได้อีก</div>
+        <ul>
+          <li>ยอดของเดือน = <b>ผลรวมของทุกช่องทาง</b> ในเดือนนั้น ไม่ได้เก็บแยกอีกที่
+            จึงไม่มีวันขัดกันเอง</li>
+          <li><b>เว้นช่องว่างไว้ = ให้ระบบคิดให้จากออเดอร์จริง</b> · กรอกตัวเลขลงไป =
+            ทับตัวเลขที่ระบบคิด (จะมีป้าย <b>กรอกเอง</b> ขึ้นให้เห็น) ·
+            ลบตัวเลขทิ้งแล้วบันทึก = กลับไปใช้ที่ระบบคิด</li>
+          <li><b>ค่าแอด</b> ต้องกรอกเองทุกเดือน เพราะบิลค่าโฆษณาไม่เคยผ่านระบบออเดอร์ —
+            กำไรที่ยังไม่หักค่าแอด ไม่ใช่กำไรจริง</li>
+          <li>ใบที่ยกเลิกหรือตีกลับ ไม่ถูกนับเป็นยอดขายของเดือน</li>
+          <li>แก้ในชีท <b>สรุปเดือน</b> ตรง ๆ ก็ได้ หนึ่งแถว = หนึ่งเดือน × หนึ่งช่องทาง</li>
+        </ul>
+      </div></details>
+
+      <details><summary>12. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
         <div class="stop"><b>ลบสินค้าออกจากฐานสินค้า ให้ลบ “ค่าในช่อง” ไม่ใช่ “ลบทั้งแถว”</b><br>
           ลบทั้งแถวทีไร สูตรของชีทอื่นที่ชี้มาจะพังเป็น #REF! ทั้งคอลัมน์ทุกที
           (เคยพังไป 38 แถว)</div>
@@ -786,9 +831,11 @@ textarea{resize:vertical}
 
     <div class="card" id="fl-month-card" style="display:none">
       <div class="hint" style="padding:0 2px 10px">
-        เดือนที่มีออเดอร์ในระบบ ระบบคิด <b>ยอดขาย</b> กับ <b>ต้นทุน</b> ให้เอง ·
-        <b>ค่าแอด</b> ต้องกรอกเองทุกเดือน เพราะบิลค่าโฆษณาไม่ได้ผ่านระบบออเดอร์ ·
-        เดือนก่อนเริ่มใช้ระบบ (ม.ค.–มี.ค.) กรอกยอดจากไฟล์เดิมได้เลย
+        ทุกยอดในหน้านี้ <b>แยกตามช่องทางขาย</b> — ยอดจากไฟล์ Shopee ต้องอยู่ใน Shopee
+        ไม่ใช่ยอดรวมทั้งร้าน · เดือนที่มีออเดอร์ในระบบ ระบบคิด <b>ยอดขาย</b> กับ
+        <b>ต้นทุน</b> ให้เองแยกช่องทางอยู่แล้ว · <b>ค่าแอด</b> ต้องกรอกเองทุกเดือน
+        เพราะบิลค่าโฆษณาไม่ได้ผ่านระบบออเดอร์ · เดือนก่อนเริ่มใช้ระบบ (ม.ค.–มี.ค.)
+        กด <b>เพิ่มช่องทาง</b> แล้วกรอกยอดจากไฟล์เดิมได้เลย
       </div>
       <div id="fl-months"><div class="load">กำลังโหลด…</div></div>
     </div>

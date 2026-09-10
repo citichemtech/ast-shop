@@ -3097,6 +3097,9 @@ function loadMonths(force){
   });
 }
 
+/* ยอดของเดือนหนึ่งไม่ใช่ตัวเลขตัวเดียว — ไฟล์รายเดือนที่เจ้าของร้านมีเป็นยอด Shopee
+   ล้วน ๆ ถ้าเอามากรอกรวมกับช่องทางอื่นจะอ่านผิดทันที ทั้งยอดขายและค่าแอด
+   จึงแยกทีละช่องทาง ยอดของเดือน = ผลรวมของช่องทางในเดือนนั้น ไม่เก็บซ้ำอีกที่ */
 function drawMonths(){
   var box = $("#fl-months");
   if(!box) return;
@@ -3122,52 +3125,137 @@ function drawMonths(){
     + '<div class="kpi"><span>กำไรสุทธิรวม</span><b style="color:'
     +   (t.net < 0 ? 'var(--red)' : 'var(--green)') + '">' + baht(t.net) + '</b></div>'
     + '</div>'
-    + list.map(function(r, i){
-        var neg = Number(r.net) < 0;
-        return '<div class="mrow" data-mi="' + i + '">'
-          + '<div class="mhd"><b>' + esc(ymThai(r.ym)) + '</b>'
-          + '<span>' + (r.orders ? r.orders + ' ใบในระบบ' : 'ไม่มีออเดอร์ในระบบ') + '</span></div>'
-          + '<div class="mgrid">'
-          +   '<div>ยอดขาย<b>' + baht(r.sales)
-          +     (r.typedSales ? '<span class="mtyped">กรอกเอง</span>' : '') + '</b></div>'
-          +   '<div>ต้นทุน<b>' + baht(r.cost)
-          +     (r.typedCost ? '<span class="mtyped">กรอกเอง</span>' : '') + '</b></div>'
-          +   '<div>ค่าแอด<b>' + baht(r.ads) + '</b></div>'
-          +   '<div class="' + (neg ? 'neg' : 'net') + '">กำไรสุทธิ<b>' + baht(r.net) + '</b></div>'
-          + '</div>'
-          + (r.note ? '<div class="hint" style="margin-top:6px">' + esc(r.note) + '</div>' : '')
-          + '<div class="medit">'
-          +   '<input type="number" inputmode="decimal" class="m-ads" placeholder="ค่าแอดเดือนนี้"'
-          +     ' value="' + (Number(r.ads) ? r.ads : '') + '">'
-          +   '<button class="mini m-save">บันทึก</button>'
-          + '</div>'
-          + '<div class="m-msg"></div>'
-          + '</div>';
-      }).join("")
+    + list.map(function(r, i){ return monthCard(r, i) }).join("")
     + '<div class="hint" style="margin-top:10px">กำไรสุทธิ = ยอดขาย − ต้นทุน − ค่าแอด · '
+    + 'ยอดของเดือนคือผลรวมของทุกช่องทาง · '
     + 'ใบที่ยกเลิกหรือตีกลับไม่ถูกนับเป็นยอดขาย · '
-    + 'ตัวเลขที่กรอกเองชนะตัวเลขที่ระบบคิด (แก้ในชีท <b>สรุปเดือน</b> ได้)</div>';
+    + 'ช่องที่เว้นว่างไว้ระบบคิดให้จากออเดอร์จริง ที่กรอกเองชนะที่ระบบคิด '
+    + '(แก้ในชีท <b>สรุปเดือน</b> ได้)</div>';
 
+  bindMonths(list);
+}
+
+/** หนึ่งเดือน = หัวเดือนกับยอดรวม แล้วไล่ทีละช่องทางข้างใน */
+function monthCard(r, i){
+  var neg = Number(r.net) < 0;
+  var chans = r.chans || [];
+  return '<div class="mrow" data-mi="' + i + '">'
+    + '<div class="mhd"><b>' + esc(ymThai(r.ym)) + '</b>'
+    +   '<span>' + (chans.length ? chans.length + ' ช่องทาง' : 'ยังไม่มีช่องทาง')
+    +   (r.orders ? ' · ' + r.orders + ' ใบในระบบ' : '') + '</span></div>'
+    + '<div class="mgrid">'
+    +   '<div>ยอดขาย<b>' + baht(r.sales) + '</b></div>'
+    +   '<div>ต้นทุน<b>' + baht(r.cost) + '</b></div>'
+    +   '<div>ค่าแอด<b>' + baht(r.ads) + '</b></div>'
+    +   '<div class="' + (neg ? 'neg' : 'net') + '">กำไรสุทธิ<b>' + baht(r.net) + '</b></div>'
+    + '</div>'
+    + (chans.length
+        ? '<div class="mchans">' + chans.map(function(c, j){ return chanCard(c, j) }).join("") + '</div>'
+        : '<div class="hint" style="margin-top:8px">เดือนนี้ยังไม่มียอดของช่องทางไหนเลย '
+          + 'เลือกช่องทางข้างล่างแล้วกรอกยอดจากไฟล์ได้</div>')
+    + '<div class="madd">'
+    +   '<select class="m-newchan">' + chanOptions(chans) + '</select>'
+    +   '<button class="mini m-add">เพิ่มช่องทาง</button>'
+    + '</div>'
+    + '</div>';
+}
+
+/** ช่องทางที่ยังไม่มีในเดือนนี้เท่านั้น — เลือกตัวที่มีอยู่แล้วจะได้การ์ดซ้ำสองใบ */
+function chanOptions(chans){
+  var have = {};
+  (chans || []).forEach(function(c){ have[c.chan] = 1 });
+  var all = ((BOOT && BOOT.lists && BOOT.lists.channel) || []).slice();
+  if(all.indexOf("อื่น ๆ") < 0) all.push("อื่น ๆ");
+  var left = all.filter(function(v){ return !have[v] });
+  if(!left.length) return '<option value="">มีครบทุกช่องทางแล้ว</option>';
+  return left.map(function(v){
+    return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+  }).join("");
+}
+
+/** หนึ่งช่องทางในเดือนนั้น — ตัวเลขที่เห็น กับช่องกรอกที่ทับตัวเลขนั้นได้ */
+function chanCard(c, j){
+  var neg = Number(c.net) < 0;
+  return '<div class="mchan" data-ci="' + j + '">'
+    + '<div class="mchd"><b>' + esc(c.chan) + '</b>'
+    +   '<span>' + (c.orders ? c.orders + ' ใบในระบบ' : 'ไม่มีออเดอร์ในระบบ') + '</span></div>'
+    + '<div class="mgrid">'
+    +   '<div>ยอดขาย<b>' + baht(c.sales)
+    +     (c.typedSales ? '<span class="mtyped">กรอกเอง</span>' : '') + '</b></div>'
+    +   '<div>ต้นทุน<b>' + baht(c.cost)
+    +     (c.typedCost ? '<span class="mtyped">กรอกเอง</span>' : '') + '</b></div>'
+    +   '<div>ค่าแอด<b>' + baht(c.ads) + '</b></div>'
+    +   '<div class="' + (neg ? 'neg' : 'net') + '">กำไรสุทธิ<b>' + baht(c.net) + '</b></div>'
+    + '</div>'
+    + (c.note ? '<div class="hint" style="margin-top:6px">' + esc(c.note) + '</div>' : '')
+    + '<div class="medit">'
+    +   monthInput("m-sales", "ยอดขาย", c.sales, c.typedSales, c.orders)
+    +   monthInput("m-cost",  "ต้นทุน", c.cost,  c.typedCost,  c.orders)
+    +   monthInput("m-ads",   "ค่าแอด", c.ads,   Number(c.ads) > 0, 0)
+    +   '<button class="mini m-save">บันทึก</button>'
+    + '</div>'
+    + '<div class="m-msg"></div>'
+    + '</div>';
+}
+
+/* ช่องว่างไม่ได้แปลว่าศูนย์ แปลว่า "ใช้ที่ระบบคิดให้" — placeholder จึงต้องบอกแบบนั้น
+   ไม่ใส่ตัวเลขลงใน placeholder เพราะช่องแคบกว่าเลขยาว ๆ พอถูกตัดท้ายจะกลายเป็น
+   เลขคนละตัว (1,103.59 อ่านได้เป็น 11) ตัวเลขจริงอยู่ในตารางเหนือช่องกรอกอยู่แล้ว */
+function monthInput(cls, label, val, typed, orders){
+  var ph = typed ? label : (orders ? "ระบบคิดให้" : "ยังไม่ได้กรอก");
+  return '<label class="mfld"><span>' + esc(label) + '</span>'
+    + '<input type="number" inputmode="decimal" step="0.01" class="' + cls + '"'
+    + ' placeholder="' + esc(ph) + '"'
+    + ' value="' + (typed ? num_(val) : "") + '"></label>';
+}
+
+function bindMonths(list){
   $$("#fl-months .mrow").forEach(function(el){
     var r = list[+el.dataset.mi];
-    el.querySelector(".m-save").onclick = function(){
-      var b = this, v = el.querySelector(".m-ads").value.trim();
-      b.disabled = true; b.textContent = "กำลังบันทึก…";
-      call("saveMonth", [{ ym: r.ym, ads: v === "" ? "" : Number(v),
-                           by: byName(), clientKey: newKey() }],
-        function(){
-          el.querySelector(".m-msg").innerHTML =
-            '<div class="msg ok" style="display:block">บันทึกค่าแอดของ '
-            + esc(ymThai(r.ym)) + ' แล้ว</div>';
-          b.disabled = false; b.textContent = "บันทึก";
-          loadMonths(true);
-        },
-        function(m){
-          b.disabled = false; b.textContent = "บันทึก";
-          el.querySelector(".m-msg").innerHTML =
-            '<div class="msg err" style="display:block">' + esc(m) + '</div>';
-        });
+
+    /* เดือนเก่าที่ไม่มีออเดอร์ในระบบเลย ต้องเปิดช่องทางขึ้นมากรอกเองได้
+       ทำฝั่งหน้าจอล้วน ยังไม่เขียนลงชีทจนกว่าจะกดบันทึก จะได้ไม่มีแถวเปล่าค้าง */
+    var add = el.querySelector(".m-add");
+    if(add) add.onclick = function(){
+      var v = el.querySelector(".m-newchan").value;
+      if(!v) return;
+      r.chans = (r.chans || []).concat([{
+        chan: v, orders: 0, sales: 0, cost: 0, ads: 0, gross: 0, net: 0,
+        typedSales: false, typedCost: false, note: "", isNew: true
+      }]);
+      drawMonths();
+      var fresh = $$("#fl-months .mrow")[+el.dataset.mi];
+      var cards = fresh ? fresh.querySelectorAll(".mchan") : [];
+      var last = cards[cards.length - 1];
+      if(last) last.querySelector(".m-sales").focus();
     };
+
+    el.querySelectorAll(".mchan").forEach(function(ce){
+      var c = r.chans[+ce.dataset.ci];
+      ce.querySelector(".m-save").onclick = function(){
+        var b = this;
+        function val(sel){
+          var s = ce.querySelector(sel).value.trim();
+          return s === "" ? "" : Number(s);
+        }
+        b.disabled = true; b.textContent = "กำลังบันทึก…";
+        call("saveMonth", [{ ym: r.ym, chan: c.chan,
+                             sales: val(".m-sales"), cost: val(".m-cost"), ads: val(".m-ads"),
+                             by: byName(), clientKey: newKey() }],
+          function(){
+            ce.querySelector(".m-msg").innerHTML =
+              '<div class="msg ok" style="display:block">บันทึก ' + esc(c.chan) + ' ของ '
+              + esc(ymThai(r.ym)) + ' แล้ว</div>';
+            b.disabled = false; b.textContent = "บันทึก";
+            loadMonths(true);
+          },
+          function(m){
+            b.disabled = false; b.textContent = "บันทึก";
+            ce.querySelector(".m-msg").innerHTML =
+              '<div class="msg err" style="display:block">' + esc(m) + '</div>';
+          });
+      };
+    });
   });
 }
 

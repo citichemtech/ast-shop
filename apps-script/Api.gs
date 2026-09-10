@@ -2003,7 +2003,15 @@ function cancelOrder(no, why, by, clientKey, kind) {
    ตัวเลขที่กรอกเองชนะตัวเลขที่คิดได้เสมอ — เดือนที่ปิดบัญชีแล้วต้องล็อกตัวเลข
    ไว้ได้ ไม่ใช่เปลี่ยนไปมาทุกครั้งที่มีคนแก้ออเดอร์เก่า                     */
 
-/** อ่านแถวที่กรอกไว้ในชีท สรุปเดือน — คืนเป็น map ตามปี-เดือน */
+/** ช่องทางที่ไม่ได้กรอกไว้ ต้องมีชื่อของตัวเอง ไม่ใช่ค่าว่างที่รวมกับอย่างอื่นเงียบ ๆ */
+var CHAN_OTHER = 'อื่น ๆ';
+
+function chanKey_(v) {
+  var c = String(v === null || v === undefined ? '' : v).trim().replace(/\s+/g, ' ');
+  return c || CHAN_OTHER;
+}
+
+/** อ่านแถวที่กรอกไว้ในชีท สรุปเดือน — คืนเป็น map ตาม "ปี-เดือน|ช่องทาง" */
 function readMonthRows_() {
   var out = {};
   var s = sheetIfAny_('month');
@@ -2012,12 +2020,13 @@ function readMonthRows_() {
   if (last < DATA_ROW) return out;
   var C = SH.month.IN;
   var n = last - DATA_ROW + 1;
-  var v = s.getRange(DATA_ROW, 1, n, 6).getValues();
+  var v = s.getRange(DATA_ROW, 1, n, 7).getValues();
   for (var i = 0; i < v.length; i++) {
     var ym = monthKey_(v[i][C.ym - 1]);
     if (!ym) continue;
-    out[ym] = {
-      row: DATA_ROW + i, ym: ym,
+    var chan = chanKey_(v[i][C.chan - 1]);
+    out[ym + '|' + chan] = {
+      row: DATA_ROW + i, ym: ym, chan: chan,
       sales: numOrNull_(v[i][C.sales - 1]),
       cost:  numOrNull_(v[i][C.cost - 1]),
       ads:   numOrNull_(v[i][C.ads - 1]),
@@ -2047,7 +2056,10 @@ function monthKey_(v) {
 }
 
 /**
- * ตารางสรุปรายเดือน
+ * ตารางสรุปรายเดือน แยกตามช่องทางขาย
+ *
+ * เดือนหนึ่งมีได้หลายช่องทาง ยอดของเดือน = ผลรวมของทุกช่องทางในเดือนนั้น
+ * ไม่ใช่ตัวเลขอีกตัวที่เก็บแยก — ถ้าเก็บแยกวันหนึ่งสองตัวจะไม่ตรงกันแล้วไม่มีใครรู้ว่าตัวไหนจริง
  *
  * months = จำนวนเดือนย้อนหลังที่อยากเห็น (นับจากเดือนนี้) 0 = เอาเท่าที่มีข้อมูล
  */
@@ -2063,43 +2075,64 @@ function getMonthReport(months) {
     if (isDeadStatus_(o.status)) continue;
     var ym = monthKey_(o.date);
     if (!ym) continue;
-    var c = calc[ym] || (calc[ym] = { n: 0, sales: 0, cost: 0 });
+    var k = ym + '|' + chanKey_(o.channel);
+    var c = calc[k] || (calc[k] = { n: 0, sales: 0, cost: 0 });
     c.n++;
     c.sales += Number(o.net) || 0;
     c.cost += Number(o.cost) || 0;
   }
 
-  var keys = {};
-  for (var k1 in typed) keys[k1] = 1;
-  for (var k2 in calc) keys[k2] = 1;
-  /* เดือนที่ยังไม่มีอะไรเลยก็ต้องขึ้น จะได้เห็นว่ายังไม่ได้กรอกค่าแอดของเดือนนั้น */
+  /* รวมกุญแจจากทั้งสองฝั่ง แล้วเติมเดือนเปล่าที่ขอมาให้ครบ
+     เดือนที่ยังไม่มีอะไรเลยก็ต้องขึ้น จะได้เห็นว่ายังไม่ได้กรอกค่าแอดของเดือนนั้น */
+  var byMonth = {};
+  function slot(ym, chan) {
+    var m = byMonth[ym] || (byMonth[ym] = { ym: ym, chans: {} });
+    return m.chans[chan] || (m.chans[chan] = { chan: chan });
+  }
+  for (var k1 in typed) slot(typed[k1].ym, typed[k1].chan);
+  for (var k2 in calc) { var p2 = k2.split('|'); slot(p2[0], p2[1]); }
   var want = Number(months) || 0;
   if (want > 0) {
     var now = new Date();
     for (var b = 0; b < want; b++) {
       var d = new Date(now.getFullYear(), now.getMonth() - b, 1);
-      keys[monthKey_(d)] = 1;
+      var ym0 = monthKey_(d);
+      if (!byMonth[ym0]) byMonth[ym0] = { ym: ym0, chans: {} };
     }
   }
 
   var out = [];
-  for (var ym in keys) {
-    var t = typed[ym] || {};
-    var g = calc[ym] || { n: 0, sales: 0, cost: 0 };
-    /* ที่กรอกเองชนะที่คิดได้ · ไม่ได้กรอกและไม่มีออเดอร์ = 0 */
-    var sales = (t.sales === null || t.sales === undefined) ? g.sales : t.sales;
-    var cost  = (t.cost  === null || t.cost  === undefined) ? g.cost  : t.cost;
-    var ads   = Number(t.ads) || 0;
+  for (var ym in byMonth) {
+    var m = byMonth[ym];
+    var chans = [], t = { orders: 0, sales: 0, cost: 0, ads: 0 };
+    for (var chan in m.chans) {
+      var key = ym + '|' + chan;
+      var ty = typed[key] || {};
+      var g = calc[key] || { n: 0, sales: 0, cost: 0 };
+      /* ที่กรอกเองชนะที่คิดได้ · ไม่ได้กรอกและไม่มีออเดอร์ = 0 */
+      var sales = (ty.sales === null || ty.sales === undefined) ? g.sales : ty.sales;
+      var cost  = (ty.cost  === null || ty.cost  === undefined) ? g.cost  : ty.cost;
+      var ads   = Number(ty.ads) || 0;
+      t.orders += g.n; t.sales += sales; t.cost += cost; t.ads += ads;
+      chans.push({
+        chan: chan, orders: g.n,
+        sales: round2_(sales), cost: round2_(cost), ads: round2_(ads),
+        gross: round2_(sales - cost), net: round2_(sales - cost - ads),
+        typedSales: ty.sales !== null && ty.sales !== undefined,
+        typedCost:  ty.cost  !== null && ty.cost  !== undefined,
+        note: ty.note || ''
+      });
+    }
+    /* ช่องทางที่ทำเงินมากสุดขึ้นก่อน คำถามแรกคือ "เดือนนี้ตัวไหนทำเงิน" */
+    chans.sort(function (a, b) { return b.sales - a.sales || (a.chan < b.chan ? -1 : 1) });
     out.push({
-      ym: ym, orders: g.n,
-      sales: round2_(sales), cost: round2_(cost), ads: round2_(ads),
+      ym: ym, orders: t.orders,
+      sales: round2_(t.sales), cost: round2_(t.cost), ads: round2_(t.ads),
       /* กำไรขั้นต้น = ขาย − ทุน · กำไรสุทธิ = หักค่าแอดอีกชั้น
          สองตัวนี้ต่างกันมากในเดือนที่ยิงแอดหนัก ถ้าโชว์ตัวเดียวจะเข้าใจผิด */
-      gross: round2_(sales - cost),
-      net: round2_(sales - cost - ads),
-      typedSales: t.sales !== null && t.sales !== undefined,
-      typedCost:  t.cost  !== null && t.cost  !== undefined,
-      note: t.note || ''
+      gross: round2_(t.sales - t.cost),
+      net: round2_(t.sales - t.cost - t.ads),
+      chans: chans
     });
   }
   out.sort(function (a, b) { return a.ym < b.ym ? 1 : (a.ym > b.ym ? -1 : 0) });
@@ -2107,7 +2140,7 @@ function getMonthReport(months) {
 }
 
 /**
- * กรอก/แก้ยอดของเดือนหนึ่ง — เขียนเฉพาะช่องกรอก ไม่แตะช่องสูตร
+ * กรอก/แก้ยอดของเดือนหนึ่ง เฉพาะช่องทางหนึ่ง — เขียนเฉพาะช่องกรอก ไม่แตะช่องสูตร
  *
  * ส่ง null หรือค่าว่างมา = ล้างช่องนั้นให้กลับไปใช้ตัวเลขที่ระบบคิดเอง
  */
@@ -2116,6 +2149,7 @@ function saveMonth(p) {
   p = p || {};
   var ym = monthKey_(p.ym);
   if (!ym) throw new Error('ยังไม่ได้บอกว่าเดือนไหน (ต้องเป็นแบบ 2026-01)');
+  var chan = chanKey_(p.chan);
 
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(20000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
@@ -2124,15 +2158,15 @@ function saveMonth(p) {
     var ck = String(p.clientKey || '').trim();
     if (ck) {
       var done = props.getProperty('mn_' + ck);
-      if (done) return { ok: true, ym: ym, repeat: true };
+      if (done) return { ok: true, ym: ym, chan: chan, repeat: true };
     }
 
     var rows = readMonthRows_();
-    var cur = rows[ym];
+    var cur = rows[ym + '|' + chan];
     var row = cur ? cur.row : nextRow_('month', SH.month.IN.ym);
     if (!row) throw new Error('ชีท ' + SH.month.name + ' เต็มแล้ว — สั่ง setup อีกครั้งเพื่อขยายแถว');
 
-    var obj = { ym: ym };
+    var obj = { ym: ym, chan: chan };
     ['sales', 'cost', 'ads'].forEach(function (f) {
       if (!Object.prototype.hasOwnProperty.call(p, f)) return;
       var v = p[f];
@@ -2142,14 +2176,14 @@ function saveMonth(p) {
     writeRow_('month', row, obj);
 
     writeLog_(String(p.by || email), cur ? 'แก้สรุปเดือน' : 'ลงสรุปเดือน',
-      SH.month.name, ym, 'ค่าแอด',
+      SH.month.name, ym + ' · ' + chan, 'ค่าแอด',
       cur ? (cur.ads === null ? '' : cur.ads) : '',
       Object.prototype.hasOwnProperty.call(obj, 'ads') ? obj.ads : '',
       String(p.why || '').trim());
 
     SpreadsheetApp.flush();
-    if (ck) props.setProperty('mn_' + ck, ym);
-    return { ok: true, ym: ym, row: row };
+    if (ck) props.setProperty('mn_' + ck, ym + '|' + chan);
+    return { ok: true, ym: ym, chan: chan, row: row };
   } finally {
     lock.releaseLock();
   }
