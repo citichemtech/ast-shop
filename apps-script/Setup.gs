@@ -19,6 +19,7 @@ var CUT_LAST = 3005;   // ตัดล็อต รองรับ 3000 บร�
    เผื่อไว้ 8,000 ใบ ราวปีครึ่ง แล้วระบบจะเตือนล่วงหน้าตอนใกล้เต็ม
    (ของเดิมทำใบละหนึ่งแท็บ ที่ 20 ใบต่อวันจะชนขีดจำกัดของ Google Sheets ใน 2 เดือน) */
 var DOC_LAST = 8005;
+var MONTH_LAST = 65;   // สรุปเดือน รองรับ 60 เดือน = ห้าปี
 var STOCK_LAST = 150;  // ขอบล่างของชีท สต๊อกคงเหลือ ที่ใช้ในสูตรตรวจยอด
 
 var C_HEAD_BG = '#1f3864';
@@ -36,6 +37,7 @@ function setup() {
   made.push(setupLotSheet_(ss));
   made.push(setupDocSheet_(ss));
   made.push(setupAppSheet_(ss));
+  made.push(setupMonthSheet_(ss));
   made.push(setupItemLotColumn_(ss));
   made.push(setupAccounting_(ss));
   made.push(setupCarrierList_(ss));
@@ -481,6 +483,63 @@ function setupCutSheet_(ss) {
  * เก็บยอดเป็นเลขนิ่ง ไม่ใช่สูตรดึงจากออเดอร์ เพราะใบที่ออกไปแล้วและลูกค้าถืออยู่
  * ต้องไม่ขยับตามการแก้ออเดอร์ทีหลัง มีคอลัมน์สูตรอยู่คอลัมน์เดียวคือลำดับ
  */
+/* ------------------------------------------------------------ สรุปรายเดือน
+
+   เดือนละหนึ่งแถว เก็บสองอย่างที่ระบบไม่มีทางรู้เอง
+     ค่าแอด    บิลค่าโฆษณาไม่ได้ผ่านระบบออเดอร์
+     เดือนเก่า ยอดของเดือนก่อนเริ่มใช้ระบบ ที่อยู่ในไฟล์ Excel เดิม
+
+   ยอดขาย/ต้นทุนของเดือนที่มีออเดอร์ในระบบแล้ว ไม่ต้องกรอก — ปล่อยว่างไว้
+   แล้วแอปจะคิดจากชีทหัวบิลให้เอง ที่กรอกไว้เองจะชนะเสมอ (เผื่อเดือนไหน
+   ตัวเลขในระบบไม่ครบ จะได้ทับด้วยตัวเลขที่ปิดบัญชีจริงได้)                */
+
+function setupMonthSheet_(ss) {
+  var name = SH.month.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < MONTH_LAST) s.insertRowsAfter(s.getMaxRows(), MONTH_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 7) s.insertColumnsAfter(s.getMaxColumns(), 7 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('สรุปยอดรายเดือน')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'กรอกจากแอป แท็บ "สรุปยอด" → ปุ่มแฟ้มเอกสาร  |  ' +
+    'เดือนที่มีออเดอร์ในระบบแล้ว เว้นยอดขาย/ต้นทุนว่างไว้ได้ แอปคิดให้เอง  |  ' +
+    'ช่องพื้นเทาเป็นสูตร ห้ามพิมพ์ทับ'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'ปี-เดือน\n(2026-01)', 'ยอดขาย\n(กรอกเองถ้าไม่มีในระบบ)',
+    'ต้นทุน\n(กรอกเองถ้าไม่มีในระบบ)', 'ค่าแอด\n(กรอกเองเสมอ)', 'หมายเหตุ',
+    'กำไรสุทธิ\n(ยอดขาย−ต้นทุน−ค่าแอด)'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = MONTH_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+  /* กำไรสุทธิคิดในชีทด้วย เผื่อคนเปิดชีทดูตรง ๆ โดยไม่ผ่านแอป
+     ต้องได้เลขเดียวกับที่แอปโชว์เสมอ ไม่งั้นจะเถียงกันเองว่าเลขไหนจริง */
+  fillFormula_(s, 7, n,
+    '=IF($B6="","",N($C6)-N($D6)-N($E6))');
+
+  paintCols_(s, n, [2, 3, 4, 5, 6], [1, 7]);
+  s.getRange(DATA_ROW, SH.month.IN.ym, n, 1).setNumberFormat('@');
+  s.getRange(DATA_ROW, SH.month.IN.sales, n, 3).setNumberFormat('#,##0.00');
+  s.getRange(DATA_ROW, 7, n, 1).setNumberFormat('#,##0.00');
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.month.IN.ym, 120);
+  s.setColumnWidth(SH.month.IN.sales, 150);
+  s.setColumnWidth(SH.month.IN.cost, 150);
+  s.setColumnWidth(SH.month.IN.ads, 150);
+  s.setColumnWidth(SH.month.IN.note, 260);
+  s.setColumnWidth(7, 160);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' เดือน)';
+}
+
 function setupDocSheet_(ss) {
   var name = SH.doc.name;
   var s = findSheet_(ss, name);

@@ -1990,6 +1990,171 @@ function cancelOrder(no, why, by, clientKey, kind) {
   }
 }
 
+/* ------------------------------------------------------ สรุปยอดรายเดือน
+
+   คำถามที่เจ้าของร้านอยากตอบให้ได้: เดือนนี้ขายไปเท่าไร ต้นทุนเท่าไร ค่าแอดเท่าไร
+   แล้วเหลือกำไรจริงเท่าไร
+
+   สองเดือนคนละแบบอยู่ในตารางเดียวกัน
+     เดือนที่มีออเดอร์ในระบบ  ยอดขาย/ต้นทุนคิดจากชีทหัวบิลเอง ไม่ต้องกรอก
+     เดือนก่อนเริ่มใช้ระบบ    ไม่มีออเดอร์ให้คิด ต้องกรอกยอดจากไฟล์เดิม
+   ส่วนค่าแอดไม่เคยผ่านระบบออเดอร์เลย จึงต้องกรอกเองทุกเดือนทั้งสองแบบ
+
+   ตัวเลขที่กรอกเองชนะตัวเลขที่คิดได้เสมอ — เดือนที่ปิดบัญชีแล้วต้องล็อกตัวเลข
+   ไว้ได้ ไม่ใช่เปลี่ยนไปมาทุกครั้งที่มีคนแก้ออเดอร์เก่า                     */
+
+/** อ่านแถวที่กรอกไว้ในชีท สรุปเดือน — คืนเป็น map ตามปี-เดือน */
+function readMonthRows_() {
+  var out = {};
+  var s = sheetIfAny_('month');
+  if (!s) return out;
+  var last = formulaLimit_('month');
+  if (last < DATA_ROW) return out;
+  var C = SH.month.IN;
+  var n = last - DATA_ROW + 1;
+  var v = s.getRange(DATA_ROW, 1, n, 6).getValues();
+  for (var i = 0; i < v.length; i++) {
+    var ym = monthKey_(v[i][C.ym - 1]);
+    if (!ym) continue;
+    out[ym] = {
+      row: DATA_ROW + i, ym: ym,
+      sales: numOrNull_(v[i][C.sales - 1]),
+      cost:  numOrNull_(v[i][C.cost - 1]),
+      ads:   numOrNull_(v[i][C.ads - 1]),
+      note:  String(v[i][C.note - 1] || '').trim()
+    };
+  }
+  return out;
+}
+
+/** ช่องว่างกับเลขศูนย์ไม่เหมือนกัน — "ยังไม่ได้กรอก" ต้องต่างจาก "กรอกว่าศูนย์" */
+function numOrNull_(v) {
+  if (v === '' || v === null || v === undefined) return null;
+  var n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
+/** รับได้ทั้ง Date และข้อความ คืน "2026-01" — อะไรที่อ่านไม่ออกคืนค่าว่าง ไม่เดา */
+function monthKey_(v) {
+  if (v instanceof Date) {
+    return v.getFullYear() + '-' + (v.getMonth() < 9 ? '0' : '') + (v.getMonth() + 1);
+  }
+  var m = /^(\d{4})[-\/]?(\d{1,2})/.exec(String(v || '').trim());
+  if (!m) return '';
+  var mo = Number(m[2]);
+  if (mo < 1 || mo > 12) return '';
+  return m[1] + '-' + (mo < 10 ? '0' : '') + mo;
+}
+
+/**
+ * ตารางสรุปรายเดือน
+ *
+ * months = จำนวนเดือนย้อนหลังที่อยากเห็น (นับจากเดือนนี้) 0 = เอาเท่าที่มีข้อมูล
+ */
+function getMonthReport(months) {
+  requireStaff_();
+  var typed = readMonthRows_();
+
+  /* คิดจากออเดอร์จริงในชีท — ใบที่ยกเลิกหรือตีกลับไม่ใช่ยอดขาย */
+  var calc = {};
+  var list = readOrders_({ limit: 0 });
+  for (var i = 0; i < list.length; i++) {
+    var o = list[i];
+    if (isDeadStatus_(o.status)) continue;
+    var ym = monthKey_(o.date);
+    if (!ym) continue;
+    var c = calc[ym] || (calc[ym] = { n: 0, sales: 0, cost: 0 });
+    c.n++;
+    c.sales += Number(o.net) || 0;
+    c.cost += Number(o.cost) || 0;
+  }
+
+  var keys = {};
+  for (var k1 in typed) keys[k1] = 1;
+  for (var k2 in calc) keys[k2] = 1;
+  /* เดือนที่ยังไม่มีอะไรเลยก็ต้องขึ้น จะได้เห็นว่ายังไม่ได้กรอกค่าแอดของเดือนนั้น */
+  var want = Number(months) || 0;
+  if (want > 0) {
+    var now = new Date();
+    for (var b = 0; b < want; b++) {
+      var d = new Date(now.getFullYear(), now.getMonth() - b, 1);
+      keys[monthKey_(d)] = 1;
+    }
+  }
+
+  var out = [];
+  for (var ym in keys) {
+    var t = typed[ym] || {};
+    var g = calc[ym] || { n: 0, sales: 0, cost: 0 };
+    /* ที่กรอกเองชนะที่คิดได้ · ไม่ได้กรอกและไม่มีออเดอร์ = 0 */
+    var sales = (t.sales === null || t.sales === undefined) ? g.sales : t.sales;
+    var cost  = (t.cost  === null || t.cost  === undefined) ? g.cost  : t.cost;
+    var ads   = Number(t.ads) || 0;
+    out.push({
+      ym: ym, orders: g.n,
+      sales: round2_(sales), cost: round2_(cost), ads: round2_(ads),
+      /* กำไรขั้นต้น = ขาย − ทุน · กำไรสุทธิ = หักค่าแอดอีกชั้น
+         สองตัวนี้ต่างกันมากในเดือนที่ยิงแอดหนัก ถ้าโชว์ตัวเดียวจะเข้าใจผิด */
+      gross: round2_(sales - cost),
+      net: round2_(sales - cost - ads),
+      typedSales: t.sales !== null && t.sales !== undefined,
+      typedCost:  t.cost  !== null && t.cost  !== undefined,
+      note: t.note || ''
+    });
+  }
+  out.sort(function (a, b) { return a.ym < b.ym ? 1 : (a.ym > b.ym ? -1 : 0) });
+  return jsonSafe_(out);
+}
+
+/**
+ * กรอก/แก้ยอดของเดือนหนึ่ง — เขียนเฉพาะช่องกรอก ไม่แตะช่องสูตร
+ *
+ * ส่ง null หรือค่าว่างมา = ล้างช่องนั้นให้กลับไปใช้ตัวเลขที่ระบบคิดเอง
+ */
+function saveMonth(p) {
+  var email = requireStaff_();
+  p = p || {};
+  var ym = monthKey_(p.ym);
+  if (!ym) throw new Error('ยังไม่ได้บอกว่าเดือนไหน (ต้องเป็นแบบ 2026-01)');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var ck = String(p.clientKey || '').trim();
+    if (ck) {
+      var done = props.getProperty('mn_' + ck);
+      if (done) return { ok: true, ym: ym, repeat: true };
+    }
+
+    var rows = readMonthRows_();
+    var cur = rows[ym];
+    var row = cur ? cur.row : nextRow_('month', SH.month.IN.ym);
+    if (!row) throw new Error('ชีท ' + SH.month.name + ' เต็มแล้ว — สั่ง setup อีกครั้งเพื่อขยายแถว');
+
+    var obj = { ym: ym };
+    ['sales', 'cost', 'ads'].forEach(function (f) {
+      if (!Object.prototype.hasOwnProperty.call(p, f)) return;
+      var v = p[f];
+      obj[f] = (v === '' || v === null || v === undefined) ? '' : (Number(v) || 0);
+    });
+    if (Object.prototype.hasOwnProperty.call(p, 'note')) obj.note = String(p.note || '').trim();
+    writeRow_('month', row, obj);
+
+    writeLog_(String(p.by || email), cur ? 'แก้สรุปเดือน' : 'ลงสรุปเดือน',
+      SH.month.name, ym, 'ค่าแอด',
+      cur ? (cur.ads === null ? '' : cur.ads) : '',
+      Object.prototype.hasOwnProperty.call(obj, 'ads') ? obj.ads : '',
+      String(p.why || '').trim());
+
+    SpreadsheetApp.flush();
+    if (ck) props.setProperty('mn_' + ck, ym);
+    return { ok: true, ym: ym, row: row };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /* ------------------------------------------------------------ ลูกค้าเก่า */
 
 /**

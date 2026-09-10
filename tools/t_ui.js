@@ -2813,6 +2813,80 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   var ext44 = (head44.match(/<script[^>]*src=/g) || []);
   eq('หัวไฟล์ไม่มีสคริปต์จากเน็ตให้รอ', ext44, []);
 
+  /* ---------- 45. แฟ้มเอกสาร + สรุปรายเดือน ---------- */
+  console.log('\n45. แฟ้มเอกสาร & สรุปรายเดือน');
+  await page.click('.tabs button[data-go="quote"]');
+  await page.waitForTimeout(400);
+  await page.click('#btn-file');
+  await page.waitForTimeout(900);
+  var fl45 = await page.evaluate(function () {
+    return {
+      shown: $('#pg-file').style.display !== 'none',
+      /* เข้ามาจากหน้าใบเสนอราคา แท็บนั้นจึงต้องยังติดไฟอยู่ */
+      tab: (document.querySelector('.tabs button.on') || {}).dataset.go,
+      docCard: $('#fl-doc-card').style.display !== 'none',
+      monthCard: $('#fl-month-card').style.display !== 'none'
+    };
+  });
+  truthy('เปิดแฟ้มเอกสารจากหน้าใบเสนอราคาได้', fl45.shown);
+  eq('แท็บใบเสนอราคายังติดไฟไว้', fl45.tab, 'quote');
+  truthy('เปิดมาเจอเอกสารที่ออกแล้วก่อน', fl45.docCard && !fl45.monthCard);
+
+  console.log('\n   สลับไปดูสรุปรายเดือน');
+  await page.click('#fl-tabs button[data-fl="month"]');
+  await page.waitForTimeout(1000);
+  var mn45 = await page.evaluate(function () {
+    return {
+      rows: $$('#fl-months .mrow').length,
+      kpis: $$('#fl-months .kpi').map(function (k) { return k.querySelector('span').textContent }),
+      hasAds: !!$('#fl-months .m-ads'),
+      docHidden: $('#fl-doc-card').style.display === 'none'
+    };
+  });
+  truthy('ซ่อนการ์ดเอกสาร โชว์การ์ดเดือนแทน', mn45.docHidden);
+  eq('ขึ้นย้อนหลัง 12 เดือน แม้เดือนที่ยังไม่มีข้อมูล', mn45.rows, 12);
+  truthy('มีช่องกรอกค่าแอดทุกเดือน', mn45.hasAds);
+  truthy('สรุปหัวตารางมีทั้งยอดขาย ต้นทุน ค่าแอด และกำไรสุทธิ',
+    mn45.kpis.join('|').indexOf('ค่าแอดรวม') > -1 &&
+    mn45.kpis.join('|').indexOf('กำไรสุทธิรวม') > -1);
+
+  console.log('\n   กรอกค่าแอดแล้วกำไรสุทธิต้องลดลงตามทันที');
+  /* ค่าแอดคือเหตุผลเดียวที่ต้องมีหน้านี้ — กำไรที่ไม่หักค่าแอดไม่ใช่กำไรจริง */
+  var ads45 = await page.evaluate(async function () {
+    /* เลือกเดือนที่มีออเดอร์อยู่จริง จะได้เห็นว่ายอดขายมาจากระบบ ไม่ใช่ที่กรอก */
+    var rows = $$('#fl-months .mrow');
+    var idx = -1;
+    for (var i = 0; i < rows.length; i++)
+      if (rows[i].innerText.indexOf('ใบในระบบ') > -1) { idx = i; break; }
+    if (idx < 0) return { skip: true };
+    var before = rows[idx].innerText;
+    rows[idx].querySelector('.m-ads').value = '250';
+    rows[idx].querySelector('.m-save').click();
+    await new Promise(function (r) { setTimeout(r, 900) });
+    var after = $$('#fl-months .mrow')[idx].innerText;
+    function money(t, label) {
+      var m = new RegExp(label + '\\s*฿([\\d,]+\\.\\d\\d)').exec(t.replace(/\n/g, ' '));
+      return m ? Number(m[1].replace(/,/g, '')) : null;
+    }
+    return {
+      salesBefore: money(before, 'ยอดขาย'), salesAfter: money(after, 'ยอดขาย'),
+      netBefore: money(before, 'กำไรสุทธิ'), netAfter: money(after, 'กำไรสุทธิ'),
+      adsAfter: money(after, 'ค่าแอด'),
+      typed: after.indexOf('กรอกเอง') > -1
+    };
+  });
+  truthy('มีเดือนที่มีออเดอร์ให้ทดสอบ', !ads45.skip);
+  eq('ค่าแอดถูกบันทึก', ads45.adsAfter, 250);
+  eq('กำไรสุทธิลดลงเท่ากับค่าแอดที่กรอก', ads45.netBefore - ads45.netAfter, 250);
+  eq('ยอดขายยังเป็นตัวเลขจากระบบ ไม่ถูกแตะ', ads45.salesAfter, ads45.salesBefore);
+  truthy('ยอดขายไม่ถูกติดป้ายว่ากรอกเอง เพราะไม่ได้กรอก', !ads45.typed);
+
+  console.log('\n   กลับไปหน้าใบเสนอราคาได้');
+  await page.click('#fl-back');
+  await page.waitForTimeout(500);
+  truthy('กดกลับแล้วได้หน้าใบเสนอราคา',
+    await page.evaluate(function () { return $('#pg-quote').style.display !== 'none' }));
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

@@ -123,6 +123,7 @@ MOCK = """
 var MOCK_BOOT = __BOOT__;
 var MOCK_ORDERS = __ORDERS__;
 var MOCK_DOCS = [];       /* ทะเบียนเอกสารที่ออกไปแล้วในรอบนี้ */
+var MOCK_MONTHS = {};     /* ยอดที่กรอกเองในชีท สรุปเดือน (ค่าแอด + เดือนเก่า) */
 var MOCK_SIGN = {};       /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ (ของจริงอยู่ในชีท ตั้งค่าแอป) */
 window.SENT = [];
 window.google = { script: { run: (function(){
@@ -410,6 +411,58 @@ window.google = { script: { run: (function(){
         }
         return { ok:true, no:o.no, whole:!left.length, kind:"ตีกลับ",
                  returned:back, qtyBack:n, items:left.length };
+      });
+    },
+    /* สรุปรายเดือน — ของจริงคิดจากชีทหัวบิลแล้วผสมกับที่กรอกไว้ในชีท สรุปเดือน */
+    getMonthReport: function(months){
+      reply(function(){
+        var typed = MOCK_MONTHS, calc = {};
+        MOCK_ORDERS.forEach(function(o){
+          var st = String(o.status||"").trim();
+          if(st==="ยกเลิก" || st==="ตีกลับ") return;
+          var m = /^(\d{4})-(\d{2})/.exec(String(o.date||""));
+          if(!m) return;
+          var ym = m[1]+"-"+m[2];
+          var c = calc[ym] || (calc[ym] = { n:0, sales:0, cost:0 });
+          c.n++; c.sales += Number(o.net)||0; c.cost += Number(o.cost)||0;
+        });
+        var keys = {};
+        for(var a in typed) keys[a]=1;
+        for(var b in calc) keys[b]=1;
+        var want = Number(months)||0, now = new Date();
+        for(var i=0;i<want;i++){
+          var d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+          keys[d.getFullYear()+"-"+(d.getMonth()<9?"0":"")+(d.getMonth()+1)] = 1;
+        }
+        var out = [];
+        for(var ym in keys){
+          var t = typed[ym] || {}, g = calc[ym] || { n:0, sales:0, cost:0 };
+          var sales = (t.sales===null||t.sales===undefined) ? g.sales : t.sales;
+          var cost  = (t.cost===null ||t.cost===undefined)  ? g.cost  : t.cost;
+          var ads   = Number(t.ads)||0;
+          out.push({ ym:ym, orders:g.n, sales:sales, cost:cost, ads:ads,
+                     gross:sales-cost, net:sales-cost-ads,
+                     typedSales:t.sales!==null&&t.sales!==undefined,
+                     typedCost:t.cost!==null&&t.cost!==undefined,
+                     note:t.note||"" });
+        }
+        out.sort(function(a,b){ return a.ym<b.ym?1:(a.ym>b.ym?-1:0) });
+        return out;
+      });
+    },
+    saveMonth: function(p){
+      reply(function(){
+        p = p || {};
+        var m = /^(\d{4})-(\d{2})/.exec(String(p.ym||""));
+        if(!m) throw new Error("ยังไม่ได้บอกว่าเดือนไหน (ต้องเป็นแบบ 2026-01)");
+        var ym = m[1]+"-"+m[2];
+        var cur = MOCK_MONTHS[ym] || (MOCK_MONTHS[ym] = { sales:null, cost:null, ads:null, note:"" });
+        ["sales","cost","ads"].forEach(function(f){
+          if(!Object.prototype.hasOwnProperty.call(p,f)) return;
+          cur[f] = (p[f]===""||p[f]===null||p[f]===undefined) ? null : Number(p[f])||0;
+        });
+        if(Object.prototype.hasOwnProperty.call(p,"note")) cur.note = String(p.note||"");
+        return { ok:true, ym:ym };
       });
     },
     /* รายชื่อลูกค้าเก่า — ของจริงอ่านจากชีทหัวบิลกับชีทเอกสาร แล้วรวมชื่อซ้ำเป็นคนเดียว */

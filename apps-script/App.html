@@ -1317,7 +1317,7 @@ function custToast(kept){
 /* ------------------------------------------------------- พิมพ์เอกสารซ้ำ */
 
 /* พิมพ์ซ้ำไม่ออกเลขใหม่ ไม่แตะสต๊อก ไม่เขียนอะไรลงชีท — แค่วาดใบเดิมออกมาอีกครั้ง */
-function drawOldDocs(orderNo, boxSel){
+function drawOldDocs(orderNo, boxSel, query){
   var sel = boxSel || "#dc-old", box = $(sel);
   if (!box) return;
   /* ที่วางผลพิมพ์ซ้ำต้องเป็นคนละ id กันในแต่ละที่ ไม่งั้นตอนเปิดหน้าใบเสนอราคา
@@ -1344,11 +1344,20 @@ function drawOldDocs(orderNo, boxSel){
       ? 'กำลังโหลดใบเสนอราคาที่เคยออก…' : 'กำลังดูว่าเคยออกใบให้ออเดอร์นี้ไว้หรือยัง…')
     + '</div>';
   api("listDocs", orderNo || "").then(function(list){
+    /* คำค้นกรองในเครื่อง — ชีทส่งใบล่าสุดมาให้แล้ว ไม่ต้องยิงซ้ำทุกตัวอักษร */
+    var want = String(query || "").trim().toLowerCase();
+    if (want && list) list = list.filter(function(d){
+      return String(d.no||"").toLowerCase().indexOf(want) > -1
+          || String(d.custName||"").toLowerCase().indexOf(want) > -1
+          || String(d.orderNo||"").toLowerCase().indexOf(want) > -1;
+    });
     if (!list || !list.length) {
-      box.innerHTML = shell(isQuote
+      box.innerHTML = shell(want
+        ? '<div class="empty"><b>ไม่พบเอกสารที่ค้นหา</b>พิมพ์เลขที่เอกสารหรือชื่อลูกค้าบางส่วนก็ได้</div>'
+        : (isQuote
         ? '<div class="empty"><b>ยังไม่มีใบเสนอราคาที่เคยออก</b>'
           + 'ใบที่ออกจากฟอร์มด้านบนจะมาขึ้นตรงนี้ พร้อมปุ่มพิมพ์ซ้ำและทำเป็นออเดอร์</div>'
-        : '<div class="hint">ยังไม่เคยออกเอกสารให้ออเดอร์นี้</div>', 0);
+        : '<div class="hint">ยังไม่เคยออกเอกสารให้ออเดอร์นี้</div>'), 0);
       bindAgain();
       return;
     }
@@ -3021,6 +3030,147 @@ function repeatOrder(o){
     : ("คีย์ซ้ำจาก " + o.no + " แล้ว ตรวจอีกครั้งก่อนบันทึก"));
 }
 
+/* ------------------------------------------------------------- แฟ้มเอกสาร
+
+   สองเรื่องที่เคยตามหายาก มาอยู่หน้าเดียวกัน
+     เอกสารที่ออกไปแล้ว  เคยอยู่ต่อท้ายฟอร์มใบเสนอราคา ต้องเลื่อนผ่านใบ A4 ทั้งใบ
+     สรุปรายเดือน        เคยไม่มีที่ไหนเลย ต้องเปิดชีทแล้วไล่กรองเอง
+
+   ไม่ทำเป็นแท็บ แถบล่างเต็มแล้ว เข้าจากปุ่มในหน้าใบเสนอราคา แท็บนั้นจึงติดไฟค้างไว้ */
+
+var FILE_TAB = "doc";
+var MONTHS_TH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.",
+                 "ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+
+/** 2026-01 → "ม.ค. 2569" — ปีไทยเหมือนทุกที่ในแอป */
+function ymThai(ym){
+  var m = /^(\d{4})-(\d{2})$/.exec(String(ym||""));
+  if(!m) return String(ym||"");
+  return MONTHS_TH[Number(m[2])-1] + " " + (Number(m[1]) + 543);
+}
+
+function fileInit(){
+  var bk = $("#fl-back");
+  if(bk && !bk.dataset.bound){
+    bk.dataset.bound = "1";
+    bk.onclick = function(){ go("quote") };
+  }
+  $$("#fl-tabs button").forEach(function(b){
+    if(b.dataset.bound) return;
+    b.dataset.bound = "1";
+    b.onclick = function(){ FILE_TAB = b.dataset.fl; fileDraw() };
+  });
+  var q = $("#fl-q");
+  if(q && !q.dataset.bound){
+    q.dataset.bound = "1";
+    q.oninput = function(){ drawOldDocs("", "#fl-docs", q.value.trim()) };
+  }
+  fileDraw();
+}
+
+function fileDraw(){
+  $$("#fl-tabs button").forEach(function(b){
+    b.classList.toggle("on", b.dataset.fl === FILE_TAB);
+  });
+  $("#fl-doc-card").style.display   = FILE_TAB === "doc"   ? "" : "none";
+  $("#fl-month-card").style.display = FILE_TAB === "month" ? "" : "none";
+  if(FILE_TAB === "doc") drawOldDocs("", "#fl-docs", ($("#fl-q") && $("#fl-q").value.trim()) || "");
+  else loadMonths();
+}
+
+/* ------------------------------------------------------ สรุปรายเดือน */
+
+var MONTHS = null;
+
+function loadMonths(force){
+  var box = $("#fl-months");
+  if(!box) return;
+  if(MONTHS && !force){ drawMonths(); return }
+  box.innerHTML = '<div class="load">กำลังคิดยอดจากชีท…</div>';
+  /* ขอย้อนหลัง 12 เดือน เดือนที่ยังไม่มีอะไรเลยก็ต้องขึ้น จะได้เห็นว่ายังไม่ได้กรอกค่าแอด */
+  call("getMonthReport", [12], function(list){
+    MONTHS = list || [];
+    drawMonths();
+  }, function(m){
+    box.innerHTML = '<div class="empty" style="color:var(--red)">คิดยอดไม่สำเร็จ<br>'
+      + esc(m) + '</div>';
+  });
+}
+
+function drawMonths(){
+  var box = $("#fl-months");
+  if(!box) return;
+  var list = MONTHS || [];
+  if(!list.length){
+    box.innerHTML = '<div class="empty"><b>ยังไม่มีข้อมูลสักเดือน</b>'
+      + 'พอคีย์ออเดอร์ใบแรก เดือนนั้นจะมาขึ้นตรงนี้เอง</div>';
+    return;
+  }
+
+  /* ยอดรวมทุกเดือนที่เห็นอยู่ — คำถามแรกที่เจ้าของร้านถามคือ "ทั้งปีเหลือเท่าไร" */
+  var t = { sales:0, cost:0, ads:0, net:0 };
+  list.forEach(function(r){
+    t.sales += Number(r.sales)||0; t.cost += Number(r.cost)||0;
+    t.ads   += Number(r.ads)||0;   t.net  += Number(r.net)||0;
+  });
+
+  box.innerHTML =
+      '<div class="kpis" style="margin-bottom:12px">'
+    + '<div class="kpi"><span>ยอดขายรวม ' + list.length + ' เดือน</span><b>' + baht(t.sales) + '</b></div>'
+    + '<div class="kpi"><span>ต้นทุนรวม</span><b>' + baht(t.cost) + '</b></div>'
+    + '<div class="kpi"><span>ค่าแอดรวม</span><b>' + baht(t.ads) + '</b></div>'
+    + '<div class="kpi"><span>กำไรสุทธิรวม</span><b style="color:'
+    +   (t.net < 0 ? 'var(--red)' : 'var(--green)') + '">' + baht(t.net) + '</b></div>'
+    + '</div>'
+    + list.map(function(r, i){
+        var neg = Number(r.net) < 0;
+        return '<div class="mrow" data-mi="' + i + '">'
+          + '<div class="mhd"><b>' + esc(ymThai(r.ym)) + '</b>'
+          + '<span>' + (r.orders ? r.orders + ' ใบในระบบ' : 'ไม่มีออเดอร์ในระบบ') + '</span></div>'
+          + '<div class="mgrid">'
+          +   '<div>ยอดขาย<b>' + baht(r.sales)
+          +     (r.typedSales ? '<span class="mtyped">กรอกเอง</span>' : '') + '</b></div>'
+          +   '<div>ต้นทุน<b>' + baht(r.cost)
+          +     (r.typedCost ? '<span class="mtyped">กรอกเอง</span>' : '') + '</b></div>'
+          +   '<div>ค่าแอด<b>' + baht(r.ads) + '</b></div>'
+          +   '<div class="' + (neg ? 'neg' : 'net') + '">กำไรสุทธิ<b>' + baht(r.net) + '</b></div>'
+          + '</div>'
+          + (r.note ? '<div class="hint" style="margin-top:6px">' + esc(r.note) + '</div>' : '')
+          + '<div class="medit">'
+          +   '<input type="number" inputmode="decimal" class="m-ads" placeholder="ค่าแอดเดือนนี้"'
+          +     ' value="' + (Number(r.ads) ? r.ads : '') + '">'
+          +   '<button class="mini m-save">บันทึก</button>'
+          + '</div>'
+          + '<div class="m-msg"></div>'
+          + '</div>';
+      }).join("")
+    + '<div class="hint" style="margin-top:10px">กำไรสุทธิ = ยอดขาย − ต้นทุน − ค่าแอด · '
+    + 'ใบที่ยกเลิกหรือตีกลับไม่ถูกนับเป็นยอดขาย · '
+    + 'ตัวเลขที่กรอกเองชนะตัวเลขที่ระบบคิด (แก้ในชีท <b>สรุปเดือน</b> ได้)</div>';
+
+  $$("#fl-months .mrow").forEach(function(el){
+    var r = list[+el.dataset.mi];
+    el.querySelector(".m-save").onclick = function(){
+      var b = this, v = el.querySelector(".m-ads").value.trim();
+      b.disabled = true; b.textContent = "กำลังบันทึก…";
+      call("saveMonth", [{ ym: r.ym, ads: v === "" ? "" : Number(v),
+                           by: byName(), clientKey: newKey() }],
+        function(){
+          el.querySelector(".m-msg").innerHTML =
+            '<div class="msg ok" style="display:block">บันทึกค่าแอดของ '
+            + esc(ymThai(r.ym)) + ' แล้ว</div>';
+          b.disabled = false; b.textContent = "บันทึก";
+          loadMonths(true);
+        },
+        function(m){
+          b.disabled = false; b.textContent = "บันทึก";
+          el.querySelector(".m-msg").innerHTML =
+            '<div class="msg err" style="display:block">' + esc(m) + '</div>';
+        });
+    };
+  });
+}
+
 /* --------------------------------------------- ของใกล้หมด + ล็อตใกล้หมดอายุ
 
    ทำระบบล็อตมาทั้งชุดเพื่อคุมวันหมดอายุของเคมี แต่ไม่มีอะไรเตือนเลย
@@ -3577,12 +3727,13 @@ function curPage(){
 }
 
 function go(page){
-  ["new","list","recv","quote","day","sum","shop","cust","help"].forEach(function(p){
+  ["new","list","recv","quote","day","sum","shop","cust","file","help"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   /* หน้านำเข้า Shopee ไม่มีปุ่มของตัวเองบนแถบล่าง เข้ามาจากหน้าออเดอร์
      จึงให้แท็บ "ออเดอร์" ยังติดไฟค้างไว้ ไม่ใช่ดับหมดทั้งแถบจนไม่รู้ว่าอยู่ตรงไหน */
-  var tab = (page==="shop" || page==="cust") ? "list" : page;
+  var tab = (page==="shop" || page==="cust") ? "list"
+          : (page==="file" ? "quote" : page);
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===tab) });
   if(page==="list") loadOrders();
   if(page==="day")  dayInit();
@@ -3591,6 +3742,7 @@ function go(page){
   if(page==="recv") recvInit();
   if(page==="shop") shopInit();
   if(page==="cust") custPageInit();
+  if(page==="file") fileInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){
@@ -3608,6 +3760,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#btn-save").onclick  = save;
   $("#btn-shop").onclick = function(){ go("shop") };
   $("#btn-cust").onclick = function(){ go("cust") };
+  $("#btn-file").onclick = function(){ go("file") };
   /* ไอคอนอยู่ใน Assets ซึ่งเป็นตัวแปรใน JS ไม่ใช่ไฟล์รูป จึงใส่ตอนเปิดแอป
      ไม่ใช่เขียนไว้ใน HTML — และถ้าวันไหนไอคอนหาย ปุ่มก็ยังอ่านออกเหมือนเดิม */
   ["#btn-shop-ic", "#sp-ic"].forEach(function(sel){

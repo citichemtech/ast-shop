@@ -346,6 +346,23 @@ textarea{resize:vertical}
 /* สถานะเงินของแถว — เส้นบาง ๆ กับตัวหนังสือสี ไม่ใช่แถบสีเต็มแท่ง
    แถบสีทึบเต็มความกว้างทุกแถวทำให้ทั้งหน้าแดงไปหมด แล้วสีแดงก็หมดความหมาย
    เส้นบางพอให้กวาดตาเห็นว่าแถวไหนเป็นสีอะไร โดยไม่กลบข้อมูลที่ต้องอ่านจริง ๆ */
+/* ตารางสรุปรายเดือน — บนมือถืออ่านเป็นการ์ดต่อเดือน ไม่ใช่ตารางที่ต้องเลื่อนข้าง */
+.mrow{border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-bottom:10px;
+  background:var(--card)}
+.mrow .mhd{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.mrow .mhd b{font-size:1.02rem}
+.mrow .mhd span{font-size:0.78rem;color:var(--gray)}
+.mgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 12px;margin-top:9px}
+.mgrid div{font-size:0.86rem;color:var(--gray)}
+.mgrid div b{display:block;font-size:1rem;color:var(--ink)}
+.mgrid div.net b{color:var(--green)}
+.mgrid div.neg b{color:var(--red)}
+/* ตัวเลขที่คนกรอกเองต้องแยกออกจากตัวเลขที่ระบบคิด ไม่งั้นจะเถียงกันเองว่าเลขไหนจริง */
+.mtyped{font-size:0.68rem;color:var(--blue);font-weight:700;margin-left:5px}
+.mrow .medit{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mrow .medit input{width:auto;flex:1 1 120px;padding:9px 11px}
+.mrow .medit button{flex:0 0 auto}
+
 /* แถบเรียงลำดับหน้าลูกค้า — ตัวหนังสือล้วน ไม่มีไอคอน เพราะสามปุ่มนี้
    เป็นการ "เรียง" ไม่ใช่ "ไปที่ไหน" รูปจะทำให้ดูเหมือนเมนูอีกชั้น */
 .sorts{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
@@ -748,6 +765,35 @@ textarea{resize:vertical}
     </div>
   </section>
 
+  <!-- --------------------------------------------------------- แฟ้มเอกสาร
+       เอกสารที่ออกไปแล้วทุกใบ + สรุปยอดรายเดือน อยู่คนละเรื่องกับการ "ออกใบ"
+       จึงแยกหน้า ไม่เอาไปต่อท้ายฟอร์มใบเสนอราคาให้เลื่อนยาว -->
+  <section id="pg-file" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>แฟ้มเอกสาร &amp; สรุปรายเดือน</h2></div>
+      <div class="paytabs" id="fl-tabs" style="grid-template-columns:repeat(2,1fr)">
+        <button data-fl="doc" class="on"><b>เอกสารที่ออกแล้ว</b></button>
+        <button data-fl="month"><b>สรุปรายเดือน</b></button>
+      </div>
+      <button class="btn ghost" id="fl-back">← กลับไปหน้าใบเสนอราคา</button>
+    </div>
+
+    <div class="card" id="fl-doc-card">
+      <input id="fl-q" placeholder="ค้นหา — เลขที่เอกสาร · ชื่อลูกค้า · เลขออเดอร์" autocomplete="off">
+      <div class="hint">ปล่อยว่าง = ใบล่าสุด 20 ใบ</div>
+      <div id="fl-docs" style="margin-top:10px"><div class="load">กำลังโหลด…</div></div>
+    </div>
+
+    <div class="card" id="fl-month-card" style="display:none">
+      <div class="hint" style="padding:0 2px 10px">
+        เดือนที่มีออเดอร์ในระบบ ระบบคิด <b>ยอดขาย</b> กับ <b>ต้นทุน</b> ให้เอง ·
+        <b>ค่าแอด</b> ต้องกรอกเองทุกเดือน เพราะบิลค่าโฆษณาไม่ได้ผ่านระบบออเดอร์ ·
+        เดือนก่อนเริ่มใช้ระบบ (ม.ค.–มี.ค.) กรอกยอดจากไฟล์เดิมได้เลย
+      </div>
+      <div id="fl-months"><div class="load">กำลังโหลด…</div></div>
+    </div>
+  </section>
+
   <!-- ------------------------------------------------ นำเข้าออเดอร์ Shopee
        ไม่ทำเป็นแท็บที่หก เพราะแถบล่างของมือถือรับได้ห้าปุ่มพอดี
        และงานนี้ทำวันละครั้ง ไม่ใช่ของที่ต้องกดถึงตลอดวันเหมือนอีกห้าอัน -->
@@ -854,6 +900,7 @@ textarea{resize:vertical}
     <!-- ใบเสนอราคาไม่ผูกกับออเดอร์ ถ้าไม่มีรายการนี้ใบที่ออกไปแล้วจะหาย
          ตามหาไม่เจอ ต้องเปิดชีทดูเอง แล้วก็พิมพ์ซ้ำไม่ได้อยู่ดี -->
     <div class="card">
+      <button class="btn ghost" id="btn-file" style="margin-bottom:12px">📂 แฟ้มเอกสาร &amp; สรุปรายเดือน</button>
       <div id="q-old"></div>
     </div>
   </section>
