@@ -5,9 +5,18 @@
 <!-- ลิงก์และการพิมพ์ต้องหลุดออกจาก iframe ของ Apps Script ไม่งั้นเปิดไม่ขึ้น -->
 <base target="_top">
 <!-- Sarabun = ฟอนต์มาตรฐานเอกสารราชการไทย เส้นหนากว่า Prompt พิมพ์ลงกระดาษแล้วชัดกว่า
-     ใบเสร็จ/ใบกำกับภาษีวาดด้วยฟอนต์นี้ ถ้าโหลดไม่ได้จะถอยไปใช้ฟอนต์ในเครื่องเอง -->
+     ใบเสร็จ/ใบกำกับภาษีวาดด้วยฟอนต์นี้ ถ้าโหลดไม่ได้จะถอยไปใช้ฟอนต์ในเครื่องเอง
+
+     ใช้เฉพาะตอนวาดเอกสาร — หน้าจอแอปใช้ฟอนต์ในเครื่อง (ดู body ข้างล่าง)
+     แต่ถ้าโหลดแบบปกติ เบราว์เซอร์จะ "รอ" ไฟล์จาก Google ให้เสร็จก่อนถึงจะวาดหน้าจอ
+     กลายเป็นรอเปล่า ๆ ทุกครั้งที่เปิดแอป และถ้าเน็ตเข้า Google Fonts ไม่ได้
+     (ไวไฟบางที่บล็อกไว้) หน้าจอจะขาวค้างหลายวินาทีกว่าจะยอมแพ้
+
+     media="print" ทำให้โหลดอยู่เบื้องหลังโดยไม่บล็อกการวาดหน้าจอ แล้วค่อยสลับ
+     เป็น all ตอนหน้าจอขึ้นแล้ว (fontSwap) · ตอนวาดเอกสารมี docFontsReady รออีกชั้น
+     เอกสารจึงยังได้ฟอนต์ถูกตัวเหมือนเดิม -->
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet"
+<link id="fontcss" rel="stylesheet" media="print"
       href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,500;0,700;1,700&display=swap">
 </head>
 <body>
@@ -971,6 +980,18 @@ function $$(s){ return [].slice.call(document.querySelectorAll(s)) }
 var baht=function(n){return "฿"+Number(n||0).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2})};
 var esc=function(s){return String(s||"").replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
 function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("on")},2400)}
+
+/* ฟอนต์เอกสารถูกตั้งเป็น media="print" ไว้ตอนโหลด เพื่อไม่ให้หน้าจอต้องรอไฟล์
+   จาก Google ก่อนวาด — พอหน้าจอขึ้นแล้วค่อยสลับเป็นใช้งานจริง
+   เรียกทั้งสองจังหวะเพราะถ้าไฟล์ทั้งหน้าโหลดเสร็จไปก่อนแล้ว DOMContentLoaded
+   จะไม่ยิงอีก แล้วฟอนต์จะค้างอยู่ที่ print ตลอดไป */
+function fontSwap(){
+  var l = document.getElementById("fontcss");
+  if (l && l.media !== "all") l.media = "all";
+}
+if (document.readyState === "loading")
+  document.addEventListener("DOMContentLoaded", fontSwap);
+else fontSwap();
 
 /* จำนวนกับหน่วยเขียนติดกันในช่องเดียว (ใบจริงไม่มีคอลัมน์หน่วยแยก)
    ถ้าหน่วยขึ้นต้นด้วยตัวเลข ลูกค้าจะอ่านรวมเป็นเลขเดียวกัน —

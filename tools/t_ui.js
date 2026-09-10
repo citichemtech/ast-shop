@@ -9,6 +9,7 @@
  */
 'use strict';
 var path = require('path');
+var fs = require('fs');
 var { chromium } = require('/opt/node22/lib/node_modules/playwright');
 
 var FILE = 'file://' + path.join(__dirname, '..', 'out', process.env.PV || 'preview.html');
@@ -2746,6 +2747,41 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ขึ้นข้อความว่าดูใบเก่าไม่ได้', /ดูใบเก่าไม่ได้|ชีทตอบไม่ได้/.test(err43));
   await page.evaluate(function () { drawOldDocs('', '#q-old') });
   await page.waitForTimeout(500);
+
+  /* ---------- 44. หน้าจอต้องไม่รอฟอนต์จาก Google ก่อนวาด ---------- */
+  console.log('\n44. เปิดแอปแล้วต้องไม่รอไฟล์จากเน็ตก่อนวาดหน้าจอ');
+  /* ของจริงที่เจ้าของร้านเจอ: เปิดแอปแล้วรู้สึกว่าโหลดช้า
+     เหตุคือ <link> ฟอนต์ Sarabun ในหัวไฟล์เป็นแบบบล็อก เบราว์เซอร์จึงรอไฟล์
+     จาก fonts.googleapis.com ให้เสร็จก่อนถึงจะวาดอะไรเลย — ทั้งที่หน้าจอแอป
+     ใช้ฟอนต์ในเครื่อง ไม่ได้ใช้ Sarabun เลย (ใช้เฉพาะตอนวาดเอกสารลงกระดาษ) */
+  var font44 = await page.evaluate(function () {
+    var l = document.getElementById("fontcss");
+    if (!l) return null;
+    return { media: l.media, href: l.href, rel: l.rel,
+             /* หน้าจอแอปต้องไม่พึ่ง Sarabun — ถ้าพึ่ง ตัวหนังสือจะกระโดดตอนฟอนต์มาถึง */
+             bodyFont: getComputedStyle(document.body).fontFamily };
+  });
+  truthy('มี <link> ฟอนต์เอกสารอยู่ในหน้า', !!font44);
+  truthy('ชี้ไปที่ Sarabun เหมือนเดิม', /fonts\.googleapis\.com/.test(font44.href));
+  /* พอหน้าจอขึ้นแล้ว fontSwap สลับกลับเป็น all เอกสารจึงยังได้ฟอนต์ถูกตัว */
+  eq('หน้าจอขึ้นแล้วสลับฟอนต์เป็นใช้งานจริง', font44.media, 'all');
+  truthy('หน้าจอแอปใช้ฟอนต์ในเครื่อง ไม่ได้ใช้ Sarabun',
+    font44.bodyFont.indexOf('Sarabun') < 0);
+
+  /* ข้อสำคัญที่สุดของหมวดนี้ — วัดจากไฟล์จริงที่เสิร์ฟ ไม่ใช่จากหน้าที่โหลดเสร็จแล้ว
+     ถ้าวันไหนมีคนลบ media="print" ออก อาการช้าจะกลับมาเงียบ ๆ โดยไม่มีอะไรฟ้อง */
+  var raw44 = fs.readFileSync(FILE.replace('file://', ''), 'utf8');
+  var tag44 = /<link[^>]*id="fontcss"[^>]*>/.exec(raw44);
+  truthy('ในไฟล์ที่เสิร์ฟจริง แท็กฟอนต์ตั้ง media="print" ไว้ (ไม่บล็อกการวาดหน้าจอ)',
+    tag44 && /media="print"/.test(tag44[0]));
+  /* ไม่มีอะไรอื่นในหัวไฟล์ที่ต้องรอเน็ตอีก */
+  var head44 = raw44.slice(0, raw44.indexOf('</head>'));
+  var block44 = (head44.match(/<link[^>]*rel="stylesheet"[^>]*>/g) || []).filter(function (t) {
+    return !/media="print"/.test(t);
+  });
+  eq('ไม่เหลือ stylesheet จากเน็ตที่บล็อกการวาดหน้าจออีก', block44, []);
+  var ext44 = (head44.match(/<script[^>]*src=/g) || []);
+  eq('หัวไฟล์ไม่มีสคริปต์จากเน็ตให้รอ', ext44, []);
 
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
