@@ -3116,6 +3116,15 @@ function drawFileDocs(){
 }
 
 /** หน้าแรกของแฟ้ม — สี่แฟ้มเรียงกัน พร้อมจำนวนใบข้างใน */
+/** รูปหน้าแฟ้ม — ถ้ารูปยังไม่มา (ไฟล์รูปเป็นรุ่นเก่า) ตกไปใช้ emoji แทน
+    ดีกว่าช่องว่างที่ทำให้ทั้งแถวเบี้ยวโดยไม่มีใครรู้ว่าหายไปไหน */
+function foldIc(k){
+  var src = (typeof DOC_ICONS !== "undefined" && DOC_ICONS) ? DOC_ICONS[k.th] : "";
+  return src
+    ? '<img class="fold-ic" src="' + src + '" alt="">'
+    : '<span class="fold-ic fold-em">' + k.ic + '</span>';
+}
+
 function drawDocFolders(box, counts){
   box.innerHTML = '<div class="hint" style="padding:0 2px 8px">'
       + 'กดที่แฟ้มเพื่อดูใบข้างใน · หรือพิมพ์ค้นหาข้างบนถ้ารู้เลขใบอยู่แล้ว</div>'
@@ -3128,7 +3137,7 @@ function drawDocFolders(box, counts){
         if(c.revised) side.push("แก้ไข " + c.revised);
         if(c.dead) side.push("ยกเลิก " + c.dead);
         return '<div class="fold' + (c.n ? '' : ' none') + '" data-fk="' + esc(k.th) + '">'
-          + '<span class="fold-ic">' + k.ic + '</span>'
+          + foldIc(k)
           + '<span class="fold-tx"><b>' + esc(k.label) + '</b>'
           +   '<em>' + esc(side.length ? side.join(" · ") : k.note) + '</em></span>'
           + '<span class="fold-n">'

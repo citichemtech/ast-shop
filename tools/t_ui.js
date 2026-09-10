@@ -2861,10 +2861,19 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       counts: $$('#fl-docs .fold').map(function (f) {
         return f.querySelector('.fold-n').textContent;
       }),
+      icons: $$('#fl-docs .fold img.fold-ic').map(function (im) { return im.src }),
       rows: $$('#fl-docs .row').length
     };
   });
   eq('มีสี่แฟ้ม ชนิดละแฟ้ม', fd45.folders.length, 4);
+  /* emoji ของเอกสารมีอยู่ไม่กี่ตัวและหน้าตาใกล้กันหมด 📃 กับ 📄 กับ 📝 แยกไม่ออกบนมือถือ
+     ซึ่งพังตรงจุดที่ตั้งใจให้แยก จึงใช้รูปที่เจ้าของร้านทำมาเอง */
+  eq('ทุกแฟ้มมีรูปของตัวเอง', fd45.icons.length, 4);
+  truthy('เป็นรูปจริง ไม่ใช่ช่องว่าง', fd45.icons.every(function (s) {
+    return /^data:image\//.test(s);
+  }));
+  eq('สี่แฟ้มใช้คนละรูป ไม่ซ้ำกัน',
+    fd45.icons.filter(function (s, i) { return fd45.icons.indexOf(s) === i }).length, 4);
   truthy('แฟ้มใบเสร็จ/ใบกำกับภาษีมาก่อน เพราะเป็นใบที่ต้องใช้ยื่นภาษี',
     fd45.folders[0].indexOf('ใบกำกับภาษี') > -1);
   truthy('แฟ้มใบเสนอราคาแยกออกไปต่างหาก', fd45.folders.indexOf('ใบเสนอราคา') > -1);
