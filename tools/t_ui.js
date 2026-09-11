@@ -423,6 +423,98 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal(); });
   await page.waitForTimeout(200);
 
+  /* ---------- 14ก. บิลเงินสด — ชนิดของตัวเอง ไม่ใช่ติ๊ก "ไม่คิด VAT" บนใบภาษี ----------
+
+     เจ้าของร้านเจอสามเรื่องพร้อมกัน: กดเสีย VAT ผิด · เลขใบไปปนกับเล่มใบกำกับภาษี ·
+     และหาบิลเงินสดไม่เจอ ทั้งสามมีรากเดียวกัน คือบิลเงินสดไม่เคยเป็นชนิดเอกสาร */
+  console.log('\n14ก. บิลเงินสดเป็นชนิดเอกสารของตัวเอง');
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () { go('list') });
+  await page.waitForTimeout(500);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec') });
+  await page.waitForTimeout(400);
+
+  var cb = await page.evaluate(function () {
+    return {
+      types: $$('#dc-pick input[name=dctype]').map(function (r) { return r.value }),
+      labels: $$('#dc-pick label b').map(function (b) { return b.textContent }),
+      vatOpts: $$('#dc-vat option').map(function (o) { return o.value })
+    };
+  });
+  truthy('มีบิลเงินสดให้เลือกในกล่องออกเอกสาร', cb.types.indexOf('cash') > -1);
+  truthy('ใบแจ้งหนี้ไม่ได้พ่วงคำว่าบิลเงินสดไว้ในชื่ออีกแล้ว',
+    cb.labels.filter(function (l) { return /ใบแจ้งหนี้/.test(l) && /บิลเงินสด/.test(l) }).length === 0);
+
+  console.log('\n   เลือกบิลเงินสดแล้ว VAT ต้องถูกปิดตาย เลือกไม่ได้');
+  var cb2 = await page.evaluate(async function () {
+    var r = document.querySelector('#dc-pick input[value="cash"]');
+    r.checked = true;
+    r.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(function (x) { setTimeout(x, 150) });
+    return {
+      vat: $('#dc-vat').value, off: $('#dc-vat').disabled,
+      msg: $('#dc-vatmsg').textContent,
+      ticks: $$('#dc-form .fchk-i:checked').length
+    };
+  });
+  eq('บังคับเป็นไม่คิด VAT', cb2.vat, 'none');
+  truthy('เลือก VAT ไม่ได้แล้ว', cb2.off);
+  truthy('บอกด้วยว่าเลขคนละชุดกับใบกำกับภาษี', /คนละชุด/.test(cb2.msg));
+  eq('ไม่ไปเน้นชื่อใดในสี่ชื่อของฟอร์มใบภาษี', cb2.ticks, 0);
+
+  console.log('\n   กลับไปเลือกใบภาษี VAT ต้องกลับมาเลือกได้ และไม่ค้างที่ "ไม่คิด"');
+  var cb3 = await page.evaluate(async function () {
+    var r = document.querySelector('#dc-pick input[value="rec"]');
+    r.checked = true;
+    r.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(function (x) { setTimeout(x, 150) });
+    return { vat: $('#dc-vat').value, off: $('#dc-vat').disabled,
+             ticks: $$('#dc-form .fchk-i:checked').length };
+  });
+  eq('กลับไปเป็นบวก VAT', cb3.vat, 'excl');
+  truthy('เลือก VAT ได้อีกครั้ง', !cb3.off);
+  eq('ติ๊กชื่อบนหัวใบกลับมาเป็นสองชื่อของใบเสร็จ/ใบกำกับภาษี', cb3.ticks, 2);
+
+  console.log('\n   เลือก "ไม่คิด VAT" บนใบภาษี ต้องสลับเป็นบิลเงินสดให้ ไม่ปล่อยออกผิดชนิด');
+  /* ปล่อยให้ออกใบกำกับภาษีที่ไม่มีภาษี = กินเลขในเล่มภาษีไปหนึ่งเลขโดยเปล่าประโยชน์
+     และเลขนั้นเอาคืนไม่ได้ */
+  var cb4 = await page.evaluate(async function () {
+    var sel = $('#dc-vat');
+    sel.value = 'none';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(function (x) { setTimeout(x, 150) });
+    return {
+      type: (document.querySelector('#dc-pick input[name=dctype]:checked') || {}).value,
+      msg: $('#dc-vatmsg').textContent, off: sel.disabled
+    };
+  });
+  eq('ชนิดถูกสลับเป็นบิลเงินสด', cb4.type, 'cash');
+  truthy('และบอกเหตุผลให้อ่าน', /ไม่ใช่ใบกำกับภาษี/.test(cb4.msg));
+  truthy('VAT ถูกปิดตามชนิดใหม่', cb4.off);
+
+  console.log('\n   ออกบิลเงินสดจริง แล้วเลขต้องเป็นชุด CS ไม่ใช่ ONIV');
+  var cb5 = await page.evaluate(async function () {
+    $('#dc-make').click();
+    await new Promise(function (x) { setTimeout(x, 1500) });
+    var d = MOCK_DOCS[MOCK_DOCS.length - 1];
+    return { no: d.no, type: d.type, vat: d.doc.vat, total: d.doc.total, base: d.doc.base };
+  });
+  truthy('เลขมาจากชุดบิลเงินสด', /^CS26-/.test(cb5.no));
+  eq('ชนิดที่ลงทะเบียนคือบิลเงินสด', cb5.type, 'บิลเงินสด');
+  eq('ไม่มีภาษีบนใบ', cb5.vat, 0);
+  eq('ยอดรวมเท่ากับยอดสินค้า', cb5.total, cb5.base);
+  /* เก็บของให้เรียบร้อยก่อนออกจากหมวดนี้ — ใบที่เพิ่งออกผูกกับออเดอร์ใบแรก
+     ข้อสอบหมวดหลังนับใบของออเดอร์นั้นและห้ามแก้รายการถ้ามีใบค้างอยู่
+     ถ้าทิ้งไว้ ข้อสอบที่เคยผ่านจะตกเพราะของที่หมวดนี้ทำ ไม่ใช่เพราะโค้ดพัง */
+  await page.evaluate(function (no) {
+    for (var i = MOCK_DOCS.length - 1; i >= 0; i--) {
+      if (MOCK_DOCS[i].no === no) MOCK_DOCS.splice(i, 1);
+    }
+  }, cb5.no);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
+
   /* ---------- 15. สินค้าซื้อมาขายไป: พิมพ์ชื่อเอง ไม่ต้องมีรหัส ----------
      ของที่รับมาขายทีเดียวแล้วจบ ไม่คุ้มที่จะตั้งรหัสไว้ในฐานสินค้าล่วงหน้า
      แต่ยอดขายต้องเข้าบิลถูก และถ้าใส่ต้นทุนมาด้วยก็ต้องได้กำไรจริง ไม่ใช่เดา */
@@ -2862,13 +2954,20 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
         return f.querySelector('.fold-n').textContent;
       }),
       icons: $$('#fl-docs .fold img.fold-ic').map(function (im) { return im.src }),
+      ics: $$('#fl-docs .fold').filter(function (f) {
+        return !!f.querySelector('.fold-ic');
+      }).length,
       rows: $$('#fl-docs .row').length
     };
   });
-  eq('มีสี่แฟ้ม ชนิดละแฟ้ม', fd45.folders.length, 4);
+  eq('มีห้าแฟ้ม ชนิดละแฟ้ม', fd45.folders.length, 5);
+  truthy('บิลเงินสดมีแฟ้มของตัวเอง ไม่ไปพ่วงกับใบแจ้งหนี้',
+    fd45.folders.indexOf('บิลเงินสด') > -1);
   /* emoji ของเอกสารมีอยู่ไม่กี่ตัวและหน้าตาใกล้กันหมด 📃 กับ 📄 กับ 📝 แยกไม่ออกบนมือถือ
      ซึ่งพังตรงจุดที่ตั้งใจให้แยก จึงใช้รูปที่เจ้าของร้านทำมาเอง */
-  eq('ทุกแฟ้มมีรูปของตัวเอง', fd45.icons.length, 4);
+  /* บิลเงินสดยังไม่มีรูป จึงตกไปใช้ emoji — ที่ต้องมีคือ "มีอะไรสักอย่าง" ไม่ใช่ช่องว่าง */
+  eq('สี่แฟ้มที่มีรูปจริงยังมีรูปครบ', fd45.icons.length, 4);
+  eq('ทุกแฟ้มมีไอคอนของตัวเอง ไม่มีแฟ้มไหนว่างเปล่า', fd45.ics, 5);
   truthy('เป็นรูปจริง ไม่ใช่ช่องว่าง', fd45.icons.every(function (s) {
     return /^data:image\//.test(s);
   }));
@@ -2910,7 +3009,7 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     await new Promise(function (r) { setTimeout(r, 600) });
     return { folders: $$('#fl-docs .fold').length, rows: $$('#fl-docs .row').length };
   });
-  eq('กดกลับแล้วได้หน้าแฟ้มเหมือนเดิม', back45.folders, 4);
+  eq('กดกลับแล้วได้หน้าแฟ้มเหมือนเดิม', back45.folders, 5);
   eq('และไม่เหลือใบค้างอยู่', back45.rows, 0);
 
   console.log('\n   ค้นหาต้องเจอใบกำกับภาษี ทั้งที่ใบพวกนี้ผูกกับออเดอร์');

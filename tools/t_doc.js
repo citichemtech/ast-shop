@@ -108,11 +108,44 @@ eq('ไม่ตั้งพื้น ทำงานเหมือนเดิ
 eq('พื้นเป็นค่าว่าง ไม่พัง', ctx.nextDocNo_('QO26-', [], 5, undefined), 'QO26-00001');
 
 head('5. ชนิดเอกสาร');
-eq('มีครบสี่ชนิด', ctx.DOC_TYPES.length, 4);
+eq('มีครบห้าชนิด', ctx.DOC_TYPES.length, 5);
 eq('ใบเสนอราคาต้องแยก ไม่ผูกออเดอร์', ctx.docType_('quote').quote, true);
-['inv', 'rec', 'dep'].forEach(function (k) {
+['inv', 'rec', 'dep', 'cash'].forEach(function (k) {
   eq(k + ' ผูกกับออเดอร์', ctx.docType_(k).quote, false);
 });
+
+/* บิลเงินสดต้องไม่มีภาษีติดตัวถาวร ไม่ใช่ติ๊กเอาตอนออกใบ
+   และต้องใช้คำนำหน้าเลขคนละตัวกับใบกำกับภาษี ไม่งั้นไปกินเลขในเล่มภาษี */
+eq('บิลเงินสดไม่มี VAT ถาวร', ctx.docType_('cash').vat, false);
+eq('สามชนิดภาษียังมี VAT เหมือนเดิม',
+   ['inv', 'rec', 'dep'].map(function (k) { return ctx.docType_(k).vat }), [true, true, true]);
+eq('บิลเงินสดใช้คำนำหน้าเลขของตัวเอง', ctx.docType_('cash').code, 'CS');
+eq('คำนำหน้าเลขของทุกชนิดไม่ซ้ำกันเลย', (function () {
+  var seen = {}, dup = [];
+  ctx.DOC_TYPES.forEach(function (t) {
+    if (seen[t.code]) dup.push(t.code);
+    seen[t.code] = 1;
+  });
+  return dup;
+})(), []);
+/* บิลเงินสดพิมพ์ชื่อตัวเอง ไม่ไปเน้นชื่อใดในสี่ชื่อของฟอร์มใบกำกับภาษี */
+eq('บิลเงินสดไม่เน้นชื่อในฟอร์มใบภาษี', ctx.docType_('cash').form, []);
+
+head('5ก. บิลเงินสดไม่คิดภาษีไม่ว่าจะสั่งอย่างไร');
+/* ส่ง vatRate มาเต็ม ๆ ก็ยังต้องไม่มีภาษี เพราะ buildDoc_ ยึด t.vat ของชนิดเอกสาร
+   ถ้ายึดที่ค่าที่ส่งมา วันหนึ่งจะมีคนออกบิลเงินสดที่มีบรรทัดภาษีอยู่ข้างใน */
+var dc = ctx.buildDoc_('cash', {
+  items: [{ name: 'ก', qty: 2, unit: 'ชิ้น', price: 100 }]
+}, { vatRate: 0.07, vatMode: 'excl' });
+eq('ฐาน = ยอดเต็ม', dc.base, 200);
+eq('ภาษีเป็นศูนย์', dc.vat, 0);
+eq('อัตราภาษีเป็นศูนย์', dc.vatRate, 0);
+eq('ยอดรวมไม่ถูกบวกภาษี', dc.total, 200);
+eq('ชื่อไทยบนใบ', dc.typeTh, 'บิลเงินสด');
+var dc2 = ctx.buildDoc_('cash', {
+  items: [{ name: 'ก', qty: 1, unit: 'ชิ้น', price: 149 }]
+}, { vatRate: 0.07, vatMode: 'incl' });
+eq('โหมดราคารวมภาษีก็ไม่ถอดภาษีออก', [dc2.base, dc2.vat, dc2.total], [149, 0, 149]);
 
 head('6. ประกอบใบเอกสารจากออเดอร์');
 var cfg = { vatRate: 0.07, vatMode: 'incl' };

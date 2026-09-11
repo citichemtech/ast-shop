@@ -1669,7 +1669,11 @@ function byName(){
 
 var DOC_BTN = [
   { key:"rec",   label:"ใบเสร็จรับเงิน / ใบกำกับภาษี", hint:"ลูกค้าจ่ายเงินแล้ว และขอใบกำกับภาษี" },
-  { key:"inv",   label:"ใบแจ้งหนี้ / บิลเงินสด",       hint:"วางบิล ยังไม่ได้รับเงิน" },
+  /* บิลเงินสดเคยถูกเขียนพ่วงไว้กับใบแจ้งหนี้ ทั้งที่เป็นคนละใบคนละเรื่อง
+     คนหาบิลเงินสดจึงไม่เจอ แล้วไปออกใบเสร็จ/ใบกำกับภาษีแบบติ๊กไม่คิด VAT แทน
+     ซึ่งกินเลขชุดใบกำกับภาษีไปฟรี ๆ ใบละหนึ่งเลข */
+  { key:"cash",  label:"บิลเงินสด",                   hint:"ไม่ออกใบกำกับภาษี ไม่มี VAT · เลขคนละชุดกับใบกำกับภาษี" },
+  { key:"inv",   label:"ใบแจ้งหนี้",                  hint:"วางบิล ยังไม่ได้รับเงิน" },
   { key:"dep",   label:"ใบรับเงินมัดจำ",              hint:"รับมัดจำไว้ก่อน ยังไม่ส่งของครบ" },
   { key:"quote", label:"ใบเสนอราคา",                 hint:"ยังไม่มีออเดอร์ ออกจากแท็บใบเสนอราคา" }
 ];
@@ -1726,7 +1730,8 @@ function openDoc(o, preType){
     +'<div class="fld"><label>ภาษีมูลค่าเพิ่ม</label>'
     +'<select id="dc-vat"><option value="excl">บวก VAT 7% จากราคา</option>'
     +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
-    +'<option value="none">ไม่คิด VAT</option></select></div></div>'
+    +'<option value="none">ไม่คิด VAT (= บิลเงินสด)</option></select>'
+    +'<div class="hint" id="dc-vatmsg"></div></div></div>'
     +'<button class="btn" id="dc-make">ออกเอกสาร</button>'
     +'<div id="dc-out" style="margin-top:12px"></div>');
 
@@ -1739,9 +1744,43 @@ function openDoc(o, preType){
       c.checked = def.indexOf(Number(c.value)) > -1;
     });
   }
-  formTick();
+
+  /* บิลเงินสดไม่มี VAT โดยนิยาม เลือกไม่ได้ว่าจะคิดหรือไม่คิด
+     และในทางกลับกัน "ไม่คิด VAT" บนใบกำกับภาษีก็ไม่มีอยู่จริง — ถ้าไม่คิดภาษี
+     ใบนั้นไม่ใช่ใบกำกับภาษี จึงสลับชนิดให้เลย แทนที่จะปล่อยให้ออกใบผิดชนิด
+     แล้วไปกินเลขชุดใบกำกับภาษี ซึ่งเอาคืนไม่ได้ */
+  function vatTick(){
+    var type = (document.querySelector('input[name=dctype]:checked')||{}).value || "rec";
+    var sel = $("#dc-vat"), msg = $("#dc-vatmsg");
+    if(!sel) return;
+    if(type === "cash"){
+      sel.value = "none"; sel.disabled = true;
+      msg.textContent = "บิลเงินสดไม่มี VAT และใช้เลขคนละชุดกับใบกำกับภาษี";
+      msg.style.color = "var(--gray)";
+    } else {
+      sel.disabled = false;
+      if(sel.value === "none") sel.value = "excl";
+      msg.textContent = "";
+    }
+  }
+  function toCash(){
+    var r = document.querySelector('#dc-pick input[value="cash"]');
+    if(r){ r.checked = true; if(!DC_FORM_TOUCHED) formTick(); vatTick(); }
+    var msg = $("#dc-vatmsg");
+    if(msg){
+      msg.textContent = "ไม่คิด VAT = ใบนี้ไม่ใช่ใบกำกับภาษี เปลี่ยนชนิดให้เป็นบิลเงินสดแล้ว";
+      msg.style.color = "var(--amber)";
+    }
+  }
+  formTick(); vatTick();
   $$("#dc-pick input[name=dctype]").forEach(function(r){
-    r.addEventListener("change", function(){ if(!DC_FORM_TOUCHED) formTick() });
+    r.addEventListener("change", function(){
+      if(!DC_FORM_TOUCHED) formTick();
+      vatTick();
+    });
+  });
+  $("#dc-vat").addEventListener("change", function(){
+    if(this.value === "none") toCash();
   });
   var DC_FORM_TOUCHED = false;
   $$("#dc-form .fchk-i").forEach(function(c){
@@ -1891,6 +1930,16 @@ function openEditItems(o){
     +'<div class="fld"><label>ค่าจัดส่ง (บาท)</label>'
     +'<input id="ed-ship" type="number" inputmode="decimal" min="0" step="0.01" value="'
     + (Number(o.ship)||0) + '"></div></div>'
+    /* กด "รับ VAT" ผิดตอนคีย์ออเดอร์เกิดขึ้นจริง และเดิมแก้ได้ทางเดียวคือเปิดชีท
+       ไปแก้เอง แล้วยอดสุทธิก็ไม่ได้คิดใหม่ตามให้ ต้องไล่แก้อีกช่อง — ยอดผิดทั้งใบได้ง่าย */
+    +'<div class="fld" style="margin-top:10px"><label>ภาษีมูลค่าเพิ่มของออเดอร์นี้</label>'
+    +'<select id="ed-vat">'
+    +'<option value="รับ VAT"'+(String(o.vat||"").indexOf("ไม่")!==0?" selected":"")+'>'
+    +'รับ VAT — บวก 7% จากยอดสินค้า</option>'
+    +'<option value="ไม่รับ VAT"'+(String(o.vat||"").indexOf("ไม่")===0?" selected":"")+'>'
+    +'ไม่รับ VAT — ไม่มีภาษี (ออกเป็นบิลเงินสด)</option></select>'
+    +'<div class="hint">เปลี่ยนตรงนี้แล้วยอดสุทธิคิดใหม่ทั้งใบ · '
+    +'ถ้าออกใบกำกับภาษีไปแล้วต้องยกเลิกใบเดิมก่อน แล้วออกใหม่เป็นบิลเงินสด</div></div>'
     +'<label class="giftck"><input type="checkbox" id="ed-fixdoc">'
     +' แก้ใบที่ออกไปแล้วตามด้วย (ใช้เลขเดิม) — เฉพาะใบที่ยังไม่ได้กด “ส่งแล้ว”</label>'
     +'<div class="sum" id="ed-sum" style="margin-top:12px"></div>'
@@ -1911,6 +1960,7 @@ function openEditItems(o){
   ["#ed-disc","#ed-ship"].forEach(function(sel){
     $(sel).addEventListener("input", function(){ edSum(o) });
   });
+  $("#ed-vat").addEventListener("change", function(){ edSum(o) });
   edSum(o);
 }
 
@@ -1995,7 +2045,11 @@ function edSum(o){
      แล้วคนอ่านนึกว่ายอดผิด ทั้งที่ VAT กับค่าส่งยังไม่ได้บวกเข้าไป */
   var disc = Number(($("#ed-disc")||{}).value || 0) || 0;
   var ship = Number(($("#ed-ship")||{}).value || 0) || 0;
-  var isVat = o && String(o.vat||"").indexOf("ไม่") !== 0;
+  /* อ่านจากช่องที่คนกำลังเลือกอยู่ ไม่ใช่จากค่าที่เก็บไว้ในออเดอร์
+     ไม่งั้นสลับเป็นไม่รับ VAT แล้วยอดตรงหน้ายังบวกภาษีอยู่ ซึ่งอ่านแล้วไม่เชื่อมือ */
+  var vatSel = $("#ed-vat");
+  var isVat = vatSel ? vatSel.value.indexOf("ไม่") !== 0
+                     : (o && String(o.vat||"").indexOf("ไม่") !== 0);
   var rate = Number(BOOT ? BOOT.vatRate : 0) || 0;
   var vat = isVat ? Math.round((sub - disc) * rate * 100) / 100 : 0;
   var net = Math.round((sub - disc + ship + vat) * 100) / 100;
@@ -2028,7 +2082,8 @@ function edSave(o, btn){
   api("editOrderItems", o.no, items, byName(), "ed-" + o.no + "-" + ED_KEY,
       { reviseDocs: !!fixDoc,
         ship: $("#ed-ship") ? $("#ed-ship").value : undefined,
-        discount: $("#ed-disc") ? $("#ed-disc").value : undefined }).then(function(r){
+        discount: $("#ed-disc") ? $("#ed-disc").value : undefined,
+        vat: $("#ed-vat") ? $("#ed-vat").value : undefined }).then(function(r){
     /* สำเร็จแล้วเปลี่ยนกุญแจ ไม่งั้นถ้าแก้รายการต่ออีกรอบในหน้าต่างเดิม
        เซิร์ฟเวอร์จะเห็นเป็นการกดซ้ำของงานเดิม แล้วไม่ทำอะไรให้เงียบ ๆ */
     ED_KEY = newKey();
@@ -2036,6 +2091,8 @@ function edSave(o, btn){
       + esc(o.no) + '</b> แล้ว จาก ' + r.before + ' เป็น ' + r.after + ' รายการ · ยอดสินค้า '
       + baht(r.subtotal)
       + (r.net !== undefined ? ' · <b>ยอดสุทธิ ' + baht(r.net) + '</b>' : '')
+      + (r.vat && String(r.vat) !== String(o.vat || '')
+          ? ' · เปลี่ยนเป็น <b>' + esc(r.vat) + '</b>' : '')
       + (r.lots && r.lots.length ? '<br>ล็อตที่ตัด: ' + esc(r.lots.join(" · ")) : '')
       + (r.docs && r.docs.length ? '<br>แก้ใบตามให้แล้ว: ' + esc(r.docs.join(" · ")) : '')
       + '</div>';
@@ -3073,6 +3130,8 @@ var FILE_KIND = "";
 var DOC_KINDS = [
   { th: "ใบเสร็จรับเงิน", label: "ใบเสร็จ / ใบกำกับภาษี", ic: "🧾",
     note: "ใบที่ขายจบแล้ว ใช้ยื่นภาษี" },
+  { th: "บิลเงินสด",     label: "บิลเงินสด",             ic: "💵",
+    note: "ขายแบบไม่ออกใบกำกับภาษี" },
   { th: "ใบแจ้งหนี้",     label: "ใบแจ้งหนี้",            ic: "📃",
     note: "วางบิลแล้วรอเก็บเงิน" },
   { th: "ใบเสนอราคา",    label: "ใบเสนอราคา",           ic: "📝",

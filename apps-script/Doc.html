@@ -21,7 +21,8 @@ var DOC_TYPE_NAMES = [
   { key: "quote", th: "ใบเสนอราคา",   en: "QUOTATION",       form: [] },
   { key: "inv",   th: "ใบแจ้งหนี้",     en: "DEBIT NOTE",      form: [3] },
   { key: "rec",   th: "ใบเสร็จรับเงิน", en: "RECEIPT",         form: [0, 1] },
-  { key: "dep",   th: "ใบรับเงินมัดจำ", en: "DEPOSIT RECEIPT", form: [] }
+  { key: "dep",   th: "ใบรับเงินมัดจำ", en: "DEPOSIT RECEIPT", form: [] },
+  { key: "cash",  th: "บิลเงินสด",     en: "CASH BILL",       form: [] }
 ];
 
 var DOC_W = 1240, DOC_H = 1754;         /* A4 แนวตั้งที่ 150 dpi */
@@ -340,23 +341,30 @@ async function buildDocPage(d, m, cfg, copy) {
     });
   });
 
-  var SUMS = [
-    ["มูลค่าสินค้า Total", money(d.base), ""],
-    ["ภาษีมูลค่าเพิ่ม Vat " + Math.round(d.vatRate * 100) + "%", money(d.vat), ""],
-    ["รวมจำนวนเงินทั้งสิ้น", money(d.total), "(Grand Total)"]
-  ];
+  /* บิลเงินสดไม่มีบรรทัดภาษี — พิมพ์ "Vat 0% ฿0.00" บนใบที่ไม่ใช่ใบกำกับภาษี
+     คือบอกเป็นนัยว่าใบนี้เกี่ยวกับภาษี ทั้งที่ไม่เกี่ยว และชวนให้ลูกค้าเอาไปขอเครดิตภาษีซื้อ
+     ตัดสินจากชนิดเอกสาร ไม่ใช่จากอัตราที่เป็นศูนย์ ใบเก่าที่เคยออกไปแล้วจะได้พิมพ์ซ้ำ
+     ได้กระดาษหน้าตาเดิมเป๊ะ */
+  var SUMS = [["มูลค่าสินค้า Total", money(d.base), ""]];
+  if (t.key !== "cash") {
+    SUMS.push(["ภาษีมูลค่าเพิ่ม Vat " + Math.round(d.vatRate * 100) + "%", money(d.vat), ""]);
+  }
+  SUMS.push(["รวมจำนวนเงินทั้งสิ้น", money(d.total), "(Grand Total)"]);
   /* ป้ายจบที่ labEnd ตัวเลขจบที่ขอบขวา สองเขตไม่ทับกันแน่นอน
      ของเดิมให้ทั้งคู่จบที่จุดใกล้กัน ตัวเลขเลยพิมพ์ทับป้าย อ่านไม่ออกทั้งคู่ */
   var labEnd = W - pad - 206, numEnd = W - pad - 16;
   var sy = fy + 4, srh = 50;
   SUMS.forEach(function (s2, i) {
-    if (i === 2) { x.fillStyle = C_BAND; x.fillRect(pad, sy - 4, IN, srh); }
+    /* แถบเน้นคือบรรทัดสุดท้ายเสมอ ไม่ใช่บรรทัดที่สาม — บิลเงินสดมีสองบรรทัด
+       ถ้ายึดเลขสาม แถบจะไปอยู่ผิดบรรทัดทันทีที่ตารางสั้นลง */
+    var last = i === SUMS.length - 1;
+    if (last) { x.fillStyle = C_BAND; x.fillRect(pad, sy - 4, IN, srh); }
     x.fillStyle = "#000";
-    fitRight(x, s2[0], labEnd, sy + (s2[2] ? 1 : 8), 330, F_BODY, i === 2 ? 700 : 500);
+    fitRight(x, s2[0], labEnd, sy + (s2[2] ? 1 : 8), 330, F_BODY, last ? 700 : 500);
     if (s2[2]) fitRight(x, s2[2], labEnd, sy + 27, 330, pt(9), 700);
-    fitRight(x, s2[1], numEnd, sy + (i === 2 ? 9 : 8), 180, i === 2 ? pt(12) : pt(11), i === 2 ? 700 : 500);
+    fitRight(x, s2[1], numEnd, sy + (last ? 9 : 8), 180, last ? pt(12) : pt(11), last ? 700 : 500);
     x.strokeStyle = "#000"; x.lineWidth = 1.1;
-    x.beginPath(); x.moveTo(i === 2 ? pad : sumX, sy + srh - 4); x.lineTo(W - pad, sy + srh - 4); x.stroke();
+    x.beginPath(); x.moveTo(last ? pad : sumX, sy + srh - 4); x.lineTo(W - pad, sy + srh - 4); x.stroke();
     x.lineWidth = 1.3;
     sy += srh;
   });

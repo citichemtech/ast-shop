@@ -754,6 +754,17 @@ function reviseRow_(row, why, p, email) {
 
   /* วิธีคิดภาษีต้องเป็นแบบเดิมของใบนั้น ถ้าหน้าจอไม่ได้สั่งมาเป็นอย่างอื่น */
   var novat = (p.novat !== undefined) ? !!p.novat : !!(oldSnap && oldSnap.novat);
+
+  /* กดเสีย VAT ผิดแล้วอยากแก้ให้เป็นไม่มี VAT — แก้ที่ใบเดิมไม่ได้
+     เลขใบนี้มาจากชุดเลขใบกำกับภาษี ซึ่งต้องเรียงต่อกันไม่ขาดและสรรพากรตรวจ
+     ถ้าปล่อยให้กลายเป็นใบไม่มีภาษีทั้งที่ยังถือเลขชุดนั้น เล่มจะมีใบที่ไม่ใช่
+     ใบกำกับภาษีปนอยู่ตรงกลาง อธิบายตอนถูกตรวจไม่ได้
+     ทางที่ถูกคือยกเลิกใบนี้ แล้วออกใหม่เป็นบิลเงินสด ซึ่งมีชุดเลขของตัวเอง */
+  if (novat && t.vat) {
+    throw new Error('ใบ ' + no + ' เป็น' + t.th + ' ซึ่งใช้เลขชุดใบกำกับภาษี ' +
+      'แก้ให้กลายเป็นใบไม่มี VAT ไม่ได้ — ถ้าขายนี้ไม่ต้องออกใบกำกับภาษี ' +
+      'ให้ยกเลิกใบนี้ แล้วออกใหม่เป็น "บิลเงินสด" ซึ่งมีชุดเลขของตัวเอง');
+  }
   var vatMode = p.vatMode || (oldSnap && oldSnap.vatMode) || appCfg_().vatMode;
   var d = buildDoc_(t.key, src, { vatRate: novat ? 0 : cfgGet_().vatRate, vatMode: vatMode });
 
@@ -1670,10 +1681,23 @@ function editOrderItems(no, items, by, clientKey, opts) {
     }
 
     /* วางแผนใหม่ด้วยหัวบิลเดิม เปลี่ยนแค่รายการสินค้า (และค่าส่ง/ส่วนลดถ้าส่งมา) */
+    /* กด "รับ VAT" ผิดตอนคีย์ออเดอร์เป็นเรื่องที่เกิดจริงและแก้ยากมาก
+       ของเดิมแก้ได้ทางเดียวคือเปิดชีทไปแก้ช่อง VAT เอง แล้วยอดสุทธิในชีท
+       ก็ไม่ได้คิดใหม่ตามให้ ต้องไล่แก้เองอีกช่อง ซึ่งพลาดแล้วยอดผิดทั้งใบ
+       ตอนนี้ส่งมาพร้อมการแก้รายการได้เลย แล้วระบบวางแผนยอดใหม่ให้ทั้งใบ */
+    var setVat = opts && opts.vat !== undefined && opts.vat !== null && opts.vat !== '';
+    var wantVat = setVat ? String(opts.vat).indexOf('ไม่') !== 0
+                         : String(head.vat || '').indexOf('ไม่') !== 0;
+    if (setVat && hRow) {
+      if (!headBack) headBack = { ship: head.ship, discount: head.discount };
+      headBack.vat = head.vat;
+      writeRow_('head', hRow, { vat: wantVat ? 'รับ VAT' : 'ไม่รับ VAT' });
+    }
+
     var plan = planOrder_({
       cust: head.cust, tel: head.tel, addr: head.addr, date: head.date,
       channel: head.channel, carrier: head.carrier, status: head.status,
-      vat: String(head.vat || '').indexOf('ไม่') !== 0,
+      vat: wantVat,
       discount: newDisc, ship: newShip, note: head.note,
       by: String(by || '').trim() || head.staff,
       items: items
@@ -1702,9 +1726,15 @@ function editOrderItems(no, items, by, clientKey, opts) {
         numOr0_(headBack.ship) + ' / ' + numOr0_(headBack.discount),
         newShip + ' / ' + newDisc, 'แก้พร้อมรายการสินค้า โดย ' + plan.staff);
     }
+    /* การเปลี่ยน VAT ของออเดอร์ต้องมีร่องรอยแยกของตัวเอง เพราะมันเปลี่ยนยอดที่เก็บลูกค้า */
+    if (headBack && headBack.vat !== undefined) {
+      writeLog_(email, 'แก้สถานะ VAT', SH.head.name, want, 'ภาษีมูลค่าเพิ่ม',
+        String(headBack.vat || ''), wantVat ? 'รับ VAT' : 'ไม่รับ VAT',
+        'แก้พร้อมรายการสินค้า โดย ' + plan.staff);
+    }
 
     return { ok: true, no: want, subtotal: plan.subtotal, net: plan.net, lots: plan.lotNote,
-             ship: newShip, discount: newDisc,
+             ship: newShip, discount: newDisc, vat: wantVat ? 'รับ VAT' : 'ไม่รับ VAT',
              before: rows.item.length, after: plan.items.length,
              docs: fixed.map(function (f) { return f.no + ' → ' + f.doc.total; }) };
   } catch (err) {
@@ -1718,10 +1748,12 @@ function editOrderItems(no, items, by, clientKey, opts) {
         restoreRows_('recv', oldRecv);
         /* ค่าส่งกับส่วนลดที่เพิ่งเขียนไปต้องคืนด้วย ไม่งั้นแก้ไม่สำเร็จแต่ยอดเปลี่ยนไปแล้ว */
         if (headBack && hRow) {
-          writeRow_('head', hRow, {
+          var undo = {
             ship: headBack.ship === '' || headBack.ship === null ? '' : headBack.ship,
             discount: headBack.discount === '' || headBack.discount === null ? '' : headBack.discount
-          });
+          };
+          if (headBack.vat !== undefined) undo.vat = headBack.vat;
+          writeRow_('head', hRow, undo);
         }
         SpreadsheetApp.flush();
       } catch (e2) {

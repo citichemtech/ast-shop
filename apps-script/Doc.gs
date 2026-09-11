@@ -36,7 +36,14 @@ var DOC_TYPES = [
   { key: 'quote', code: 'QO', th: 'ใบเสนอราคา',   en: 'QUOTATION',      quote: true,  vat: true, form: [] },
   { key: 'inv',   code: 'IV', th: 'ใบแจ้งหนี้',     en: 'DEBIT NOTE',     quote: false, vat: true, form: [3] },
   { key: 'rec',   code: 'RE', th: 'ใบเสร็จรับเงิน', en: 'RECEIPT',        quote: false, vat: true, form: [0, 1] },
-  { key: 'dep',   code: 'DR', th: 'ใบรับเงินมัดจำ', en: 'DEPOSIT RECEIPT', quote: false, vat: true, form: [] }
+  { key: 'dep',   code: 'DR', th: 'ใบรับเงินมัดจำ', en: 'DEPOSIT RECEIPT', quote: false, vat: true, form: [] },
+  /* บิลเงินสด — ขายที่ไม่ออกใบกำกับภาษี
+     ของเดิมทำด้วยการออก "ใบเสร็จรับเงิน" แล้วเลือก "ไม่คิด VAT" ซึ่งผิดสองชั้น
+       หนึ่ง  กระดาษยังพิมพ์คำว่า ใบกำกับภาษี อยู่บนหัวใบ ทั้งที่ไม่ใช่ใบกำกับภาษี
+       สอง   กินเลขจากชุด ONIV ซึ่งเป็นชุดเลขใบกำกับภาษีที่ต้องเรียงต่อกันไม่ขาด
+              และเป็นชุดที่สรรพากรตรวจ
+     จึงต้องเป็นเอกสารคนละชนิด คนละชุดเลข และ vat:false ถาวร ไม่ใช่ติ๊กเอาตอนออกใบ */
+  { key: 'cash',  code: 'CS', th: 'บิลเงินสด',     en: 'CASH BILL',      quote: false, vat: false, form: [] }
 ];
 
 function docType_(key) {

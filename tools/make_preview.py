@@ -207,11 +207,15 @@ window.google = { script: { run: (function(){
             })();
         var d = DOC_SRV.buildDoc_(p.type, src,
           { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
-        var pre = { rec:"ONIV26-", inv:"IV26-", quote:"QO26-", dep:"DR26-" }[p.type] || "DOC-";
-        var th = { rec:"ใบเสร็จรับเงิน", inv:"ใบแจ้งหนี้", quote:"ใบเสนอราคา", dep:"ใบรับเงินมัดจำ" }[p.type];
+        /* บิลเงินสดมีชุดเลขของตัวเอง (CS) แยกจากชุดใบกำกับภาษี (ONIV) เหมือนของจริง
+           ถ้าที่นี่ให้ใช้ชุดเดียวกัน ข้อสอบจะผ่านทั้งที่ของจริงยังปนกันอยู่ */
+        var pre = { rec:"ONIV26-", inv:"IV26-", quote:"QO26-", dep:"DR26-",
+                    cash:"CS26-" }[p.type] || "DOC-";
+        var th = { rec:"ใบเสร็จรับเงิน", inv:"ใบแจ้งหนี้", quote:"ใบเสนอราคา",
+                   dep:"ใบรับเงินมัดจำ", cash:"บิลเงินสด" }[p.type];
         /* เลขวิ่งต่อทีละใบเหมือนของจริง (nextDocNo_ = เลขสูงสุดในเล่ม + 1)
            ถ้าตรึงเลขไว้ตัวเดียว ใบที่สองจะทับเลขใบแรกและข้อสอบจะหลอกตัวเอง */
-        var seq = ({ rec:231, inv:1, quote:114, dep:1 }[p.type] || 1)
+        var seq = ({ rec:231, inv:1, quote:114, dep:1, cash:1 }[p.type] || 1)
           + MOCK_DOCS.filter(function(x){ return x.type === th }).length;
         var no = pre + ("0000"+seq).slice(-5);
         /* เก็บใบที่ออกไว้ในทะเบียน เพื่อให้กดพิมพ์ซ้ำได้เหมือนของจริง */
@@ -327,9 +331,15 @@ window.google = { script: { run: (function(){
           throw new Error("ต้องบอกเหตุผลที่แก้อย่างน้อย 5 ตัวอักษร");
         var o = MOCK_ORDERS.filter(function(x){ return x.no === f.orderNo })[0];
         if(!o) throw new Error("ไม่พบออเดอร์ " + f.orderNo);
-        var d = DOC_SRV.buildDoc_(
-          { "ใบเสร็จรับเงิน":"rec", "ใบแจ้งหนี้":"inv", "ใบเสนอราคา":"quote",
-            "ใบรับเงินมัดจำ":"dep" }[f.type] || "rec",
+        var tk = { "ใบเสร็จรับเงิน":"rec", "ใบแจ้งหนี้":"inv", "ใบเสนอราคา":"quote",
+                   "ใบรับเงินมัดจำ":"dep", "บิลเงินสด":"cash" }[f.type] || "rec";
+        /* ใบที่ใช้เลขชุดใบกำกับภาษี แก้ให้กลายเป็นใบไม่มี VAT ไม่ได้ — เหมือนของจริง */
+        if(p.novat && tk !== "cash"){
+          throw new Error("ใบ " + f.no + " เป็น" + f.type + " ซึ่งใช้เลขชุดใบกำกับภาษี "
+            + "แก้ให้กลายเป็นใบไม่มี VAT ไม่ได้ — ให้ยกเลิกใบนี้ "
+            + "แล้วออกใหม่เป็น “บิลเงินสด” ซึ่งมีชุดเลขของตัวเอง");
+        }
+        var d = DOC_SRV.buildDoc_(tk,
           { items:o.items, ship:o.ship, discount:o.discount },
           { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
         f.times = (f.times || 0) + 1;

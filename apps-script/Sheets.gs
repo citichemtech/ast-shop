@@ -542,12 +542,12 @@ function appCfg_() {
        เก็บในชีทไม่ใช่ในโค้ด เจ้าของร้านจะได้แก้เองโดยไม่ต้องรอคนแก้โปรแกรม */
     co: { name: '', nameEn: '', shortName: '', addr: '', taxId: '', branch: '', tel: '', email: '' },
     bank: '', thanks: '', docTerms: '', website: '', docSeller: '', docSellerEmail: '', vatMode: 'excl',
-    docPrefix: { rec: 'ONIV26-', inv: 'IV26-', quote: 'QO26-', dep: 'DR26-' },
+    docPrefix: { rec: 'ONIV26-', inv: 'IV26-', quote: 'QO26-', dep: 'DR26-', cash: 'CS26-' },
     /* ลายเซ็นฝั่งร้านที่เซ็นครั้งเดียวแล้วประทับให้ทุกใบ เก็บเป็นพิกัดเส้น (ดู Sign.html)
        ไม่ใช่รูป เพราะช่องในชีทรับได้ 50,000 ตัวอักษร และต้องคมตอนพิมพ์ 300 dpi */
     sign: { cashier: '', auth: '' },
     /* เลขที่ยกยอดมาจากระบบเดิม ระบบจะออกเลขถัดจากตัวนี้เสมอ แม้ชีทยังว่าง */
-    docStart: { rec: 0, inv: 0, quote: 0, dep: 0 },
+    docStart: { rec: 0, inv: 0, quote: 0, dep: 0, cash: 0 },
     quoteDays: 7
   };
   if (!s) return out;
@@ -587,10 +587,12 @@ function appCfg_() {
     else if (k === 'คำนำหน้าเลขใบแจ้งหนี้') out.docPrefix.inv = String(val || out.docPrefix.inv);
     else if (k === 'คำนำหน้าเลขใบเสนอราคา') out.docPrefix.quote = String(val || out.docPrefix.quote);
     else if (k === 'คำนำหน้าเลขใบรับเงินมัดจำ') out.docPrefix.dep = String(val || out.docPrefix.dep);
+    else if (k === 'คำนำหน้าเลขบิลเงินสด') out.docPrefix.cash = String(val || out.docPrefix.cash);
     else if (k === 'ยกยอดเลขใบเสร็จ/ใบกำกับภาษีมาจาก') out.docStart.rec = Number(val || 0) || 0;
     else if (k === 'ยกยอดเลขใบแจ้งหนี้มาจาก') out.docStart.inv = Number(val || 0) || 0;
     else if (k === 'ยกยอดเลขใบเสนอราคามาจาก') out.docStart.quote = Number(val || 0) || 0;
     else if (k === 'ยกยอดเลขใบรับเงินมัดจำมาจาก') out.docStart.dep = Number(val || 0) || 0;
+    else if (k === 'ยกยอดเลขบิลเงินสดมาจาก') out.docStart.cash = Number(val || 0) || 0;
     else if (k === 'ลายเซ็นผู้รับเงิน/พนักงานขาย') out.sign.cashier = String(val || '');
     else if (k === 'ลายเซ็นผู้มีอำนาจลงนาม') out.sign.auth = String(val || '');
     else if (k === 'ใบเสนอราคายืนราคากี่วัน') out.quoteDays = Number(val || 7) || 7;

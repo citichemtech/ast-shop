@@ -3121,5 +3121,88 @@ var over54 = [];
 for (var nm54 in fx54.sheets) over54 = over54.concat(fx54.sheets[nm54].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over54, []);
 
+/* ====== 55. บิลเงินสด — เอกสารคนละชนิด คนละชุดเลข ไม่มี VAT
+
+   เจ้าของร้านเจอสามเรื่องพร้อมกัน: กด "เสีย VAT" ผิดทั้งที่ขายแบบไม่มีภาษี ·
+   เลขใบไปปนกับชุดใบกำกับภาษี · และหาบิลเงินสดในแอปไม่เจอ
+   ทั้งสามเรื่องมีรากเดียวกัน — บิลเงินสดเคยไม่ใช่ชนิดเอกสาร เป็นแค่ติ๊ก "ไม่คิด VAT"
+   บนใบเสร็จ/ใบกำกับภาษี ซึ่งกินเลขชุด ONIV และยังพิมพ์คำว่าใบกำกับภาษีบนหัวใบ */
+console.log('\n55. บิลเงินสด แยกชนิด แยกชุดเลข');
+
+var fx55 = FS.build();
+var api55 = FS.load(fx55, {});
+api55.setup();
+
+var o55 = api55.createOrder(order({ cust: 'ลูกค้าเงินสด',
+  items: [{ sku: 'SKU-141', qty: 1, price: 1000 }] }));
+var rec55 = api55.issueDoc({ type: 'rec', orderNo: o55.no,
+  cust: { name: 'ลูกค้าเงินสด' }, by: 'AEY', clientKey: 'dk-55-1' });
+var cash55 = api55.issueDoc({ type: 'cash', orderNo: o55.no,
+  cust: { name: 'ลูกค้าเงินสด' }, by: 'AEY', clientKey: 'dk-55-2' });
+
+console.log('\n   เลขต้องมาคนละชุด ห้ามปนกับเล่มใบกำกับภาษี');
+truthy2('ใบกำกับภาษีใช้ชุด ONIV', rec55.no.indexOf('ONIV26-') === 0);
+truthy2('บิลเงินสดใช้ชุด CS', cash55.no.indexOf('CS26-') === 0);
+eq('บิลเงินสดเริ่มนับของตัวเองจากหนึ่ง', cash55.no, 'CS26-00001');
+truthy2('เลขสองใบไม่เท่ากัน', rec55.no !== cash55.no);
+
+console.log('\n   ออกบิลเงินสดใบที่สองแล้วเลขต้องเดินในชุดตัวเอง ไม่ไปแตะ ONIV');
+var o55b = api55.createOrder(order({ cust: 'ลูกค้าเงินสดสอง',
+  items: [{ sku: 'SKU-141', qty: 1, price: 500 }] }));
+var cash55b = api55.issueDoc({ type: 'cash', orderNo: o55b.no,
+  cust: { name: 'ลูกค้าเงินสดสอง' }, by: 'AEY', clientKey: 'dk-55-3' });
+eq('บิลเงินสดใบถัดไป', cash55b.no, 'CS26-00002');
+var rec55b = api55.issueDoc({ type: 'rec', orderNo: o55b.no,
+  cust: { name: 'ลูกค้าเงินสดสอง' }, by: 'AEY', clientKey: 'dk-55-4' });
+eq('ชุด ONIV เดินต่อของตัวเอง ไม่ถูกบิลเงินสดกินเลข',
+   Number(rec55b.no.replace('ONIV26-', '')), Number(rec55.no.replace('ONIV26-', '')) + 1);
+
+console.log('\n   บิลเงินสดต้องไม่มีภาษีบนใบ');
+eq('ไม่มีภาษี', cash55.doc.vat, 0);
+eq('ยอดรวมเท่ากับยอดสินค้า', cash55.doc.total, cash55.doc.base);
+eq('ชื่อชนิดที่ลงชีท', api55.findDocs({ q: cash55.no }).rows[0].type, 'บิลเงินสด');
+
+console.log('\n   ใบกำกับภาษีที่กด VAT ผิด แก้ให้เป็นไม่มี VAT ไม่ได้');
+/* เลขใบนั้นมาจากเล่มใบกำกับภาษี ถ้าแก้ให้กลายเป็นใบไม่มีภาษีทั้งที่ยังถือเลขเล่มนั้น
+   เล่มจะมีใบที่ไม่ใช่ใบกำกับภาษีปนอยู่ตรงกลาง อธิบายตอนถูกตรวจไม่ได้ */
+throws('แก้ใบภาษีให้ไม่มี VAT', function () {
+  api55.reviseDoc({ no: rec55.no, why: 'ลูกค้าไม่เอาใบกำกับภาษี', novat: true,
+    by: 'AEY', clientKey: 'rk-55-1' });
+}, 'บิลเงินสด');
+eq('ใบเดิมยังเป็นใบภาษีเหมือนเดิม ไม่ถูกแก้ค้างไว้ครึ่งทาง',
+   api55.findDocs({ q: rec55.no }).rows[0].type, 'ใบเสร็จรับเงิน');
+
+console.log('\n   แก้ใบปกติ (ไม่ยุ่งกับ VAT) ยังทำได้เหมือนเดิม');
+var rv55 = api55.reviseDoc({ no: rec55.no, why: 'ลูกค้าขอแก้ชื่อบนใบ',
+  cust: { name: 'ลูกค้าเงินสด (แก้ชื่อ)' }, by: 'AEY', clientKey: 'rk-55-2' });
+eq('ยังเป็นเลขเดิม', rv55.no, rec55.no);
+
+console.log('\n   แก้สถานะ VAT ของออเดอร์ได้ พร้อมคิดยอดใหม่ทั้งใบ');
+/* กดรับ VAT ผิดตอนคีย์ออเดอร์ ของเดิมแก้ได้ทางเดียวคือเปิดชีทแก้เอง
+   แล้วยอดสุทธิก็ไม่ได้คิดใหม่ตามให้ */
+var o55c = api55.createOrder(order({ cust: 'ลูกค้ากด VAT ผิด', vat: true, ship: 0, discount: 0,
+  items: [{ sku: 'SKU-141', qty: 1, price: 1000 }] }));
+var hd55 = fx55.sheets['ออเดอร์_หัวบิล'];
+var row55 = rowsWith(hd55, api55.SH.head.IN.no).filter(function (r) {
+  return hd55.cell(r, api55.SH.head.IN.no).v === o55c.no;
+})[0];
+eq('ตอนแรกเป็นรับ VAT', String(hd55.cell(row55, api55.SH.head.IN.vat).v), 'รับ VAT');
+var ed55 = api55.editOrderItems(o55c.no, [{ sku: 'SKU-141', qty: 1, price: 1000 }],
+  'AEY', 'ck-55-vat', { vat: 'ไม่รับ VAT' });
+eq('ระบบตอบกลับว่าเปลี่ยนเป็นไม่รับ VAT', ed55.vat, 'ไม่รับ VAT');
+eq('ช่อง VAT ในชีทเปลี่ยนตาม', String(hd55.cell(row55, api55.SH.head.IN.vat).v), 'ไม่รับ VAT');
+eq('ยอดสุทธิคิดใหม่ ไม่มีภาษีแล้ว', ed55.net, 1000);
+
+console.log('\n   ไม่ส่ง vat มาก็ต้องไม่ไปแตะของเดิม');
+var ed55b = api55.editOrderItems(o55c.no, [{ sku: 'SKU-141', qty: 2, price: 1000 }],
+  'AEY', 'ck-55-vat2', {});
+eq('ยังเป็นไม่รับ VAT เหมือนเดิม', String(hd55.cell(row55, api55.SH.head.IN.vat).v), 'ไม่รับ VAT');
+eq('ยอดใหม่ยังไม่มีภาษี', ed55b.net, 2000);
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over55 = [];
+for (var nm55 in fx55.sheets) over55 = over55.concat(fx55.sheets[nm55].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over55, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
