@@ -3387,6 +3387,58 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('กดกลับแล้วได้หน้าใบเสนอราคา',
     await page.evaluate(function () { return $('#pg-quote').style.display !== 'none' }));
 
+  /* ---------- 20ก. ของแถมในกล่องแก้รายการ ----------
+
+     เจ้าของร้านตั้งใจแถม Adapter ให้ลูกค้าฟรี แต่บนใบกำกับภาษีคิด 225 บาท
+     ตอนจะมาแก้ กล่องแก้รายการไม่มีช่อง "แถมฟรี" (หน้าคีย์ออเดอร์มี)
+     ต้องพิมพ์เลข 0 เอง ซึ่งคนจะลบให้ว่างแทน แล้วค่าว่างแปลว่า "ใช้ราคามาตรฐาน"
+     ของแถมจึงกลับมาคิดเงินอีกรอบ */
+  console.log('\n20ก. แถมฟรีจากกล่องแก้รายการ');
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () { go('list') });
+  await page.waitForTimeout(600);
+  var gf = await page.evaluate(async function () {
+    var o = (ORDERS || [])[0];
+    openEditItems(o);
+    await new Promise(function (r) { setTimeout(r, 500) });
+    return {
+      rows: $$('#ed-rows .edrow').length,
+      hasGift: !!$('#ed-rows .i-gift'),
+      price0: $('#ed-rows .i-price').value
+    };
+  });
+  truthy('กล่องแก้รายการมีช่องแถมฟรี', gf.hasGift);
+
+  var gf2 = await page.evaluate(async function () {
+    var row = $$('#ed-rows .edrow')[0];
+    row.querySelector('.i-gift').checked = true;
+    row.querySelector('.i-gift').dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(function (r) { setTimeout(r, 200) });
+    return {
+      price: row.querySelector('.i-price').value,
+      locked: row.querySelector('.i-price').readOnly,
+      sent: edItems()[0].price,
+      sum: $('#ed-sum').innerText
+    };
+  });
+  eq('ติ๊กแล้วราคากลายเป็นศูนย์', gf2.price, '0');
+  truthy('และตรึงไว้ไม่ให้เผลอลบจนว่าง', gf2.locked);
+  eq('ค่าที่ส่งขึ้นชีทเป็นเลขศูนย์ ไม่ใช่ค่าว่าง', gf2.sent, '0');
+
+  var gf3 = await page.evaluate(async function () {
+    var row = $$('#ed-rows .edrow')[0];
+    row.querySelector('.i-gift').checked = false;
+    row.querySelector('.i-gift').dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise(function (r) { setTimeout(r, 200) });
+    return { price: row.querySelector('.i-price').value,
+             locked: row.querySelector('.i-price').readOnly };
+  });
+  eq('ติ๊กออกแล้วกลับไปเป็นช่องว่าง (= ราคามาตรฐาน)', gf3.price, '');
+  truthy('และแก้ราคาได้อีกครั้ง', !gf3.locked);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
+
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

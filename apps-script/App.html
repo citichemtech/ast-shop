@@ -1985,7 +1985,13 @@ function edRow(v){
     +'placeholder="ปล่อยว่าง = ราคามาตรฐาน" value="'+(v.price===""||v.price===undefined?"":v.price)+'"></div>'
     +'<div></div></div>'
     +'<label class="giftck"><input type="checkbox" class="i-free"'+(v.free?" checked":"")+'>'
-    +' ซื้อมาขายไป — พิมพ์ชื่อและราคาเอง</label>';
+    +' ซื้อมาขายไป — พิมพ์ชื่อและราคาเอง</label>'
+    /* หน้าคีย์ออเดอร์มีช่องนี้มาตั้งแต่แรก แต่กล่องแก้รายการไม่มี
+       เวลาที่ต้องใช้จริงที่สุดคือตอนรู้ตัวว่าคิดเงินของแถมไปแล้ว ซึ่งเป็นตอนที่ต้องมาแก้
+       ถ้าไม่มีช่องนี้ต้องพิมพ์เลข 0 เอง และคนจะลบให้ว่างแทน ซึ่งกลายเป็นราคาป้าย */
+    +'<label class="giftck"><input type="checkbox" class="i-gift"'
+    + (Number(v.price) === 0 && v.price !== "" && v.price !== undefined ? " checked" : "")
+    +'> แถมฟรี (ราคา 0 แต่ยังตัดสต๊อก)</label>';
   box.appendChild(d);
 
   function toggle(){
@@ -1995,6 +2001,21 @@ function edRow(v){
     edSum();
   }
   d.querySelector(".i-free").onchange = toggle;
+
+  /* ติ๊กแล้วตรึงราคาเป็นศูนย์ไปเลย ไม่ใช่แค่พิมพ์ 0 ให้ — กันไม่ให้เผลอลบจนว่าง
+     แล้วกลายเป็นราคาป้ายโดยไม่รู้ตัว ซึ่งเป็นวิธีที่ของแถมกลับมาคิดเงินอีกครั้ง */
+  function giftToggle(){
+    var pr = d.querySelector(".i-price");
+    if (d.querySelector(".i-gift").checked) {
+      pr.value = "0"; pr.readOnly = true; pr.style.background = "#f2f4f7";
+    } else {
+      if (Number(pr.value) === 0) pr.value = "";
+      pr.readOnly = false; pr.style.background = "";
+    }
+    edSum();
+  }
+  d.querySelector(".i-gift").onchange = giftToggle;
+  if (d.querySelector(".i-gift").checked) giftToggle();
   /* แถวสินค้าไม่รู้จักหัวบิล จึงคิดยอดสุทธิเองไม่ได้ ให้กล่องสรุปไปอ่านค่าจากฟอร์มเอง */
   if(v.free) toggle();
 
@@ -2012,13 +2033,15 @@ function edRow(v){
 function edItems(){
   return $$("#ed-rows .edrow").map(function(r){
     var free = r.querySelector(".i-free").checked;
+    var gift = r.querySelector(".i-gift") && r.querySelector(".i-gift").checked;
     return {
       free: free,
       sku:   free ? "" : r.querySelector(".i-sku").value,
       name:  free ? r.querySelector(".i-name").value.trim() : "",
       cost:  free ? r.querySelector(".i-cost").value : "",
       qty:   r.querySelector(".i-qty").value,
-      price: r.querySelector(".i-price").value
+      /* ส่งเลขศูนย์ไปตรง ๆ ไม่ใช่ค่าว่าง — ค่าว่างแปลว่า "ใช้ราคามาตรฐาน" */
+      price: gift ? "0" : r.querySelector(".i-price").value
     };
   });
 }

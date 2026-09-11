@@ -421,7 +421,7 @@ function readOrders_(opts) {
         name: itemName_(iv[j][4], iv[j][SH.item.IN.sku - 1]),
         unit: String(iv[j][5] || ''),
         qty: Number(iv[j][SH.item.IN.qty - 1] || 0),
-        price: Number(iv[j][SH.item.IN.price - 1] || iv[j][7] || 0),
+        price: linePrice_(iv[j][SH.item.IN.price - 1], iv[j][7]),
         total: Number(iv[j][9] || 0),
         profit: Number(iv[j][11] || 0),
         lot: String(iv[j][SH.item.lot - 1] || '')
@@ -1367,6 +1367,25 @@ function peekDocNos() {
 }
 
 /** หาออเดอร์หนึ่งใบพร้อมรายการ — ใช้ตัวอ่านเดียวกับหน้ารายการออเดอร์ */
+/**
+ * ราคาขายจริงของบรรทัดสินค้า — ช่องว่างกับเลขศูนย์ไม่ใช่เรื่องเดียวกัน
+ *
+ *   ช่องว่าง  = ไม่ได้ตั้งราคาพิเศษ ให้ใช้ราคามาตรฐานจากฐานสินค้า
+ *   เลข 0     = ตั้งใจแจกฟรี เป็นราคาจริงของบรรทัดนั้น
+ *
+ * ของเดิมเขียนว่า (ราคาขายจริง || ราคามาตรฐาน) ซึ่ง 0 เป็นค่าเท็จในจาวาสคริปต์
+ * ของแถมที่ตั้งราคาไว้ 0 จึงถูกอ่านกลับมาเป็นราคาป้ายทุกครั้งที่อ่านออเดอร์
+ * ยอดในชีทถูก (ชีทคิดจากช่องราคาขายจริงตรง ๆ) แต่ทุกอย่างที่ประกอบจาก getOrders
+ * กลับคิดเงินของแถมนั้น — ใบกำกับภาษีที่แก้ตามออเดอร์ · ข้อความสรุปที่ส่งลูกค้า ·
+ * การคีย์ออเดอร์ซ้ำ  เกิดขึ้นจริงกับใบ ONIV26-00279 (Adapter ER-11mm ที่แจกฟรี
+ * แต่บนใบคิด 225 บาท)
+ */
+function linePrice_(actual, std) {
+  if (actual === '' || actual === null || actual === undefined) return Number(std || 0);
+  var n = Number(actual);
+  return isFinite(n) ? n : Number(std || 0);
+}
+
 function findOrder_(no) {
   var list = getOrders(0);
   for (var i = 0; i < list.length; i++) if (String(list[i].no) === String(no)) return list[i];

@@ -1666,7 +1666,10 @@ var o35b = api35b.createOrder(order({
   items: [{ sku: 'SKU-141', qty: 2, price: 100 }]
 }));
 var r35h = rowsWith(hd35, 1)[0];
-eq('ตั้งต้น ค่าส่ง 50 ยอดสุทธิ 264', hd35.cell(r35h, 14).v, 264);   /* 200 + VAT 14 + 50 */
+/* ค่าส่งอยู่ในฐานภาษีด้วย ตามสูตรจริงในชีท (ยืนยันกับใบที่ออกให้ลูกค้าไปแล้วห้าใบ)
+   ตัวเลข 264 ที่เคยเขียนไว้ตรงนี้คิด VAT จากยอดสินค้าอย่างเดียว ซึ่งเป็นกฎของ
+   ชีทจำลองที่เขียนผิด ไม่ใช่กฎของชีทจริง */
+eq('ตั้งต้น ค่าส่ง 50 ยอดสุทธิ 267.50', hd35.cell(r35h, 14).v, 267.5);  /* (200+50)×1.07 */
 
 api35b.editOrderItems(o35b.no, [{ sku: 'SKU-141', qty: 2, price: 100 }], 'AEY', 'ck-ship-1',
   { ship: 0 });
@@ -3299,6 +3302,73 @@ console.log('\n   ไม่มีช่องสูตรถูกเขีย�
 var over56 = [];
 for (var nm56 in fx56.sheets) over56 = over56.concat(fx56.sheets[nm56].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over56, []);
+
+/* ====== 57. ของแถม ราคา 0 ต้องเป็นศูนย์จริงทุกที่ที่อ่านออเดอร์
+
+   เกิดขึ้นจริงกับใบ ONIV26-00279: Adapter ER-11mm ที่ตั้งใจแจกฟรี
+   ยอดในชีทถูก (ชีทคิดจากช่องราคาขายจริงตรง ๆ) แต่บนใบกำกับภาษีคิด 225 บาท
+   เพราะตัวอ่านออเดอร์เขียนว่า (ราคาขายจริง || ราคามาตรฐาน) — 0 เป็นค่าเท็จ
+   ในจาวาสคริปต์ ของแถมจึงถูกอ่านกลับมาเป็นราคาป้ายทุกครั้ง
+
+   "ช่องว่าง" กับ "เลขศูนย์" ไม่ใช่เรื่องเดียวกัน และนี่คือที่ที่ความต่างนั้นเป็นเงินจริง */
+console.log('\n57. ของแถมราคา 0 ต้องไม่ถูกคิดเงินย้อนหลัง');
+
+var fx57 = FS.build();
+var api57 = FS.load(fx57, {});
+api57.setup();
+
+/* SKU-143 มีราคามาตรฐานในฐานสินค้า ตั้งราคาขายจริงเป็น 0 = แจกฟรี */
+var o57 = api57.createOrder(order({ cust: 'ลูกค้าได้ของแถม', ship: 0, discount: 0, vat: false,
+  items: [{ sku: 'SKU-141', qty: 2, price: 79 }, { sku: 'SKU-143', qty: 1, price: 0 }] }));
+eq('ยอดสินค้าในชีทคิดของแถมเป็นศูนย์', o57.subtotal, 158);
+
+console.log('\n   อ่านออเดอร์กลับมา ของแถมต้องยังเป็นศูนย์');
+var read57 = api57.getOrders(0).filter(function (x) { return x.no === o57.no })[0];
+eq('ราคาของแถมที่อ่านกลับมา',
+   read57.items.filter(function (i) { return i.sku === 'SKU-143' })[0].price, 0);
+eq('ราคาบรรทัดปกติไม่ถูกแตะ',
+   read57.items.filter(function (i) { return i.sku === 'SKU-141' })[0].price, 79);
+
+console.log('\n   ออกใบกำกับภาษี ของแถมต้องขึ้นเป็น 0 บนกระดาษ');
+var d57 = api57.issueDoc({ type: 'rec', orderNo: o57.no, cust: { name: 'ลูกค้าได้ของแถม' },
+  by: 'AEY', clientKey: 'dk-57-1' });
+var free57 = d57.doc.lines.filter(function (l) { return /Endmill|End Mill|SKU-143/.test(l.name) });
+/* ใบเสร็จ/ใบกำกับภาษีบวก VAT ตอนออกใบ (158 × 1.07) — ที่ตรวจตรงนี้คือ
+   "ของแถมไม่ถูกคิดเงิน" ไม่ใช่เรื่องภาษี จึงดูที่ผลรวมของบรรทัดก่อนภาษี */
+eq('ผลรวมบรรทัดบนใบ = ยอดสินค้าจริง ไม่รวมของแถม',
+   d57.doc.lines.reduce(function (a, l) { return a + l.amount }, 0), 158);
+eq('ฐานภาษีบนใบคือ 158 ไม่ใช่ 158 + ราคาป้ายของแถม', d57.doc.base, 158);
+
+console.log('\n   แก้บรรทัดที่คิดเงินมาแล้วให้เป็นของแถม แล้วแก้ใบตามด้วย');
+/* นี่คือทางที่เจ้าของร้านต้องเดินจริงตอนเจอปัญหา */
+var o57b = api57.createOrder(order({ cust: 'ลูกค้าคิดเงินผิด', ship: 0, discount: 0, vat: false,
+  items: [{ sku: 'SKU-141', qty: 2, price: 79 }, { sku: 'SKU-143', qty: 1, price: 225 }] }));
+var d57b = api57.issueDoc({ type: 'rec', orderNo: o57b.no, cust: { name: 'ลูกค้าคิดเงินผิด' },
+  by: 'AEY', clientKey: 'dk-57-2' });
+eq('ใบแรกคิดเงินของแถมไปด้วย', d57b.doc.base, 383);
+var ed57 = api57.editOrderItems(o57b.no,
+  [{ sku: 'SKU-141', qty: 2, price: 79 }, { sku: 'SKU-143', qty: 1, price: 0 }],
+  'AEY', 'ck-57-1', { reviseDocs: true });
+eq('ยอดสินค้าใหม่ไม่รวมของแถม', ed57.subtotal, 158);
+eq('แก้ใบเลขเดิมให้ ไม่ได้กินเลขใหม่', ed57.docs, [d57b.no + ' → 169.06']);
+var got57 = api57.getDoc(d57b.no);
+eq('ยอดบนใบลดลงเหลือเฉพาะของที่คิดเงินจริง', got57.doc.base, 158);
+eq('บรรทัดของแถมบนใบเป็นศูนย์',
+   got57.doc.lines.filter(function (l) { return l.amount === 0 }).length, 1);
+eq('และยังเป็นใบที่มีภาพถ่ายจริง พิมพ์ซ้ำได้ใบเดิม', got57.exact, true);
+
+console.log('\n   เว้นช่องราคาว่างไว้ ต้องยังใช้ราคามาตรฐานเหมือนเดิม');
+/* ความต่างระหว่างว่างกับศูนย์ต้องยังอยู่ ไม่ใช่แก้อันหนึ่งแล้วพังอีกอัน */
+var o57c = api57.createOrder(order({ cust: 'ลูกค้าราคาป้าย', ship: 0, discount: 0, vat: false,
+  items: [{ sku: 'SKU-143', qty: 1, price: '' }] }));
+var read57c = api57.getOrders(0).filter(function (x) { return x.no === o57c.no })[0];
+truthy2('เว้นว่างแล้วได้ราคามาตรฐาน ไม่ใช่ศูนย์', read57c.items[0].price > 0);
+eq('และยอดสินค้าเท่ากับราคามาตรฐาน', o57c.subtotal, read57c.items[0].price);
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับเลยตลอดหมวดนี้');
+var over57 = [];
+for (var nm57 in fx57.sheets) over57 = over57.concat(fx57.sheets[nm57].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over57, []);
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

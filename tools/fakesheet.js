@@ -309,7 +309,11 @@ function build(opts) {
       }
       head.cell(hr, 10).v = Math.round(sum * 100) / 100;
       var disc = Number(head.cell(hr, 11).v || 0), ship = Number(head.cell(hr, 12).v || 0);
-      var vat = head.cell(hr, 9).v === 'รับ VAT' ? Math.round((sum - disc) * 0.07 * 100) / 100 : 0;
+      /* ค่าส่งอยู่ในฐานภาษีด้วย — ต้องตรงกับ HEAD_VAT_FORMULA ใน Setup.gs เป๊ะ ๆ
+         ซึ่งยึดตามใบที่ออกให้ลูกค้าไปแล้ว (ONIV26-00246 ฐาน 1,350 VAT 94.50 ฯลฯ)
+         ชีทจำลองคิดคนละแบบกับชีทจริงเมื่อไร ข้อสอบจะรับรองยอดเงินที่ผิด */
+      var vat = head.cell(hr, 9).v === 'รับ VAT'
+        ? Math.round((sum - disc + ship) * 0.07 * 100) / 100 : 0;
       head.cell(hr, 13).v = vat;
       head.cell(hr, 14).v = Math.round((sum - disc + ship + vat) * 100) / 100;
     }
