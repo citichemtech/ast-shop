@@ -502,7 +502,7 @@ function payAcct_(wantVat) {
   }
 
   return {
-    bank: a.bank, name: a.name, acct: a.acct, pp: a.pp,
+    bank: a.bank, name: a.name, acct: a.acct, pp: a.pp, link: a.link,
     which: which, miss: miss, drift: drift
   };
 }
@@ -528,6 +528,12 @@ function payMsg_(ord, acct, wantVat) {
   L.push('');
   L.push('💰 ยอดที่ต้องโอน ' + money_(ord.net) + (wantVat ? ' (รวม VAT 7% แล้ว)' : ''));
   L.push('');
+  /* ลิงก์เปิดแอพธนาคาร — ไม่ได้กรอกอะไรให้ ลูกค้ายังต้องพิมพ์เลขบัญชีกับยอดเอง
+     จึงต้องอยู่ "ใต้" เลขบัญชีกับยอด ไม่ใช่แทนที่ */
+  if (acct.link) {
+    L.push('📲 เปิดแอพธนาคาร: ' + acct.link);
+    L.push('');
+  }
   if (wantVat) {
     L.push('📌 ออกใบกำกับภาษีได้ค่ะ');
     L.push('หลังโอนชำระเงิน กรุณาส่งสลิปยืนยันการโอน');
@@ -783,10 +789,208 @@ function slipsWaiting() {
   return jsonSafe_({ total: n, byOrder: out });
 }
 
+
+/* ============================================ ส่งออกหลักฐานการโอนเป็น Excel
+
+   ทำไมเป็น .xlsx จริง ไม่ใช่ .csv
+   CSV กับภาษาไทยใน Excel เป็นคู่ที่พังกันมานาน ต่อให้ใส่ BOM แล้ว เครื่องที่ตั้ง
+   ตัวคั่นรายการเป็นอย่างอื่นก็ยังเปิดมาเป็นคอลัมน์เดียวยาว ๆ อยู่ดี
+   ไฟล์นี้ส่งต่อให้บัญชีเปิด ถ้าเปิดมาแล้วอ่านไม่ออกคือต้องทำใหม่ทั้งรอบ
+
+   .xlsx คือไฟล์ zip ที่ข้างในเป็น XML — Apps Script มี Utilities.zip ให้อยู่แล้ว
+   จึงประกอบเองได้โดยไม่ต้องพึ่งไลบรารีข้างนอกเหมือนเรื่อง QR                    */
+
+var XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+var XLSX_SHEET = 'หลักฐานการโอน';
+
+function xlEsc_(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    /* อักขระควบคุมทำให้ Excel บอกว่าไฟล์เสียแล้วไม่ยอมเปิดเลยทั้งไฟล์
+       ข้อความที่คนพิมพ์ในช่องหมายเหตุมีติดมาได้เสมอ ตัดทิ้งตั้งแต่ตรงนี้ */
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+}
+
+/** 1 -> A · 27 -> AA */
+function xlCol_(n) {
+  var s = '';
+  while (n > 0) {
+    var r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = (n - r - 1) / 26;
+  }
+  return s;
+}
+
+/**
+ * ช่องหนึ่งช่อง — ตัวเลขลงเป็นตัวเลข ที่เหลือลงเป็นข้อความ
+ *
+ * เลขออเดอร์ AST-26-0001 กับเลขบัญชี 431-039435-5 ต้องเป็นข้อความเท่านั้น
+ * ปล่อยให้ Excel เดาเองเมื่อไร มันจะตีความเป็นสูตรลบบ้าง เป็นวันที่บ้าง
+ */
+function xlCell_(ref, v) {
+  if (typeof v === 'number' && isFinite(v)) return '<c r="' + ref + '"><v>' + v + '</v></c>';
+  var t = xlEsc_(v);
+  if (!t) return '';
+  return '<c r="' + ref + '" t="inlineStr"><is><t xml:space="preserve">' + t + '</t></is></c>';
+}
+
+/** ทุกชิ้นส่วนของไฟล์ .xlsx เป็นข้อความล้วน แยกออกมาให้สอบได้โดยไม่ต้องแตกไฟล์ zip */
+function xlParts_(rows) {
+  var body = [];
+  for (var r = 0; r < rows.length; r++) {
+    var cells = [];
+    for (var c = 0; c < rows[r].length; c++) {
+      var one = xlCell_(xlCol_(c + 1) + (r + 1), rows[r][c]);
+      if (one) cells.push(one);
+    }
+    body.push('<row r="' + (r + 1) + '">' + cells.join('') + '</row>');
+  }
+
+  var X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  var NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  var PR = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  var OR = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+  return [
+    { name: '[Content_Types].xml', xml: X +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet"/>' +
+      '</Types>' },
+    { name: '_rels/.rels', xml: X +
+      '<Relationships xmlns="' + PR + '">' +
+      '<Relationship Id="rId1" Type="' + OR + '/officeDocument" Target="xl/workbook.xml"/>' +
+      '</Relationships>' },
+    { name: 'xl/workbook.xml', xml: X +
+      '<workbook xmlns="' + NS + '" xmlns:r="' + OR + '">' +
+      '<sheets><sheet name="' + xlEsc_(XLSX_SHEET) + '" sheetId="1" r:id="rId1"/></sheets>' +
+      '</workbook>' },
+    { name: 'xl/_rels/workbook.xml.rels', xml: X +
+      '<Relationships xmlns="' + PR + '">' +
+      '<Relationship Id="rId1" Type="' + OR + '/worksheet" Target="worksheets/sheet1.xml"/>' +
+      '</Relationships>' },
+    { name: 'xl/worksheets/sheet1.xml', xml: X +
+      '<worksheet xmlns="' + NS + '"><sheetData>' + body.join('') + '</sheetData></worksheet>' }
+  ];
+}
+
+function xlBlob_(rows, fileName) {
+  var parts = xlParts_(rows).map(function (p) {
+    return Utilities.newBlob(p.xml, 'application/xml', p.name);
+  });
+  return Utilities.zip(parts).setName(fileName).setContentType(XLSX_MIME);
+}
+
+var SLIP_XL_HEAD = ['เลขที่ออเดอร์', 'ชื่อลูกค้า', 'วันที่ออเดอร์', 'ยอดออเดอร์',
+  'วันที่โอนตามสลิป', 'ยอดตามสลิป', 'ต่างจากยอดออเดอร์', 'โอนเข้าบัญชี',
+  'สถานะสลิป', 'ผู้แนบ', 'แนบเมื่อ', 'ผู้ตรวจสอบ', 'ตรวจสอบเมื่อ',
+  'ลิงก์ไฟล์สลิป', 'ชื่อไฟล์', 'หมายเหตุ'];
+
+function slipYm_(sp) {
+  var d = sp.paidAt || sp.at;
+  if (!d) return '';
+  var s = String(d);
+  var m = /^(\d{4})-(\d{2})/.exec(s);
+  if (m) return m[1] + '-' + m[2];
+  var dt = new Date(s);
+  return isNaN(dt.getTime()) ? '' : Utilities.formatDate(dt, tz_(), 'yyyy-MM');
+}
+
+/**
+ * วันเวลาสำหรับใส่ในตาราง
+ *
+ * withTime=false สำหรับช่องที่เป็น "วัน" ล้วน ๆ อย่างวันที่โอนตามสลิป
+ * ของพวกนี้ระบบเก็บเป็นเที่ยงวันเพื่อกันปัญหาเขตเวลา ถ้าพิมพ์ 12:00 ออกไปด้วย
+ * บัญชีจะอ่านว่าลูกค้าโอนตอนเที่ยง ทั้งที่ไม่มีใครรู้ว่าโอนกี่โมง
+ */
+function ymd_(v, withTime) {
+  if (!v) return '';
+  var d = (v instanceof Date) ? v : null;
+  if (!d) {
+    var s = String(v);
+    var m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+    if (m) return withTime ? s : m[1];
+    d = new Date(s);
+    if (isNaN(d.getTime())) return s;
+  }
+  return Utilities.formatDate(d, tz_(), withTime ? 'yyyy-MM-dd HH:mm' : 'yyyy-MM-dd');
+}
+
+/** เดือนที่มีสลิปอยู่จริง ใหม่อยู่บน — เอาไว้ทำรายการให้เลือก ไม่ต้องเดาเอง */
+function slipMonths() {
+  requireStaff_();
+  var rows = slipRows_(''), seen = {}, out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var ym = slipYm_(rows[i]);
+    if (!ym || seen[ym]) continue;
+    seen[ym] = 1;
+    out.push(ym);
+  }
+  out.sort();
+  out.reverse();
+  return jsonSafe_({ months: out, total: rows.length });
+}
+
+/**
+ * ตารางหลักฐานการโอนของเดือนหนึ่ง เป็นไฟล์ Excel
+ *
+ * ym ว่าง = ทุกเดือน  ·  คืนไฟล์เป็น data URL ให้หน้าจอสั่งบันทึกลงเครื่อง
+ * เดือนที่ไม่มีสลิปเลย ต้องล้มพร้อมบอก ไม่ใช่ส่งไฟล์เปล่ากลับไป
+ * ไฟล์เปล่าที่เปิดแล้วว่าง คนจะนึกว่าเดือนนั้นไม่มีใครโอนเงินมาเลย
+ */
+function exportSlips(ym) {
+  requireStaff_();
+  var want = String(ym || '').trim();
+  var all = slipRows_('');
+  var rows = want ? all.filter(function (sp) { return slipYm_(sp) === want; }) : all;
+  if (!rows.length) {
+    throw new Error(want
+      ? 'เดือน ' + want + ' ไม่มีสลิปสักใบ จึงไม่มีอะไรให้ส่งออก'
+      : 'ยังไม่มีสลิปในระบบเลย');
+  }
+
+  /* ยอดของออเดอร์ต้องมาจากชีท ไม่ใช่จากสลิป — คนละตัวเลขกันโดยตั้งใจ
+     ช่อง "ต่างจากยอดออเดอร์" คือสิ่งที่บัญชีต้องเห็นก่อนอย่างอื่น */
+  var ord = {};
+  readOrders_({ limit: 0 }).forEach(function (o) { ord[o.no] = o; });
+
+  var out = [SLIP_XL_HEAD.slice()];
+  rows.sort(function (a, b) {
+    return String(a.paidAt || a.at) < String(b.paidAt || b.at) ? -1 : 1;
+  });
+  rows.forEach(function (sp) {
+    var o = ord[sp.no] || {};
+    var net = Number(o.net || 0);
+    var amt = Number(sp.amount || 0);
+    out.push([
+      sp.no, String(o.cust || ''), ymd_(o.date), net || '',
+      ymd_(sp.paidAt), amt || '', (amt > 0 && net > 0) ? round2_(amt - net) : '',
+      sp.bank, sp.status, sp.by, ymd_(sp.at, true), sp.checkBy, ymd_(sp.checkAt, true),
+      sp.fileUrl, sp.fileName, sp.note
+    ]);
+  });
+
+  /* ชื่อไฟล์เป็นอังกฤษล้วนโดยตั้งใจ — Chrome ทิ้งชื่อไฟล์ทั้งชื่อถ้ามีอักษรไทย
+     ไฟล์จะมาถึงเครื่องในชื่อ "download" ไม่มีนามสกุล แล้วดับเบิลคลิกไม่เปิด Excel
+     (พิสูจน์ในเบราว์เซอร์จริง 12 ก.ย. 69 — ชื่ออังกฤษล้วนมาครบทุกครั้ง)
+     ภาษาไทยอยู่ในชื่อแท็บข้างในไฟล์แทน ตรงนั้นไม่มีปัญหา */
+  var name = 'AST-slip-' + (want || 'all') + '.xlsx';
+  var blob = xlBlob_(out, name);
+  return jsonSafe_({
+    ok: true, name: name, mime: XLSX_MIME, count: rows.length, ym: want,
+    data: 'data:' + XLSX_MIME + ';base64,' + Utilities.base64Encode(blob.getBytes())
+  });
+}
+
 /* ให้ node เรียกไปสอบได้ ตัว Apps Script ไม่มี module จึงต้องกันไว้ */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { ppCrc16_: ppCrc16_, ppField_: ppField_, ppTarget_: ppTarget_,
     ppPayload_: ppPayload_, qrModules_: qrModules_, qrUtf8_: qrUtf8_,
     qrPickVersion_: qrPickVersion_, qrCodewords_: qrCodewords_,
-    payMsg_: payMsg_, payWantVat_: payWantVat_ };
+    payMsg_: payMsg_, payWantVat_: payWantVat_,
+    xlEsc_: xlEsc_, xlCol_: xlCol_, xlCell_: xlCell_, xlParts_: xlParts_ };
 }

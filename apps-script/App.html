@@ -2729,7 +2729,30 @@ function qrImg(rows, px){
   return cv.toDataURL("image/png");
 }
 
+/* ออเดอร์ใบที่เปิดหน้ารับเงินอยู่ — เก็บไว้เพราะข้อความ "สรุปออเดอร์" ต้องใช้รายการสินค้า
+   ซึ่งฝั่งชีทไม่ได้ส่งมากับข้อมูลการชำระเงิน (คนละเรื่องกัน ไม่ควรผูกติดกัน) */
+var PAY_ORD = null;
+
+/* ชื่อธนาคารในชีทเขียนได้หลายแบบ — "ไทยพาณิชย์ (SCB)" · "SCB" · "ธนาคารกรุงศรีอยุธยา"
+   จึงจับด้วยคำสำคัญ ไม่ใช่เทียบทั้งสตริง  จับไม่ได้ = ไม่มีไอคอน ไม่ใช่ไอคอนมั่ว */
+var BANK_MATCH = [
+  { re: /ไทยพาณิชย์|scb/i,   key: "scb" },
+  { re: /กรุงศรี|krungsri/i, key: "krungsri" }
+];
+
+function bankIc(name){
+  if(typeof BANK_ICONS === "undefined") return "";
+  for(var i = 0; i < BANK_MATCH.length; i++){
+    if(BANK_MATCH[i].re.test(String(name || ""))){
+      var src = BANK_ICONS[BANK_MATCH[i].key];
+      if(src) return '<img class="bankic" src="' + src + '" alt="">';
+    }
+  }
+  return "";
+}
+
 function openPay(o){
+  PAY_ORD = o;
   openModal("รับเงิน — " + o.no, '<div class="hint">กำลังอ่านบัญชีและยอด…</div>');
   call("payAsk", [o.no], drawPay, function(m){
     if(!$("#m-body")) return;
@@ -2772,10 +2795,16 @@ function drawPay(p){
   }else{
     if(p.acct.drift) h += '<div class="warn">' + esc(p.acct.drift) + '</div>';
     h += '<div class="subhd">โอนเข้าบัญชีนี้ (' + esc(p.acct.which) + ')</div>';
-    h += '<div class="mrow"><b>' + esc(p.acct.bank) + '</b><br>'
+    h += '<div class="mrow bankrow">' + bankIc(p.acct.bank)
+       + '<div><b>' + esc(p.acct.bank) + '</b><br>'
        + esc(p.acct.acct) + '<br><span class="hint" style="display:inline">'
-       + esc(p.acct.name) + '</span></div>';
+       + esc(p.acct.name) + '</span></div></div>';
 
+    if(p.acct.link){
+      /* เปิดแท็บใหม่ ไม่ใช่ทับหน้าแอป — พนักงานกำลังคีย์งานค้างอยู่ */
+      h += '<a class="btn ghost" href="' + esc(p.acct.link) + '" target="_blank" rel="noopener">'
+         + 'เปิดแอพธนาคาร</a>';
+    }
     if(p.qr){
       h += '<div style="text-align:center;margin:12px 0">'
          /* วาดใหญ่กว่าที่โชว์ตั้งใจ — คนกดค้างบันทึกรูปไปส่งในแชท ปลายทางจะได้ไม่แตก
@@ -2791,7 +2820,16 @@ function drawPay(p){
       h += '<div class="warn">ไม่มี QR ให้สแกน — ' + esc(p.qrWhy) + '</div>';
     }
 
-    h += '<button class="btn" id="py-copy">คัดลอกข้อความเรียกเก็บเงิน</button>';
+    /* สองปุ่ม เพราะสองสถานการณ์จริงที่ต่างกัน
+         ใบใหม่ ลูกค้ายังไม่เคยเห็นรายการ  -> ส่งสรุปออเดอร์พร้อมวิธีโอนไปทีเดียว
+         ใบเก่า คุยกันไปแล้ว มาทวงเงินอย่างเดียว -> ส่งแต่วิธีโอน ไม่ต้องยาว */
+    h += '<button class="btn" id="py-copy2">คัดลอกสรุปออเดอร์ + วิธีโอน</button>';
+    h += '<button class="btn ghost" id="py-copy">คัดลอกเฉพาะวิธีโอน</button>';
+    /* บอกให้ชัดว่าทำไมถึงได้บัญชีนี้ และแก้ที่ไหนถ้าผิด — พนักงานที่เห็นบัญชีผิด
+       แล้วไม่รู้ว่าแก้ตรงไหน จะไปพิมพ์เลขบัญชีเองในแชท ซึ่งพิมพ์ผิดได้ */
+    h += '<div class="hint">ระบบเลือกช่องทาง “' + esc(p.acct.which) + '” ให้เอง '
+       + 'ตามช่อง VAT ของออเดอร์ใบนี้ — ถ้าผิด ให้แก้ VAT ที่ปุ่ม ✏️ แก้รายการ '
+       + 'แล้วเปิดหน้านี้ใหม่ ยอดจะเปลี่ยนตามด้วย</div>';
     h += '<pre class="paymsg" id="py-msg">' + esc(p.msg) + '</pre>';
   }
 
@@ -2820,7 +2858,14 @@ function drawPay(p){
 
 function payBind(p){
   var c = $("#py-copy");
-  if(c) c.onclick = function(){ copyText(p.msg, "คัดลอกข้อความแล้ว เอาไปวางในแชทได้เลย") };
+  if(c) c.onclick = function(){ copyText(p.msg, "คัดลอกวิธีโอนแล้ว เอาไปวางในแชทได้เลย") };
+
+  var c2 = $("#py-copy2");
+  if(c2) c2.onclick = function(){
+    var head = PAY_ORD ? orderMsg(PAY_ORD) : "";
+    copyText(head ? head + "\n\n" + p.msg : p.msg,
+      "คัดลอกสรุปออเดอร์พร้อมวิธีโอนแล้ว");
+  };
 
   $$("#py-slips [data-sok]").forEach(function(b){
     b.onclick = function(){ paySetSlip(p, b.getAttribute("data-sok"), "ยืนยันแล้ว", b) };
@@ -2949,6 +2994,68 @@ function section_(title, rows){
   return '<div class="card"><div class="subhd" style="margin-top:0">' + esc(title) + '</div>' + rows + '</div>';
 }
 
+
+/* ------------------------------------------- ส่งออกหลักฐานการโอนเป็น Excel
+
+   บัญชีทำงานเป็นรอบเดือน ไม่ได้ตามดูทีละใบ ตารางทั้งเดือนไฟล์เดียวจึงตรงกับงานจริง
+   ในไฟล์มีลิงก์เปิดรูปสลิปแต่ละใบ บัญชีกดจากใน Excel ได้เลย ไม่ต้องขอไฟล์เพิ่ม   */
+
+function b64Blob_(dataUrl){
+  var i = dataUrl.indexOf(",");
+  var head = dataUrl.slice(0, i);
+  var mime = (/data:([^;]+)/.exec(head) || [])[1] || "application/octet-stream";
+  var bin = atob(dataUrl.slice(i + 1));
+  var arr = new Uint8Array(bin.length);
+  for(var k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k);
+  return new Blob([arr], { type: mime });
+}
+
+function drawSlipXl(){
+  var box = $("#slip-xl");
+  if(!box) return;
+  call("slipMonths", [], function(r){
+    if(!$("#slip-xl")) return;
+    var months = (r && r.months) || [];
+    if(!months.length){
+      box.innerHTML = '<div class="empty" style="padding:16px 8px"><b>ยังไม่มีสลิปในระบบ</b>'
+        + 'แนบสลิปจากปุ่ม 💰 ที่แถวออเดอร์ก่อน แล้วค่อยกลับมาโหลดไฟล์</div>';
+      return;
+    }
+    box.innerHTML = '<div class="fld"><label>เลือกเดือน</label><select id="sx-ym">'
+      + '<option value="">ทุกเดือน (' + r.total + ' ใบ)</option>'
+      + months.map(function(m){ return '<option value="' + esc(m) + '">' + esc(m) + '</option>' }).join("")
+      + '</select></div>'
+      + '<button class="btn" id="sx-go">โหลดไฟล์ Excel</button>'
+      + '<div id="sx-say"></div>';
+
+    $("#sx-go").onclick = function(){
+      var b = $("#sx-go"), ym = $("#sx-ym").value;
+      b.disabled = true; b.textContent = "กำลังสร้างไฟล์…";
+      call("exportSlips", [ym], function(res){
+        b.disabled = false; b.textContent = "โหลดไฟล์ Excel";
+        try{
+          var href = URL.createObjectURL(b64Blob_(res.data));
+          var a = document.createElement("a");
+          a.href = href; a.download = res.name;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function(){ URL.revokeObjectURL(href) }, 4000);
+          $("#sx-say").innerHTML = '<div class="ok-note">โหลดแล้ว ' + res.count
+            + ' บรรทัด · ดูในโฟลเดอร์ดาวน์โหลด</div>';
+        }catch(e){
+          /* บันทึกไม่ได้ ต้องบอก ไม่ใช่เงียบแล้วปล่อยให้ไปหาไฟล์ที่ไม่มีอยู่ */
+          $("#sx-say").innerHTML = '<div class="stop">เครื่องนี้บันทึกไฟล์ไม่ได้<br>'
+            + esc(e.message || e) + '</div>';
+        }
+      }, function(m){
+        b.disabled = false; b.textContent = "โหลดไฟล์ Excel";
+        $("#sx-say").innerHTML = '<div class="stop">' + esc(m) + '</div>';
+      });
+    };
+  }, function(m){
+    if($("#slip-xl")) box.innerHTML = '<div class="stop">อ่านรายการสลิปไม่ได้<br>' + esc(m) + '</div>';
+  });
+}
+
 function loadSummary(){
   /* ปุ่มช่วงเวลาวาดครั้งเดียว กดสลับแล้วคำนวณจากข้อมูลชุดเดิม ไม่ต้องยิงชีทซ้ำ */
   if (!$("#sum-range").innerHTML){
@@ -2966,6 +3073,7 @@ function loadSummary(){
   }
   /* วาดที่ตั้งลายเซ็นทุกครั้งที่เข้าหน้านี้ ไม่ผูกกับว่ามีออเดอร์ในช่วงที่เลือกหรือไม่ */
   drawSigSettings();
+  drawSlipXl();
   drawAlerts();
   if (SUM_CACHE) { drawSummary(SUM_CACHE); drawDue(SUM_CACHE); return; }
   $("#summary").innerHTML = '<div class="load">กำลังโหลด…</div>';

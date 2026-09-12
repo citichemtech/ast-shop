@@ -337,7 +337,13 @@ function blob_(data, type, name, opts) {
     getName: function () { return b._name; },
     setName: function (n) { b._name = n; return b; },
     getContentType: function () { return b._type; },
+    setContentType: function (t) { b._type = t; return b; },
     getDataAsString: function () { return String(b._data); },
+    /* ของจริงคืนไบต์เสมอ ไม่ว่าตอนสร้างจะส่งข้อความหรือไบต์เข้ามา
+       ถ้าจำลองให้คืนข้อความ ตัว zip กับ base64 จะได้ผลคนละอย่างกับของจริง */
+    getBytes: function () {
+      return Buffer.isBuffer(b._data) ? b._data : Buffer.from(String(b._data), 'utf8');
+    },
     getAs: function (want) {
       /* ตัวแปลงของ Google ไม่ได้ทำงานทุกกรณี — เปิดสวิตช์ให้ข้อสอบทดสอบทางที่แปลงไม่ได้ */
       if (opts && opts.noPdf) throw new Error('Converting from image/png to application/pdf is not supported.');
@@ -477,6 +483,9 @@ function load(fixture, opts) {
       formatDate: function (d, tz, fmt) {
         var p = function (n) { return n < 10 ? '0' + n : '' + n; };
         if (fmt === 'yyyy-MM') return d.getFullYear() + '-' + p(d.getMonth() + 1);
+        if (fmt === 'yyyy-MM-dd') {
+          return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+        }
         if (fmt === 'yyyy-MM-dd HH:mm') {
           return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
             ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
@@ -492,6 +501,40 @@ function load(fixture, opts) {
         throw new Error('formatDate: ยังไม่ได้ทำรูปแบบ ' + fmt);
       },
       base64Decode: function (b64) { return Buffer.from(String(b64), 'base64'); },
+      base64Encode: function (bytes) { return Buffer.from(bytes).toString('base64'); },
+      /* zip จริง แบบไม่บีบอัด (store) — พอให้ไฟล์ .xlsx ที่ออกมาเปิดได้จริง
+         ถ้าจำลองแบบขอไปที ข้อสอบจะผ่านทั้งที่ไฟล์ที่ส่งให้บัญชีเปิดไม่ขึ้น */
+      zip: function (blobs) {
+        var zlib = require('zlib');
+        var locals = [], central = [], off = 0;
+        blobs.forEach(function (b) {
+          var name = Buffer.from(String(b.getName()), 'utf8');
+          var data = Buffer.from(b.getBytes());
+          var crc = zlib.crc32(data) >>> 0;
+          var lh = Buffer.alloc(30);
+          lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0800, 6);
+          lh.writeUInt16LE(0, 8); lh.writeUInt16LE(0, 10); lh.writeUInt16LE(0, 12);
+          lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(data.length, 18);
+          lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(name.length, 26);
+          lh.writeUInt16LE(0, 28);
+          locals.push(lh, name, data);
+          var ch = Buffer.alloc(46);
+          ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
+          ch.writeUInt16LE(0x0800, 8); ch.writeUInt16LE(0, 10);
+          ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(data.length, 20);
+          ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(name.length, 28);
+          ch.writeUInt32LE(off, 42);
+          central.push(ch, name);
+          off += lh.length + name.length + data.length;
+        });
+        var body = Buffer.concat(locals);
+        var dir = Buffer.concat(central);
+        var end = Buffer.alloc(22);
+        end.writeUInt32LE(0x06054b50, 0);
+        end.writeUInt16LE(blobs.length, 8); end.writeUInt16LE(blobs.length, 10);
+        end.writeUInt32LE(dir.length, 12); end.writeUInt32LE(body.length, 16);
+        return blob_(Buffer.concat([body, dir, end]), 'application/zip', 'archive.zip', opts);
+      },
       newBlob: function (data, type, name) { return blob_(data, type, name, opts); }
     },
     DriveApp: drive.app,

@@ -50,7 +50,7 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
     args: ['--no-sandbox']
   });
-  var page = await browser.newPage({ viewport: { width: 390, height: 820 } });
+  var page = await browser.newPage({ viewport: { width: 390, height: 820 }, acceptDownloads: true });
   var errors = [];
   page.on('pageerror', function (e) { errors.push(e.message); });
   /* ฟอนต์ Sarabun โหลดจากอินเทอร์เน็ต เครื่องที่รันข้อสอบต่อเน็ตออกไม่ได้
@@ -3469,14 +3469,17 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     return {
       no: o.no, net: o.net,
       bank: ($('#m-body .mrow') || {}).innerText || '',
+      bankIc: !!$('#m-body .bankic'),
       hasQr: !!img,
       src10: img ? img.src.slice(0, 22) : '',
+      icSrc: ($('#m-body .bankic') || {}).src || '',
       msg: ($('#py-msg') || {}).textContent || '',
       /* ยืนยันว่ารูปที่วาดมาจากตารางจุดชุดเดียวกับที่ฝั่งเซิร์ฟเวอร์ส่งมา */
       rows: PAY_SRV.qrModules_(PAY_SRV.ppPayload_('0105558055790', o.net)).length
     };
   });
   truthy('ใบมี VAT ขึ้นบัญชีบริษัท', pv1.bank.indexOf('ไทยพาณิชย์') > -1);
+  truthy('มีไอคอนธนาคารข้างเลขบัญชี', pv1.bankIc);
   truthy('เลขบัญชีจัดกลุ่มแบบ SCB', pv1.bank.indexOf('431-039435-5') > -1);
   truthy('มี QR ให้สแกน', pv1.hasQr);
   eq('QR เป็นรูปจริง กดค้างบันทึกได้', pv1.src10, 'data:image/png;base64,');
@@ -3493,10 +3496,13 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     await new Promise(function (r) { setTimeout(r, 500) });
     return { bank: ($('#m-body .mrow') || {}).innerText || '',
              msg: ($('#py-msg') || {}).textContent || '',
+             icSrc: ($('#m-body .bankic') || {}).src || '',
              qr: !!$('.qr'), warnBox: !!$('#m-body .warn'),
              note: ($('#m-body .hint') || {}).innerText || '' };
   });
   truthy('ขึ้นอีกบัญชีหนึ่ง', pv2.bank.indexOf('ไทยพาณิชย์') < 0 && pv2.bank.length > 5);
+  /* ไอคอนต้องเปลี่ยนตามชื่อธนาคาร ไม่ใช่ค้างเป็นอันเดิมของอีกช่องทาง */
+  truthy('และไอคอนธนาคารเป็นคนละอันกับใบมี VAT', !!pv2.icSrc && pv2.icSrc !== pv1.icSrc);
   truthy('และบอกชัดว่าไม่มีใบกำกับภาษี', pv2.msg.indexOf('ไม่มีใบกำกับภาษี') > -1);
 
   console.log('\n   ช่องนี้ตั้งไว้ว่าไม่ใช้ QR — ต้องไม่ขึ้นกล่องเตือนทวงทุกใบ');
@@ -3558,9 +3564,72 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ออเดอร์กลายเป็นชำระแล้ว', pv5.status, 'ชำระแล้ว');
   eq('และหลุดออกจากรายการรอตรวจไปหนึ่งใบ', pv5.waiting, 1);
 
+  console.log('\n   สองปุ่มคัดลอก — ทั้งใบ กับเฉพาะวิธีโอน');
+  var cp = await page.evaluate(async function () {
+    closeModal();
+    var o = (ORDERS || []).filter(function (x) { return x.vat === 'รับ VAT' })[0];
+    openPay(o);
+    await new Promise(function (r) { setTimeout(r, 500) });
+    var got = [];
+    var real = window.copyText;
+    window.copyText = function (t) { got.push(t) };
+    $('#py-copy2').click();
+    $('#py-copy').click();
+    window.copyText = real;
+    return { full: got[0] || '', pay: got[1] || '', no: o.no };
+  });
+  truthy('ปุ่มรวมมีทั้งรายการสินค้าและวิธีโอน',
+    cp.full.indexOf('ธนาคาร') > -1 && cp.full.length > cp.pay.length);
+  truthy('ปุ่มรวมมีเลขออเดอร์', cp.full.indexOf(cp.no) > -1);
+  truthy('ปุ่มเฉพาะวิธีโอนสั้นกว่า และยังมีเลขบัญชีครบ',
+    cp.pay.indexOf('เลขบัญชี') > -1);
+
+  console.log('\n   ลิงก์เปิดแอพธนาคาร');
+  var pv7 = await page.evaluate(async function () {
+    closeModal();
+    var o = (ORDERS || []).filter(function (x) { return x.vat === 'รับ VAT' })[0];
+    openPay(o);
+    await new Promise(function (r) { setTimeout(r, 500) });
+    var a = $$('#m-body a').filter(function (x) { return /เปิดแอพธนาคาร/.test(x.textContent) })[0];
+    return { has: !!a, href: a ? a.getAttribute('href') : '',
+             blank: a ? a.getAttribute('target') : '',
+             inMsg: (($('#py-msg') || {}).textContent || '').indexOf('เปิดแอพธนาคาร') > -1,
+             note: ($$('#m-body .hint').map(function (x) { return x.innerText }).join(' ')) };
+  });
+  truthy('มีปุ่มเปิดแอพธนาคารเมื่อกรอกลิงก์ไว้', pv7.has);
+  truthy('ลิงก์เป็น https', /^https:\/\//.test(pv7.href));
+  eq('เปิดแท็บใหม่ ไม่ทับหน้าที่คีย์ค้างอยู่', pv7.blank, '_blank');
+  truthy('และลิงก์อยู่ในข้อความที่คัดลอกส่งลูกค้าด้วย', pv7.inMsg);
+  truthy('บอกว่าใช้ช่องทางไหนและแก้ที่ไหนถ้าผิด',
+    pv7.note.indexOf('ตามช่อง VAT ของออเดอร์') > -1);
+
+  console.log('\n   โหลดตารางหลักฐานการโอนเป็นไฟล์');
+  await page.evaluate(function () { closeModal() });
+  await page.click('.tabs button[data-go="sum"]');
+  await page.waitForTimeout(900);
+  var xl = await page.evaluate(function () {
+    return { box: !!$('#sx-go'), months: $('#sx-ym') ? $('#sx-ym').options.length : 0 };
+  });
+  truthy('หน้าสรุปยอดมีปุ่มโหลดไฟล์', xl.box);
+  truthy('มีเดือนให้เลือก (ทุกเดือน + เดือนที่มีสลิปจริง)', xl.months >= 2);
+
+  var dl = page.waitForEvent('download', { timeout: 8000 });
+  await page.click('#sx-go');
+  var got = await dl;
+  truthy('กดแล้วไฟล์ถูกบันทึกลงเครื่องจริง', !!got.suggestedFilename());
+  /* ชื่อต้องเป็นอังกฤษล้วน ไม่งั้น Chrome ทิ้งชื่อทั้งชื่อ เหลือแค่ "download" */
+  eq('ชื่อไฟล์มาถึงครบ ไม่ถูกเบราว์เซอร์ทิ้ง',
+     /^AST-slip-.*\.xlsx$/.test(got.suggestedFilename()), true);
+  var say = await page.evaluate(function () { return ($('#sx-say') || {}).innerText || '' });
+  truthy('และบอกว่าโหลดกี่บรรทัด', say.indexOf('บรรทัด') > -1);
+
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(400);
+
   console.log('\n   ป้ายสลิปรอตรวจต้องขึ้นในรายการออเดอร์');
   var pv6 = await page.evaluate(async function () {
     closeModal();
+    await new Promise(function (r) { setTimeout(r, 100) });
     renderOrders();
     await new Promise(function (r) { setTimeout(r, 200) });
     return { badge: ($('#list') || {}).innerText.indexOf('สลิปรอตรวจ') > -1,

@@ -237,6 +237,30 @@ truthy('ใบไม่มี VAT ไม่ไปสัญญาว่าออ�
 truthy('ทั้งสองแบบขอสลิปกลับมา', ask3.msg.indexOf('สลิป') > -1 && ask3b.msg.indexOf('สลิป') > -1);
 truthy('มีเลขออเดอร์กำกับ กันวางผิดแชท', ask3.msg.indexOf(noVat3) > -1);
 
+console.log('\n   ลิงก์เปิดแอพธนาคาร — เจ้าของร้านกรอกเอง แยกคนละช่องทาง');
+var s4b = start({
+  'ลิงก์แอพธนาคาร บิลมี VAT': 'https://www.scb.co.th/th/personal-banking.html',
+  'ธนาคารที่รับเงิน บิลไม่มี VAT': 'กรุงเทพ', 'ชื่อบัญชี บิลไม่มี VAT': 'ทดสอบ',
+  'เลขบัญชี บิลไม่มี VAT': '111-2-33333-4',
+  'ลิงก์แอพธนาคาร บิลไม่มี VAT': 'https://www.bangkokbank.com/th-TH'
+});
+var v4b = s4b.ctx.payAsk(s4b.order({ vat: true }));
+var n4b = s4b.ctx.payAsk(s4b.order({ vat: false }));
+truthy('ใบมี VAT ได้ลิงก์ของช่องทางตัวเอง', v4b.msg.indexOf('scb.co.th') > -1);
+truthy('ใบไม่มี VAT ได้อีกลิงก์', n4b.msg.indexOf('bangkokbank.com') > -1);
+truthy('ไม่เอาลิงก์ของอีกช่องทางมาปน', v4b.msg.indexOf('bangkokbank') < 0);
+truthy('ลิงก์อยู่ใต้เลขบัญชีกับยอด ไม่ใช่แทนที่',
+  v4b.msg.indexOf('เลขบัญชี') < v4b.msg.indexOf('เปิดแอพธนาคาร') &&
+  v4b.msg.indexOf('ยอดที่ต้องโอน') < v4b.msg.indexOf('เปิดแอพธนาคาร'));
+eq('ไม่ได้กรอกลิงก์ = ไม่มีบรรทัดลิงก์เลย', ask3.msg.indexOf('เปิดแอพธนาคาร'), -1);
+
+console.log('\n   ลิงก์นี้ไปโผล่ในแชทลูกค้า จึงรับเฉพาะ http/https');
+var bad4 = start({ 'ลิงก์แอพธนาคาร บิลมี VAT': 'javascript:alert(1)' });
+eq('javascript: ถูกตัดทิ้ง', bad4.ctx.payAsk(bad4.order({ vat: true })).acct.link, '');
+var sch4 = start({ 'ลิงก์แอพธนาคาร บิลมี VAT': 'kplus://transfer' });
+eq('scheme ของแอพก็ไม่รับ เพราะไลน์ทำให้กดไม่ได้อยู่ดี',
+   sch4.ctx.payAsk(sch4.order({ vat: true })).acct.link, '');
+
 /* ============================================ 5. แนบสลิป */
 console.log('\n5. แนบสลิป');
 var PNG1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -349,6 +373,57 @@ s7.ctx.setSlipStatus(fidB7, 'ยืนยันแล้ว', '', false);
 var w7b = s7.ctx.slipsWaiting();
 eq('ตรวจไปแล้วต้องหลุดออกจากรายการรอ', w7b.total, 2);
 eq('และออเดอร์ที่ไม่เหลือใบรอ ต้องไม่มีป้าย', w7b.byOrder[b7], undefined);
+
+/* ============================================ 9. ส่งออกเป็น Excel */
+console.log('\n9. ส่งออกตารางหลักฐานการโอนเป็นไฟล์ Excel');
+
+console.log('\n   ชิ้นส่วนข้างในไฟล์ .xlsx');
+var parts9 = PAY.xlParts_([['หัว', 'ก&ข <c> "d"'], ['AST-26-0001', 12.5]]);
+eq('มีครบห้าชิ้นตามที่ Excel ต้องการ', parts9.map(function (x) { return x.name; }),
+   ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml',
+    'xl/_rels/workbook.xml.rels', 'xl/worksheets/sheet1.xml']);
+var sheet9 = parts9[4].xml;
+truthy('อักขระพิเศษถูก escape ไม่งั้น Excel บอกว่าไฟล์เสียทั้งไฟล์',
+  sheet9.indexOf('ก&amp;ข &lt;c&gt; &quot;d&quot;') > -1);
+truthy('ตัวเลขลงเป็นตัวเลข ไม่ใช่ข้อความ', sheet9.indexOf('<c r="B2"><v>12.5</v></c>') > -1);
+truthy('เลขออเดอร์ลงเป็นข้อความ ไม่งั้น Excel อ่าน AST-26-0001 เป็นสูตรลบ',
+  sheet9.indexOf('<c r="A2" t="inlineStr"><is><t xml:space="preserve">AST-26-0001</t>') > -1);
+eq('อักขระควบคุมถูกตัดทิ้ง (Excel ไม่ยอมเปิดไฟล์ที่มีอักขระพวกนี้)',
+   PAY.xlEsc_('ก' + String.fromCharCode(7) + 'ข'), 'กข');
+eq('คอลัมน์ที่ 27 คือ AA', PAY.xlCol_(27), 'AA');
+
+console.log('\n   ไฟล์จริงที่ออกมา');
+var s9 = start(FILL);
+var a9 = s9.order({ vat: true });
+var net9 = s9.ctx.payAsk(a9).net;
+s9.ctx.addSlip(a9, { data: PNG1, paidAt: '2026-09-10', amount: net9, bank: 'SCB' });
+s9.ctx.addSlip(a9, { data: PNG1, paidAt: '2026-08-20', amount: 100, bank: 'SCB' });
+
+var xl9 = s9.ctx.exportSlips('');
+eq('ชื่อไฟล์บอกว่าเป็นของเดือนไหน', xl9.name, 'AST-slip-all.xlsx');
+eq('เดือนเดียวก็บอกเดือนในชื่อไฟล์', s9.ctx.exportSlips('2026-09').name, 'AST-slip-2026-09.xlsx');
+/* Chrome ทิ้งชื่อไฟล์ทั้งชื่อถ้ามีอักษรไทย ไฟล์จะมาถึงในชื่อ "download" ไม่มีนามสกุล
+   ข้อนี้กันไม่ให้ใครเผลอเปลี่ยนกลับไปเป็นชื่อไทยเพราะอ่านง่ายกว่า */
+truthy('ชื่อไฟล์ต้องเป็นอังกฤษล้วน ไม่งั้นเบราว์เซอร์ทิ้งชื่อทิ้งนามสกุล',
+  /^[\x20-\x7E]+$/.test(xl9.name));
+truthy('ชื่อแท็บข้างในไฟล์ยังเป็นไทยได้ ตรงนั้นไม่มีปัญหา',
+  PAY.xlParts_([['a']])[2].xml.indexOf('หลักฐานการโอน') > -1);
+eq('นับบรรทัดถูก', xl9.count, 2);
+eq('ชนิดไฟล์เป็น xlsx จริง', xl9.mime,
+   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+var bytes9 = Buffer.from(xl9.data.split(',')[1], 'base64');
+eq('ไฟล์ที่ได้เป็น zip จริง (Excel อ่านได้)', bytes9.slice(0, 2).toString(), 'PK');
+truthy('ไฟล์มีเนื้อจริง ไม่ใช่ zip เปล่า', bytes9.length > 1200);
+
+console.log('\n   เลือกเดือนได้ และเดือนที่ไม่มีสลิปต้องบอก ไม่ใช่ส่งไฟล์เปล่า');
+eq('รายการเดือนเรียงใหม่อยู่บน', s9.ctx.slipMonths().months, ['2026-09', '2026-08']);
+eq('กรองเดือนกันยายนได้ใบเดียว', s9.ctx.exportSlips('2026-09').count, 1);
+eq('กรองเดือนสิงหาคมได้ใบเดียว', s9.ctx.exportSlips('2026-08').count, 1);
+throws('เดือนที่ไม่มีสลิป', function () { s9.ctx.exportSlips('2026-01'); }, 'ไม่มีสลิปสักใบ');
+/* ไฟล์เปล่าที่เปิดแล้วว่าง คนจะนึกว่าเดือนนั้นไม่มีใครโอนเงินมาเลย ซึ่งคนละเรื่องกัน */
+var s9b = start(FILL);
+throws('ยังไม่มีสลิปเลยสักใบในระบบ', function () { s9b.ctx.exportSlips(''); }, 'ยังไม่มีสลิป');
+eq('และรายการเดือนต้องว่าง ไม่ใช่เดาเดือนนี้ให้', s9b.ctx.slipMonths().months, []);
 
 /* ============================================ 8. ไม่แตะช่องสูตร */
 console.log('\n8. ไม่มีช่องสูตรถูกเขียนทับแม้แต่ช่องเดียว');

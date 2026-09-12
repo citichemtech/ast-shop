@@ -11,9 +11,13 @@
 ไม่มีข้อมูลลูกค้าจริงอยู่ในไฟล์นี้ ทุกอย่างเป็นข้อมูลสมมติ
 """
 import json
+import os
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 GS = ROOT / "apps-script"
@@ -253,11 +257,12 @@ window.google = { script: { run: (function(){
         var acct = wantVat
           ? { bank:"ไทยพาณิชย์ (SCB)", acct:"431-039435-5",
               name:"บริษัท เคมีคอล อินโนเวชั่น เทคโนโลยี แอนด์ อินสตรูเมนท์ จำกัด",
-              pp:"0105558055790", which:"บิลมี VAT", miss:[] }
+              pp:"0105558055790", which:"บิลมี VAT", miss:[],
+              link:"https://www.scb.co.th/th/personal-banking.html" }
           /* ชุดไม่มี VAT ตั้งเป็นไม่ใช้พร้อมเพย์ ให้ตรงกับที่ร้านตั้งไว้จริง
              พรีวิวจะได้โชว์ทางที่ "ไม่มี QR" ด้วย ไม่ใช่โชว์แต่ทางที่มี */
-          : { bank:"ธนาคารสมมติ", acct:"000-000000-0", name:"ชื่อบัญชีสมมติ",
-              pp:"", which:"บิลไม่มี VAT", miss:[] };
+          : { bank:"กรุงศรีอยุธยา", acct:"000-000000-0", name:"ชื่อบัญชีสมมติ",
+              pp:"", which:"บิลไม่มี VAT", miss:[], link:"" };
         var qr = null, qrWhy = "", qrOff = false;
         if(!acct.pp){
           qrOff = true;
@@ -285,6 +290,7 @@ window.google = { script: { run: (function(){
         var amtTxt = "฿" + Number(o.net).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
         L.push("💰 ยอดที่ต้องโอน " + amtTxt + (wantVat ? " (รวม VAT 7% แล้ว)" : ""));
         L.push("");
+        if(acct.link){ L.push("📲 เปิดแอพธนาคาร: " + acct.link); L.push("") }
         if(wantVat){
           L.push("📌 ออกใบกำกับภาษีได้ค่ะ");
           L.push("หลังโอนชำระเงิน กรุณาส่งสลิปยืนยันการโอน");
@@ -336,6 +342,40 @@ window.google = { script: { run: (function(){
         }
         return { ok:true, no:sp.no, fileId:sp.fileId, status:sp.status,
                  slips: MOCK_SLIPS.filter(function(x){ return x.no === sp.no }).slice().reverse() };
+      });
+    },
+    slipMonths: function(){
+      reply(function(){
+        var seen = {}, out = [];
+        MOCK_SLIPS.forEach(function(x){
+          var ym = String(x.paidAt || x.at).slice(0, 7);
+          if(ym.length === 7 && !seen[ym]){ seen[ym] = 1; out.push(ym) }
+        });
+        out.sort(); out.reverse();
+        return { months: out, total: MOCK_SLIPS.length };
+      });
+    },
+    /* ของจริงคืนไฟล์ .xlsx ที่ Apps Script ประกอบด้วย Utilities.zip
+       ในเบราว์เซอร์เปล่า ๆ บีบ zip เองไม่ได้ พรีวิวจึงคืนเป็นไฟล์ข้อความแทน
+       เส้นทางที่พรีวิวพิสูจน์ได้คือ "กดแล้วไฟล์ถูกบันทึกลงเครื่องไหม"
+       ส่วนหน้าตาข้างในไฟล์ .xlsx มีข้อสอบฝั่งชีทคุมไว้ใน t_pay.js แล้ว */
+    exportSlips: function(ym){
+      reply(function(){
+        var want = String(ym || "");
+        var rows = MOCK_SLIPS.filter(function(x){
+          return !want || String(x.paidAt || x.at).slice(0, 7) === want;
+        });
+        if(!rows.length){
+          throw new Error(want ? "เดือน " + want + " ไม่มีสลิปสักใบ จึงไม่มีอะไรให้ส่งออก"
+                               : "ยังไม่มีสลิปในระบบเลย");
+        }
+        var txt = ["เลขที่ออเดอร์\\tยอดตามสลิป\\tสถานะ"].concat(rows.map(function(x){
+          return x.no + "\\t" + x.amount + "\\t" + x.status;
+        })).join("\\n");
+        /* ชื่ออังกฤษล้วนเหมือนของจริง — Chrome ทิ้งชื่อไฟล์ที่มีอักษรไทยทั้งชื่อ */
+        return { ok:true, name:"AST-slip-" + (want || "all") + ".txt",
+                 mime:"text/plain", count:rows.length, ym:want,
+                 data:"data:text/plain;base64," + btoa(unescape(encodeURIComponent(txt))) };
       });
     },
     slipsWaiting: function(){
@@ -874,6 +914,33 @@ window.google = { script: { run: (function(){
 """
 
 
+def check_scripts(html):
+    """คอมไพล์ทุกก้อน <script> ด้วย node ก่อนเขียนไฟล์
+
+    เคยเสีย escape ไปหนึ่งชั้นในตัวจำลอง (\\t ในซอร์ส Python กลายเป็นแท็บจริง)
+    หน้าเว็บบูตไม่ขึ้นทั้งหน้า แต่สิ่งที่เห็นคือข้อสอบเบราว์เซอร์ค้างสี่นาที
+    แล้วบอกแค่ว่า "รอ #form ไม่เจอ" ซึ่งไม่ได้ชี้ว่าพังตรงไหนเลย
+    ตรวจตรงนี้เสียเวลาไม่ถึงวินาที และบอกบรรทัดที่ผิดให้ตรง ๆ
+    """
+    node = shutil.which("node")
+    if not node:
+        return          # เครื่องที่ไม่มี node ก็ยังสร้างพรีวิวได้ แค่ไม่มีด่านนี้
+    blocks = re.findall(r"<script>([\s\S]*?)</script>", html)
+    for i, code in enumerate(blocks):
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                         encoding="utf-8") as fh:
+            fh.write(code)
+            path = fh.name
+        try:
+            r = subprocess.run([node, "--check", path], capture_output=True, text=True)
+            if r.returncode:
+                head = code.strip().split("\n")[0][:70]
+                sys.exit("สคริปต์ก้อนที่ %d ในหน้าพรีวิวคอมไพล์ไม่ผ่าน\n  ขึ้นต้นด้วย: %s\n%s"
+                         % (i, head, r.stderr.strip()))
+        finally:
+            os.unlink(path)
+
+
 def main():
     out = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "out" / "preview.html"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -934,6 +1001,7 @@ def main():
                 '<meta name="viewport" content="width=device-width, initial-scale=1">'
                 '<title>ตัวอย่างหน้าคีย์ออเดอร์ (ข้อมูลสมมติ)</title></head><body>'
                 + mock + page + '</body></html>')
+    check_scripts(html)
     out.write_text(html, encoding="utf-8")
     print("เขียน %s (%.0f KB)" % (out, len(html.encode("utf-8")) / 1024))
 

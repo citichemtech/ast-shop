@@ -559,6 +559,18 @@ function tel_(v) {
  * เดาผิดหนึ่งครั้งคือเงินลูกค้าโอนเข้าบัญชีคนอื่นแล้วตามคืนแทบไม่ได้
  * ยกเว้นกรณีเดียวที่ไม่กำกวม — เบอร์มือถือเหลือ 9 หลักเพราะชีทกินศูนย์หน้าไป
  */
+/**
+ * ลิงก์ที่จะถูกส่งต่อไปอยู่ในแชทของลูกค้า — รับเฉพาะ http/https
+ *
+ * ข้อความนี้ออกจากมือร้านไปอยู่หน้าจอคนนอก ลิงก์แบบ javascript: หรือ data:
+ * ไม่ควรมีทางหลุดออกไปได้เลยแม้จะมาจากช่องที่เจ้าของร้านกรอกเอง
+ * (และ scheme แปลก ๆ อย่าง kplus:// ก็ไม่มีประโยชน์ เพราะไลน์ไม่ทำให้กดได้อยู่ดี)
+ */
+function webLink_(v) {
+  var t = String(v == null ? '' : v).trim();
+  return /^https?:\/\/[^\s]+$/i.test(t) ? t : '';
+}
+
 function ppRaw_(v) {
   var t = String(v == null ? '' : v).trim().replace(/[^\d]/g, '');
   return /^\d{9}$/.test(t) ? '0' + t : t;
@@ -590,8 +602,8 @@ function appCfg_() {
        ชุดที่ไม่มี VAT เว้นว่างไว้ในโค้ด ให้ไปกรอกในชีทเอา
        เป็นบัญชีชื่อบุคคล ไม่ควรอยู่ในไฟล์โค้ดที่เปิดดูได้จากข้างนอก */
     pay: {
-      vat: { bank: '', name: '', acct: '', pp: '' },
-      novat: { bank: '', name: '', acct: '', pp: '' }
+      vat: { bank: '', name: '', acct: '', pp: '', link: '' },
+      novat: { bank: '', name: '', acct: '', pp: '', link: '' }
     },
     quoteDays: 7
   };
@@ -635,6 +647,8 @@ function appCfg_() {
     else if (k === 'ชื่อบัญชี บิลไม่มี VAT') out.pay.novat.name = String(val || '');
     else if (k === 'เลขบัญชี บิลไม่มี VAT') out.pay.novat.acct = String(val || '');
     else if (k === 'พร้อมเพย์ บิลไม่มี VAT') out.pay.novat.pp = ppRaw_(val);
+    else if (k === 'ลิงก์แอพธนาคาร บิลมี VAT') out.pay.vat.link = webLink_(val);
+    else if (k === 'ลิงก์แอพธนาคาร บิลไม่มี VAT') out.pay.novat.link = webLink_(val);
     else if (k === 'ข้อความขอบคุณท้ายหัวเอกสาร') out.thanks = String(val || '');
     else if (k === 'ข้อความในช่องหมายเหตุ') out.docTerms = String(val || '');
     else if (k === 'ราคาสินค้ารวม VAT แล้วหรือยัง') out.vatMode = /ไม่|ยัง/.test(String(val || '')) ? 'excl' : 'incl';
