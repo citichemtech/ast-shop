@@ -125,6 +125,7 @@ var MOCK_ORDERS = __ORDERS__;
 var MOCK_DOCS = [];       /* ทะเบียนเอกสารที่ออกไปแล้วในรอบนี้ */
 var MOCK_MONTHS = {};     /* ยอดที่กรอกเองในชีท สรุปเดือน คีย์เป็น "ปี-เดือน|ช่องทาง" */
 var MOCK_SIGN = {};       /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ (ของจริงอยู่ในชีท ตั้งค่าแอป) */
+var MOCK_SLIPS = [];      /* สลิปที่แนบในรอบนี้ (ของจริงอยู่ในชีท หลักฐานการชำระเงิน) */
 window.SENT = [];
 window.google = { script: { run: (function(){
   var ok=null, bad=null;
@@ -239,6 +240,107 @@ window.google = { script: { run: (function(){
                    sentAt:d.sentAt||"", hasSnap:true, revised:rv.length,
                    lastRevise: rv.length ? rv[rv.length-1].replace(/^\[|\]$/g,"") : "" };
         }).reverse();
+      });
+    },
+    /* ---------------- รับเงิน ----------------
+       บัญชีสองชุดล้อของจริง ชุดไม่มี VAT ในระบบจริงเว้นว่างไว้ให้กรอกในชีท
+       ที่นี่ใส่ค่าสมมติเพื่อให้กดดูหน้าจอได้ครบทาง (ไม่ใช่เลขบัญชีจริงของร้าน) */
+    payAsk: function(orderNo){
+      reply(function(){
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === String(orderNo) })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + orderNo + " ในชีท");
+        var wantVat = String(o.vat||"").indexOf("ไม่") < 0 && String(o.vat||"").indexOf("รับ") > -1;
+        var acct = wantVat
+          ? { bank:"ไทยพาณิชย์ (SCB)", acct:"431-039435-5",
+              name:"บริษัท เคมีคอล อินโนเวชั่น เทคโนโลยี แอนด์ อินสตรูเมนท์ จำกัด",
+              pp:"0105558055790", which:"บิลมี VAT", miss:[] }
+          : { bank:"ธนาคารสมมติ", acct:"000-000000-0", name:"ชื่อบัญชีสมมติ",
+              pp:"123456789012345", which:"บิลไม่มี VAT", miss:[] };
+        var qr = null, qrWhy = "";
+        if(Number(o.net) > 0){
+          var payload = PAY_SRV.ppPayload_(acct.pp, o.net);
+          var t = PAY_SRV.ppTarget_(acct.pp);
+          qr = { rows: PAY_SRV.qrModules_(payload), payload: payload,
+                 target: t.val, kind: t.kind, amount: Number(o.net) };
+        }else{
+          qrWhy = "ออเดอร์ใบนี้ยอดเป็นศูนย์ จึงทำ QR เรียกเก็บเงินไม่ได้";
+        }
+        var L = ["ออเดอร์ " + o.no + (o.cust ? " · " + o.cust : ""), ""];
+        if(!wantVat){
+          L.push("รบกวนแจ้งเพื่อความเข้าใจตรงกันนะคะ");
+          L.push("ราคาสินค้ายังไม่รวม VAT และไม่มีใบกำกับภาษีค่ะ");
+          L.push("");
+        }
+        L.push("🏦 ธนาคาร: " + acct.bank);
+        L.push("🔢 เลขบัญชี: " + acct.acct);
+        L.push("ชื่อบัญชี: " + acct.name);
+        L.push("");
+        /* ใส่จุลภาคให้เหมือน money_ ตัวจริงฝั่งชีท ไม่งั้นพรีวิวจะสอนเราผิด
+           ว่าข้อความที่ลูกค้าได้หน้าตาเป็นแบบไม่มีจุลภาค */
+        var amtTxt = "฿" + Number(o.net).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        L.push("💰 ยอดที่ต้องโอน " + amtTxt + (wantVat ? " (รวม VAT 7% แล้ว)" : ""));
+        L.push("");
+        if(wantVat){
+          L.push("📌 ออกใบกำกับภาษีได้ค่ะ");
+          L.push("หลังโอนชำระเงิน กรุณาส่งสลิปยืนยันการโอน");
+          L.push("พร้อมแจ้งชื่อ-ที่อยู่สำหรับออกใบกำกับภาษีด้วยนะคะ");
+          L.push("ขอบคุณค่ะ 🙏");
+        }else{
+          L.push("✅️▶️ โอนแล้วส่งสลิปยืนยันได้เลยค่ะ 🙏");
+        }
+        return { no:o.no, cust:o.cust, date:o.date, net:Number(o.net),
+                 status:o.status, vat:o.vat, wantVat:wantVat, acct:acct,
+                 qr:qr, qrWhy:qrWhy, msg:L.join("\\n"), miss:[],
+                 slips: MOCK_SLIPS.filter(function(x){ return x.no === o.no }).slice().reverse() };
+      });
+    },
+    addSlip: function(orderNo, p){
+      reply(function(){
+        p = p || {};
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === String(orderNo) })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + orderNo + " ในชีท");
+        var m = /^data:([^;]+);base64,/.exec(String(p.data||""));
+        if(!m) throw new Error("ยังไม่ได้เลือกไฟล์สลิป หรือไฟล์อ่านไม่ออก");
+        var okMime = /^(image\\/(jpeg|jpg|png|webp|heic|heif)|application\\/pdf)$/.test(m[1].toLowerCase());
+        if(!okMime) throw new Error("ไฟล์ชนิด " + m[1] + " แนบไม่ได้ — รับเฉพาะรูปกับ PDF");
+        var amt = Number(p.amount||0);
+        var fid = "mock-slip-" + (MOCK_SLIPS.length + 1);
+        MOCK_SLIPS.push({ no:o.no, at:new Date().toISOString(), paidAt:p.paidAt||"",
+          amount:amt, bank:p.bank||"", fileName:"สลิป " + o.no + " " + fid + ".jpg",
+          fileUrl:"https://drive.google.com/file/d/" + fid + "/view",
+          by:MOCK_BOOT.staff, status:"รอตรวจสอบ", checkBy:"", checkAt:"", note:"", fileId:fid });
+        var warn = (amt > 0 && Math.abs(amt - Number(o.net)) >= 0.01)
+          ? "ยอดในสลิป ฿" + amt.toFixed(2) + " ไม่เท่ายอดออเดอร์ ฿" + Number(o.net).toFixed(2) : "";
+        return { ok:true, no:o.no, fileId:fid, warn:warn,
+                 fileName:"สลิป " + o.no + " " + fid + ".jpg",
+                 fileUrl:"https://drive.google.com/file/d/" + fid + "/view",
+                 slips: MOCK_SLIPS.filter(function(x){ return x.no === o.no }).slice().reverse() };
+      });
+    },
+    setSlipStatus: function(fileId, status, why, alsoPaid){
+      reply(function(){
+        var sp = MOCK_SLIPS.filter(function(x){ return x.fileId === String(fileId) })[0];
+        if(!sp) throw new Error("ไม่พบสลิปใบนี้ในชีท หลักฐานการชำระเงิน");
+        if(["รอตรวจสอบ","ยืนยันแล้ว","ไม่ใช่ของใบนี้"].indexOf(String(status)) < 0){
+          throw new Error("สถานะสลิป \\"" + status + "\\" ไม่มีในตัวเลือกของชีท ตั้งค่า");
+        }
+        sp.status = String(status); sp.checkBy = MOCK_BOOT.staff;
+        sp.checkAt = new Date().toISOString(); sp.note = String(why||"");
+        if(alsoPaid && sp.status === "ยืนยันแล้ว"){
+          MOCK_ORDERS.forEach(function(o){ if(o.no === sp.no) o.status = "ชำระแล้ว" });
+        }
+        return { ok:true, no:sp.no, fileId:sp.fileId, status:sp.status,
+                 slips: MOCK_SLIPS.filter(function(x){ return x.no === sp.no }).slice().reverse() };
+      });
+    },
+    slipsWaiting: function(){
+      reply(function(){
+        var by = {}, n = 0;
+        MOCK_SLIPS.forEach(function(x){
+          if(x.status !== "รอตรวจสอบ") return;
+          by[x.no] = (by[x.no]||0) + 1; n++;
+        });
+        return { total:n, byOrder:by };
       });
     },
     /* ค้นเอกสารทั้งชีท ทุกชนิด — ของจริงคือ findDocs ใน Api.gs
@@ -797,6 +899,15 @@ def main():
     srv = ("<script>var DOC_SRV=(function(){" + m_r2.group(0) + "\n" + doc_src +
            "\nreturn {buildDoc_:buildDoc_,bahtText_:bahtText_,vatSplit_:vatSplit_,"
            "taxIdValid_:taxIdValid_,nextDocNo_:nextDocNo_};})();</script>")
+
+    # ตัวสร้าง QR พร้อมเพย์ตัวจริง ยัดเข้าหน้าจำลองด้วย
+    # QR ที่เห็นในพรีวิวจึงเป็น QR ที่สแกนได้จริง ไม่ใช่ลายสี่เหลี่ยมที่วาดหลอกตา
+    pay_src = (GS / "Pay.gs").read_text(encoding="utf-8")
+    cut = pay_src.find("/* ======================================================= เรียกเก็บเงิน")
+    if cut < 0:
+        sys.exit("หาจุดตัดส่วนที่ต้องใช้ Apps Script ใน Pay.gs ไม่เจอ")
+    srv += ("<script>var PAY_SRV=(function(){" + pay_src[:cut] +
+            "\nreturn {ppPayload_:ppPayload_,ppTarget_:ppTarget_,qrModules_:qrModules_};})();</script>")
 
     mock = (srv + MOCK.replace("__BOOT__", json.dumps(BOOT, ensure_ascii=False))
                       .replace("__ORDERS__", json.dumps(ORDERS, ensure_ascii=False)))

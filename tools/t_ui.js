@@ -2585,12 +2585,14 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('สามเหลี่ยมอยู่หน้าชื่อลูกค้าในบรรทัดเดียวกัน',
     seen40.rows.slice(0, 4).every(function (r) { return r.inline }));
 
-  eq('ใบที่ยังทำงานต่อได้มีปุ่มครบแปดอัน',
-    seen40.rows.slice(0, 4).map(function (r) { return r.btns }), [8, 8, 8, 8]);
-  eq('ทุกปุ่มเป็นรูปจริง ไม่มีปุ่มไหนตกกลับไปเป็นตัวอักษร',
+  eq('ใบที่ยังทำงานต่อได้มีปุ่มครบเก้าอัน',
+    seen40.rows.slice(0, 4).map(function (r) { return r.btns }), [9, 9, 9, 9]);
+  /* แปดปุ่มมีรูปของตัวเอง ปุ่มเก็บเงินยังใช้อีโมจิอยู่ เพราะยังไม่ได้รูปจากเจ้าของร้าน
+     ล็อกเลขไว้ที่ 8 ตั้งใจ — วันที่ได้รูปมาแล้วข้อสอบข้อนี้จะเตือนให้มาแก้เป็น 9 */
+  eq('แปดปุ่มเดิมยังเป็นรูปจริง ไม่มีปุ่มไหนตกกลับไปเป็นตัวอักษร',
     seen40.rows.slice(0, 4).map(function (r) { return r.icons }), [8, 8, 8, 8]);
-  /* แปดปุ่มตกบรรทัด = ปุ่มสุดท้ายลอยเดี่ยวใต้แถว ดูเหมือนปุ่มแปลกที่ไม่เข้าพวก */
-  eq('ปุ่มทั้งแปดอยู่บรรทัดเดียวกันบนจอมือถือ',
+  /* ปุ่มตกบรรทัด = ปุ่มสุดท้ายลอยเดี่ยวใต้แถว ดูเหมือนปุ่มแปลกที่ไม่เข้าพวก */
+  eq('ปุ่มทั้งเก้าอยู่บรรทัดเดียวกันบนจอมือถือ',
     seen40.rows.slice(0, 4).map(function (r) { return r.lines }), [1, 1, 1, 1]);
   eq('รูปแปดอันต้องเป็นคนละรูปกันทั้งหมด ไม่มีปุ่มไหนใช้รูปซ้ำ',
     seen40.rows[0].srcs.filter(function (s, i, a) { return a.indexOf(s) === i }).length, 8);
@@ -3437,6 +3439,130 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('และแก้ราคาได้อีกครั้ง', !gf3.locked);
   await page.evaluate(function () { closeModal() });
   await page.waitForTimeout(300);
+
+  /* ---------- 47. หน้ารับเงิน — QR ล็อกยอด · แนบสลิป · ยืนยัน ---------- */
+  console.log('\n47. รับเงิน — QR พร้อมเพย์ และสลิป');
+
+  /* ตั้งออเดอร์ของตัวเองสองใบ (มี VAT / ไม่มี VAT) — ข้อสอบข้อก่อน ๆ สลับ
+     รายการออเดอร์ไปแล้ว จะมาหวังว่ายังมีใบที่ต้องการเหลืออยู่ไม่ได้ */
+  await page.evaluate(async function () {
+    MOCK_SLIPS.length = 0;
+    MOCK_ORDERS.length = 0;
+    MOCK_ORDERS.push({ no:'AST-26-9101', date:'2026-09-12', channel:'เพจ Facebook',
+      cust:'คุณทดสอบ มีแวต', tel:'0812345678', addr:'1/2 ถ.ทดสอบ',
+      carrier:'Flash Express', track:'', vat:'รับ VAT', status:'รอชำระ',
+      subtotal:1000, discount:0, ship:50, vatAmt:73.5, net:1123.5, items:[] });
+    MOCK_ORDERS.push({ no:'AST-26-9102', date:'2026-09-12', channel:'เพจ Facebook',
+      cust:'คุณทดสอบ ไม่แวต', tel:'0812345679', addr:'3/4 ถ.ทดสอบ',
+      carrier:'Flash Express', track:'', vat:'ไม่รับ VAT', status:'รอชำระ',
+      subtotal:800, discount:0, ship:50, vatAmt:0, net:850, items:[] });
+    ORDERS = []; SUM_CACHE = null;
+    loadOrders(true);
+    await new Promise(function (r) { setTimeout(r, 600) });
+  });
+
+  var pv1 = await page.evaluate(async function () {
+    var o = (ORDERS || []).filter(function (x) { return x.vat === 'รับ VAT' })[0];
+    openPay(o);
+    await new Promise(function (r) { setTimeout(r, 500) });
+    var img = $('.qr');
+    return {
+      no: o.no, net: o.net,
+      bank: ($('#m-body .mrow') || {}).innerText || '',
+      hasQr: !!img,
+      src10: img ? img.src.slice(0, 22) : '',
+      msg: ($('#py-msg') || {}).textContent || '',
+      /* ยืนยันว่ารูปที่วาดมาจากตารางจุดชุดเดียวกับที่ฝั่งเซิร์ฟเวอร์ส่งมา */
+      rows: PAY_SRV.qrModules_(PAY_SRV.ppPayload_('0105558055790', o.net)).length
+    };
+  });
+  truthy('ใบมี VAT ขึ้นบัญชีบริษัท', pv1.bank.indexOf('ไทยพาณิชย์') > -1);
+  truthy('เลขบัญชีจัดกลุ่มแบบ SCB', pv1.bank.indexOf('431-039435-5') > -1);
+  truthy('มี QR ให้สแกน', pv1.hasQr);
+  eq('QR เป็นรูปจริง กดค้างบันทึกได้', pv1.src10, 'data:image/png;base64,');
+  truthy('ข้อความมีเลขออเดอร์', pv1.msg.indexOf(pv1.no) > -1);
+  truthy('ข้อความบอกยอดเป็นตัวเลข', pv1.msg.indexOf('฿') > -1);
+  truthy('ใบมี VAT บอกว่าออกใบกำกับภาษีได้', pv1.msg.indexOf('ออกใบกำกับภาษีได้') > -1);
+  truthy('ตารางจุดขนาดสมเหตุสมผล', pv1.rows >= 25 && pv1.rows <= 57);
+
+  console.log('\n   ใบไม่มี VAT ต้องเป็นคนละบัญชี');
+  var pv2 = await page.evaluate(async function () {
+    closeModal();
+    var o = (ORDERS || []).filter(function (x) { return x.vat !== 'รับ VAT' && Number(x.net) > 0 })[0];
+    openPay(o);
+    await new Promise(function (r) { setTimeout(r, 500) });
+    return { bank: ($('#m-body .mrow') || {}).innerText || '',
+             msg: ($('#py-msg') || {}).textContent || '' };
+  });
+  truthy('ขึ้นอีกบัญชีหนึ่ง', pv2.bank.indexOf('ไทยพาณิชย์') < 0 && pv2.bank.length > 5);
+  truthy('และบอกชัดว่าไม่มีใบกำกับภาษี', pv2.msg.indexOf('ไม่มีใบกำกับภาษี') > -1);
+
+  console.log('\n   แนบสลิป');
+  var PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  var pv3 = await page.evaluate(async function (b64) {
+    closeModal();
+    var o = (ORDERS || []).filter(function (x) { return x.vat === 'รับ VAT' })[0];
+    openPay(o);
+    await new Promise(function (r) { setTimeout(r, 400) });
+    var bin = atob(b64), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    var dt = new DataTransfer();
+    dt.items.add(new File([arr], 'slip.png', { type: 'image/png' }));
+    $('#py-file').files = dt.files;
+    $('#py-add').click();
+    await new Promise(function (r) { setTimeout(r, 700) });
+    return {
+      no: o.no,
+      slips: $$('#py-slips .row').length,
+      say: ($('#py-say') || {}).innerText || '',
+      hasOk: !!$('#py-slips [data-sok]'),
+      waiting: SLIP_WAIT.total
+    };
+  }, PNG_B64);
+  eq('สลิปขึ้นมาหนึ่งใบ', pv3.slips, 1);
+  truthy('บอกว่าแนบเรียบร้อย', pv3.say.indexOf('เรียบร้อย') > -1);
+  truthy('มีปุ่มยืนยันให้กด', pv3.hasOk);
+  eq('นับเข้ารายการสลิปรอตรวจ', pv3.waiting, 1);
+
+  console.log('\n   ยอดในสลิปไม่ตรง ต้องเตือนแต่ยังรับไฟล์');
+  var pv4 = await page.evaluate(async function (b64) {
+    var bin = atob(b64), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    var dt = new DataTransfer();
+    dt.items.add(new File([arr], 'slip2.png', { type: 'image/png' }));
+    $('#py-file').files = dt.files;
+    $('#py-amt').value = '1';
+    $('#py-add').click();
+    await new Promise(function (r) { setTimeout(r, 700) });
+    return { slips: $$('#py-slips .row').length,
+             say: ($('#py-say') || {}).innerText || '' };
+  }, PNG_B64);
+  eq('ยังรับไฟล์ และเก็บได้หลายใบ', pv4.slips, 2);
+  truthy('แต่เตือนว่ายอดไม่ตรง', pv4.say.indexOf('ไม่เท่ายอดออเดอร์') > -1);
+
+  console.log('\n   ยืนยันสลิปแล้วปิดยอดออเดอร์ในทีเดียว');
+  await page.evaluate(function () { window.confirm = function () { return true } });
+  var pv5 = await page.evaluate(async function (no) {
+    $('#py-slips [data-sok]').click();
+    await new Promise(function (r) { setTimeout(r, 900) });
+    var o = (ORDERS || []).filter(function (x) { return x.no === no })[0];
+    return { status: o.status, waiting: SLIP_WAIT.total };
+  }, pv3.no);
+  eq('ออเดอร์กลายเป็นชำระแล้ว', pv5.status, 'ชำระแล้ว');
+  eq('และหลุดออกจากรายการรอตรวจไปหนึ่งใบ', pv5.waiting, 1);
+
+  console.log('\n   ป้ายสลิปรอตรวจต้องขึ้นในรายการออเดอร์');
+  var pv6 = await page.evaluate(async function () {
+    closeModal();
+    renderOrders();
+    await new Promise(function (r) { setTimeout(r, 200) });
+    return { badge: ($('#list') || {}).innerText.indexOf('สลิปรอตรวจ') > -1,
+             btn: $$('#list [data-py]').length > 0 };
+  });
+  truthy('ขึ้นป้ายบอกว่ามีสลิปรออยู่', pv6.badge);
+  truthy('และมีปุ่มเก็บเงินทุกแถว', pv6.btn);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
 
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
   console.log('\n21. ความสะอาดของหน้าเว็บ');

@@ -636,7 +636,13 @@ function loadOrders(force){
   $("#list").innerHTML='<div class="load">กำลังโหลดออเดอร์จากชีท…</div>';
   /* list||[] ไม่ใช่ความระแวงเปล่า ๆ — ถ้าฝั่งชีทส่งอะไรที่ข้ามมาไม่ได้
      google.script.run จะส่ง null มาให้เฉย ๆ แล้วหน้าออเดอร์ค้างทั้งจอ */
-  call("getOrders",[40],function(list){ ORDERS = list || []; renderOrders() },
+  /* ดึงรายการสลิปที่ยังไม่ตรวจมาพร้อมกัน แล้วค่อยวาด ป้ายจะได้ขึ้นตั้งแต่รอบแรก
+     ไม่ใช่ขึ้นเอาตอนกดเข้าไปดูใบใดใบหนึ่งแล้วกลับออกมา */
+  call("getOrders",[40],function(list){
+      ORDERS = list || [];
+      renderOrders();
+      slipWaitLoad(function(){ if(!ORD_Q) renderOrders() });
+    },
     function(m){ $("#list").innerHTML='<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'+esc(m)+'</div>' });
 }
 
@@ -783,6 +789,7 @@ function renderOrders(){
       + (o.track?' · '+esc(o.track):'')+'</span><br>'
       +'<span style="color:var(--ink);font-weight:700">'+baht(o.net)+'</span> '
       +'<span class="tag '+statusTag(o.status)+'">'+esc(o.status||"-")+'</span>'
+      + slipBadge(o.no)
       + (o.check && o.check!=="OK" ? ' <span class="tag bad">'+esc(o.check)+'</span>' : '')
       /* สถานะบัญชีแยกจากสถานะออเดอร์ — ของถึงมือลูกค้าแล้วแต่ยังค้างส่งบัญชี
          เป็นเรื่องที่เกิดทุกวัน ถ้าไม่โชว์คู่กันจะรู้อีกทีตอนสิ้นเดือน */
@@ -795,6 +802,8 @@ function renderOrders(){
         : '<button class="sq" data-lb="'+i+'" title="ใบปะหน้า">'+rowIc("lb","🖨")+'</button>'
         +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">'+rowIc("tk","📦")+'</button>'
         +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">'+rowIc("sm","💬")+'</button>'
+        /* เก็บเงิน — QR ล็อกยอด + ที่เก็บสลิป อยู่ก่อนปุ่มเอกสารเพราะเงินมาก่อนใบเสร็จ */
+        +'<button class="sq" data-py="'+i+'" title="ขอเก็บเงิน / แนบสลิป">'+rowIc("py","💰")+'</button>'
         +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">'+rowIc("dc","📄")+'</button>'
         /* ส่งบัญชีเป็นคนละงานกับออกเอกสาร จึงเป็นคนละปุ่ม */
         +'<button class="sq" data-ac="'+i+'" title="ส่งบัญชี">'+rowIc("ac","🧾")+'</button>'
@@ -2670,6 +2679,216 @@ function copyText(text, okMsg){
   else toast(done?okMsg:"กดค้างที่ข้อความเพื่อคัดลอก");
 }
 
+/* ------------------------------------------------------------------ รับเงิน
+
+   สองงานคนละเวลา แต่อยู่หน้าเดียวกันเพราะเป็นเงินก้อนเดียวกัน
+     1. ขอเก็บเงิน — QR พร้อมเพย์ที่ล็อกยอดไว้แล้ว + ข้อความคัดลอกไปวางในแชท
+     2. แนบสลิป   — เก็บหลักฐานลงไดรฟ์ ผูกกับเลขออเดอร์
+
+   ทำไมต้องล็อกยอดใน QR: QR ถาวรที่ร้านใช้อยู่ ลูกค้าต้องพิมพ์จำนวนเงินเอง
+   พิมพ์ผิดหลักเดียวก็ต้องมาตามคืนเงินกันทีหลัง และร้านไม่มีทางรู้ล่วงหน้า
+
+   ทำไมบัญชีเลือกให้อัตโนมัติ: ร้านใช้คนละบัญชีระหว่างใบมี VAT กับไม่มี VAT
+   ให้พนักงานจำเองเมื่อไร วันหนึ่งจะมีเงินเข้าผิดบัญชีแล้วบัญชีปิดยอดไม่ลง   */
+
+var SLIP_WAIT = { total: 0, byOrder: {} };
+
+/** สลิปที่ยังไม่มีใครตรวจ — ป้ายเตือนพังไม่ใช่เหตุให้ทั้งหน้าพัง จึงกลืน error ตรงนี้ */
+function slipWaitLoad(then){
+  call("slipsWaiting", [], function(w){
+    SLIP_WAIT = w || { total:0, byOrder:{} };
+    if(then) then();
+  }, function(){ if(then) then() });
+}
+
+function slipBadge(no){
+  var n = (SLIP_WAIT.byOrder||{})[no] || 0;
+  return n ? ' <span class="tag wait">สลิปรอตรวจ ' + n + '</span>' : '';
+}
+
+/**
+ * วาด QR ลงผ้าใบแล้วคืนเป็นรูป
+ *
+ * ที่ต้องแปลงเป็นรูปเพราะบนมือถือคนจะกดค้างเพื่อ "บันทึกรูป" แล้วส่งเข้าไลน์
+ * ผ้าใบเปล่า ๆ กดค้างแล้วไม่มีเมนูนั้นให้ ต้องเป็น img เท่านั้น
+ */
+function qrImg(rows, px){
+  var n = rows.length, quiet = 4;
+  var sc = Math.max(2, Math.floor((px || 320) / (n + quiet * 2)));
+  var w = (n + quiet * 2) * sc;
+  var cv = document.createElement("canvas");
+  cv.width = w; cv.height = w;
+  var g = cv.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, w, w);
+  g.fillStyle = "#000";
+  for(var i=0;i<n;i++){
+    for(var j=0;j<n;j++){
+      if(rows[i].charAt(j) === "1") g.fillRect((j+quiet)*sc, (i+quiet)*sc, sc, sc);
+    }
+  }
+  return cv.toDataURL("image/png");
+}
+
+function openPay(o){
+  openModal("รับเงิน — " + o.no, '<div class="hint">กำลังอ่านบัญชีและยอด…</div>');
+  call("payAsk", [o.no], drawPay, function(m){
+    if(!$("#m-body")) return;
+    $("#m-body").innerHTML = '<div class="stop">เปิดหน้ารับเงินไม่ได้<br>' + esc(m) + '</div>';
+  });
+}
+
+function slipRowHtml(sp){
+  var cls = sp.status === "ยืนยันแล้ว" ? "ok" : (sp.status === "รอตรวจสอบ" ? "wait" : "bad");
+  return '<div class="row"><div class="i">'
+    + '<b>' + esc(sp.fileName) + '</b>'
+    + '<span>' + (sp.amount ? baht(sp.amount) + ' · ' : '')
+    + esc(String(sp.paidAt||"").slice(0,10) || "ไม่ได้ระบุวันโอน")
+    + (sp.bank ? ' · ' + esc(sp.bank) : '')
+    + ' · แนบโดย ' + esc(String(sp.by||"").split("@")[0]) + '</span>'
+    + '<span class="tag ' + cls + '">' + esc(sp.status) + '</span>'
+    + (sp.checkBy ? ' <span class="hint" style="display:inline">ตรวจโดย '
+        + esc(String(sp.checkBy).split("@")[0]) + '</span>' : '')
+    + '</div><div class="acts">'
+    + '<a class="sq" href="' + esc(sp.fileUrl) + '" target="_blank" rel="noopener" title="เปิดไฟล์">🔍</a>'
+    + (sp.status === "รอตรวจสอบ"
+        ? '<button class="sq ok" data-sok="' + esc(sp.fileId) + '" title="ยืนยันว่าเงินเข้าแล้ว">✔</button>'
+          + '<button class="sq red" data-sno="' + esc(sp.fileId) + '" title="ไม่ใช่สลิปของใบนี้">✖</button>'
+        : '')
+    + '</div></div>';
+}
+
+function drawPay(p){
+  if(!$("#m-body")) return;                 /* ปิดหน้าต่างไปก่อนข้อมูลมาถึง */
+  var h = '';
+
+  h += '<div class="kpi"><span>ยอดที่ต้องเก็บ</span><b>' + baht(p.net) + '</b></div>';
+  h += '<div class="hint">' + esc(p.cust||"") + ' · '
+     + (p.wantVat ? 'ใบนี้มี VAT ออกใบกำกับภาษีได้' : 'ใบนี้ไม่มี VAT ไม่ออกใบกำกับภาษี')
+     + '</div>';
+
+  if(p.miss && p.miss.length){
+    h += '<div class="stop"><b>ยังส่งให้ลูกค้าไม่ได้</b><br>'
+       + 'ยังไม่ได้กรอกในชีท ตั้งค่าแอป:<br>· ' + p.miss.map(esc).join('<br>· ') + '</div>';
+  }else{
+    if(p.acct.drift) h += '<div class="warn">' + esc(p.acct.drift) + '</div>';
+    h += '<div class="subhd">โอนเข้าบัญชีนี้ (' + esc(p.acct.which) + ')</div>';
+    h += '<div class="mrow"><b>' + esc(p.acct.bank) + '</b><br>'
+       + esc(p.acct.acct) + '<br><span class="hint" style="display:inline">'
+       + esc(p.acct.name) + '</span></div>';
+
+    if(p.qr){
+      h += '<div style="text-align:center;margin:12px 0">'
+         /* วาดใหญ่กว่าที่โชว์ตั้งใจ — คนกดค้างบันทึกรูปไปส่งในแชท ปลายทางจะได้ไม่แตก
+            บนจอย่อลงด้วยการไล่สีปกติ (ไม่ใช่ pixelated) ขอบจุดจะได้ไม่กะพร่องกะแพร่ง */
+         + '<img class="qr" src="' + qrImg(p.qr.rows, 480) + '" alt="QR พร้อมเพย์ ' + baht(p.net) + '">'
+         + '<div class="hint">สแกนแล้วยอด ' + baht(p.net) + ' ขึ้นเอง ลูกค้าไม่ต้องพิมพ์<br>'
+         + 'พร้อมเพย์ ' + esc(p.qr.kind) + ' ' + esc(p.qr.target) + '<br>'
+         + 'กดค้างที่รูปเพื่อบันทึกแล้วส่งเข้าแชทได้เลย</div></div>';
+    }else if(p.qrWhy){
+      h += '<div class="warn">ไม่มี QR ให้สแกน — ' + esc(p.qrWhy) + '</div>';
+    }
+
+    h += '<button class="btn" id="py-copy">คัดลอกข้อความเรียกเก็บเงิน</button>';
+    h += '<pre class="paymsg" id="py-msg">' + esc(p.msg) + '</pre>';
+  }
+
+  h += '<div class="subhd">หลักฐานการโอน</div>';
+  h += '<div id="py-slips">'
+     + (p.slips && p.slips.length
+        ? p.slips.map(slipRowHtml).join("")
+        : '<div class="hint">ยังไม่มีสลิปของใบนี้</div>')
+     + '</div>';
+
+  h += '<div class="subhd">แนบสลิปที่ลูกค้าส่งมา</div>'
+     + '<div class="fld"><label>ไฟล์สลิป (รูปหรือ PDF)</label>'
+     + '<input type="file" id="py-file" accept="image/*,application/pdf"></div>'
+     + '<div class="fld"><label>วันที่โอนตามสลิป</label>'
+     + '<input type="date" id="py-date" value="' + esc(todayISO()) + '"></div>'
+     + '<div class="fld"><label>ยอดตามสลิป</label>'
+     + '<input type="number" step="0.01" id="py-amt" value="' + Number(p.net||0) + '"></div>'
+     + '<div class="fld"><label>โอนเข้าบัญชี</label>'
+     + '<input id="py-bank" value="' + esc(p.acct.bank||"") + '"></div>'
+     + '<button class="btn" id="py-add">แนบสลิปเข้าออเดอร์นี้</button>'
+     + '<div id="py-say"></div>';
+
+  $("#m-body").innerHTML = h;
+  payBind(p);
+}
+
+function payBind(p){
+  var c = $("#py-copy");
+  if(c) c.onclick = function(){ copyText(p.msg, "คัดลอกข้อความแล้ว เอาไปวางในแชทได้เลย") };
+
+  $$("#py-slips [data-sok]").forEach(function(b){
+    b.onclick = function(){ paySetSlip(p, b.getAttribute("data-sok"), "ยืนยันแล้ว", b) };
+  });
+  $$("#py-slips [data-sno]").forEach(function(b){
+    b.onclick = function(){ paySetSlip(p, b.getAttribute("data-sno"), "ไม่ใช่ของใบนี้", b) };
+  });
+
+  var add = $("#py-add");
+  if(!add) return;
+  add.onclick = function(){
+    var f = $("#py-file").files[0];
+    if(!f){ toast("ยังไม่ได้เลือกไฟล์สลิป"); return }
+    /* กันไว้ตั้งแต่ในเครื่อง ดีกว่าให้รออัปโหลดสิบวินาทีแล้วค่อยบอกว่าใหญ่เกิน */
+    if(f.size > 10*1024*1024){
+      toast("ไฟล์ใหญ่ " + Math.round(f.size/1024/1024*10)/10 + " MB เกิน 10 MB — ย่อรูปก่อน");
+      return;
+    }
+    add.disabled = true; add.textContent = "กำลังอัปโหลด…";
+    var r = new FileReader();
+    r.onerror = function(){
+      add.disabled = false; add.textContent = "แนบสลิปเข้าออเดอร์นี้";
+      toast("อ่านไฟล์ไม่ได้ ลองเลือกใหม่อีกครั้ง");
+    };
+    r.onload = function(){
+      call("addSlip", [p.no, {
+        data: r.result, paidAt: $("#py-date").value,
+        amount: $("#py-amt").value, bank: $("#py-bank").value.trim()
+      }], function(res){
+        add.disabled = false; add.textContent = "แนบสลิปเข้าออเดอร์นี้";
+        $("#py-file").value = "";
+        p.slips = res.slips;
+        $("#py-slips").innerHTML = res.slips.map(slipRowHtml).join("");
+        payBind(p);
+        $("#py-say").innerHTML = res.warn
+          ? '<div class="warn">แนบแล้ว แต่ ' + esc(res.warn) + '</div>'
+          : '<div class="ok-note">แนบสลิปเรียบร้อย</div>';
+        slipWaitLoad();
+      }, function(m){
+        add.disabled = false; add.textContent = "แนบสลิปเข้าออเดอร์นี้";
+        $("#py-say").innerHTML = '<div class="stop">แนบไม่สำเร็จ<br>' + esc(m) + '</div>';
+      });
+    };
+    r.readAsDataURL(f);
+  };
+}
+
+function paySetSlip(p, fileId, status, btn){
+  var paid = false;
+  if(status === "ยืนยันแล้ว"){
+    paid = confirm("ยืนยันว่าเงินเข้าบัญชีแล้ว\n\nกด ตกลง = ทำเครื่องหมายว่าออเดอร์ "
+      + p.no + " ชำระแล้วด้วย\nกด ยกเลิก = ยืนยันแค่สลิป ยังไม่ปิดยอดออเดอร์");
+  }
+  btn.disabled = true;
+  call("setSlipStatus", [fileId, status, "", paid], function(res){
+    toast(status === "ยืนยันแล้ว"
+      ? (paid ? "ยืนยันแล้ว และปิดยอด " + p.no : "ยืนยันสลิปแล้ว")
+      : "ทำเครื่องหมายว่าไม่ใช่สลิปของใบนี้");
+    slipWaitLoad();
+    if(paid) loadOrders(true);
+    p.slips = res.slips;
+    var box = $("#py-slips");
+    if(!box) return;                        /* ปิดหน้าต่างไปแล้วระหว่างรอ */
+    box.innerHTML = res.slips.map(slipRowHtml).join("");
+    payBind(p);                             /* ปุ่มชุดใหม่ต้องผูกใหม่ ไม่งั้นกดไม่ติด */
+  }, function(m){
+    btn.disabled = false;
+    toast("ไม่สำเร็จ: " + m);
+  });
+}
+
 /* ------------------------------------------------------------------ สรุปยอด */
 
 /* ช่วงเวลาที่ดูได้ — ชุดเดียวกับที่ร้านใช้คิดงานจริง (วันนี้ / เมื่อวาน / 7 วัน / เดือนนี้) */
@@ -2867,8 +3086,10 @@ function drawDue(all){
               + '<span style="color:var(--ink);font-weight:700;font-size:1.02rem">'
               + baht(o.net) + '</span>'
               + '<span class="paybar ' + p.key + '">' + esc(p.label) + '</span>'
+              + slipBadge(o.no)
               + '</div><div class="acts">'
               + '<button class="sq" data-due-sm="' + esc(o.no) + '" title="ทวงถาม / ส่งข้อความ">💬</button>'
+              + '<button class="sq" data-due-py="' + esc(o.no) + '" title="ส่ง QR เก็บเงิน / แนบสลิป">💰</button>'
               /* ปุ่มเขียว = เปิดประวัติของลูกค้ารายนี้ และปิดยอดจากในนั้นได้
                  ตอนถือสายทวงเงิน ต้องรู้ก่อนว่ารายนี้ซื้อกับเรามาแค่ไหน
                  ค้างใบเดียวจากสิบใบ กับค้างใบเดียวเพราะเพิ่งซื้อครั้งแรก คนละเรื่องกัน */
@@ -2900,6 +3121,9 @@ function drawDue(all){
   function find(no){ return (all||[]).filter(function(o){ return o.no === no })[0] }
   $$("#due-list [data-due-sm]").forEach(function(b){
     b.onclick = function(){ var o = find(b.getAttribute("data-due-sm")); if(o) openMsg(o) };
+  });
+  $$("#due-list [data-due-py]").forEach(function(b){
+    b.onclick = function(){ var o = find(b.getAttribute("data-due-py")); if(o) openPay(o) };
   });
   $$("#due-list [data-due-cu]").forEach(function(b){
     b.onclick = function(){
@@ -4303,11 +4527,12 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
 
   $("#list").addEventListener("click", function(e){
-    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc],[data-ac],[data-ed],[data-rt],[data-cx]");
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-py],[data-dc],[data-ac],[data-ed],[data-rt],[data-cx]");
     if(!b) return;
     if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
     else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
     else if(b.dataset.sm!==undefined) openMsg(ORDERS[+b.dataset.sm]);
+    else if(b.dataset.py!==undefined) openPay(ORDERS[+b.dataset.py]);
     else if(b.dataset.dc!==undefined) openDoc(ORDERS[+b.dataset.dc]);
     else if(b.dataset.ac!==undefined) openAcct(ORDERS[+b.dataset.ac]);
     else if(b.dataset.ed!==undefined) openEditItems(ORDERS[+b.dataset.ed]);

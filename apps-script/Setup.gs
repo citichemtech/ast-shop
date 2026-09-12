@@ -19,6 +19,7 @@ var CUT_LAST = 3005;   // ตัดล็อต รองรับ 3000 บร�
    เผื่อไว้ 8,000 ใบ ราวปีครึ่ง แล้วระบบจะเตือนล่วงหน้าตอนใกล้เต็ม
    (ของเดิมทำใบละหนึ่งแท็บ ที่ 20 ใบต่อวันจะชนขีดจำกัดของ Google Sheets ใน 2 เดือน) */
 var DOC_LAST = 8005;
+var SLIP_LAST = 3005;  // หลักฐานการชำระเงิน รองรับ 3000 สลิป
 var MONTH_LAST = 305;  // สรุปเดือน รองรับ 300 แถว = 60 เดือน × 5 ช่องทาง
 var STOCK_LAST = 150;  // ขอบล่างของชีท สต๊อกคงเหลือ ที่ใช้ในสูตรตรวจยอด
 
@@ -38,6 +39,7 @@ function setup() {
   made.push(setupDocSheet_(ss));
   made.push(setupAppSheet_(ss));
   made.push(setupMonthSheet_(ss));
+  made.push(setupSlipSheet_(ss));
   made.push(setupItemLotColumn_(ss));
   made.push(setupAccounting_(ss));
   made.push(setupCarrierList_(ss));
@@ -1548,6 +1550,64 @@ function repairSummaryRange_() {
  * ค่าที่ใบปะหน้าพัสดุต้องใช้ ชีทเดิมไม่มี — สร้างเป็นชีทของแอปเอง
  * ค่าที่มีอยู่แล้วจะไม่ถูกเขียนทับ สั่ง setup ซ้ำได้
  */
+/**
+ * ชีท หลักฐานการชำระเงิน — 1 สลิป = 1 แถว
+ *
+ * เก็บลิงก์ไฟล์ในไดรฟ์ ไม่ใช่ตัวรูป รูปสลิปใบละหลายร้อยกิโล
+ * ฝังลงชีทไม่กี่ร้อยใบก็เปิดชีทไม่ไหวแล้ว
+ */
+function setupSlipSheet_(ss) {
+  var name = SH.slip.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < SLIP_LAST) s.insertRowsAfter(s.getMaxRows(), SLIP_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 14) s.insertColumnsAfter(s.getMaxColumns(), 14 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('หลักฐานการชำระเงิน — ระบบเขียนให้เอง')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'แนบสลิปจากหน้าออเดอร์ในแอป แล้วแถวจะมาโผล่ที่นี่  |  ' +
+    'ไฟล์จริงอยู่ในโฟลเดอร์ไดรฟ์ ช่องลิงก์คือทางไปเปิดดู  |  ' +
+    'สลิปที่แนบผิดใบ ให้เปลี่ยนสถานะเป็น "ไม่ใช่ของใบนี้" ไม่ใช่ลบแถวทิ้ง'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'เลขที่ออเดอร์', 'แนบเมื่อ', 'วันที่โอน\n(ตามสลิป)',
+    'ยอดตามสลิป', 'โอนเข้าบัญชี', 'ชื่อไฟล์', 'ลิงก์ไฟล์', 'ผู้แนบ',
+    'สถานะ', 'ผู้ตรวจสอบ', 'ตรวจสอบเมื่อ', 'หมายเหตุ',
+    'รหัสไฟล์ในไดรฟ์\n(ระบบใช้อ้างอิง ห้ามแก้)'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = SLIP_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+
+  var inCols = [];
+  for (var c = 2; c <= 14; c++) inCols.push(c);
+  paintCols_(s, n, inCols, [1]);
+
+  s.getRange(DATA_ROW, SH.slip.IN.at, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.slip.IN.paidAt, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.slip.IN.amount, n, 1).setNumberFormat('#,##0.00');
+  s.getRange(DATA_ROW, SH.slip.IN.checkAt, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.slip.IN.fileId, n, 1).setNumberFormat('@')
+    .setFontColor('#9aa0a6');
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.slip.IN.no, 130);
+  s.setColumnWidth(SH.slip.IN.at, 140);
+  s.setColumnWidth(SH.slip.IN.paidAt, 140);
+  s.setColumnWidth(SH.slip.IN.bank, 150);
+  s.setColumnWidth(SH.slip.IN.fileName, 220);
+  s.setColumnWidth(SH.slip.IN.fileUrl, 260);
+  s.setColumnWidth(SH.slip.IN.status, 130);
+  s.setColumnWidth(SH.slip.IN.fileId, 70);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' สลิป)';
+}
+
 function setupAppSheet_(ss) {
   var name = SH.app.name;
   var s = findSheet_(ss, name);
@@ -1636,7 +1696,25 @@ function setupAppSheet_(ss) {
        ที่ต้องเรียงต่อกันไม่ขาดและเป็นชุดที่สรรพากรตรวจ ถ้าบิลเงินสดไปกินเลขในชุดนั้น
        เล่มใบกำกับภาษีจะมีเลขที่ไม่ใช่ใบกำกับภาษีปนอยู่ อธิบายตอนถูกตรวจไม่ได้ */
     ['คำนำหน้าเลขบิลเงินสด', 'CS26-'],
-    ['ยกยอดเลขบิลเงินสดมาจาก', 0]
+    ['ยกยอดเลขบิลเงินสดมาจาก', 0],
+
+    /* ---- บัญชีรับเงิน (ยังต่อท้ายอย่างเดียวตามกฎด้านบน) ----
+       ร้านใช้สองบัญชีจริง ๆ แยกตามว่าใบนั้นออก VAT หรือไม่ออก
+       ระบบจะเลือกให้เองตามช่อง VAT ของออเดอร์ พนักงานไม่ต้องจำ
+
+       ชุด "ไม่มี VAT" เว้นว่างไว้ตั้งใจ เพราะเป็นบัญชีชื่อบุคคล
+       ไม่ควรอยู่ในไฟล์โค้ดที่คนนอกเปิดดูได้ ให้กรอกลงชีทเอาเอง
+
+       ช่องพร้อมเพย์กรอกได้สามแบบ เบอร์มือถือ 10 หลัก · เลขผู้เสียภาษี/บัตรประชาชน
+       13 หลัก · เลข e-Wallet 15 หลัก  ว่างไว้ก็ได้ แค่จะไม่มี QR ให้ มีแต่เลขบัญชี */
+    ['ธนาคารที่รับเงิน บิลมี VAT', 'ไทยพาณิชย์ (SCB)'],
+    ['ชื่อบัญชี บิลมี VAT', 'บริษัท เคมีคอล อินโนเวชั่น เทคโนโลยี แอนด์ อินสตรูเมนท์ จำกัด'],
+    ['เลขบัญชี บิลมี VAT', '431-039435-5'],
+    ['พร้อมเพย์ บิลมี VAT', ''],
+    ['ธนาคารที่รับเงิน บิลไม่มี VAT', ''],
+    ['ชื่อบัญชี บิลไม่มี VAT', ''],
+    ['เลขบัญชี บิลไม่มี VAT', ''],
+    ['พร้อมเพย์ บิลไม่มี VAT', '']
   ];
   for (var i = 0; i < rows.length; i++) {
     var r = DATA_ROW + i;
@@ -1644,7 +1722,9 @@ function setupAppSheet_(ss) {
     // เบอร์โทรต้องเป็นช่องข้อความ ไม่งั้นชีทแปลงเป็นตัวเลขแล้วศูนย์นำหน้าหาย
     /* ช่องที่ขึ้นต้นด้วยศูนย์ต้องเป็นช่องข้อความ ไม่งั้นชีทแปลงเป็นตัวเลขแล้วศูนย์นำหน้าหาย
        เลขผู้เสียภาษี 0105558055790 จะกลายเป็น 105558055790 แล้วใบกำกับภาษีใช้ไม่ได้ */
-    if (/เบอร์โทร|มือถือ|แฟกซ์|ผู้เสียภาษี|ลายเซ็น/.test(rows[i][0])) s.getRange(r, 2).setNumberFormat('@');
+    if (/เบอร์โทร|มือถือ|แฟกซ์|ผู้เสียภาษี|ลายเซ็น|พร้อมเพย์|เลขบัญชี/.test(rows[i][0])) {
+      s.getRange(r, 2).setNumberFormat('@');
+    }
     // ค่าที่เจ้าของร้านกรอกไว้แล้ว ห้ามทับ — เติมให้เฉพาะตอนที่ยังว่าง
     if (s.getRange(r, 2).getValue() === '') s.getRange(r, 2).setValue(rows[i][1]);
   }

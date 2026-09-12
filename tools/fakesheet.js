@@ -367,8 +367,11 @@ function fakeDrive(opts) {
         if (opts && opts.driveFail && files.length >= opts.driveFail) {
           throw new Error('ไดรฟ์เต็ม (จำลอง)');
         }
+        var fid = 'file-' + (++seq.n);
         var file = {
           _folder: f, _blob: b, _trashed: false,
+          getId: function () { return fid; },
+          getUrl: function () { return 'https://drive.google.com/file/d/' + fid + '/view'; },
           getName: function () { return b.getName(); },
           getBlob: function () { return b; },
           setTrashed: function (t) { file._trashed = !!t; return file; }
@@ -478,6 +481,10 @@ function load(fixture, opts) {
           return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
             ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
         }
+        if (fmt === 'yyyyMMdd-HHmmss') {
+          return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
+            p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+        }
         if (fmt === 'd/M/yyyy HH:mm') {
           return d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear() +
             ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
@@ -512,7 +519,7 @@ function load(fixture, opts) {
   var dir = path.join(__dirname, '..', 'apps-script');
   /* Doc.gs ต้องโหลดด้วย ไม่งั้น issueDoc/voidDoc เรียก docType_ ไม่เจอ
      ทะเบียนเอกสารเป็นของที่แก้ทีหลังไม่ได้ จึงต้องมีข้อสอบคุมเหมือนส่วนอื่น */
-  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs'];
+  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs', 'Pay.gs'];
   /* BUNDLE=1 = สอบไฟล์ที่รวมแล้วแทนไฟล์ต้นฉบับ
      ไฟล์ที่เอาไปวางใน Apps Script จริงคือไฟล์ที่รวมแล้ว ถ้าตัวรวมทำอะไรพัง
      ข้อสอบที่อ่านแต่ต้นฉบับจะผ่านหมดโดยที่ของจริงใช้ไม่ได้ */
