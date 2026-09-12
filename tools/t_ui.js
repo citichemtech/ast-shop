@@ -3617,9 +3617,13 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.click('#sx-go');
   var got = await dl;
   truthy('กดแล้วไฟล์ถูกบันทึกลงเครื่องจริง', !!got.suggestedFilename());
-  /* ชื่อต้องเป็นอังกฤษล้วน ไม่งั้น Chrome ทิ้งชื่อทั้งชื่อ เหลือแค่ "download" */
-  eq('ชื่อไฟล์มาถึงครบ ไม่ถูกเบราว์เซอร์ทิ้ง',
-     /^AST-slip-.*\.xlsx$/.test(got.suggestedFilename()), true);
+  /* ข้อนี้คุมเรื่องเดียว: ชื่อไฟล์ที่ฝั่งชีทตั้งมา ต้องรอดมาถึงเครื่องครบ
+     Chrome ทิ้งชื่อทั้งชื่อถ้ามีอักษรไทย เหลือแค่ "download" ไม่มีนามสกุล
+     ส่วนนามสกุลไม่เช็คตรงนี้ เพราะตัวจำลองในพรีวิวบีบ zip ไม่ได้จึงคืน .txt
+     (นามสกุล .xlsx ของจริงมีข้อสอบคุมอยู่ใน t_pay.js แล้ว) */
+  var fn = got.suggestedFilename();
+  eq('ชื่อไฟล์มาถึงครบ ไม่ถูกเบราว์เซอร์ทิ้ง', /^AST-slip-\S+$/.test(fn), true);
+  truthy('และเป็นอักษรอังกฤษล้วน', /^[\x20-\x7E]+$/.test(fn));
   var say = await page.evaluate(function () { return ($('#sx-say') || {}).innerText || '' });
   truthy('และบอกว่าโหลดกี่บรรทัด', say.indexOf('บรรทัด') > -1);
 
