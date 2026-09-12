@@ -559,12 +559,18 @@ function payAsk(orderNo) {
   var wantVat = payWantVat_(ord);
   var acct = payAcct_(wantVat);
 
-  var qr = null, qrWhy = '';
+  /* qrOff = ช่องพร้อมเพย์ว่าง ซึ่งเป็นทางเลือกที่ถูกต้องทางหนึ่ง ไม่ใช่การตั้งค่าค้าง
+     ร้านที่รับเงินด้วยการโอนเข้าบัญชีอย่างเดียวไม่ควรโดนเตือนว่า "ยังไม่ได้กรอก"
+     ทุกใบไปตลอดกาล คำเตือนที่ขึ้นทุกวันโดยไม่มีอะไรให้ทำ คือคำเตือนที่คนเลิกอ่าน
+     แล้ววันที่มีคำเตือนของจริงขึ้นมา มันจะถูกมองข้ามไปด้วย */
+  var qr = null, qrWhy = '', qrOff = false;
   if (acct.miss.length) {
     qrWhy = 'ยังไม่ได้กรอก ' + acct.miss.join(' · ') + ' ในชีท ' + SH.app.name;
   } else if (!acct.pp) {
-    qrWhy = 'ยังไม่ได้กรอก "พร้อมเพย์ ' + acct.which + '" ในชีท ' + SH.app.name +
-      ' — โอนตามเลขบัญชีได้ตามปกติ แค่ไม่มี QR ให้สแกน';
+    qrOff = true;
+    /* สั้นไว้ ข้อความนี้ขึ้นทุกใบ — รายละเอียดวิธีเปิดใช้อยู่ในคู่มือแล้ว */
+    qrWhy = 'รับเงินด้วยการโอนเข้าบัญชี ไม่ได้ใช้ QR (เปิดใช้ได้ที่ช่องพร้อมเพย์ ในชีท ' +
+      SH.app.name + ')';
   } else if (!(Number(ord.net) > 0)) {
     qrWhy = 'ออเดอร์ใบนี้ยอดเป็น ' + money_(ord.net) + ' จึงทำ QR เรียกเก็บเงินไม่ได้';
   } else {
@@ -579,7 +585,7 @@ function payAsk(orderNo) {
   return jsonSafe_({
     no: ord.no, cust: ord.cust, date: ord.date, net: Number(ord.net),
     status: ord.status, vat: ord.vat, wantVat: wantVat,
-    acct: acct, qr: qr, qrWhy: qrWhy,
+    acct: acct, qr: qr, qrWhy: qrWhy, qrOff: qrOff,
     msg: acct.miss.length ? '' : payMsg_(ord, acct, wantVat),
     miss: acct.miss,
     slips: slipRows_(ord.no)

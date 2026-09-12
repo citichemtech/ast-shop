@@ -254,10 +254,15 @@ window.google = { script: { run: (function(){
           ? { bank:"ไทยพาณิชย์ (SCB)", acct:"431-039435-5",
               name:"บริษัท เคมีคอล อินโนเวชั่น เทคโนโลยี แอนด์ อินสตรูเมนท์ จำกัด",
               pp:"0105558055790", which:"บิลมี VAT", miss:[] }
+          /* ชุดไม่มี VAT ตั้งเป็นไม่ใช้พร้อมเพย์ ให้ตรงกับที่ร้านตั้งไว้จริง
+             พรีวิวจะได้โชว์ทางที่ "ไม่มี QR" ด้วย ไม่ใช่โชว์แต่ทางที่มี */
           : { bank:"ธนาคารสมมติ", acct:"000-000000-0", name:"ชื่อบัญชีสมมติ",
-              pp:"123456789012345", which:"บิลไม่มี VAT", miss:[] };
-        var qr = null, qrWhy = "";
-        if(Number(o.net) > 0){
+              pp:"", which:"บิลไม่มี VAT", miss:[] };
+        var qr = null, qrWhy = "", qrOff = false;
+        if(!acct.pp){
+          qrOff = true;
+          qrWhy = "รับเงินด้วยการโอนเข้าบัญชี ไม่ได้ใช้ QR (เปิดใช้ได้ที่ช่องพร้อมเพย์ ในชีท ตั้งค่าแอป)";
+        }else if(Number(o.net) > 0){
           var payload = PAY_SRV.ppPayload_(acct.pp, o.net);
           var t = PAY_SRV.ppTarget_(acct.pp);
           qr = { rows: PAY_SRV.qrModules_(payload), payload: payload,
@@ -290,7 +295,7 @@ window.google = { script: { run: (function(){
         }
         return { no:o.no, cust:o.cust, date:o.date, net:Number(o.net),
                  status:o.status, vat:o.vat, wantVat:wantVat, acct:acct,
-                 qr:qr, qrWhy:qrWhy, msg:L.join("\\n"), miss:[],
+                 qr:qr, qrWhy:qrWhy, qrOff:qrOff, msg:L.join("\\n"), miss:[],
                  slips: MOCK_SLIPS.filter(function(x){ return x.no === o.no }).slice().reverse() };
       });
     },

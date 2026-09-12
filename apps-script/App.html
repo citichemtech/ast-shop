@@ -2784,6 +2784,9 @@ function drawPay(p){
          + '<div class="hint">สแกนแล้วยอด ' + baht(p.net) + ' ขึ้นเอง ลูกค้าไม่ต้องพิมพ์<br>'
          + 'พร้อมเพย์ ' + esc(p.qr.kind) + ' ' + esc(p.qr.target) + '<br>'
          + 'กดค้างที่รูปเพื่อบันทึกแล้วส่งเข้าแชทได้เลย</div></div>';
+    }else if(p.qrOff){
+      /* ตั้งใจไม่ใช้ QR — บอกเบา ๆ พอ ไม่ใช่กล่องเตือนสีเหลืองที่ขึ้นทุกใบ */
+      h += '<div class="hint">' + esc(p.qrWhy) + '</div>';
     }else if(p.qrWhy){
       h += '<div class="warn">ไม่มี QR ให้สแกน — ' + esc(p.qrWhy) + '</div>';
     }

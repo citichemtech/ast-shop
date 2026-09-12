@@ -3492,10 +3492,17 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     openPay(o);
     await new Promise(function (r) { setTimeout(r, 500) });
     return { bank: ($('#m-body .mrow') || {}).innerText || '',
-             msg: ($('#py-msg') || {}).textContent || '' };
+             msg: ($('#py-msg') || {}).textContent || '',
+             qr: !!$('.qr'), warnBox: !!$('#m-body .warn'),
+             note: ($('#m-body .hint') || {}).innerText || '' };
   });
   truthy('ขึ้นอีกบัญชีหนึ่ง', pv2.bank.indexOf('ไทยพาณิชย์') < 0 && pv2.bank.length > 5);
   truthy('และบอกชัดว่าไม่มีใบกำกับภาษี', pv2.msg.indexOf('ไม่มีใบกำกับภาษี') > -1);
+
+  console.log('\n   ช่องนี้ตั้งไว้ว่าไม่ใช้ QR — ต้องไม่ขึ้นกล่องเตือนทวงทุกใบ');
+  eq('ไม่มี QR ตามที่ตั้งไว้', pv2.qr, false);
+  eq('และไม่มีกล่องเตือนสีเหลือง', pv2.warnBox, false);
+  truthy('ยังมีเลขบัญชีให้โอนครบ', pv2.msg.indexOf('เลขบัญชี') > -1);
 
   console.log('\n   แนบสลิป');
   var PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
