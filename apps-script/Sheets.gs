@@ -371,7 +371,24 @@ function authDrive() {
     out.push('ขั้นต่อไป: กด Deploy → Manage deployments → แก้ไข → New version');
     out.push('แล้วเปิดแอปใหม่อีกครั้ง จึงจะแนบสลิปได้');
   } catch (e) {
-    out.push(driveAuthMsg_('เก็บไฟล์', String((e && e.message) || e)));
+    /* คนที่อ่านข้อความนี้คือคนที่เพิ่งกด Run ที่ authDrive มาหมาด ๆ
+       การบอกให้ไปกด authDrive อีกทีจึงเป็นคำตอบที่ผิดที่สุดเท่าที่จะตอบได้
+       ล้มตรงนี้ทั้งที่หน้าต่างขออนุญาตไม่ขึ้นเลย = ไฟล์ appsscript.json
+       ล็อกรายการสิทธิ์ไว้แคบเกิน Google จึงไม่เคยถามหาสิทธิ์ไดรฟ์ตั้งแต่แรก */
+    out.push('ยังใช้ไดรฟ์ไม่ได้ — และเพราะคุณกด Run ที่นี่แล้ว แปลว่าปัญหาไม่ได้อยู่ที่');
+    out.push('การกดอนุญาต แต่อยู่ที่ไฟล์ appsscript.json ของโปรเจกต์ล็อกสิทธิ์ไว้แคบเกิน');
+    out.push('');
+    out.push('แก้ที่ตัวแก้ไขโค้ด Apps Script');
+    out.push('1. เมนูซ้าย กด ⚙ การตั้งค่าโปรเจกต์ (Project Settings)');
+    out.push('2. ติ๊ก "แสดงไฟล์ appsscript.json ในตัวแก้ไข"');
+    out.push('3. กลับไปแท็บตัวแก้ไข จะเห็นไฟล์ appsscript.json โผล่มาในรายการไฟล์');
+    out.push('4. ในวงเล็บ oauthScopes ต้องมีบรรทัดนี้อยู่ด้วย');
+    out.push('     "https://www.googleapis.com/auth/drive"');
+    out.push('   ถ้าไม่มี ให้เพิ่มเข้าไป (อย่าลืมจุลภาคคั่นบรรทัดก่อนหน้า) แล้วกดบันทึก');
+    out.push('5. กลับมา Run ที่ authDrive อีกครั้ง คราวนี้หน้าต่างขออนุญาตจะขึ้นมา');
+    out.push('6. อนุญาตให้ครบ แล้วค่อย Deploy ใหม่');
+    out.push('');
+    out.push('ข้อความจาก Google: ' + String((e && e.message) || e));
   }
   var msg = out.join('\n');
   Logger.log(msg);

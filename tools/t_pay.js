@@ -462,7 +462,18 @@ truthy('เป็นขั้นตอนหลายบรรทัด ไม�
 eq('ไม่มีแถวสลิปค้างในชีท', s10.ctx.listSlips(s10.no).length, 0);
 
 console.log('\n   ฟังก์ชัน authDrive ที่ให้เจ้าของร้านกด ต้องตอบเป็นภาษาคน');
-truthy('ตอนสิทธิ์ยังไม่พอ บอกวิธีแก้', s10.ctx.authDrive().indexOf('authDrive') > -1);
+/* เจอกับของจริงรอบสอง 13 ก.ย. 69: เจ้าของร้านกด Run ที่ authDrive แล้ว
+   ข้อความที่ได้กลับมาบอกให้ไปกด Run ที่ authDrive ซึ่งคือสิ่งที่เพิ่งทำมา
+   ล้มตรงนี้ทั้งที่หน้าต่างขออนุญาตไม่ขึ้น แปลว่าปัญหาอยู่ที่รายการสิทธิ์ในไฟล์ตั้งค่า
+   ไม่ใช่ที่การกดอนุญาต — ต้องพาไปแก้ที่นั่น ไม่ใช่วนกลับที่เดิม */
+var deny10b = s10.ctx.authDrive();
+truthy('ไม่ไล่ให้กลับไปกดสิ่งที่เพิ่งกดมา',
+  deny10b.indexOf('เพราะคุณกด Run ที่นี่แล้ว') > -1);
+truthy('พาไปแก้ที่ไฟล์ appsscript.json', deny10b.indexOf('appsscript.json') > -1);
+truthy('บอกชื่อสิทธิ์ที่ต้องเพิ่มแบบก๊อปวางได้เลย',
+  deny10b.indexOf('"https://www.googleapis.com/auth/drive"') > -1);
+truthy('บอกด้วยว่าติ๊กตรงไหนถึงจะเห็นไฟล์นั้น',
+  deny10b.indexOf('การตั้งค่าโปรเจกต์') > -1);
 var okDrive = (function () {
   var fx = FS.build(); var ctx = FS.load(fx, {}); ctx.setup();
   return ctx.authDrive();
