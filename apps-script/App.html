@@ -2971,6 +2971,11 @@ function drawPay(p){
        + 'ตามช่อง VAT ของออเดอร์ใบนี้ — ถ้าผิด ให้แก้ VAT ที่ปุ่ม ✏️ แก้รายการ '
        + 'แล้วเปิดหน้านี้ใหม่ ยอดจะเปลี่ยนตามด้วย</div>';
     h += '<pre class="paymsg" id="py-msg">' + esc(p.msg) + '</pre>';
+
+    /* ลิงก์ให้ลูกค้าจ่ายเอง — ทางที่สามนอกจากคัดลอกข้อความ
+       ลูกค้าที่ได้ลิงก์ไม่ต้องพิมพ์เลขบัญชีเอง ซึ่งเป็นจุดที่พิมพ์ผิดบ่อยที่สุด */
+    h += '<div class="subhd">ลิงก์ให้ลูกค้าจ่ายเอง</div>';
+    h += '<div id="py-link">' + payLinkHtml(p.link) + '</div>';
   }
 
   h += '<div class="subhd">หลักฐานการโอน</div>';
@@ -2996,7 +3001,78 @@ function drawPay(p){
   payBind(p);
 }
 
+/**
+ * กล่องลิงก์ในหน้าเก็บเงิน — สามสถานะ ยังไม่มี / มีแล้ว / ยังกรอกลิงก์เว็บแอปไม่ครบ
+ *
+ * ยังไม่มีลิงก์ ไม่ได้แปลว่ากดสร้างไม่ได้ และมีลิงก์แล้วก็ไม่ได้แปลว่าลูกค้าเห็นแล้ว
+ * สามอย่างนี้ต้องอ่านออกจากหน้าจอโดยไม่ต้องเดา
+ */
+function payLinkHtml(L){
+  if(!L){
+    return '<button class="btn ghost" id="py-mklink">สร้างลิงก์ส่งให้ลูกค้า</button>'
+      + '<div class="hint">ลูกค้าเปิดลิงก์แล้วเห็นยอดกับเลขบัญชี '
+      + 'กดคัดลอกเลขบัญชีได้ แล้วแนบสลิปกลับมาเองโดยไม่ต้องส่งในแชท</div>';
+  }
+  if(L.why){
+    /* มีกุญแจแล้วแต่ยังประกอบลิงก์ไม่ได้ — บอกให้ครบว่าติดตรงไหน
+       ห้ามโชว์ลิงก์ครึ่ง ๆ กลาง ๆ ให้พนักงานเผลอก๊อปไปส่ง */
+    return '<div class="stop"><b>ยังส่งลิงก์ให้ลูกค้าไม่ได้</b><br>' + esc(L.why) + '</div>';
+  }
+  var h = '<pre class="paymsg" id="py-url">' + esc(L.url) + '</pre>'
+    + '<button class="btn" id="py-copylink">คัดลอกข้อความ + ลิงก์</button>'
+    + '<button class="btn ghost" id="py-copyurl">คัดลอกเฉพาะลิงก์</button>';
+  /* คำถามแรกเวลาลูกค้าเงียบคือ "เขาเห็นลิงก์หรือยัง"
+     ยังไม่เปิด กับ เปิดแล้วแต่ยังไม่โอน ตามงานคนละแบบ */
+  if(L.told){
+    h += '<div class="ok-note">ลูกค้าแจ้งชำระแล้วเมื่อ ' + esc(L.told)
+       + ' — ดูสลิปข้างล่าง</div>';
+  }else if(L.opened > 0){
+    h += '<div class="hint">ลูกค้าเปิดลิงก์แล้ว ' + L.opened + ' ครั้ง แต่ยังไม่ได้แจ้งชำระ</div>';
+  }else{
+    h += '<div class="hint">ยังไม่มีใครเปิดลิงก์นี้เลย</div>';
+  }
+  h += '<div class="hint">ส่งผิดคน? เปิดชีท <b>ลิงก์ชำระเงิน</b> '
+     + 'พิมพ์ “ปิด” ที่ช่องปิดลิงก์ของแถวนั้น ลิงก์เดิมจะใช้ไม่ได้ทันที</div>';
+  return h;
+}
+
+/** ข้อความสำเร็จรูปที่พนักงานก๊อปไปวางในแชทได้เลย */
+function payLinkMsg(p, url){
+  var head = PAY_ORD ? orderMsg(PAY_ORD) : "";
+  var tail = "ชำระเงินและส่งสลิปได้ที่ลิงก์นี้เลยค่ะ\n" + url;
+  return head ? head + "\n\n" + tail : tail;
+}
+
+function payLinkBind(p){
+  var mk = $("#py-mklink");
+  if(mk) mk.onclick = function(){
+    mk.disabled = true; mk.textContent = "กำลังสร้าง…";
+    google.script.run
+      .withSuccessHandler(function(L){
+        p.link = L;
+        $("#py-link").innerHTML = payLinkHtml(L);
+        payLinkBind(p);
+      })
+      .withFailureHandler(function(m){
+        mk.disabled = false; mk.textContent = "สร้างลิงก์ส่งให้ลูกค้า";
+        $("#py-link").innerHTML += '<div class="stop">สร้างลิงก์ไม่สำเร็จ<br>'
+          + escLines(m) + '</div>';
+      })
+      .payLink(p.no);
+  };
+
+  var cl = $("#py-copylink");
+  if(cl) cl.onclick = function(){
+    copyText(payLinkMsg(p, p.link.url), "คัดลอกข้อความพร้อมลิงก์แล้ว เอาไปวางในแชทได้เลย");
+  };
+  var cu = $("#py-copyurl");
+  if(cu) cu.onclick = function(){
+    copyText(p.link.url, "คัดลอกลิงก์แล้ว");
+  };
+}
+
 function payBind(p){
+  payLinkBind(p);
   var c = $("#py-copy");
   if(c) c.onclick = function(){ copyText(p.msg, "คัดลอกวิธีโอนแล้ว เอาไปวางในแชทได้เลย") };
 

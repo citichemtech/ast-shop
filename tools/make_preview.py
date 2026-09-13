@@ -130,6 +130,7 @@ var MOCK_DOCS = [];       /* ทะเบียนเอกสารที่อ
 var MOCK_MONTHS = {};     /* ยอดที่กรอกเองในชีท สรุปเดือน คีย์เป็น "ปี-เดือน|ช่องทาง" */
 var MOCK_SIGN = {};       /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ (ของจริงอยู่ในชีท ตั้งค่าแอป) */
 var MOCK_SLIPS = [];      /* สลิปที่แนบในรอบนี้ (ของจริงอยู่ในชีท หลักฐานการชำระเงิน) */
+var MOCK_LINKS = {};      /* ลิงก์ชำระเงินที่สร้างในรอบนี้ (ของจริงอยู่ในชีท ลิงก์ชำระเงิน) */
 window.SENT = [];
 window.google = { script: { run: (function(){
   var ok=null, bad=null;
@@ -302,7 +303,24 @@ window.google = { script: { run: (function(){
         return { no:o.no, cust:o.cust, date:o.date, net:Number(o.net),
                  status:o.status, vat:o.vat, wantVat:wantVat, acct:acct,
                  qr:qr, qrWhy:qrWhy, qrOff:qrOff, msg:L.join("\\n"), miss:[],
+                 link: MOCK_LINKS[o.no] || null,
                  slips: MOCK_SLIPS.filter(function(x){ return x.no === o.no }).slice().reverse() };
+      });
+    },
+    /* ลิงก์ชำระเงิน — ของจริงอยู่ในชีท ลิงก์ชำระเงิน
+       ตัวจำลองจำไว้ในหน่วยความจำ และคืนใบเดิมถ้าเคยสร้างแล้ว เหมือนของจริง */
+    payLink: function(orderNo){
+      reply(function(){
+        var o = MOCK_ORDERS.filter(function(x){ return x.no === String(orderNo) })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + orderNo + " ในชีท");
+        if(MOCK_LINKS[o.no]) return MOCK_LINKS[o.no];
+        var k = "";
+        while(k.length < 32) k += Math.floor(Math.random() * 16).toString(16);
+        MOCK_LINKS[o.no] = {
+          key: k, opened: 0, told: "", why: "",
+          url: "https://script.google.com/macros/s/AKfyPREVIEW/exec?p=" + k
+        };
+        return MOCK_LINKS[o.no];
       });
     },
     addSlip: function(orderNo, p){

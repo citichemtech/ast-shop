@@ -594,6 +594,9 @@ function payAsk(orderNo) {
     acct: acct, qr: qr, qrWhy: qrWhy, qrOff: qrOff,
     msg: acct.miss.length ? '' : payMsg_(ord, acct, wantVat),
     miss: acct.miss,
+    /* ลิงก์ที่เคยสร้างไว้แล้ว (ถ้ามี) — เปิดหน้านี้ครั้งไหนก็เห็นสถานะล่าสุด
+       ว่าลูกค้าเปิดหรือยัง โดยไม่ต้องกดอะไรก่อน */
+    link: (typeof linkInfo_ === 'function') ? linkInfo_(ord.no) : null,
     slips: slipRows_(ord.no)
   });
 }

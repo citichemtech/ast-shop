@@ -3645,6 +3645,72 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal() });
   await page.waitForTimeout(200);
 
+  /* ---------- 47.5 ลิงก์ให้ลูกค้าจ่ายเอง ---------- */
+  console.log('\n47.5 ลิงก์ให้ลูกค้าจ่ายเอง');
+  await page.evaluate(function () { openPay((window.ORDERS || [])[0]) });
+  await page.waitForTimeout(700);
+  var lk1 = await page.evaluate(function () {
+    return {
+      mk: !!$('#py-mklink'),
+      url: !!$('#py-url'),
+      hint: ($('#py-link') || {}).innerText || ''
+    };
+  });
+  truthy('ยังไม่มีลิงก์ ต้องมีปุ่มให้สร้าง', lk1.mk);
+  /* ยังไม่กด = ยังไม่มีลิงก์ ห้ามสร้างให้เองตอนเปิดหน้าดูเฉย ๆ
+     ไม่งั้นทุกครั้งที่เปิดดูออเดอร์จะเกิดลิงก์ใหม่ที่ไม่มีใครตั้งใจจะส่ง */
+  eq('และยังไม่มีลิงก์โผล่มาก่อนกด', lk1.url, false);
+  truthy('บอกด้วยว่าลิงก์นี้ให้ลูกค้าทำอะไรได้', lk1.hint.indexOf('แนบสลิปกลับมาเอง') > -1);
+
+  await page.click('#py-mklink');
+  await page.waitForTimeout(600);
+  var lk2 = await page.evaluate(function () {
+    return {
+      url: ($('#py-url') || {}).textContent || '',
+      copy: !!$('#py-copylink'),
+      only: !!$('#py-copyurl'),
+      text: ($('#py-link') || {}).innerText || ''
+    };
+  });
+  truthy('กดแล้วได้ลิงก์เต็มพร้อมกุญแจ', /\?p=[0-9a-f]{32}$/.test(lk2.url));
+  truthy('มีปุ่มคัดลอกข้อความพร้อมลิงก์', lk2.copy);
+  truthy('และปุ่มคัดลอกเฉพาะลิงก์', lk2.only);
+  truthy('บอกว่ายังไม่มีใครเปิด', lk2.text.indexOf('ยังไม่มีใครเปิด') > -1);
+  /* ส่งผิดคนเป็นเรื่องที่เกิดจริง ต้องรู้วิธีปิดตั้งแต่ตอนเห็นลิงก์ ไม่ใช่ตอนพลาดแล้ว */
+  truthy('บอกวิธีปิดลิงก์ไว้ตรงนั้นเลย', lk2.text.indexOf('พิมพ์ “ปิด”') > -1);
+
+  console.log('\n   ข้อความที่ก๊อปไปวางในแชท ต้องมีทั้งสรุปออเดอร์และลิงก์');
+  var lk3 = await page.evaluate(function () {
+    var got = '';
+    var real = window.copyText;
+    window.copyText = function (t) { got = t; };
+    $('#py-copylink').click();
+    window.copyText = real;
+    return got;
+  });
+  /* ใช้ข้อความสรุปตัวเดียวกับที่ร้านส่งอยู่แล้ว ไม่ได้เขียนขึ้นใหม่
+     (ตัวนั้นตั้งใจไม่ใส่เลขออเดอร์ เพราะเป็นเลขที่ใช้ในร้าน ลูกค้าไม่ต้องรู้) */
+  truthy('มีสรุปออเดอร์ของเดิมอยู่ในข้อความ', lk3.indexOf('สรุปออเดอร์ลูกค้า') > -1);
+  truthy('มีบรรทัดยอดชำระทั้งหมด', lk3.indexOf('ยอดชำระทั้งหมด') > -1);
+  truthy('และมีลิงก์', lk3.indexOf('?p=') > -1);
+  truthy('เขียนบอกลูกค้าว่าให้ทำอะไรกับลิงก์', lk3.indexOf('ส่งสลิป') > -1);
+  /* ลิงก์ต้องอยู่ท้ายสุด คนอ่านในแชทจะได้เห็นยอดก่อนแล้วค่อยกด
+     ไม่ใช่กดลิงก์ตั้งแต่ยังไม่รู้ว่ากำลังจะจ่ายค่าอะไร */
+  truthy('ลิงก์อยู่ท้ายข้อความ', lk3.indexOf('?p=') > lk3.indexOf('ยอดชำระทั้งหมด'));
+
+  console.log('\n   เปิดหน้าเดิมใหม่ ต้องเห็นลิงก์เดิม ไม่ใช่ปุ่มสร้างอีกรอบ');
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () { openPay((window.ORDERS || [])[0]) });
+  await page.waitForTimeout(700);
+  var lk4 = await page.evaluate(function () {
+    return { url: ($('#py-url') || {}).textContent || '', mk: !!$('#py-mklink') };
+  });
+  eq('ลิงก์เดิมยังอยู่', lk4.url, lk2.url);
+  eq('ไม่มีปุ่มสร้างซ้ำให้กดพลาด', lk4.mk, false);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
   /* ---------- 48. ใบวางบิล — ใบเดียวรวมหลายบิล ---------- */
   console.log('\n48. ใบวางบิล');
 

@@ -262,6 +262,26 @@ function pubSlip(key, p) {
 /* ------------------------------------------------------------ ฝั่งพนักงาน */
 
 /**
+ * ลิงก์ที่มีอยู่แล้วของออเดอร์ใบนี้ — ดูอย่างเดียว ไม่สร้างใหม่
+ *
+ * แยกจาก payLink เพราะหน้าเก็บเงินเปิดขึ้นมาทุกครั้งที่กดดูออเดอร์
+ * ถ้าใช้ตัวสร้าง ทุกครั้งที่เปิดดูจะได้ลิงก์ใหม่ทั้งที่ยังไม่ได้ตั้งใจจะส่งให้ใคร
+ */
+function linkInfo_(orderNo) {
+  if (!sheetIfAny_('link')) return null;
+  var hit = linkRowByOrder_(orderNo);
+  if (!hit || !hit.key) return null;
+  var IN = SH.link.IN, base = appCfg_().payLink;
+  return {
+    key: hit.key,
+    url: base ? base + (base.indexOf('?') > -1 ? '&' : '?') + 'p=' + hit.key : '',
+    why: base ? '' : 'ยังไม่ได้กรอก "ลิงก์เว็บแอปสำหรับลูกค้า" ในชีท ' + SH.app.name,
+    opened: Number(hit.vals[IN.opened - 1] || 0),
+    told: hit.vals[IN.told - 1] instanceof Date ? ymd_(hit.vals[IN.told - 1], true) : ''
+  };
+}
+
+/**
  * ขอลิงก์ของออเดอร์ใบหนึ่ง — มีอยู่แล้วใช้ใบเดิม ไม่ออกใหม่ทุกครั้งที่กด
  *
  * ออกใหม่ทุกครั้งคือลิงก์ที่ส่งไปเมื่อวานตายเงียบ ๆ ลูกค้ากดแล้วเจอ
