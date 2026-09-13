@@ -20,7 +20,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 GS = ROOT / "apps-script"
 
 # เรียงตามลำดับที่อ่านแล้วเข้าใจง่าย — Apps Script ไม่สนลำดับ ฟังก์ชันถูก hoist หมด
-SERVER = ["Sheets.gs", "Fefo.gs", "Doc.gs", "Setup.gs", "Api.gs", "Acct.gs", "Pay.gs", "Import.gs"]
+SERVER = ["Sheets.gs", "Fefo.gs", "Doc.gs", "Setup.gs", "Api.gs", "Acct.gs", "Pay.gs",
+          "Pub.gs", "Import.gs"]
 
 
 def main():
@@ -40,6 +41,12 @@ def main():
         parts.append("\n\n/* ==================== %s ==================== */\n\n%s\n" % (name, body))
     code = "".join(parts)
     (out / "Code.gs").write_text(code, encoding="utf-8")
+
+    # ---- Pub.html (ไฟล์4) ----
+    # หน้าลูกค้าเป็นไฟล์แยกโดยตั้งใจ ไม่รวมเข้า Index.html
+    # เพราะ Index.html คือหลังร้านทั้งก้อน ส่งไปถึงเครื่องลูกค้าไม่ได้
+    (out / "Pub.html").write_text(
+        (GS / "Pub.html").read_text(encoding="utf-8"), encoding="utf-8")
 
     # ---- Backup.gs (ไฟล์3) ----
     # ไม่รวมเข้า Code.gs โดยตั้งใจ — ตัวสำรองต้องยืนอยู่ได้ลำพัง

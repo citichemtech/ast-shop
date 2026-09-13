@@ -482,6 +482,10 @@ function load(fixture, opts) {
     },
     /* พอสร้างวันที่ตามเขตเวลาของสเปรดชีต ต้องมีตัวแปลงให้เรียกเหมือนของจริง */
     Utilities: {
+      /* ของจริงใช้ตัวสุ่มของ Java ซึ่งเดาไม่ได้ ตัวจำลองใช้ crypto ของ node
+         ไม่ใช้ Math.random เพราะข้อสอบมีข้อที่ดูว่ากุญแจซ้ำกันไหม
+         ถ้าตัวจำลองสุ่มอ่อนกว่าของจริง ข้อสอบจะจับปัญหาที่ไม่มีจริง */
+      getUuid: function () { return require('crypto').randomUUID(); },
       parseDate: function (txt, tz, fmt) {
         var m = String(txt).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
         if (!m) throw new Error('parseDate: รูปแบบไม่ตรง ' + txt);
@@ -571,7 +575,8 @@ function load(fixture, opts) {
   var dir = path.join(__dirname, '..', 'apps-script');
   /* Doc.gs ต้องโหลดด้วย ไม่งั้น issueDoc/voidDoc เรียก docType_ ไม่เจอ
      ทะเบียนเอกสารเป็นของที่แก้ทีหลังไม่ได้ จึงต้องมีข้อสอบคุมเหมือนส่วนอื่น */
-  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs', 'Pay.gs'];
+  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs', 'Pay.gs',
+    'Pub.gs'];
   /* BUNDLE=1 = สอบไฟล์ที่รวมแล้วแทนไฟล์ต้นฉบับ
      ไฟล์ที่เอาไปวางใน Apps Script จริงคือไฟล์ที่รวมแล้ว ถ้าตัวรวมทำอะไรพัง
      ข้อสอบที่อ่านแต่ต้นฉบับจะผ่านหมดโดยที่ของจริงใช้ไม่ได้ */

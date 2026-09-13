@@ -1,0 +1,251 @@
+<!--
+  หน้าที่ลูกค้าเห็นเมื่อกดลิงก์ชำระเงิน
+
+  ทำไมไม่ใช้ Index.html ร่วมกัน: หน้านั้นคือหลังร้านทั้งก้อน — เมนู ปุ่มคีย์ออเดอร์
+  รายชื่อลูกค้า ต้นทุน กำไร ต่อให้ซ่อนด้วย CSS ทุกอย่างก็ยังถูกส่งไปถึงเครื่องลูกค้า
+  และเปิดอ่านได้จาก View Source หน้านี้จึงเป็นไฟล์แยกที่มีแค่ของที่ลูกค้าต้องเห็น
+
+  ข้อมูลถูกฝังมากับหน้าเป็นก้อน JSON ก้อนเดียวตั้งแต่ตอนเสิร์ฟ (ดู pubPage_ ใน Pub.gs)
+  ไม่ต้องยิงถามอีกรอบ — ลูกค้าเปิดจากมือถือกลางทาง เน็ตช้าหนึ่งรอบคือหน้าขาวหนึ่งครั้ง
+  และการวาดด้วย JS แทน scriptlet ทำให้เอาหน้านี้ไปสอบในเบราว์เซอร์จริงได้
+-->
+<style>
+:root{
+  --ink:#1f2328; --sub:#6a737d; --line:#e6e8eb; --bg:#f6f7f9; --card:#fff;
+  --gold:#b8860b; --soft:#fdf6e3; --ok:#1a7f37; --red:#c62828;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Sarabun","Noto Sans Thai",sans-serif}
+.wrap{max-width:520px;margin:0 auto;padding:16px 14px 40px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:16px;margin-bottom:12px}
+h1{font-size:1.15rem;margin:0 0 2px}
+.shop{text-align:center;padding:14px 0 10px}
+.shop b{font-size:1.05rem}
+.shop div{color:var(--sub);font-size:0.85rem}
+.no{color:var(--sub);font-size:0.85rem}
+
+.it{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.it:last-child{border-bottom:0}
+.it .nm{flex:1;min-width:0}
+.it .nm b{font-weight:600;display:block;word-break:break-word}
+.it .nm span{color:var(--sub);font-size:0.85rem}
+.it .amt{text-align:right;white-space:nowrap}
+
+.sum{display:flex;justify-content:space-between;padding:5px 0}
+.sum.big{border-top:2px solid var(--ink);margin-top:8px;padding-top:10px;
+  font-size:1.2rem;font-weight:700}
+.sum.big .v{color:var(--gold)}
+
+.bank{background:var(--soft);border:1px solid #f0e2b6;border-radius:12px;padding:14px}
+.bank .b{font-weight:700;font-size:1.05rem}
+.acct{display:flex;align-items:center;gap:10px;margin-top:8px}
+.acct .n{font-size:1.35rem;font-weight:700;letter-spacing:0.5px;flex:1;
+  font-variant-numeric:tabular-nums}
+button,a.btn{font:inherit;border-radius:10px;border:1px solid var(--line);
+  background:#fff;padding:10px 14px;cursor:pointer;color:inherit}
+a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none}
+.go{width:100%;background:var(--gold);color:#fff;border-color:var(--gold);
+  font-weight:700;font-size:1.05rem;padding:14px}
+.go[disabled]{opacity:0.55}
+
+label{display:block;font-size:0.88rem;color:var(--sub);margin:12px 0 4px}
+input[type=file],input[type=number],input[type=date]{
+  width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;
+  font:inherit;background:#fff}
+
+.step{display:flex;gap:10px;align-items:flex-start;padding:6px 0}
+.dot{width:22px;height:22px;border-radius:50%;background:var(--line);flex:none;
+  display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:#fff}
+.dot.on{background:var(--ok)}
+.dot.wait{background:#e8a33d}
+.step div b{display:block;font-size:0.95rem}
+.step div span{color:var(--sub);font-size:0.8rem}
+
+.say{padding:11px;border-radius:10px;margin-top:12px;font-size:0.92rem;line-height:1.6}
+.say.ok{background:#eef7ef;border-left:3px solid var(--ok)}
+.say.bad{background:#fdf0f0;border-left:3px solid var(--red)}
+.mid{text-align:center;color:var(--sub);padding:26px 12px}
+.mid b{display:block;color:var(--ink);font-size:1.05rem;margin-bottom:6px}
+</style>
+
+<div class="wrap" id="wrap"><div class="mid">กำลังเปิด…</div></div>
+
+<script>
+/* ก้อนเดียวที่ฝั่งชีทฝังมา — ถ้าเปิดลิงก์ไม่ผ่าน err จะมีข้อความบอกเหตุผล */
+var PUB = <?!= boot ?>;
+
+(function () {
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  };
+  var money = function (n) {
+    return Number(n || 0).toLocaleString('th-TH',
+      { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  var $ = function (id) { return document.getElementById(id) };
+  var wrap = $('wrap');
+
+  function head() {
+    var s = PUB.shop || {};
+    return '<div class="shop"><b>' + esc(s.name || '') + '</b>' +
+      (s.tel ? '<div>' + esc(s.tel) + '</div>' : '') + '</div>';
+  }
+
+  /* ลิงก์ผิด ลิงก์ถูกปิด ใบถูกยกเลิก — สามอย่างนี้ต้องหน้าตาเหมือนหน้าปกติ
+     มีหัวร้าน มีข้อความไทยที่บอกว่าให้ทำอะไรต่อ ไม่ใช่หน้า error ของ Google
+     ที่ลูกค้าอ่านแล้วนึกว่าโดนหลอกให้กดลิงก์ปลอม */
+  function stop(title, body) {
+    wrap.innerHTML = head() + '<div class="card mid"><b>' + esc(title) + '</b>' +
+      esc(body) + '</div>';
+  }
+
+  if (PUB.err) { stop('เปิดหน้านี้ไม่ได้', PUB.err); return; }
+  var d = PUB.data, o = d.ord;
+
+  var h = head();
+  h += '<div class="card"><h1>ยอดที่ต้องชำระ</h1>' +
+    '<div class="no">เลขที่ออเดอร์ ' + esc(o.no) + ' · ' + esc(o.date) + '</div>' +
+    '<div class="no">ลูกค้า ' + esc(o.cust) + '</div></div>';
+
+  if (d.dead) {
+    wrap.innerHTML = h + '<div class="card mid"><b>ออเดอร์ใบนี้ถูกยกเลิกแล้ว</b>' +
+      'รบกวนทักร้านก่อนโอนเงินนะคะ</div>';
+    return;
+  }
+
+  h += '<div class="card">';
+  for (var i = 0; i < o.items.length; i++) {
+    var it = o.items[i];
+    h += '<div class="it"><div class="nm"><b>' + esc(it.name) + '</b>' +
+      '<span>' + esc(it.qty) + ' ' + esc(it.unit) + ' × ' + money(it.price) + '</span></div>' +
+      '<div class="amt">' + money(it.total) + '</div></div>';
+  }
+  h += '<div class="sum"><span>มูลค่าสินค้า</span><span>' + money(o.subtotal) + '</span></div>';
+  if (o.discount > 0) {
+    h += '<div class="sum"><span>ส่วนลด</span><span>−' + money(o.discount) + '</span></div>';
+  }
+  if (o.vatAmt > 0) {
+    h += '<div class="sum"><span>ภาษีมูลค่าเพิ่ม 7%</span><span>' + money(o.vatAmt) + '</span></div>';
+  }
+  if (o.ship > 0) {
+    h += '<div class="sum"><span>ค่าจัดส่ง' + (o.carrier ? ' · ' + esc(o.carrier) : '') +
+      '</span><span>' + money(o.ship) + '</span></div>';
+  }
+  h += '<div class="sum big"><span>รวมยอดชำระ</span>' +
+    '<span class="v">' + money(o.net) + ' บาท</span></div></div>';
+
+  h += '<div class="card">';
+  if (d.acct) {
+    h += '<div class="bank"><div style="font-size:0.85rem;color:var(--sub)">โอนเข้าบัญชี</div>' +
+      '<div class="b">' + esc(d.acct.bank) + '</div>' +
+      '<div>' + esc(d.acct.name) + '</div>' +
+      '<div class="acct"><span class="n" id="acct-no">' + esc(d.acct.acct) + '</span>' +
+      '<button type="button" id="copy">คัดลอก</button></div></div>';
+    if (d.acct.link) {
+      h += '<a class="btn" style="margin-top:10px" target="_blank" rel="noopener" href="' +
+        esc(d.acct.link) + '">เปิดแอปธนาคาร</a>';
+    }
+  } else {
+    /* ไม่มีบัญชีให้โอน ดีกว่าโชว์บัญชีที่ไม่ใช่ของใบนี้ */
+    h += '<div class="say bad">ยังไม่มีเลขบัญชีสำหรับใบนี้ รบกวนทักร้านขอเลขบัญชีนะคะ</div>';
+  }
+  h += '</div>';
+
+  h += '<div class="card"><h1>แจ้งชำระเงิน</h1>' +
+    '<div class="no">โอนแล้วแนบสลิปตรงนี้ได้เลย ร้านจะตรวจแล้วยืนยันให้อีกครั้ง</div>' +
+    '<label for="f">รูปสลิป หรือไฟล์ PDF</label>' +
+    '<input type="file" id="f" accept="image/*,application/pdf">' +
+    '<label for="dt">วันที่โอน</label><input type="date" id="dt">' +
+    '<label for="amt">ยอดที่โอน (บาท)</label>' +
+    '<input type="number" id="amt" step="0.01" inputmode="decimal" value="' + o.net + '">' +
+    '<button class="go" id="send" style="margin-top:16px">แจ้งชำระเงิน</button>' +
+    '<div id="say"></div></div>';
+
+  h += '<div class="card"><h1>สถานะออเดอร์</h1>' +
+    '<div class="step"><span class="dot on">✓</span><div><b>สั่งซื้อแล้ว</b>' +
+    '<span>' + esc(o.date) + '</span></div></div>' +
+    '<div class="step" id="st-told"><span class="dot' + (d.told ? ' wait' : '') + '">' +
+    (d.told ? '⌛' : '') + '</span><div><b>แจ้งชำระเงินแล้ว</b>' +
+    '<span id="told-at">' + esc(d.told || 'ยังไม่ได้แจ้ง') + '</span></div></div>' +
+    '<div class="step"><span class="dot"></span><div><b>ร้านยืนยันรับเงิน</b>' +
+    '<span>รอร้านตรวจสลิป</span></div></div></div>';
+
+  wrap.innerHTML = h;
+
+  var copy = $('copy');
+  if (copy) {
+    copy.onclick = function () {
+      var t = $('acct-no').textContent.replace(/[^0-9]/g, '');
+      var done = function () { copy.textContent = 'คัดลอกแล้ว'; };
+      /* คลิปบอร์ดสมัยใหม่ใช้ไม่ได้ในเว็บวิวบางตัวที่ลูกค้าเปิดจากในไลน์
+         จึงมีทางสำรองเสมอ — ปุ่มที่กดแล้วเงียบคือปุ่มที่ลูกค้าคิดว่าเว็บพัง */
+      function fallback() {
+        var x = document.createElement('textarea');
+        x.value = t; document.body.appendChild(x); x.select();
+        try { document.execCommand('copy'); done(); }
+        catch (e) { copy.textContent = 'กดค้างที่เลขเพื่อคัดลอก'; }
+        document.body.removeChild(x);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).then(done, fallback);
+      } else fallback();
+    };
+  }
+
+  var dt = $('dt');
+  if (dt && !dt.value) {
+    var n = new Date();
+    dt.value = n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) +
+      '-' + ('0' + n.getDate()).slice(-2);
+  }
+
+  $('send').onclick = function () {
+    var send = $('send'), say = $('say'), f = $('f').files[0];
+    if (!f) { say.className = 'say bad'; say.textContent = 'ยังไม่ได้เลือกรูปสลิปค่ะ'; return; }
+    /* กันไฟล์ใหญ่ตั้งแต่ก่อนอ่าน — ฝั่งชีทกันไว้อีกชั้นอยู่แล้ว แต่ปล่อยให้ส่ง
+       30 MB ผ่านเน็ตมือถือไปก่อนแล้วค่อยบอกว่าใหญ่ไป คือกินเน็ตลูกค้าฟรี ๆ */
+    if (f.size > 10 * 1024 * 1024) {
+      say.className = 'say bad';
+      say.textContent = 'ไฟล์ใหญ่เกิน 10 MB รบกวนถ่ายใหม่หรือย่อรูปก่อนนะคะ';
+      return;
+    }
+    send.disabled = true; send.textContent = 'กำลังส่ง…';
+    say.className = ''; say.textContent = '';
+
+    var r = new FileReader();
+    r.onerror = function () {
+      send.disabled = false; send.textContent = 'แจ้งชำระเงิน';
+      say.className = 'say bad'; say.textContent = 'อ่านไฟล์ไม่ได้ รบกวนเลือกรูปใหม่นะคะ';
+    };
+    r.onload = function () {
+      google.script.run
+        .withSuccessHandler(function () {
+          send.textContent = 'แจ้งแล้ว ขอบคุณค่ะ';
+          say.className = 'say ok';
+          say.textContent = 'ได้รับสลิปแล้วค่ะ ร้านจะตรวจแล้วยืนยันให้อีกครั้ง';
+          var dot = document.querySelector('#st-told .dot');
+          if (dot) { dot.className = 'dot wait'; dot.textContent = '⌛'; }
+          var at = $('told-at');
+          if (at) at.textContent = 'เพิ่งแจ้งเมื่อครู่นี้';
+        })
+        .withFailureHandler(function (m) {
+          /* ล้มแล้วต้องกดใหม่ได้ทันที ห้ามค้างปุ่มไว้ — ลูกค้าที่โอนเงินไปแล้ว
+             แต่แจ้งไม่สำเร็จ คือคนที่กำลังกังวลว่าเงินหายไปไหน */
+          send.disabled = false; send.textContent = 'แจ้งชำระเงิน';
+          say.className = 'say bad';
+          say.textContent = String(m && m.message ? m.message : m);
+        })
+        .pubSlip(PUB.key, {
+          data: r.result,
+          paidAt: $('dt').value,
+          amount: Number($('amt').value || 0)
+        });
+    };
+    r.readAsDataURL(f);
+  };
+})();
+</script>

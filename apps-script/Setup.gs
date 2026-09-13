@@ -20,6 +20,7 @@ var CUT_LAST = 3005;   // ตัดล็อต รองรับ 3000 บร�
    (ของเดิมทำใบละหนึ่งแท็บ ที่ 20 ใบต่อวันจะชนขีดจำกัดของ Google Sheets ใน 2 เดือน) */
 var DOC_LAST = 8005;
 var SLIP_LAST = 3005;  // หลักฐานการชำระเงิน รองรับ 3000 สลิป
+var LINK_LAST = 3005;  // ลิงก์ชำระเงิน รองรับ 3000 ลิงก์
 var MONTH_LAST = 305;  // สรุปเดือน รองรับ 300 แถว = 60 เดือน × 5 ช่องทาง
 var STOCK_LAST = 150;  // ขอบล่างของชีท สต๊อกคงเหลือ ที่ใช้ในสูตรตรวจยอด
 
@@ -41,6 +42,7 @@ function setup() {
   made.push(setupAppSheet_(ss));
   made.push(setupMonthSheet_(ss));
   made.push(setupSlipSheet_(ss));
+  made.push(setupLinkSheet_(ss));
   made.push(setupItemLotColumn_(ss));
   made.push(setupAccounting_(ss));
   made.push(setupCarrierList_(ss));
@@ -1616,6 +1618,60 @@ function setupSlipSheet_(ss) {
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' สลิป)';
 }
 
+/**
+ * ชีท ลิงก์ชำระเงิน — ทะเบียนกุญแจของลิงก์ที่ส่งให้ลูกค้า
+ *
+ * ช่อง "ปิดลิงก์" มีไว้ให้เจ้าของร้านพิมพ์ว่า ปิด ลงไปเองได้ทันที
+ * เวลาส่งลิงก์ผิดคน — ต้องปิดได้จากในชีทโดยไม่ต้องรอใครมาแก้โค้ดให้
+ */
+function setupLinkSheet_(ss) {
+  var name = SH.link.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < LINK_LAST) s.insertRowsAfter(s.getMaxRows(), LINK_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 10) s.insertColumnsAfter(s.getMaxColumns(), 10 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('ลิงก์ชำระเงินที่ส่งให้ลูกค้า — ระบบเขียนให้เอง')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'กุญแจในลิงก์คือสิ่งเดียวที่กั้นคนนอกออกจากออเดอร์ใบนั้น ห้ามแก้ด้วยมือ  |  ' +
+    'ส่งผิดคน ให้พิมพ์ "ปิด" ที่ช่องปิดลิงก์ ลิงก์เดิมจะใช้ไม่ได้ทันที  |  ' +
+    'ลบแถวทิ้ง = ลิงก์ที่ส่งไปแล้วกลายเป็นลิงก์เสีย โดยลูกค้าไม่รู้ว่าเกิดอะไรขึ้น'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'เลขที่ออเดอร์', 'กุญแจ\n(ห้ามแก้)', 'สร้างเมื่อ', 'ผู้สร้าง',
+    'ลูกค้าเปิดกี่ครั้ง', 'เปิดล่าสุด', 'ลูกค้าแจ้งชำระเมื่อ',
+    'ปิดลิงก์\n(พิมพ์ ปิด)', 'หมายเหตุ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = LINK_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+
+  var inCols = [];
+  for (var c = 2; c <= 10; c++) inCols.push(c);
+  paintCols_(s, n, inCols, [1]);
+
+  s.getRange(DATA_ROW, SH.link.IN.key, n, 1).setNumberFormat('@').setFontColor('#9aa0a6');
+  s.getRange(DATA_ROW, SH.link.IN.at, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.link.IN.lastOpen, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.link.IN.told, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.link.IN.no, 130);
+  s.setColumnWidth(SH.link.IN.key, 90);
+  s.setColumnWidth(SH.link.IN.at, 140);
+  s.setColumnWidth(SH.link.IN.by, 180);
+  s.setColumnWidth(SH.link.IN.lastOpen, 140);
+  s.setColumnWidth(SH.link.IN.told, 150);
+  s.setColumnWidth(SH.link.IN.note, 220);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' ลิงก์)';
+}
+
 function setupAppSheet_(ss) {
   var name = SH.app.name;
   var s = findSheet_(ss, name);
@@ -1742,7 +1798,16 @@ function setupAppSheet_(ss) {
        เครดิตกี่วันใช้ตอนคิดช่อง "วันครบกำหนด" ของแต่ละบรรทัด ถ้าอ่านจากข้อความ
        เงื่อนไขชำระเงินของใบนั้นไม่ออก */
     ['คำนำหน้าเลขใบวางบิล', 'BL'],
-    ['เครดิตกี่วัน (ใบวางบิล)', 30]
+    ['เครดิตกี่วัน (ใบวางบิล)', 30],
+
+    /* ลิงก์ที่ส่งให้ลูกค้าเปิดดูยอดและแนบสลิป
+
+       ต้องเป็นลิงก์ของ deploy อีกตัวที่ตั้งเป็น "ทุกคน รวมถึงผู้ใช้ที่ไม่ระบุตัวตน"
+       ไม่ใช่ลิงก์ที่พนักงานใช้ ลูกค้าไม่มีบัญชีบริษัทจึงเปิดตัวนั้นไม่ได้
+
+       เว้นว่าง = ยังไม่เปิดใช้ ระบบจะบอกตรง ๆ ว่ายังส่งลิงก์ให้ลูกค้าไม่ได้
+       ห้ามเดา URL เอง เพราะเดาผิดคือส่งลิงก์เสียให้ลูกค้าโดยไม่มีใครรู้ */
+    ['ลิงก์เว็บแอปสำหรับลูกค้า', '']
   ];
   for (var i = 0; i < rows.length; i++) {
     var r = DATA_ROW + i;
