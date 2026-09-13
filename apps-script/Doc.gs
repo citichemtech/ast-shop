@@ -36,7 +36,19 @@ var DOC_TYPES = [
   { key: 'quote', code: 'QO', th: 'ใบเสนอราคา',   en: 'QUOTATION',      quote: true,  vat: true, form: [] },
   { key: 'inv',   code: 'IV', th: 'ใบแจ้งหนี้',     en: 'DEBIT NOTE',     quote: false, vat: true, form: [3] },
   { key: 'rec',   code: 'RE', th: 'ใบเสร็จรับเงิน', en: 'RECEIPT',        quote: false, vat: true, form: [0, 1] },
-  { key: 'dep',   code: 'DR', th: 'ใบรับเงินมัดจำ', en: 'DEPOSIT RECEIPT', quote: false, vat: true, form: [] }
+  { key: 'dep',   code: 'DR', th: 'ใบรับเงินมัดจำ', en: 'DEPOSIT RECEIPT', quote: false, vat: true, form: [] },
+  /* บิลเงินสด — ขายที่ไม่ออกใบกำกับภาษี
+     ของเดิมทำด้วยการออก "ใบเสร็จรับเงิน" แล้วเลือก "ไม่คิด VAT" ซึ่งผิดสองชั้น
+       หนึ่ง  กระดาษยังพิมพ์คำว่า ใบกำกับภาษี อยู่บนหัวใบ ทั้งที่ไม่ใช่ใบกำกับภาษี
+       สอง   กินเลขจากชุด ONIV ซึ่งเป็นชุดเลขใบกำกับภาษีที่ต้องเรียงต่อกันไม่ขาด
+              และเป็นชุดที่สรรพากรตรวจ
+     จึงต้องเป็นเอกสารคนละชนิด คนละชุดเลข และ vat:false ถาวร ไม่ใช่ติ๊กเอาตอนออกใบ */
+  { key: 'cash',  code: 'CS', th: 'บิลเงินสด',     en: 'CASH BILL',      quote: false, vat: false, form: [] },
+  /* ใบวางบิล — ใบเดียวรวมหลายบิลของลูกค้ารายเดียว ไม่ใช่ 1 ใบ = 1 ออเดอร์เหมือนใบอื่น
+     เนื้อในใบเป็น "รายการเอกสาร" (เลขที่ใบ · วันที่ · PO · วันครบกำหนด · ยอด)
+     ไม่ใช่รายการสินค้า จึงมีตัวประกอบใบของตัวเองคือ buildBill_ ไม่ได้ใช้ buildDoc_
+     และเลขใบเป็นคนละรูปแบบ BL260822-001 (วันที่ + ลำดับในวันนั้น) ตามใบจริงของร้าน */
+  { key: 'bill',  code: 'BL', th: 'ใบวางบิล',      en: 'BILLING NOTE',   quote: false, vat: true,  form: [], many: true }
 ];
 
 function docType_(key) {
@@ -156,6 +168,108 @@ function taxIdValid_(v) {
  *
  * prefix  เช่น "ONIV26-"   used  เลขที่เคยออกไปแล้วทั้งชุด   floor  เลขที่ยกยอดมา
  */
+/**
+ * เลขใบวางบิล — BL + ปีเดือนวัน + ลำดับในวันนั้น  เช่น BL260822-001
+ *
+ * คนละรูปแบบกับชุด ONIV ที่เดินเลขต่อกันทั้งปีโดยตั้งใจ ใบวางบิลไม่ใช่เอกสารภาษี
+ * ไม่ต้องเรียงไม่ขาด และร้านใช้รูปแบบนี้อยู่แล้ว (ใบจริง BL260822-001 · 22/08/2026)
+ */
+/**
+ * เป็นวันที่ที่ใช้ได้ไหม — ดูที่ "ทำอะไรได้" ไม่ใช่ instanceof
+ *
+ * instanceof Date เป็นเท็จทันทีถ้า Date ตัวนั้นมาจากคนละขอบเขต (เช่นข้ามจากไลบรารี
+ * หรือข้ามจาก vm ตอนรันข้อสอบ) แล้วโค้ดจะถอยไปใช้ "วันนี้" แทนวันที่จริงแบบเงียบ ๆ
+ * ซึ่งบนใบวางบิลแปลว่าวันครบกำหนดผิดไปทั้งใบโดยไม่มีอะไรฟ้อง
+ */
+function isDate_(v) {
+  return !!v && typeof v.getTime === 'function' && !isNaN(v.getTime());
+}
+
+function billNo_(prefix, when, used) {
+  var d = isDate_(when) ? when : new Date();
+  function p2(n) { return n < 10 ? '0' + n : '' + n; }
+  var stem = String(prefix || 'BL') +
+    String(d.getFullYear()).slice(-2) + p2(d.getMonth() + 1) + p2(d.getDate()) + '-';
+  var max = 0;
+  for (var i = 0; i < (used || []).length; i++) {
+    var t = String(used[i] || '');
+    if (t.indexOf(stem) !== 0) continue;
+    var n = parseInt(t.substring(stem.length), 10);
+    if (!isNaN(n) && n > max) max = n;
+  }
+  var seq = String(max + 1);
+  while (seq.length < 3) seq = '0' + seq;
+  return stem + seq;
+}
+
+/**
+ * เครดิตกี่วัน อ่านจากข้อความเงื่อนไขชำระเงินที่คนพิมพ์เอง
+ * "เครดิต 30 วัน" -> 30 · "เงินสด" -> 0 · อ่านไม่ออก -> ค่าตั้งต้น
+ *
+ * อ่านไม่ออกแล้วเดาเป็น 30 ทุกกรณีไม่ได้ เพราะวันครบกำหนดบนใบวางบิล
+ * คือวันที่ลูกค้าใช้ตั้งรอบจ่ายจริง ผิดไปสามสิบวันคือเงินเข้าช้าไปหนึ่งเดือน
+ */
+function creditDays_(terms, fallback) {
+  var t = String(terms == null ? '' : terms);
+  var m = /(\d{1,3})\s*วัน/.exec(t);
+  if (m) return Number(m[1]);
+  if (/เงินสด|ทันที|cash/i.test(t)) return 0;
+  return fallback === undefined ? 30 : Number(fallback) || 0;
+}
+
+function addDays_(d, n) {
+  var out = new Date(d.getTime());
+  out.setDate(out.getDate() + Number(n || 0));
+  return out;
+}
+
+/**
+ * ประกอบใบวางบิลจากรายการเอกสารที่เลือกมา
+ *
+ * ยอดทุกช่องมาจาก "ยอดที่บันทึกไว้ตอนออกใบนั้น ๆ" ไม่ได้คิดใหม่จากสินค้า
+ * ใบที่ลูกค้าถืออยู่เขียนยอดเท่าไร ใบวางบิลต้องเขียนเท่านั้น ห้ามต่างกันแม้แต่สตางค์เดียว
+ * ถ้าคิดใหม่แล้วอัตราภาษีหรือวิธีปัดเศษเปลี่ยนไปตอนไหน ยอดสองใบจะไม่ตรงกันเงียบ ๆ
+ */
+/* ใบวางบิลพิมพ์ได้กี่บรรทัดในหนึ่งแผ่น — ตัวเลขนี้ต้องตรงกับที่ Doc.html วาดจริง
+   เกินกว่านี้ระบบไม่ยอมออกใบ ไม่ใช่พิมพ์แค่ที่พอแล้วเงียบ
+   ใบวางบิลที่โชว์ 14 บรรทัดแต่ยอดรวมเป็นของ 20 ใบ คือใบที่ลูกค้าตรวจไม่ได้
+   และเป็นข้อโต้แย้งที่ร้านอธิบายไม่ได้ตอนทวงเงิน */
+var BILL_MAX_LINES = 14;
+
+function buildBill_(docs, opts) {
+  var o = opts || {};
+  var days = creditDays_(o.terms, o.creditDays);
+  var base = 0, vat = 0, total = 0;
+  var lines = (docs || []).map(function (d, i) {
+    var b = round2_(Number(d.base) || 0);
+    var v = round2_(Number(d.vat) || 0);
+    var g = round2_(Number(d.total) || 0);
+    base = round2_(base + b); vat = round2_(vat + v); total = round2_(total + g);
+    var dt = isDate_(d.date) ? d.date : parseYmd_(d.date);
+    return {
+      i: i + 1, no: String(d.no || ''), date: dt, po: String(d.po || ''),
+      due: dt ? addDays_(dt, days) : null,
+      base: b, vat: v, total: g
+    };
+  });
+  return {
+    type: 'bill', typeTh: 'ใบวางบิล', typeEn: 'BILLING NOTE',
+    lines: lines, count: lines.length, creditDays: days,
+    base: base, vat: vat, total: total, totalText: bahtText_(total)
+  };
+}
+
+/** "2026-08-22" หรือ "22/08/2026" -> Date · อ่านไม่ออกคืน null ไม่เดาเป็นวันนี้ */
+function parseYmd_(v) {
+  var t = String(v == null ? '' : v).trim();
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(t);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  var d = new Date(t);
+  return isDate_(d) ? d : null;
+}
+
 function nextDocNo_(prefix, used, width, floor) {
   var w = width || 5;
   var max = Number(floor) || 0;

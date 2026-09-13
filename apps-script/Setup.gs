@@ -19,6 +19,8 @@ var CUT_LAST = 3005;   // ตัดล็อต รองรับ 3000 บร�
    เผื่อไว้ 8,000 ใบ ราวปีครึ่ง แล้วระบบจะเตือนล่วงหน้าตอนใกล้เต็ม
    (ของเดิมทำใบละหนึ่งแท็บ ที่ 20 ใบต่อวันจะชนขีดจำกัดของ Google Sheets ใน 2 เดือน) */
 var DOC_LAST = 8005;
+var SLIP_LAST = 3005;  // หลักฐานการชำระเงิน รองรับ 3000 สลิป
+var MONTH_LAST = 305;  // สรุปเดือน รองรับ 300 แถว = 60 เดือน × 5 ช่องทาง
 var STOCK_LAST = 150;  // ขอบล่างของชีท สต๊อกคงเหลือ ที่ใช้ในสูตรตรวจยอด
 
 var C_HEAD_BG = '#1f3864';
@@ -30,11 +32,18 @@ var C_SUB_FG = '#555555';
 function setup() {
   var ss = ss_();
   var made = [];
-  made.push(setupLotSheet_(ss));
+  /* ตัดล็อต ต้องมีและต้องสูงครบก่อน เพราะสูตรคอลัมน์ "ตัดออกแล้ว" ของ ล็อตสินค้า
+     อ้างช่วงในชีทนี้ — อ้างเกินจำนวนแถวจริงเมื่อไร ทั้งคอลัมน์กลายเป็น error */
   made.push(setupCutSheet_(ss));
+  made.push(setupLotSheet_(ss));
   made.push(setupDocSheet_(ss));
   made.push(setupAppSheet_(ss));
+  made.push(setupMonthSheet_(ss));
+  made.push(setupSlipSheet_(ss));
   made.push(setupItemLotColumn_(ss));
+  made.push(setupAccounting_(ss));
+  made.push(setupCarrierList_(ss));
+  made.push(setupStatusList_(ss));
   // ซ่อมให้อัตโนมัติ แต่ห้ามล้มทั้ง setup ถ้าซ่อมไม่ได้ — ส่วนอื่นติดตั้งไปแล้ว
   try { made.push(repairStockSheet()); }
   catch (e) { made.push('ซ่อมชีทสต๊อกไม่สำเร็จ: ' + e.message); }
@@ -44,11 +53,307 @@ function setup() {
   return msg;
 }
 
+/* ------------------------------------------------------- ตรวจสุขภาพของชีท */
+
+var ERR_RE = /^#(REF!|N\/A|VALUE!|DIV\/0!|NAME\?|NUM!|ERROR!)/;
+
+/**
+ * ตรวจว่าชีทไหนมีช่องที่ขึ้น error อยู่บ้าง — อ่านอย่างเดียว ไม่แก้ ไม่เขียนอะไรเลย
+ *
+ * ช่องสูตรที่พังไม่ได้ส่งเสียงร้อง มันแค่แสดง #N/A เงียบ ๆ อยู่ในคอลัมน์ที่ไม่มีใครดู
+ * แล้ววันหนึ่งระบบตัดล็อตก็ทำงานไม่ได้โดยไม่มีใครรู้ว่าเริ่มพังตั้งแต่เมื่อไร
+ * สั่งฟังก์ชันนี้แล้วดูใน Log จะได้รู้ทันทีว่าพังตรงไหนและสูตรในช่องนั้นเขียนว่าอะไร
+ */
+function checkSheets() {
+  var ss = ss_();
+  var names = [SH.lot.name, SH.cut.name, SH.stock.name, SH.prod.name,
+               SH.head.name, SH.item.name, SH.recv.name];
+  var out = [], bad = 0;
+
+  for (var i = 0; i < names.length; i++) {
+    var sh = findSheet_(ss, names[i]);
+    if (!sh) { out.push('✗ ไม่มีชีท ' + names[i]); bad++; continue; }
+
+    /* แท็บที่สะกดต่างจากชื่อในโค้ดนิดเดียว โปรแกรมยังหาเจอ แต่สูตรในชีทหาไม่เจอ
+       เรื่องนี้ต้องขึ้นให้เห็นชัด ๆ เพราะมันคือสาเหตุที่ทำให้ช่องขึ้น #REF! โดยดูไม่ออก */
+    var real = sh.getName();
+    var size = names[i] + (real === names[i] ? '' : '  ⚠ ชื่อแท็บจริงคือ "' + real + '"') +
+      ' — ' + sh.getMaxRows() + ' แถว × ' + sh.getMaxColumns() + ' คอลัมน์';
+    var rows = sh.getLastRow(), cols = sh.getLastColumn();
+    if (rows < 1 || cols < 1) { out.push('· ' + size + ' (ยังไม่มีข้อมูล)'); continue; }
+
+    var dv = sh.getRange(1, 1, rows, cols).getDisplayValues();
+    var hits = [];
+    for (var r = 0; r < dv.length; r++) {
+      for (var c = 0; c < dv[r].length; c++) {
+        if (ERR_RE.test(String(dv[r][c] || ''))) hits.push([r + 1, c + 1, dv[r][c]]);
+      }
+    }
+    if (!hits.length) { out.push('✓ ' + size); continue; }
+
+    bad++;
+    var lines = ['✗ ' + size + ' — เจอ ' + hits.length + ' ช่องที่ขึ้น error'];
+    /* พอเห็นสามช่องแรกก็รู้แล้วว่าคอลัมน์ไหนพัง ไม่ต้องพ่นมาทั้งพันแถว */
+    for (var k = 0; k < Math.min(3, hits.length); k++) {
+      var cell = sh.getRange(hits[k][0], hits[k][1]);
+      lines.push('     ' + cell.getA1Notation() + ' = ' + hits[k][2] +
+        '   สูตร: ' + (cell.getFormula() || '(ไม่มีสูตร เป็นค่านิ่ง)'));
+    }
+    if (hits.length > 3) lines.push('     และอีก ' + (hits.length - 3) + ' ช่อง');
+    out.push(lines.join('\n'));
+  }
+
+  var msg = (bad ? 'เจอปัญหา ' + bad + ' ชีท — สั่ง setup อีกครั้งเพื่อเขียนสูตรใหม่'
+                 : 'ทุกชีทปกติดี ไม่มีช่องไหนขึ้น error') + '\n\n' + out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * ตรวจ + ซ่อมชีท ล็อตสินค้า ในการสั่งครั้งเดียว แล้วพิมพ์ออกมาว่าเจออะไร
+ *
+ * มีไว้เพราะ "สั่ง setup แล้วยังเหมือนเดิม" ไม่ได้บอกอะไรเลยว่าเหมือนเดิมตรงไหน
+ * ตัวนี้พิมพ์ของจริงที่อยู่ในช่องออกมาก่อนซ่อม แล้วซ่อม แล้วพิมพ์ผลหลังซ่อมให้ดู
+ * ในการรันครั้งเดียว — ถ้ายังไม่หาย ภาพหน้าจอของ Log จะบอกได้เองว่าติดตรงไหน
+ */
+function fixLotSheet() {
+  var ss = ss_();
+  var out = [];
+  var COLS = 'ABCDEFGHIJKLMNOP';
+
+  function dump(sh, rows, wide) {
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      for (var c = 1; c <= wide; c++) {
+        var cell = sh.getRange(r, c);
+        var f = cell.getFormula();
+        var v = String(cell.getDisplayValue());
+        if (!f && v === '') continue;
+        out.push('    ' + COLS.charAt(c - 1) + r + ' = ' + (v === '' ? '(ว่าง)' : v) +
+          (f ? '\n         สูตร: ' + f : ''));
+      }
+    }
+  }
+
+  var cut = findSheet_(ss, SH.cut.name);
+  var lot = findSheet_(ss, SH.lot.name);
+
+  out.push('===== ก่อนซ่อม =====');
+  if (!cut) {
+    out.push('  ✗ ไม่พบชีท ' + SH.cut.name + ' — นี่คือสาเหตุ');
+  } else {
+    out.push('  ชีท ' + SH.cut.name + ' : ' + cut.getMaxRows() + ' แถว × ' +
+      cut.getMaxColumns() + ' คอลัมน์');
+    out.push('    หัวตาราง: ' + cut.getRange(HEAD_ROW, 1, 1, cut.getMaxColumns())
+      .getDisplayValues()[0].join(' | '));
+  }
+
+  if (!lot) {
+    out.push('  ✗ ไม่พบชีท ' + SH.lot.name);
+  } else {
+    out.push('  ชีท ' + SH.lot.name + ' : ' + lot.getMaxRows() + ' แถว × ' +
+      lot.getMaxColumns() + ' คอลัมน์');
+    out.push('    หัวตาราง: ' + lot.getRange(HEAD_ROW, 1, 1, Math.min(16, lot.getMaxColumns()))
+      .getDisplayValues()[0].join(' | '));
+    /* แถว 3 คือช่องตรวจยอดบนหัวชีท · แถว 6 กับ 7 คือสองแถวข้อมูลแรก */
+    dump(lot, [3, DATA_ROW, DATA_ROW + 1], Math.min(16, lot.getMaxColumns()));
+  }
+
+  out.push('');
+  out.push('===== ซ่อม =====');
+  out.push('  ' + setupCutSheet_(ss));
+  out.push('  ' + setupLotSheet_(ss));
+  SpreadsheetApp.flush();
+
+  out.push('');
+  out.push('===== หลังซ่อม =====');
+  lot = findSheet_(ss, SH.lot.name);
+  dump(lot, [3, DATA_ROW, DATA_ROW + 1], Math.min(16, lot.getMaxColumns()));
+
+  /* คำตอบที่เจ้าของร้านอยากรู้จริง ๆ มีข้อเดียว: ตอนนี้ขายของที่คุมล็อตได้หรือยัง */
+  var bad = 0, rows = 0;
+  var last = Math.min(lot.getMaxRows(), LOT_LAST);
+  var vals = lot.getRange(DATA_ROW, 2, last - DATA_ROW + 1, 8).getDisplayValues();
+  for (var i = 0; i < vals.length; i++) {
+    if (!String(vals[i][0] || '').trim()) continue;   // B = SKU
+    rows++;
+    var remain = String(vals[i][7] || '');            // I = คงเหลือ
+    if (remain === '' || ERR_RE.test(remain) || isNaN(Number(remain.replace(/,/g, '')))) bad++;
+  }
+  out.push('');
+  out.push(bad
+    ? '✗ ยังเหลือ ' + bad + ' แถวจาก ' + rows + ' ที่ช่องคงเหลือไม่มีตัวเลข — ' +
+      'ส่งภาพ Log นี้มาให้ดูได้เลย บรรทัด "สูตร:" ข้างบนจะบอกว่าติดตรงไหน'
+    : '✓ ช่องคงเหลือมีตัวเลขครบทั้ง ' + rows + ' แถว — ระบบตัดล็อตใช้งานได้แล้ว');
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/* ------------------------------------------------- ช่องสูตรที่ถูกพิมพ์ทับ
+
+   กฎข้อเดียวที่ห้ามลืมเวลาแก้ชีทเองคือ "ช่องพื้นเทาคือสูตร ห้ามพิมพ์ทับ"
+   แต่กฎนี้ไม่มีอะไรบังคับ พิมพ์ทับได้เงียบ ๆ ไม่มีอะไรเตือน และผลที่ตามมา
+   ก็เงียบเหมือนกัน — เลขในช่องนั้นนิ่งอยู่อย่างนั้นตลอดไป ไม่อัปเดตตามอีกเลย
+   คนที่มาอ่านทีหลังแยกไม่ออกเลยว่าเลขไหนคำนวณมาจริง เลขไหนเป็นเลขนิ่ง
+
+   ของจริงที่เจอ: ชีท รับเข้า แถว 401 มีเลขนิ่งค้างอยู่ในคอลัมน์สูตร
+
+   ตัวนี้เดินหาให้ทั้งชีท แล้วซ่อมสองแบบตามสิ่งที่เจอจริง
+     - แถวนั้นมีข้อมูลอยู่ → เอาสูตรจากแถวที่ยังดีมาวางคืน (copyTo ปรับแถวให้เอง)
+     - แถวนั้นว่างทั้งแถว เหลือแต่ช่องนี้ → เป็นเศษที่ค้างไว้ ล้างทิ้ง
+   ค่าเดิมทุกช่องถูกเขียนลง Log ก่อนเสมอ ไม่มีอะไรหายไปเงียบ ๆ            */
+
+/** อ่านอย่างเดียว — บอกว่ามีช่องสูตรไหนถูกพิมพ์ทับบ้าง ไม่แตะอะไรทั้งนั้น */
+function checkStaticCells() { return staticCells_(false); }
+
+/** ซ่อมจริง — เอาสูตรกลับมา หรือล้างเศษที่ค้างไว้ พร้อมลง Log ทุกช่อง */
+function fixStaticCells() { return staticCells_(true); }
+
+function staticCells_(doFix) {
+  var ss = ss_();
+  var COLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  var keys = ['lot', 'cut', 'stock', 'head', 'item', 'recv'];
+  /* สต๊อกคงเหลือเป็นสูตรทั้งแผ่น (CALC_ALL) ไม่มีช่องกรอกสักช่อง
+     ช่องไหนไม่มีสูตรแต่มีค่า = ถูกพิมพ์ทับแน่นอน ไม่ต้องเดา */
+  function calcCols(cfg, wide) {
+    if (cfg.CALC && cfg.CALC.length) return cfg.CALC;
+    if (!cfg.CALC_ALL) return [];
+    var all = [];
+    for (var i = 1; i <= wide; i++) all.push(i);
+    return all;
+  }
+  var out = [], found = 0, fixed = 0, cleared = 0;
+
+  for (var k = 0; k < keys.length; k++) {
+    var cfg = SH[keys[k]];
+    if (!cfg) continue;
+    var sh = findSheet_(ss, cfg.name);
+    if (!sh) { out.push('✗ ไม่มีชีท ' + cfg.name); continue; }
+
+    /* สูตรมักลากไว้ยาวกว่าแถวที่มีข้อมูลจริง ต้องดูให้ถึงแถวสุดท้ายที่ยังมีสูตร
+       ไม่งั้นแถวที่ถูกพิมพ์ทับจนไม่เหลือสูตร จะหาสูตรต้นแบบมาวางคืนไม่เจอ */
+    var lim = formulaLimit_(keys[k]);
+    var last = Math.min(sh.getMaxRows(), Math.max(sh.getLastRow(), lim));
+    if (last < DATA_ROW) { out.push('· ' + cfg.name + ' — ยังไม่มีข้อมูล'); continue; }
+    var n = last - DATA_ROW + 1;
+    var wide = sh.getLastColumn();
+    var cols = calcCols(cfg, wide);
+    if (!cols.length) continue;
+    var hits = [];
+
+    for (var c = 0; c < cols.length; c++) {
+      var col = cols[c];
+      if (col > wide) continue;
+      var rng = sh.getRange(DATA_ROW, col, n, 1);
+      var fs = rng.getFormulas();
+      var vs = rng.getDisplayValues();
+      /* แถวที่ยังมีสูตรดีอยู่ ไว้เป็นต้นแบบตอนวางคืน */
+      var good = -1;
+      for (var i = 0; i < fs.length; i++) if (fs[i][0]) { good = i; break; }
+
+      for (var j = 0; j < fs.length; j++) {
+        if (fs[j][0]) continue;                                  /* มีสูตร = ปกติ */
+        if (String(vs[j][0] || '').trim() === '') continue;       /* ว่าง = ปกติ */
+        hits.push({ col: col, i: j, row: DATA_ROW + j, val: vs[j][0], good: good });
+      }
+    }
+
+    if (!hits.length) { out.push('✓ ' + cfg.name + ' — ไม่มีช่องสูตรถูกพิมพ์ทับ'); continue; }
+
+    found += hits.length;
+    out.push((doFix ? '⚙ ' : '✗ ') + cfg.name + ' — เจอ ' + hits.length + ' ช่อง');
+
+    for (var h = 0; h < hits.length; h++) {
+      var t = hits[h];
+      var a1 = COLS.charAt(t.col - 1) + t.row;
+      /* แถวนี้มีของอยู่จริงไหม ดูจากช่องกรอกทั้งแถว ไม่ใช่จากช่องที่กำลังซ่อม */
+      var alive = true;
+      if (cfg.IN) {
+        var rowVals = sh.getRange(t.row, 1, 1, wide).getDisplayValues()[0];
+        alive = false;
+        for (var q in cfg.IN) {
+          var cc = cfg.IN[q];
+          if (cc <= wide && String(rowVals[cc - 1] || '').trim() !== '') { alive = true; break; }
+        }
+      }
+
+      var how;
+      if (!alive) how = 'แถวว่างทั้งแถว เหลือแต่ช่องนี้ — เป็นเศษที่ค้างไว้ ล้างทิ้ง';
+      else if (t.good < 0) how = 'ทั้งคอลัมน์ไม่เหลือสูตรให้ก๊อปเลย — ต้องสั่ง setup เขียนสูตรใหม่';
+      else how = 'เอาสูตรจากแถว ' + (DATA_ROW + t.good) + ' มาวางคืน';
+      out.push('    ' + a1 + ' = ' + t.val + '   ' + (doFix ? '→ ' : '') + how);
+
+      if (!doFix) continue;
+      if (!alive) {
+        sh.getRange(t.row, t.col).clearContent();
+        cleared++;
+      } else if (t.good >= 0) {
+        sh.getRange(DATA_ROW + t.good, t.col).copyTo(sh.getRange(t.row, t.col));
+        fixed++;
+      } else {
+        continue;   /* ซ่อมเองไม่ได้ ไม่ต้องลง Log ว่าซ่อมแล้ว */
+      }
+      /* ค่าเดิมต้องอยู่ใน Log เสมอ เผื่อวันหนึ่งมีคนถามว่าเลขนั้นหายไปไหน */
+      writeLog_('ระบบ', 'ซ่อมช่องสูตร', cfg.name, a1, 'ค่าเดิม',
+        t.val, alive ? '(คืนสูตร)' : '(ล้างทิ้ง)',
+        'ช่องสูตรถูกพิมพ์ทับ ซ่อมด้วย fixStaticCells');
+    }
+  }
+
+  if (doFix) SpreadsheetApp.flush();
+
+  var head;
+  if (!found) head = '✓ ไม่มีช่องสูตรไหนถูกพิมพ์ทับเลย ทุกชีทปกติดี';
+  else if (!doFix) head = 'เจอ ' + found + ' ช่องที่ถูกพิมพ์ทับ — สั่ง fixStaticCells เพื่อซ่อม';
+  else head = '✓ ซ่อมแล้ว ' + fixed + ' ช่อง · ล้างเศษทิ้ง ' + cleared + ' ช่อง' +
+    (found > fixed + cleared
+      ? ' · เหลือ ' + (found - fixed - cleared) + ' ช่องที่ต้องสั่ง setup ก่อน' : '') +
+    '\nค่าเดิมทุกช่องถูกบันทึกไว้ในชีท Log แล้ว';
+
+  var msg = head + '\n\n' + out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 /* ---------------------------------------------------------------- ล็อตสินค้า */
+
+/**
+ * ขอบล่างของช่วงที่อ้างข้ามชีท — ต้องไม่เกินจำนวนแถวจริงของชีทนั้น
+ *
+ * สูตรที่อ้างเลยขอบชีทปลายทางไปแม้แถวเดียว Google จะให้ทั้งช่องเป็น #REF!
+ * แล้วช่องอื่นที่อ้างต่อจากช่องนั้นพังตามไปทั้งแถบ — ของจริงที่เจอคือ
+ * ล็อตสินค้า คอลัมน์ "ตัดออกแล้ว" ขึ้น error ทุกแถว จนคอลัมน์ "คงเหลือ" ว่างหมด
+ * ซึ่งแปลว่าระบบตัดล็อต FEFO ทำงานไม่ได้เลยทั้งชีท
+ */
+/**
+ * ชื่อชีทที่จะเอาไปใส่ในสูตร — ต้องเป็นชื่อจริงของแท็บ ไม่ใช่ชื่อที่เขียนไว้ในโค้ด
+ *
+ * findSheet_ หาแท็บแบบไม่ถือสา — ช่องว่างหัวท้าย อักขระความกว้างศูนย์ และการสะกดต่าง
+ * เล็กน้อยอย่าง "สต๊อกคงเหลือ" กับ "สต๊อคคงเหลือ" ถือว่าเป็นชีทเดียวกัน
+ * แต่ "สูตรในชีท" ถือสาเป๊ะทุกตัวอักษร
+ *
+ * ถ้าเอาชื่อในโค้ดไปเขียนลงสูตรตรง ๆ สูตรจะชี้ไปที่แท็บที่ไม่มีอยู่จริง แล้วขึ้น #REF!
+ * ทั้งช่อง ทั้งที่โปรแกรมอ่านเขียนชีทนั้นได้ปกติดี — อาการที่เจอจริงคือช่องตรวจยอด
+ * บนหัวชีท ล็อตสินค้า ขึ้น #REF! ทั้งที่ checkSheets บอกว่าชีทสต๊อกไม่มีปัญหาอะไรเลย
+ */
+function sheetRef_(ss, name) {
+  var sh = findSheet_(ss, name);
+  var real = sh ? sh.getName() : name;
+  /* ชื่อชีทที่มีเครื่องหมายคำพูดเดี่ยวต้องคูณสอง ไม่งั้นสูตรขาดกลางคัน */
+  return "'" + String(real).replace(/'/g, "''") + "'";
+}
+
+function boundLast_(ss, name, want) {
+  var s = findSheet_(ss, name);
+  if (!s) return want;
+  return Math.max(DATA_ROW, Math.min(want, s.getMaxRows()));
+}
 
 function setupLotSheet_(ss) {
   var name = SH.lot.name;
-  var s = ss.getSheetByName(name);
+  var s = findSheet_(ss, name);
   var fresh = !s;
   if (fresh) s = ss.insertSheet(name);
 
@@ -63,10 +368,12 @@ function setupLotSheet_(ss) {
 
   s.getRange('H3').setValue('SKU ที่ยอดล็อตไม่ตรงกับสต๊อก').setFontColor(C_SUB_FG)
     .setHorizontalAlignment('right');
+  var ST = boundLast_(ss, SH.stock.name, STOCK_LAST);
+  var SR = sheetRef_(ss, SH.stock.name);
   s.getRange('I3').setFormula(
-    '=SUMPRODUCT(--(COUNTIF($B$6:$B$' + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + STOCK_LAST + ')>0),' +
-    "--(ROUND(SUMIF($B$6:$B$" + LOT_LAST + ",'สต๊อกคงเหลือ'!$B$6:$B$" + STOCK_LAST +
-    ',$I$6:$I$' + LOT_LAST + "),3)<>ROUND('สต๊อกคงเหลือ'!$I$6:$I$" + STOCK_LAST + ',3)))'
+    '=SUMPRODUCT(--(COUNTIF($B$6:$B$' + LOT_LAST + ',' + SR + '!$B$6:$B$' + ST + ')>0),' +
+    '--(ROUND(SUMIF($B$6:$B$' + LOT_LAST + ',' + SR + '!$B$6:$B$' + ST +
+    ',$I$6:$I$' + LOT_LAST + '),3)<>ROUND(' + SR + '!$I$6:$I$' + ST + ',3)))'
   ).setFontWeight('bold');
   s.getRange('J3').setValue('← ถ้าไม่ใช่ 0 แปลว่ายอดล็อตกับยอดสต๊อกเริ่มเพี้ยน ต้องตรวจ')
     .setFontColor(C_SUB_FG);
@@ -79,13 +386,22 @@ function setupLotSheet_(ss) {
     .setVerticalAlignment('middle').setWrap(true);
 
   var n = LOT_LAST - DATA_ROW + 1;
-  var L = LOT_LAST, C = CUT_LAST;
+  var L = LOT_LAST, C = boundLast_(ss, SH.cut.name, CUT_LAST);
 
   fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
   fillFormula_(s, 3, n,
-    '=IF($B6="","",IFERROR(VLOOKUP($B6,\'ฐานสินค้า\'!$B$6:$D$200,3,FALSE),"ไม่พบ SKU"))');
+    '=IF($B6="","",IFERROR(VLOOKUP($B6,' + sheetRef_(ss, SH.prod.name) +
+    '!$B$6:$D$200,3,FALSE),"ไม่พบ SKU"))');
+  /* อ้างทั้งคอลัมน์ ไม่ใส่เลขแถว — สองช่วงจึงสูงเท่ากันเสมอโดยไม่ต้องเชื่อว่าชีทปลายทาง
+     สูงเท่าไร ต่อให้มีคนไปลบแถวออก หรือชีทถูกสร้างมาคนละขนาด ก็ไม่มีทางเพี้ยน
+
+     ของจริงที่เจอ: คอลัมน์นี้ขึ้น #N/A ทุกแถวจนคอลัมน์คงเหลือว่างหมด ตัดล็อตไม่ได้ทั้งชีท
+     ทั้ง SUMIFS และ SUMIF แบบระบุแถวต่างก็ให้ #N/A เหมือนกัน เพราะช่วงที่อ้างไปไม่ถึง
+     ของจริงในชีทปลายทาง — แบบทั้งคอลัมน์ไม่มีทางอ้างพลาดแบบนั้น
+     (แถวหัวตารางไม่กวน เพราะกุญแจล็อตหน้าตาเป็น SKU|เลขล็อต ไม่มีทางไปตรงกับหัวตาราง) */
+  var CR = sheetRef_(ss, SH.cut.name);
   fillFormula_(s, 8, n,
-    '=IF($L6="","",SUMIFS(\'' + SH.cut.name + '\'!$F$6:$F$' + C + ',\'' + SH.cut.name + '\'!$I$6:$I$' + C + ',$L6))');
+    '=IF($L6="","",SUMIF(' + CR + '!$I:$I,$L6,' + CR + '!$F:$F))');
   fillFormula_(s, 9, n, '=IF($B6="","",IFERROR($G6-$H6,""))');
   fillFormula_(s, 10, n,
     '=IF($B6="","",IF(NOT(ISNUMBER($I6)),"",IF($I6<=0,"หมดแล้ว",' +
@@ -94,18 +410,21 @@ function setupLotSheet_(ss) {
   fillFormula_(s, 12, n, '=IF(OR($B6="",$D6=""),"",$B6&"|"&$D6)');
   fillFormula_(s, 13, n,
     '=IF($B6="","",IF($D6="","ยังไม่ใส่เลขล็อต",' +
+    /* ช่องสูตรที่พังไม่ส่งเสียงร้อง มันขึ้น #N/A เงียบ ๆ แล้วคอลัมน์คงเหลือก็ว่างตามไป
+       ช่องตรวจสอบต้องแปลให้เป็นคำ ไม่งั้นคนอ่านชีทไม่รู้ว่าระบบตัดล็อตหยุดทำงานไปแล้ว */
+    'IF(ISERROR($H6),"สูตรช่องตัดออกแล้วเสีย — สั่ง setup ใหม่",' +
     'IF(COUNTIF($L$6:$L$' + L + ',$L6)>1,"เลขล็อตซ้ำ",' +
     'IF(NOT(ISNUMBER($G6)),"ยังไม่ใส่จำนวนรับ",' +
     'IF($G6<=0,"จำนวนรับต้องมากกว่า 0",' +
     'IF($H6>$G6,"ตัดออกเกินจำนวนที่รับเข้า",' +
-    'IF($C6="ไม่พบ SKU","SKU ไม่มีในฐานสินค้า","OK")))))))');
+    'IF($C6="ไม่พบ SKU","SKU ไม่มีในฐานสินค้า","OK"))))))))');
 
   paintCols_(s, n, [2, 4, 5, 6, 7, 11], [1, 3, 8, 9, 10, 12, 13]);
 
   s.getRange(DATA_ROW, 5, n, 2).setNumberFormat('dd/mm/yyyy');
   s.getRange(DATA_ROW, 7, n, 3).setNumberFormat('#,##0');
 
-  var skuRange = ss.getSheetByName(SH.prod.name).getRange('B6:B200');
+  var skuRange = findSheet_(ss, SH.prod.name).getRange('B6:B200');
   s.getRange(DATA_ROW, 2, n, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInRange(skuRange, true).setAllowInvalid(true).build()
   );
@@ -122,7 +441,7 @@ function setupLotSheet_(ss) {
 
 function setupCutSheet_(ss) {
   var name = SH.cut.name;
-  var s = ss.getSheetByName(name);
+  var s = findSheet_(ss, name);
   var fresh = !s;
   if (fresh) s = ss.insertSheet(name);
 
@@ -166,14 +485,75 @@ function setupCutSheet_(ss) {
  * เก็บยอดเป็นเลขนิ่ง ไม่ใช่สูตรดึงจากออเดอร์ เพราะใบที่ออกไปแล้วและลูกค้าถืออยู่
  * ต้องไม่ขยับตามการแก้ออเดอร์ทีหลัง มีคอลัมน์สูตรอยู่คอลัมน์เดียวคือลำดับ
  */
+/* ------------------------------------------------------------ สรุปรายเดือน
+
+   เดือนละหนึ่งแถว เก็บสองอย่างที่ระบบไม่มีทางรู้เอง
+     ค่าแอด    บิลค่าโฆษณาไม่ได้ผ่านระบบออเดอร์
+     เดือนเก่า ยอดของเดือนก่อนเริ่มใช้ระบบ ที่อยู่ในไฟล์ Excel เดิม
+
+   ยอดขาย/ต้นทุนของเดือนที่มีออเดอร์ในระบบแล้ว ไม่ต้องกรอก — ปล่อยว่างไว้
+   แล้วแอปจะคิดจากชีทหัวบิลให้เอง ที่กรอกไว้เองจะชนะเสมอ (เผื่อเดือนไหน
+   ตัวเลขในระบบไม่ครบ จะได้ทับด้วยตัวเลขที่ปิดบัญชีจริงได้)                */
+
+function setupMonthSheet_(ss) {
+  var name = SH.month.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < MONTH_LAST) s.insertRowsAfter(s.getMaxRows(), MONTH_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 8) s.insertColumnsAfter(s.getMaxColumns(), 8 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('สรุปยอดรายเดือน')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'หนึ่งแถว = หนึ่งเดือน × หนึ่งช่องทางขาย (Shopee · เพจ Facebook · หน้าร้าน ...)  |  ' +
+    'กรอกจากแอป หน้าใบเสนอราคา → ปุ่มแฟ้มเอกสาร  |  ' +
+    'เดือนที่มีออเดอร์ในระบบแล้ว เว้นยอดขาย/ต้นทุนว่างไว้ได้ แอปคิดให้เอง  |  ' +
+    'ช่องพื้นเทาเป็นสูตร ห้ามพิมพ์ทับ'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'ปี-เดือน\n(2026-01)', 'ช่องทางขาย', 'ยอดขาย\n(กรอกเองถ้าไม่มีในระบบ)',
+    'ต้นทุน\n(กรอกเองถ้าไม่มีในระบบ)', 'ค่าแอด\n(กรอกเองเสมอ)', 'หมายเหตุ',
+    'กำไรสุทธิ\n(ยอดขาย−ต้นทุน−ค่าแอด)'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = MONTH_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+  /* กำไรสุทธิคิดในชีทด้วย เผื่อคนเปิดชีทดูตรง ๆ โดยไม่ผ่านแอป
+     ต้องได้เลขเดียวกับที่แอปโชว์เสมอ ไม่งั้นจะเถียงกันเองว่าเลขไหนจริง */
+  fillFormula_(s, 8, n,
+    '=IF($B6="","",N($D6)-N($E6)-N($F6))');
+
+  paintCols_(s, n, [2, 3, 4, 5, 6, 7], [1, 8]);
+  s.getRange(DATA_ROW, SH.month.IN.ym, n, 1).setNumberFormat('@');
+  s.getRange(DATA_ROW, SH.month.IN.chan, n, 1).setNumberFormat('@');
+  s.getRange(DATA_ROW, SH.month.IN.sales, n, 3).setNumberFormat('#,##0.00');
+  s.getRange(DATA_ROW, 8, n, 1).setNumberFormat('#,##0.00');
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.month.IN.ym, 120);
+  s.setColumnWidth(SH.month.IN.chan, 150);
+  s.setColumnWidth(SH.month.IN.sales, 150);
+  s.setColumnWidth(SH.month.IN.cost, 150);
+  s.setColumnWidth(SH.month.IN.ads, 150);
+  s.setColumnWidth(SH.month.IN.note, 240);
+  s.setColumnWidth(8, 160);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name +
+    ' (รองรับ ' + n + ' แถว = เดือน × ช่องทาง)';
+}
+
 function setupDocSheet_(ss) {
   var name = SH.doc.name;
-  var s = ss.getSheetByName(name);
+  var s = findSheet_(ss, name);
   var fresh = !s;
   if (fresh) s = ss.insertSheet(name);
 
   if (s.getMaxRows() < DOC_LAST) s.insertRowsAfter(s.getMaxRows(), DOC_LAST - s.getMaxRows());
-  if (s.getMaxColumns() < 21) s.insertColumnsAfter(s.getMaxColumns(), 21 - s.getMaxColumns());
+  if (s.getMaxColumns() < 23) s.insertColumnsAfter(s.getMaxColumns(), 23 - s.getMaxColumns());
 
   s.getRange('A2').setValue('ทะเบียนเอกสารขาย — ระบบเขียนให้เอง')
     .setFontWeight('bold').setFontSize(12);
@@ -186,7 +566,9 @@ function setupDocSheet_(ss) {
     'ชื่อลูกค้า', 'เลขประจำตัว\nผู้เสียภาษี', 'สำนักงานใหญ่\n/ สาขา', 'ที่อยู่ตามใบกำกับภาษี',
     'โทรศัพท์', 'อีเมล', 'รหัสลูกค้า', 'เลขที่ PO', 'เงื่อนไขชำระเงิน',
     'มูลค่าสินค้า\n(ก่อน VAT)', 'ภาษีมูลค่าเพิ่ม', 'รวมทั้งสิ้น', 'ผู้ออกเอกสาร',
-    'หมายเหตุ', 'เหตุผลที่ยกเลิก', 'รายการในใบ\n(ระบบใช้พิมพ์ซ้ำ ห้ามแก้)'];
+    'หมายเหตุ', 'เหตุผลที่ยกเลิก', 'รายการในใบ\n(ระบบใช้พิมพ์ซ้ำ ห้ามแก้)',
+    'ลายเซ็นผู้รับของ\n(ลูกค้าเซ็นในแอป ห้ามแก้)',
+    'ส่งให้ลูกค้าแล้วเมื่อ\n(ว่าง = ยังแก้ใบได้)'];
   s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
     .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
     .setVerticalAlignment('middle').setWrap(true);
@@ -195,7 +577,7 @@ function setupDocSheet_(ss) {
   fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
 
   var inCols = [];
-  for (var c = 2; c <= 21; c++) inCols.push(c);
+  for (var c = 2; c <= 23; c++) inCols.push(c);
   paintCols_(s, n, inCols, [1]);
 
   s.getRange(DATA_ROW, SH.doc.IN.date, n, 1).setNumberFormat('dd/mm/yyyy');
@@ -215,6 +597,8 @@ function setupDocSheet_(ss) {
      (ข้อมูลยังอยู่ครบ แค่ไม่เกะกะสายตาตอนเปิดชีทดู) */
   s.setColumnWidth(SH.doc.IN.snap, 60);
   s.getRange(DATA_ROW, SH.doc.IN.snap, n, 1).setFontColor('#9aa0a6').setNumberFormat('@');
+  s.setColumnWidth(SH.doc.IN.sign, 60);
+  s.getRange(DATA_ROW, SH.doc.IN.sign, n, 1).setFontColor('#9aa0a6').setNumberFormat('@');
 
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' ใบ ราวปีครึ่งที่ 20 ใบ/วัน)';
 }
@@ -281,6 +665,723 @@ function clearAllOrders(confirm) {
   }
 }
 
+/* ---------------------------------------- ปุ่ม Run ส่งค่าเข้าฟังก์ชันไม่ได้ */
+
+/**
+ * ตัวปลดล็อกสองขั้น สำหรับสั่งจากหน้าจอ Apps Script
+ *
+ * ปุ่ม Run ในหน้า Apps Script เรียกฟังก์ชันแบบไม่ส่งค่าเข้าไปเลย
+ * คำยืนยันที่ต้องพิมพ์ (clearAllOrders('...')) จึงไปไม่ถึงตัวฟังก์ชัน
+ * กด Run ทีไรก็ติดด่านกันกดพลาดทุกที ทั้งที่ตั้งใจจะล้างจริง ๆ
+ *
+ * เปลี่ยนเป็นสองขั้นแทน ซึ่งกันพลาดได้เท่ากันแต่กดจากหน้าจอได้จริง
+ *   ขั้น 1  เลือก armClear         แล้วกด Run
+ *   ขั้น 2  เลือก clearOldOrdersNow (หรือ clearAllOrdersNow) แล้วกด Run ภายใน 5 นาที
+ *
+ * ปลดล็อกแล้วใช้ได้ครั้งเดียว หมดเวลาหรือใช้ไปแล้วต้องปลดล็อกใหม่
+ * เผลอกด Run ค้างไว้ข้ามวันจึงไม่ล้างข้อมูลทิ้งโดยไม่ตั้งใจ
+ */
+var ARM_KEY = 'arm_clear';
+var ARM_MINUTES = 5;
+
+function armClear() {
+  [OLD_KEY_, ALL_KEY_].forEach(function (k) {
+    PropertiesService.getScriptProperties().setProperty(k, String(Date.now()));
+  });
+  var msg = 'ปลดล็อกแล้ว มีเวลา ' + ARM_MINUTES + ' นาที\n\n' +
+    'ขั้นต่อไป เลือกฟังก์ชันข้างบนแล้วกด Run\n' +
+    '  clearOldOrdersNow  = ล้างออเดอร์เก่า เก็บของวันนี้ไว้\n' +
+    '  clearAllOrdersNow  = ล้างออเดอร์ทั้งหมด ไม่เหลือสักใบ';
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * กด Run ครั้งแรก = ยังไม่ลบ แต่รายงานว่าจะหายกี่ใบ แล้วปลดล็อกไว้ให้เอง
+ * กด Run ครั้งที่สองภายใน 5 นาที = ล้างจริง
+ *
+ * ไม่ต้องสลับช่องฟังก์ชันไปมา และไม่มีทางลบโดยยังไม่ได้เห็นตัวเลขก่อน
+ * เพราะครั้งแรกบังคับให้เห็นเสมอ
+ *
+ * ปลดล็อกแยกกันคนละฟังก์ชัน กด Run ที่ตัวล้างเฉพาะของเก่าไว้
+ * แล้วเผลอไปกดตัวล้างทั้งหมด จึงไม่ทะลุผ่านไปได้
+ */
+var OLD_KEY_ = ARM_KEY + '_old';
+var ALL_KEY_ = ARM_KEY + '_all';
+
+function armed_(key) {
+  var p = PropertiesService.getScriptProperties();
+  var t = Number(p.getProperty(key) || 0);
+  if (t && Date.now() - t < ARM_MINUTES * 60000) {
+    p.deleteProperty(key);   // ใช้แล้วหมดไป กด Run ซ้ำโดยไม่ตั้งใจจึงไม่ล้างซ้ำ
+    return true;
+  }
+  p.setProperty(key, String(Date.now()));
+  return false;
+}
+
+function again_(what) {
+  return '↑ ยังไม่ได้ลบอะไรเลย — ถ้าตัวเลขข้างบนถูกต้องแล้ว\n' +
+    '   กด Run ที่ ' + what + ' อีกครั้งภายใน ' + ARM_MINUTES + ' นาที จึงจะล้างจริง';
+}
+
+/** ล้างออเดอร์เก่า เก็บของวันนี้ไว้ — กด Run สองครั้ง */
+function clearOldOrdersNow() {
+  if (!armed_(OLD_KEY_)) {
+    var msg = runClearOld_(false) + '\n\n' + again_('clearOldOrdersNow');
+    Logger.log(msg);
+    return msg;
+  }
+  return runClearOld_(true);
+}
+
+/** ล้างออเดอร์ทั้งหมด ไม่เหลือสักใบ — กด Run สองครั้ง */
+function clearAllOrdersNow() {
+  if (!armed_(ALL_KEY_)) {
+    requireStaff_();
+    var n = countOrders_();
+    var msg = 'ทดลองดูก่อน — ยังไม่ได้ลบอะไรเลย\n' +
+      '  จะล้างออเดอร์ทั้งหมด ' + n + ' ใบ ไม่เหลือสักใบ\n' +
+      '  ' + SH.doc.name + ': ไม่แตะเลย\n\n' + again_('clearAllOrdersNow');
+    Logger.log(msg);
+    return msg;
+  }
+  return clearAllOrders('ล้างออเดอร์ทั้งหมด');
+}
+
+function countOrders_() {
+  var s = sheet_('head');
+  var last = formulaLimit_('head');
+  if (last < DATA_ROW) return 0;
+  var v = s.getRange(DATA_ROW, SH.head.IN.no, last - DATA_ROW + 1, 1).getValues();
+  var n = 0;
+  for (var i = 0; i < v.length; i++) if (String(v[i][0] || '').trim()) n++;
+  return n;
+}
+
+/**
+ * ล้างเฉพาะออเดอร์เก่า เก็บของวันนี้ไว้
+ *
+ * ใช้ตอนเลิกทดลองแล้วเริ่มคีย์ของจริง แต่ของจริงคีย์ไปแล้วบางส่วน
+ * clearAllOrders() ล้างหมดทั้งชีท ซึ่งจะกินใบจริงที่เพิ่งคีย์ไปด้วย
+ *
+ * "วันนี้" ยึดจากช่องวันที่ในหัวบิล ไม่ใช่เวลาที่กดบันทึก จะได้ตรงกับเลข
+ * ที่หน้าสรุปยอดโชว์ในแท็บ "วันนี้" เป๊ะ ๆ ไม่มีทางเถียงกันเอง
+ *
+ * แถวใน ตัดล็อต ของใบที่ล้าง ถูกล้างไปด้วย ของในล็อตจึงคืนกลับมาเอง
+ * ไม่ใช่หายไปพร้อมออเดอร์ทดลอง
+ *
+ * ชีท เอกสาร ไม่ถูกแตะ (เหมือน clearAllOrders) เพราะใบกำกับภาษีที่ออกไปแล้ว
+ * ลบไม่ได้ตามกฎหมาย แต่รายงานจะบอกว่ามีกี่ใบที่อ้างออเดอร์ที่กำลังจะหายไป
+ */
+function clearOldOrders(confirm) {
+  var WORD = 'ล้างออเดอร์เก่า';
+  if (String(confirm || '').trim() !== WORD) {
+    throw new Error('เพื่อกันกดพลาด ต้องสั่งแบบนี้:  clearOldOrders(\'' + WORD + '\')' +
+      '  — ล้างแล้วกู้คืนไม่ได้ อยากดูก่อนว่าจะหายกี่ใบให้สั่ง previewClearOldOrders() ก่อน');
+  }
+  return runClearOld_(true);
+}
+
+/** ดูก่อนว่าจะหายใบไหนบ้าง โดยยังไม่ลบอะไรเลย */
+function previewClearOldOrders() {
+  return runClearOld_(false);
+}
+
+function runClearOld_(doIt) {
+  var email = requireStaff_();
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var today = isoDate_(new Date());
+    var hs = sheet_('head');
+    var hLast = formulaLimit_('head');
+    if (hLast < DATA_ROW) return 'ยังไม่มีออเดอร์ในชีทเลย';
+
+    var hv = hs.getRange(DATA_ROW, 1, hLast - DATA_ROW + 1, SH.head.net).getValues();
+    var killRows = [], killNos = {}, keep = 0, keepNet = 0, killNet = 0, noDate = [];
+
+    for (var i = 0; i < hv.length; i++) {
+      var no = String(hv[i][SH.head.IN.no - 1] || '').trim();
+      if (!no) continue;
+      var d = hv[i][SH.head.IN.date - 1];
+      var iso = (d instanceof Date) ? isoDate_(d) : String(d || '').slice(0, 10);
+      var net = Number(hv[i][SH.head.net - 1] || 0);
+      if (iso === today) { keep++; keepNet += net; continue; }
+      /* วันที่อ่านไม่ออก = ไม่ใช่ของวันนี้แน่ ๆ จึงล้าง แต่ต้องขึ้นในรายงานให้เห็นชัด
+         จะได้ไม่มีใบไหนหายไปเงียบ ๆ โดยเจ้าของร้านไม่รู้ว่าหายเพราะอะไร */
+      if (!iso) noDate.push(no);
+      killRows.push(DATA_ROW + i);
+      killNos[no] = true;
+      killNet += net;
+    }
+
+    var nKill = killRows.length;
+    var lines = [];
+    lines.push((doIt ? 'ล้างออเดอร์เก่าเรียบร้อย' : 'ทดลองดูก่อน — ยังไม่ได้ลบอะไรเลย'));
+    lines.push('วันนี้คือ ' + today);
+    lines.push('  เก็บไว้ (ของวันนี้): ' + keep + ' ใบ  ยอดรวม ' + money_(keepNet));
+    lines.push('  ' + (doIt ? 'ล้างไป' : 'จะล้าง') + ' (ก่อนวันนี้): ' + nKill + ' ใบ  ยอดรวม ' + money_(killNet));
+    if (noDate.length) {
+      lines.push('  ในนั้นมี ' + noDate.length + ' ใบที่ช่องวันที่ว่างหรืออ่านไม่ออก: ' +
+        noDate.slice(0, 10).join(', ') + (noDate.length > 10 ? ' …' : ''));
+    }
+
+    /* นับแถวลูกของใบที่จะหาย ทั้งตอนพรีวิวและตอนล้างจริง ใช้ทางเดินเดียวกัน
+       เลขที่พรีวิวบอกจึงเป็นเลขเดียวกับที่จะเกิดขึ้นจริง ไม่ใช่คนละตัวนับ */
+    [['item', SH.item.IN.no], ['cut', SH.cut.IN.no]].forEach(function (pair) {
+      var key = pair[0], col = pair[1];
+      var sh = sheet_(key);
+      var last = formulaLimit_(key);
+      var n = 0;
+      if (last >= DATA_ROW) {
+        var v = sh.getRange(DATA_ROW, col, last - DATA_ROW + 1, 1).getValues();
+        for (var j = 0; j < v.length; j++) {
+          var ono = String(v[j][0] || '').trim();
+          if (!ono || !killNos[ono]) continue;
+          if (doIt) clearRow_(key, DATA_ROW + j);
+          n++;
+        }
+      }
+      lines.push('  ' + SH[key].name + ': ' + (doIt ? 'ล้าง ' : 'จะล้าง ') + n + ' แถว');
+    });
+
+    if (doIt) for (var k = killRows.length - 1; k >= 0; k--) clearRow_('head', killRows[k]);
+
+    /* ใบกำกับภาษีที่ออกไปแล้วลบไม่ได้ตามกฎหมาย จึงไม่แตะ แต่ต้องบอกให้รู้
+       ว่ามีใบที่ชี้ไปหาออเดอร์ที่ไม่มีอยู่แล้ว จะได้ไม่งงตอนเปิดชีท เอกสาร */
+    var orphan = 0;
+    if (sheetIfAny_('doc')) {
+      var ds = sheet_('doc'), dLast = formulaLimit_('doc');
+      if (dLast >= DATA_ROW) {
+        var dv = ds.getRange(DATA_ROW, SH.doc.IN.orderNo, dLast - DATA_ROW + 1, 1).getValues();
+        for (var m = 0; m < dv.length; m++) {
+          if (killNos[String(dv[m][0] || '').trim()]) orphan++;
+        }
+      }
+    }
+    lines.push('  ' + SH.doc.name + ': ไม่แตะเลย' +
+      (orphan ? ' (แต่มี ' + orphan + ' ใบที่อ้างออเดอร์ที่หายไป)' : ''));
+
+    if (doIt) {
+      SpreadsheetApp.flush();
+      writeLog_(email, 'ล้างออเดอร์', SH.head.name, '', 'เฉพาะก่อนวันที่ ' + today,
+        nKill + keep, keep, 'ล้างออเดอร์ทดลอง เก็บของวันนี้ไว้');
+      lines.push('');
+      lines.push('ของในล็อตที่ใบเก่าตัดไป คืนกลับมาแล้ว');
+      lines.push('ใบต่อไปจะเป็น ' + peekNextOrderNo_());
+    } else {
+      lines.push('');
+      lines.push('ถ้าตัวเลขถูกต้องแล้ว สั่งจริงด้วย  clearOldOrders(\'' + 'ล้างออเดอร์เก่า' + '\')');
+    }
+
+    var msg = lines.join('\n');
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function money_(n) {
+  var v = Math.round(Number(n || 0) * 100) / 100;
+  return '฿' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/**
+ * ตั้งเขตเวลาของสเปรดชีตให้ตรงกับสคริปต์
+ *
+ * เมนู ไฟล์ > การตั้งค่า > เขตเวลา มีเฉพาะบนคอม แอป Sheets บนมือถือไม่มีให้
+ * เจ้าของร้านทำงานบนมือถือเป็นหลัก จึงทำเป็นฟังก์ชันให้กด เรียกใช้ แทน
+ *
+ * ทำไมต้องตรง: สคริปต์สร้างวันที่ตามเขตเวลาของตัวเอง แต่ชีทแสดงตามเขตเวลาของชีท
+ * ต่างกันเมื่อไรวันที่เลื่อน — ของจริงเจอมาแล้ว คีย์ 1 ก.ย. แต่ชีทลง 31 ส.ค. 10:00
+ * และสูตรที่ใช้ TODAY() ก็เพี้ยนตาม เช่นสถานะ "ใกล้หมดอายุ" ของล็อตเคมี
+ *
+ * ของแถม: ออเดอร์ที่ลงไปแล้วด้วยเขตเวลาผิด จะกลับมาแสดงวันที่ถูกเองทันที
+ * เพราะค่าที่เก็บไว้เป็นเวลาจริง ที่เพี้ยนคือการแสดงผลเท่านั้น
+ */
+function fixTimeZone() {
+  requireStaff_();
+  var want = 'Asia/Bangkok';
+  var ss = ss_();
+  var before = ss.getSpreadsheetTimeZone();
+  var script = Session.getScriptTimeZone();
+
+  var out = [];
+  out.push('เขตเวลาของสคริปต์: ' + script);
+  out.push('เขตเวลาของสเปรดชีต (ก่อน): ' + before);
+
+  if (before === want) {
+    out.push('');
+    out.push('ตรงกันดีอยู่แล้ว ไม่ต้องแก้อะไร');
+  } else {
+    ss.setSpreadsheetTimeZone(want);
+    SpreadsheetApp.flush();
+    out.push('เขตเวลาของสเปรดชีต (หลัง): ' + ss.getSpreadsheetTimeZone());
+    out.push('');
+    out.push('ตั้งให้ตรงกันแล้ว');
+    out.push('ออเดอร์ที่ลงไปแล้วด้วยเขตเวลาเดิม จะกลับมาแสดงวันที่ถูกเองทันที');
+    out.push('สูตรที่ใช้ TODAY() เช่นสถานะใกล้หมดอายุของล็อต ก็นับวันถูกตั้งแต่ตอนนี้');
+  }
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * ตรวจว่าแอปกำลังอ่านไฟล์ไหน และในไฟล์นั้นมีอะไรอยู่จริง
+ *
+ * ทำเพราะเถียงกันไม่จบว่า "รหัสในแอปไม่ตรงกับที่แก้ในชีท" ซึ่งมีได้สองสาเหตุ
+ * คือแก้คนละไฟล์กัน หรือแก้ไฟล์ถูกแล้วแต่ยังไม่ได้บันทึก
+ * ฟังก์ชันนี้อ่านอย่างเดียว ไม่แก้ ไม่ลบ ไม่เขียนอะไรทั้งนั้น กด Run ได้ไม่ต้องกลัว
+ */
+function checkSheet() {
+  requireStaff_();
+  var ss = ss_();
+  var out = [];
+  out.push('แอปกำลังอ่านไฟล์นี้');
+  out.push('  ชื่อไฟล์: ' + ss.getName());
+  out.push('  ลิงก์: ' + ss.getUrl());
+  out.push('  (ถ้าไม่ใช่ไฟล์ที่เพิ่งแก้ แปลว่าแก้คนละไฟล์กัน)');
+
+  /* เขตเวลาไม่ตรงกันทำให้วันที่เลื่อนไปหนึ่งวัน และสูตร TODAY() นับผิดวัน
+     เป็นอาการที่ดูยังไงก็ไม่เห็น ถ้าไม่เอามาบอกตรงนี้ */
+  var stz = ss.getSpreadsheetTimeZone(), ktz = Session.getScriptTimeZone();
+  out.push('  เขตเวลา: สเปรดชีต ' + stz + ' · สคริปต์ ' + ktz +
+    (stz === ktz ? '  (ตรงกันดี)' : '  ← ไม่ตรงกัน! ให้ Run ที่ fixTimeZone'));
+  out.push('');
+
+  var rows = readAll_('prod');
+  var C = SH.prod.IN;
+  var stock = readStock_();
+  var all = 0, chem = [];
+  for (var i = 0; i < rows.length; i++) {
+    var sku = String(rows[i][C.sku - 1] || '').trim();
+    if (!sku) continue;
+    all++;
+    if (sku.toLowerCase().indexOf('chem') < 0) continue;
+    chem.push('  ' + sku + '  ' + String(rows[i][C.name - 1] || '').slice(0, 46) +
+      '  ยกมา ' + (rows[i][C.opening - 1] === '' ? '(ว่าง)' : rows[i][C.opening - 1]) +
+      '  คงเหลือ ' + (stock[sku] === undefined ? '(ไม่มีในชีทสต๊อก)' : stock[sku]));
+  }
+  out.push('ฐานสินค้า: ' + all + ' รายการ  เป็นเคมี ' + chem.length + ' รายการ');
+  out.push('รหัสเคมีที่อยู่ในชีทตอนนี้จริง ๆ (ยกมา = ช่องที่กรอกเอง, คงเหลือ = ที่สูตรคำนวณ)');
+  out = out.concat(chem.slice(0, 30));
+  if (chem.length > 30) out.push('  … อีก ' + (chem.length - 30) + ' รายการ');
+  out.push('');
+
+  /* ออเดอร์ที่อยู่ในไฟล์นี้จริง ๆ — ตอบคำถาม "คีย์ออเดอร์ไปเยอะ แต่ทำไมหาไม่เจอ"
+     ถ้าตรงนี้ขึ้น 0 ทั้งที่คีย์ไปแล้ว แปลว่าแอปเขียนลงคนละไฟล์กับที่กำลังเปิดดูอยู่ */
+  var hs = sheet_('head');
+  var hLast = formulaLimit_('head');
+  var nos = [];
+  if (hLast >= DATA_ROW) {
+    var hv = hs.getRange(DATA_ROW, SH.head.IN.no, hLast - DATA_ROW + 1, 1).getValues();
+    for (var h = 0; h < hv.length; h++) {
+      var hno = String(hv[h][0] || '').trim();
+      if (hno) nos.push(hno);
+    }
+  }
+  out.push('ออเดอร์ในไฟล์นี้: ' + nos.length + ' ใบ');
+  if (nos.length) {
+    out.push('  ห้าใบล่าสุด: ' + nos.slice(-5).join(', '));
+    out.push('  ใบต่อไปจะเป็น: ' + peekNextOrderNo_());
+    out.push('  (ชีท ใบสรุปออเดอร์ โชว์ทีละใบ ต้องพิมพ์เลขใบใดใบหนึ่งข้างบนลงช่องสีเหลือง B5');
+    out.push('   ถ้าเลขในช่องนั้นไม่มีอยู่จริง ทั้งชีทจะขึ้น #N/A ซึ่งปกติ ไม่ใช่ของเสีย)');
+  } else {
+    out.push('  ไม่มีออเดอร์เลยสักใบในไฟล์นี้');
+    out.push('  ถ้าคีย์ออเดอร์ไปแล้ว แปลว่าแอปเขียนลงคนละไฟล์กับที่กำลังเปิดดูอยู่');
+    out.push('  ให้กดลิงก์ข้างบนเพื่อเปิดไฟล์ที่แอปเขียนจริง');
+  }
+  out.push('');
+
+  /* อ่านอาการของชีทสต๊อกโดยไม่ซ่อม จะได้รู้ว่ายอดคงเหลือที่เห็นเชื่อได้ไหม */
+  var st = sheet_('stock');
+  var cols = st.getLastColumn();
+  var ref = countRef_(st, cols), skew = countSkew_(st), flat = countFlat_(st, cols);
+  out.push('อาการของชีท ' + SH.stock.name);
+  out.push('  #REF! ' + ref + ' ช่อง');
+  out.push('  แถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว');
+  out.push('  สูตรที่ถูกพิมพ์ทับเป็นเลขนิ่ง ' + flat + ' ช่อง');
+  out.push((ref || skew || flat)
+    ? '  → ยอดคงเหลือที่เห็นในแอปยังเชื่อไม่ได้ ให้ Run ที่ repairStockSheet ก่อน'
+    : '  → ปกติดี ยอดคงเหลือที่เห็นในแอปเชื่อได้');
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * เลขนิ่งที่ค้างอยู่ใต้แถวสุดท้ายที่ยังมีสูตร — อ่านอย่างเดียว ไม่ลบอะไร
+ *
+ * เกิดตอนมีคนก๊อปช่องสูตรแล้ว "วางเฉพาะค่า" ลากยาวเกินแถวที่มีสูตรจริง
+ * ตอนนี้ยังไม่ทำอะไรผิดเพราะระบบไม่เขียนออเดอร์เกินแถวที่มีสูตรอยู่แล้ว
+ * แต่วันที่ลากสูตรลงมาเพิ่ม ยอดผิดพวกนี้จะกลายเป็นยอดของออเดอร์ใหม่ทันที
+ */
+function calcJunkBelow_(key) {
+  var cfg = SH[key];
+  var out = { n: 0, from: 0, to: 0 };
+  var cols = cfg.CALC || [];
+  if (!cols.length) return out;
+  var sh = sheetIfAny_(key);
+  if (!sh) return out;
+  var start = formulaLimit_(key) + 1;
+  var last = sh.getLastRow();
+  if (last < start) return out;
+
+  var wide = sh.getLastColumn();
+  var v = sh.getRange(start, 1, last - start + 1, wide).getValues();
+  var f = sh.getRange(start, 1, last - start + 1, wide).getFormulas();
+  for (var i = 0; i < v.length; i++) {
+    for (var k = 0; k < cols.length; k++) {
+      var c = cols[k];
+      if (c > wide) continue;
+      if (String(f[i][c - 1] || '').charAt(0) === '=') continue;
+      var val = v[i][c - 1];
+      if (val === '' || val === null || val === undefined) continue;
+      out.n++;
+      if (!out.from) out.from = start + i;
+      out.to = start + i;
+    }
+  }
+  return out;
+}
+
+/**
+ * ช่องสูตรช่องนี้ยังใช้ได้ไหม — คำตอบเดียวที่ทั้งการตรวจและการซ่อมใช้ร่วมกัน
+ *
+ * '' = ปกติ · 'flat' = ถูกพิมพ์ทับจนไม่เหลือสูตร · 'ref' = ยังเป็นสูตรแต่ชี้ไปหาช่องที่ถูกลบ
+ *
+ * ตัว 'ref' สำคัญไม่แพ้กัน และเคยหลุดมาแล้ว: 7 ก.ย. 69 ช่อง VAT กับยอดสุทธิของ
+ * ใบที่ "รับ VAT" เป็น =...#REF!... ทั้งคอลัมน์ ตัวตรวจเดิมเห็นว่าขึ้นต้นด้วย =
+ * ก็นับว่าปกติ เลยไม่ซ่อมให้ ทั้งที่ใบละพันบาทอ่านยอดไม่ได้เลยสักใบ
+ */
+function calcBad_(f) {
+  f = String(f == null ? '' : f);
+  if (f.charAt(0) !== '=') return 'flat';
+  if (f.indexOf('#REF!') > -1) return 'ref';
+  return '';
+}
+
+/** นับช่องที่ควรเป็นสูตรตาม CALC แต่ใช้ไม่ได้แล้ว พร้อมบอกแถวต้นแบบที่ยังดี */
+function scanCalc_(key) {
+  var cfg = SH[key];
+  var cols = cfg.CALC || [];
+  var out = { flat: 0, ref: 0, bad: 0, rows: 0, good: 0, cols: cols };
+  /* ชีทที่ยังไม่มีในไฟล์ให้ข้ามไป ไม่ใช่ล้มทั้งการซ่อม ชีทอื่นจะได้ซ่อมต่อได้ */
+  if (!cols.length || !sheetIfAny_(key)) { out.cols = []; return out; }
+  var sh = sheet_(key);
+  var limit = formulaLimit_(key);
+  if (limit < DATA_ROW) return out;
+  var n = limit - DATA_ROW + 1;
+  out.rows = n;
+  out.f = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
+  for (var i = 0; i < n; i++) {
+    var whole = true;
+    for (var k = 0; k < cols.length; k++) {
+      var c = cols[k];
+      var why = c <= out.f[i].length ? calcBad_(out.f[i][c - 1]) : 'flat';
+      if (!why) continue;
+      out[why]++; out.bad++; whole = false;
+    }
+    /* แถวต้นแบบคือแถวแรกที่ทุกช่องสูตรยังครบ ใช้เป็นตัวคัดลอกไปซ่อมแถวที่พัง */
+    if (whole && !out.good) out.good = DATA_ROW + i;
+  }
+  return out;
+}
+
+/**
+ * ซ่อมสูตรของชีทที่มีคอลัมน์สูตรปนกับคอลัมน์กรอก
+ *
+ * ต่างจาก repairStockSheet ตรงที่ชีทพวกนี้มีข้อมูลที่คนกรอกเองปนอยู่ในแถวเดียวกัน
+ * จะคัดลอกทั้งแถวแบบชีทสต๊อกไม่ได้ เพราะข้อมูลออเดอร์จะถูกทับหาย
+ * จึงคัดลอกเฉพาะคอลัมน์ที่อยู่ใน CALC และวางแบบ "เฉพาะสูตร" เท่านั้น
+ *
+ * และไม่ฮาร์ดโค้ดสูตรไว้ในโค้ด เพราะสูตรพวกนี้เจ้าของร้านเขียนเอง
+ * เดาผิดแม้ช่องเดียวคือใบเสร็จยอดผิด — ใช้แถวที่ยังดีในชีทเดียวกันเป็นต้นแบบแทน
+ * อ้างอิงสัมพัทธ์จะขยับตามแถวให้เอง
+ */
+function repairOrderSheets() {
+  requireStaff_();
+  var keys = ['head', 'item', 'prod', 'recv', 'lot', 'cut', 'doc'];
+  var out = [], total = 0;
+
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var cfg = SH[key];
+    var before = scanCalc_(key);
+    if (!before.cols.length) continue;
+    /* formulaLimit_ วัดจากคอลัมน์เดียว ถ้าคอลัมน์นั้นถูกล้างหมดทั้งชีท
+       จะดูเหมือนไม่มีสูตรเลยและถูกข้ามไปเงียบ ๆ ต้องบอกให้รู้ */
+    if (!before.rows) {
+      out.push('  ' + cfg.name + ': ไม่เหลือสูตรเลยแม้แต่แถวเดียว ' +
+        '(วัดจากคอลัมน์ที่ ' + cfg.probe + ') — ต้องกู้ชีทจากประวัติเวอร์ชันของ Google');
+      continue;
+    }
+    /* เลขนิ่งที่ค้างอยู่ "ใต้" แถวสุดท้ายที่มีสูตร ตัวซ่อมไม่แตะ เพราะไม่รู้ว่า
+       เจ้าของร้านตั้งใจเขียนอะไรไว้เองหรือเปล่า แต่ต้องบอกให้รู้ทุกครั้ง
+       ถึงจะไม่มีอะไรต้องซ่อมก็ตาม — วันที่ลากสูตรลงมาเพิ่ม ยอดผิดพวกนี้จะติดมาด้วย */
+    var junk = calcJunkBelow_(key);
+    var junkMsg = junk.n
+      ? '  ' + cfg.name + ': มีเลขนิ่งค้างอยู่ใต้แถวสุดท้ายที่มีสูตร ' + junk.n +
+        ' ช่อง (แถว ' + junk.from + '-' + junk.to + ') — เลือกช่วงนั้นแล้วกด Delete ทิ้ง ' +
+        'ตัวซ่อมไม่ลบให้เพราะไม่รู้ว่าตั้งใจเขียนไว้เองหรือเปล่า'
+      : '';
+
+    if (!before.bad) {
+      out.push('  ' + cfg.name + ': ปกติดีอยู่แล้ว');
+      if (junkMsg) out.push(junkMsg);
+      continue;
+    }
+    if (!before.good) {
+      out.push('  ' + cfg.name + ': เสีย ' + before.bad + ' ช่อง แต่ไม่มีแถวไหนสูตรครบเลย ' +
+        'จึงไม่มีต้นแบบให้คัดลอก — ต้องซ่อมด้วยมือ');
+      if (junkMsg) out.push(junkMsg);
+      continue;
+    }
+
+    var sh = sheet_(key);
+    var fixedCells = 0;
+    for (var k = 0; k < before.cols.length; k++) {
+      var c = before.cols[k];
+      /* รวมแถวที่พังซึ่งติดกันเป็นช่วงเดียว แล้วคัดลอกทีเดียว ลดรอบคุยกับ Google */
+      var start = 0, len = 0;
+      for (var r = 0; r <= before.rows; r++) {
+        var bad = false;
+        if (r < before.rows) {
+          var row = before.f[r];
+          bad = c > row.length || !!calcBad_(row[c - 1]);
+        }
+        if (bad) { if (!len) start = DATA_ROW + r; len++; continue; }
+        if (len) {
+          sh.getRange(before.good, c).copyTo(sh.getRange(start, c, len, 1),
+            SpreadsheetApp.CopyPasteType.PASTE_FORMULA, false);
+          fixedCells += len;
+          len = 0;
+        }
+      }
+    }
+
+    SpreadsheetApp.flush();
+    var after = scanCalc_(key);
+    total += fixedCells;
+    out.push('  ' + cfg.name + ': ซ่อม ' + fixedCells + ' ช่อง (เหลือ ' + after.bad + ') ' +
+      '— เลขนิ่ง ' + before.flat + ' · #REF! ' + before.ref + ' ' +
+      'ใช้แถว ' + before.good + ' เป็นต้นแบบ');
+
+    if (junkMsg) out.push(junkMsg);
+  }
+
+  var msg = 'ซ่อมสูตรของชีทออเดอร์\n' + (out.length ? out.join('\n') : '  ไม่มีอะไรต้องซ่อม') +
+    '\n\nรวมซ่อม ' + total + ' ช่อง' +
+    '\nคอลัมน์ที่คนกรอกเองไม่ถูกแตะเลย คัดลอกเฉพาะช่องสูตรอย่างเดียว';
+  Logger.log(msg);
+  return msg;
+}
+
+/* ------------------------------------------------- เลขเอกสารที่หายไปจากเล่ม */
+
+/** เลขที่หายไปของแต่ละชุดเอกสาร — อ่านอย่างเดียว ไม่เขียนอะไร */
+function docGaps_() {
+  var cfg = appCfg_();
+  var s = sheetIfAny_('doc');
+  var out = [];
+  if (!s) return out;
+  var last = formulaLimit_('doc');
+  if (last < DATA_ROW) return out;
+
+  var C = SH.doc.IN;
+  var v = s.getRange(DATA_ROW, C.no, last - DATA_ROW + 1, 1).getValues();
+
+  for (var k = 0; k < DOC_TYPES.length; k++) {
+    var t = DOC_TYPES[k];
+    var prefix = cfg.docPrefix[t.key] || (t.code + '26-');
+    var used = {}, max = 0, min = 0;
+    for (var i = 0; i < v.length; i++) {
+      var no = String(v[i][0] || '').trim();
+      if (no.indexOf(prefix) !== 0) continue;
+      var n = parseInt(no.substring(prefix.length), 10);
+      if (isNaN(n)) continue;
+      used[n] = true;
+      if (n > max) max = n;
+      if (!min || n < min) min = n;
+    }
+    if (!max) continue;
+
+    /* เริ่มนับช่องว่างจากเลขแรกที่ระบบออกเอง ไม่ใช่จากเลข 1
+       เล่มก่อนหน้าที่ยกยอดมาไม่ได้อยู่ในชีทนี้ จึงไม่ใช่ช่องว่างของเรา */
+    var floor = Number(cfg.docStart[t.key] || 0) || 0;
+    var from = Math.max(min, floor + 1);
+    var miss = [];
+    for (var n2 = from; n2 <= max; n2++) if (!used[n2]) miss.push(prefix + pad5_(n2));
+    if (miss.length) out.push({ key: t.key, th: t.th, prefix: prefix, miss: miss });
+  }
+  return out;
+}
+
+function pad5_(n) {
+  var t = String(n);
+  while (t.length < 5) t = '0' + t;
+  return t;
+}
+
+/** ดูก่อนว่าเล่มขาดเลขอะไรบ้าง โดยยังไม่เขียนอะไรลงชีท */
+function previewDocGaps() {
+  requireStaff_();
+  var g = docGaps_();
+  if (!g.length) {
+    var okMsg = 'เลขเอกสารเรียงครบทุกชุด ไม่มีเลขขาด';
+    Logger.log(okMsg);
+    return okMsg;
+  }
+  var out = ['เลขที่หายไปจากเล่ม (ยังไม่ได้เติมให้)'];
+  var n = 0;
+  for (var i = 0; i < g.length; i++) {
+    out.push('  ' + g[i].th + ': ' + g[i].miss.join(', '));
+    n += g[i].miss.length;
+  }
+  out.push('');
+  out.push('รวม ' + n + ' เลข — สั่ง fillDocGaps() เพื่อเติมกลับเข้าเล่ม');
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * เติมเลขที่หายไปกลับเข้าเล่ม เพื่อให้เลขเอกสารเรียงครบไม่มีรู
+ *
+ * สิ่งที่สรรพากรถามเวลาตรวจคือ "เลขนี้ไปไหน" — เลขที่หายไปเฉย ๆ ตอบไม่ได้
+ * ส่วนใบที่ยกเลิกแล้วแต่ยังอยู่ในเล่มพร้อมเหตุผล ตอบได้ทันทีและถือว่าถูกต้อง
+ *
+ * เลขหายได้สองทาง และทั้งสองทางเกิดขึ้นจริงกับร้านนี้แล้ว
+ *   ตั้งช่องยกยอดสูงกว่าเลขที่ออกไปจริง ระบบเลยข้ามไปเลขถัดไป (ONIV26-00241)
+ *   ลบแถวใบที่ยกเลิกทิ้งทั้งแถว แทนที่จะปล่อยไว้พร้อมเหตุผล (00248-00250)
+ *
+ * ตัวนี้เติมแถวใหม่ให้เฉพาะเลขที่ไม่มีในชีทเลย ไม่แตะแถวที่มีอยู่แล้วแม้แต่แถวเดียว
+ * และกรอกเหตุผลกลาง ๆ ไว้ให้ ต้องไปแก้เป็นเหตุผลจริงทีหลัง
+ *
+ * ใบที่เคยออกแล้วยกเลิกไป ถ้ายังอยากได้ยอดกับชื่อลูกค้าเดิมคืน
+ * ให้กู้จากประวัติเวอร์ชันของ Google ก่อน (ไฟล์ › ประวัติเวอร์ชัน) แล้วค่อยสั่งตัวนี้
+ * ตัวนี้ทำได้แค่ทำให้เลขครบ ไม่รู้ว่าใบที่หายไปเคยมีอะไรอยู่
+ */
+function fillDocGaps() {
+  var email = requireStaff_();
+  var g = docGaps_();
+  if (!g.length) {
+    var okMsg = 'เลขเอกสารเรียงครบทุกชุดอยู่แล้ว ไม่มีอะไรต้องเติม';
+    Logger.log(okMsg);
+    return okMsg;
+  }
+
+  var total = 0;
+  for (var i = 0; i < g.length; i++) total += g[i].miss.length;
+  if (total > 50) {
+    throw new Error('เลขที่หายไปมีถึง ' + total + ' เลข ซึ่งมากผิดปกติ — ' +
+      'น่าจะตั้งช่องยกยอดผิดมากกว่าเลขหายจริง ให้สั่ง previewDocGaps() ดูก่อน ' +
+      'แล้วแก้ช่อง "ยกยอดเลข...มาจาก" ในชีท ตั้งค่าแอป ให้ตรงกับเล่มเดิมก่อน');
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var why = 'ไม่ได้ใช้เลขนี้ — เติมกลับเข้าเล่มให้เลขครบ ' +
+      '(ถ้าเคยออกใบจริงแล้วยกเลิก ให้แก้เหตุผลตรงนี้ให้ตรงกับของจริง)';
+    var done = [];
+    for (var a = 0; a < g.length; a++) {
+      for (var b = 0; b < g[a].miss.length; b++) {
+        var no = g[a].miss[b];
+        var row = nextRow_('doc', SH.doc.IN.no);
+        if (!row) throw new Error('ชีท ' + SH.doc.name + ' เต็มแล้ว — สั่ง setup() อีกครั้งเพื่อขยายแถว');
+        /* เขียนแค่สามช่อง เลข ชนิด และเหตุผล — ไม่ใส่วันที่และไม่ใส่ยอด
+           เพราะใบนี้ไม่ได้ออกจริง ใส่ตัวเลขไปจะกลายเป็นยอดขายผีในรายงาน */
+        writeRow_('doc', row, { no: no, type: g[a].th, voidWhy: why });
+        writeLog_(email, 'เติมเลขเอกสาร', SH.doc.name, no, g[a].th, '', 'ไม่ได้ใช้',
+          'เติมกลับเข้าเล่มให้เลขเรียงครบ โดย ' + email);
+        done.push(no);
+      }
+    }
+    SpreadsheetApp.flush();
+
+    var msg = 'เติมเลขกลับเข้าเล่มแล้ว ' + done.length + ' เลข\n  ' + done.join(', ') +
+      '\n\nทุกแถวใส่เหตุผลกลาง ๆ ไว้ให้ — ให้เปิดชีท ' + SH.doc.name +
+      ' แล้วแก้ช่อง "เหตุผลที่ยกเลิก" ของแถวที่เคยออกใบจริงให้ตรงกับความจริง' +
+      '\nเลขใบถัดไปไม่เปลี่ยน เพราะเลขที่เติมเป็นเลขที่ต่ำกว่าเลขล่าสุดอยู่แล้ว';
+    Logger.log(msg);
+    return msg;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ส่องสูตรของชีทออเดอร์ ว่ายังคำนวณได้อยู่ไหม
+ *
+ * ทำเพราะบันทึกออเดอร์แล้วชีทคำนวณยอดสินค้าได้ 0 ทั้งที่ควรได้ 178
+ * ด่านตรวจยอดจึงถอยใบนั้นออก (ซึ่งถูกแล้ว ดีกว่าปล่อยบิลยอดผิดค้างไว้)
+ * แต่ต้องรู้ให้ได้ว่าสูตรช่องไหนพัง ถึงจะซ่อมถูกจุด
+ *
+ * อ่านอย่างเดียว ไม่แก้ ไม่ลบ ไม่เขียนอะไรทั้งนั้น
+ */
+function checkFormulas() {
+  requireStaff_();
+  var out = [];
+
+  function dump(key, cols, labels) {
+    var cfg = SH[key];
+    var sh = sheet_(key);
+    var limit = formulaLimit_(key);
+    out.push('— ชีท ' + cfg.name + ' (สูตรลากถึงแถว ' + limit + ') —');
+    if (limit < DATA_ROW) { out.push('  ไม่มีสูตรเลยสักแถว'); out.push(''); return; }
+
+    /* แถว 6 เป็นแถวต้นแบบ ถ้าตรงนี้ไม่ใช่สูตร แถวอื่นก็มักไม่ใช่ตามไปด้วย */
+    for (var i = 0; i < cols.length; i++) {
+      var c = cols[i];
+      var f = sh.getRange(DATA_ROW, c).getFormula();
+      var v = sh.getRange(DATA_ROW, c).getValue();
+      out.push('  ' + sh.getRange(DATA_ROW, c).getA1Notation() + ' ' + labels[i] + ': ' +
+        (f ? f.slice(0, 96) : 'ไม่ใช่สูตรแล้ว! ค่าที่ค้างอยู่ = ' + JSON.stringify(v)));
+    }
+
+    /* นับทั้งชีทว่าช่องที่ควรเป็นสูตร กลายเป็นค่านิ่งไปกี่ช่อง */
+    var n = limit - DATA_ROW + 1;
+    var all = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
+    var flat = 0;
+    for (var r = 0; r < all.length; r++) {
+      for (var k = 0; k < (cfg.CALC || []).length; k++) {
+        var col = cfg.CALC[k];
+        if (col > all[r].length) continue;
+        if (String(all[r][col - 1] || '').charAt(0) !== '=') flat++;
+      }
+    }
+    out.push('  ช่องที่ควรเป็นสูตรแต่ไม่ใช่สูตรแล้ว: ' + flat + ' ช่อง');
+    out.push('');
+  }
+
+  dump('head', [SH.head.subtotal, 13, SH.head.net],
+       ['ยอดสินค้า', 'VAT', 'ยอดชำระสุทธิ']);
+  dump('item', [8, 10, 15, 16],
+       ['ราคามาตรฐาน', 'ยอดรวม', 'ลำดับในบิล', 'คีย์อ้างอิง']);
+
+  /* ราคาขายของสินค้าตัวอย่าง ใช้ดูว่าตัวคูณที่สูตรจะไปดึงมีค่าจริงไหม */
+  var rows = readAll_('prod');
+  var shown = 0;
+  out.push('— ราคาขายใน ฐานสินค้า (ตัวอย่าง) —');
+  for (var i = 0; i < rows.length && shown < 5; i++) {
+    var sku = String(rows[i][SH.prod.IN.sku - 1] || '').trim();
+    if (!sku) continue;
+    out.push('  ' + sku + '  ราคาขาย ' + JSON.stringify(rows[i][SH.prod.IN.price - 1]) +
+      '  ต้นทุน ' + JSON.stringify(rows[i][SH.prod.IN.cost - 1]));
+    shown++;
+  }
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 /* ------------------------------------------------- ซ่อมชีทสต๊อกที่ขึ้น #REF! */
 
 /**
@@ -297,28 +1398,83 @@ function clearAllOrders(confirm) {
  *
  * > เลี่ยงปัญหานี้ในอนาคต: เอาสินค้าออกด้วยการ **ลบค่าในช่อง** ไม่ใช่ **ลบทั้งแถว**
  */
+/**
+ * สูตรตั้งต้นของแถว 6 ในชีท สต๊อกคงเหลือ
+ *
+ * ชีทนี้เป็นสูตรล้วนทุกช่อง ไม่มีอะไรที่คนต้องกรอกเอง แต่เคยเจอกรณีที่คนวาง
+ * "เฉพาะค่า" ทับลงไป ทำให้ห้าคอลัมน์ (C, E, I, K, M) กลายเป็นเลขนิ่ง
+ * ผลคือขายของแล้วยอดคงเหลือไม่ลด ระบบตัดสต๊อกตายเงียบโดยไม่มีอะไรฟ้อง
+ *
+ * ตัวซ่อมเดิมใช้แถว 6 เป็นต้นแบบคัดลอกลงมา ถ้าแถว 6 เองกลายเป็นเลขนิ่ง
+ * มันจะคัดลอกเลขนิ่งลงไปทั้งชีท คือทำให้พังหนักกว่าเดิม
+ * จึงต้องรู้ว่าสูตรที่ถูกต้องหน้าตาเป็นอย่างไร เพื่อประกอบแถว 6 คืนก่อนคัดลอก
+ */
+var STOCK_ROW6 = {
+  1:  '=IF($B6="","",COUNTA($B$6:$B6))',
+  2:  '=IF(\'ฐานสินค้า\'!$B6="","",\'ฐานสินค้า\'!$B6)',
+  3:  '=IF($B6="","",\'ฐานสินค้า\'!$D6)',
+  4:  '=IF($B6="","",\'ฐานสินค้า\'!$F6)',
+  5:  '=IF($B6="","",\'ฐานสินค้า\'!$I6)',
+  9:  '=IF($B6="","",$E6+$F6-$G6-$H6)',
+  10: '=IF($B6="","",\'ฐานสินค้า\'!$J6)',
+  11: '=IF($B6="","",\'ฐานสินค้า\'!$G6)',
+  12: '=IF($B6="","",ROUND($I6*$K6,2))',
+  13: '=IF($B6="","",\'ฐานสินค้า\'!$H6)',
+  14: '=IF($B6="","",ROUND($I6*$M6,2))'
+};
+
 function repairStockSheet() {
   var s = sheet_('stock');
   var cols = s.getLastColumn();
   var tmpl = s.getRange(DATA_ROW, 1, 1, cols);
   var f = tmpl.getFormulas()[0];
 
-  if (f.join('').indexOf('#REF') > -1 || f[1].indexOf(SH.prod.name) < 0) {
-    throw new Error('แถว 6 ของชีท ' + SH.stock.name + ' ก็เสียด้วย จึงไม่มีต้นแบบให้ซ่อม ' +
+  if (f.join('').indexOf('#REF') > -1) {
+    throw new Error('แถว 6 ของชีท ' + SH.stock.name + ' ขึ้น #REF! จึงไม่มีต้นแบบให้ซ่อม ' +
       '— ต้องแก้แถว 6 ด้วยมือก่อน');
+  }
+
+  /* ช่องไหนในแถว 6 ถูกพิมพ์ทับจนไม่เหลือสูตร ให้ประกอบคืนก่อน
+     ไม่งั้นการคัดลอกแถว 6 ลงมาจะแพร่เลขนิ่งไปทั้งชีท */
+  var fixed = [];
+  for (var col in STOCK_ROW6) {
+    col = Number(col);
+    if (col > cols) continue;
+    if (String(f[col - 1] || '').charAt(0) === '=') continue;
+    /* สูตรต้นแบบเขียนชื่อ 'ฐานสินค้า' ไว้ตรง ๆ ถ้าแท็บจริงสะกดต่างไปนิดเดียว
+       สูตรที่เขียนลงไปจะกลายเป็น #REF! ทันที — ต้องสลับเป็นชื่อจริงก่อนเสมอ */
+    s.getRange(DATA_ROW, col).setFormula(
+      STOCK_ROW6[col].replace(/'ฐานสินค้า'/g, sheetRef_(ss_(), SH.prod.name)));
+    fixed.push(s.getRange(DATA_ROW, col).getA1Notation());
+  }
+  if (fixed.length) {
+    SpreadsheetApp.flush();
+    f = tmpl.getFormulas()[0];
   }
 
   var before = countRef_(s, cols);
   var skew = countSkew_(s);
-  if (!before && !skew) return 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
+  var flat = countFlat_(s, cols);
+  if (!before && !skew && !flat && !fixed.length) {
+    var okMsg = 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
+    Logger.log(okMsg);
+    return okMsg;
+  }
 
   tmpl.copyTo(s.getRange(DATA_ROW + 1, 1, STOCK_LAST - DATA_ROW, cols));
   SpreadsheetApp.flush();
   var after = countRef_(s, cols), skewAfter = countSkew_(s);
 
+  var flatAfter = countFlat_(s, cols);
   var extra = repairSummaryRange_();
-  return 'ชีท ' + SH.stock.name + ': ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')' +
-    ' · ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')' + extra;
+  var msg = 'ชีท ' + SH.stock.name + ':\n' +
+    (fixed.length ? '  ประกอบสูตรแถว 6 ที่ถูกพิมพ์ทับคืน ' + fixed.length + ' ช่อง (' +
+      fixed.join(', ') + ')\n' : '') +
+    '  ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')\n' +
+    '  ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')\n' +
+    '  ซ่อมช่องที่กลายเป็นเลขนิ่ง ' + flat + ' ช่อง (เหลือ ' + flatAfter + ')' + extra;
+  Logger.log(msg);
+  return msg;
 }
 
 /**
@@ -341,6 +1497,28 @@ function countSkew_(s) {
   return n;
 }
 
+/**
+ * นับช่องที่ควรเป็นสูตรแต่กลายเป็นเลขนิ่ง
+ *
+ * อาการนี้เงียบที่สุดในบรรดาทั้งหมด — ตัวเลขยังโชว์ปกติ ไม่มี error ไม่มีอะไรผิดสังเกต
+ * แต่ช่อง "คงเหลือ" ที่เป็นเลขนิ่งแปลว่าขายของแล้วสต๊อกไม่ลด ซึ่งคือหัวใจของทั้งระบบ
+ */
+function countFlat_(s, cols) {
+  var last = STOCK_LAST;
+  var f = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, cols).getFormulas();
+  var v = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, cols).getValues();
+  var n = 0;
+  for (var i = 0; i < f.length; i++) {
+    if (v[i][1] === '' || v[i][1] === null) continue;   /* แถวว่างไม่ต้องนับ */
+    for (var col in STOCK_ROW6) {
+      col = Number(col);
+      if (col > cols) continue;
+      if (String(f[i][col - 1] || '').charAt(0) !== '=') n++;
+    }
+  }
+  return n;
+}
+
 function countRef_(s, cols) {
   var f = s.getRange(DATA_ROW, 1, STOCK_LAST - DATA_ROW + 1, cols).getFormulas();
   var n = 0;
@@ -355,13 +1533,14 @@ function countRef_(s, cols) {
  * (จาก $B$150 เหลือ $B$117) ถ้าเพิ่มสินค้าเกินแถวนั้นจะนับไม่ครบเงียบ ๆ
  */
 function repairSummaryRange_() {
-  var s = ss_().getSheetByName('สรุปยอดขาย');
+  var s = findSheet_(ss_(), 'สรุปยอดขาย');
   if (!s) return '';
   var cell = s.getRange('B23');
   var f = String(cell.getFormula() || '');
   var m = f.match(/COUNTA\('ฐานสินค้า'!\$B\$6:\$B\$(\d+)\)/);
   if (!m || Number(m[1]) >= STOCK_LAST) return '';
-  cell.setFormula("=COUNTA('ฐานสินค้า'!$B$6:$B$" + STOCK_LAST + ')');
+  cell.setFormula('=COUNTA(' + sheetRef_(ss_(), SH.prod.name) +
+    '!$B$6:$B$' + STOCK_LAST + ')');
   return ' · ขยายช่วงนับ SKU ในชีท สรุปยอดขาย จากแถว ' + m[1] + ' เป็น ' + STOCK_LAST;
 }
 
@@ -371,9 +1550,67 @@ function repairSummaryRange_() {
  * ค่าที่ใบปะหน้าพัสดุต้องใช้ ชีทเดิมไม่มี — สร้างเป็นชีทของแอปเอง
  * ค่าที่มีอยู่แล้วจะไม่ถูกเขียนทับ สั่ง setup ซ้ำได้
  */
+/**
+ * ชีท หลักฐานการชำระเงิน — 1 สลิป = 1 แถว
+ *
+ * เก็บลิงก์ไฟล์ในไดรฟ์ ไม่ใช่ตัวรูป รูปสลิปใบละหลายร้อยกิโล
+ * ฝังลงชีทไม่กี่ร้อยใบก็เปิดชีทไม่ไหวแล้ว
+ */
+function setupSlipSheet_(ss) {
+  var name = SH.slip.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < SLIP_LAST) s.insertRowsAfter(s.getMaxRows(), SLIP_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 14) s.insertColumnsAfter(s.getMaxColumns(), 14 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('หลักฐานการชำระเงิน — ระบบเขียนให้เอง')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'แนบสลิปจากหน้าออเดอร์ในแอป แล้วแถวจะมาโผล่ที่นี่  |  ' +
+    'ไฟล์จริงอยู่ในโฟลเดอร์ไดรฟ์ ช่องลิงก์คือทางไปเปิดดู  |  ' +
+    'สลิปที่แนบผิดใบ ให้เปลี่ยนสถานะเป็น "ไม่ใช่ของใบนี้" ไม่ใช่ลบแถวทิ้ง'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'เลขที่ออเดอร์', 'แนบเมื่อ', 'วันที่โอน\n(ตามสลิป)',
+    'ยอดตามสลิป', 'โอนเข้าบัญชี', 'ชื่อไฟล์', 'ลิงก์ไฟล์', 'ผู้แนบ',
+    'สถานะ', 'ผู้ตรวจสอบ', 'ตรวจสอบเมื่อ', 'หมายเหตุ',
+    'รหัสไฟล์ในไดรฟ์\n(ระบบใช้อ้างอิง ห้ามแก้)'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = SLIP_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+
+  var inCols = [];
+  for (var c = 2; c <= 14; c++) inCols.push(c);
+  paintCols_(s, n, inCols, [1]);
+
+  s.getRange(DATA_ROW, SH.slip.IN.at, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.slip.IN.paidAt, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.slip.IN.amount, n, 1).setNumberFormat('#,##0.00');
+  s.getRange(DATA_ROW, SH.slip.IN.checkAt, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.slip.IN.fileId, n, 1).setNumberFormat('@')
+    .setFontColor('#9aa0a6');
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.slip.IN.no, 130);
+  s.setColumnWidth(SH.slip.IN.at, 140);
+  s.setColumnWidth(SH.slip.IN.paidAt, 140);
+  s.setColumnWidth(SH.slip.IN.bank, 150);
+  s.setColumnWidth(SH.slip.IN.fileName, 220);
+  s.setColumnWidth(SH.slip.IN.fileUrl, 260);
+  s.setColumnWidth(SH.slip.IN.status, 130);
+  s.setColumnWidth(SH.slip.IN.fileId, 70);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' สลิป)';
+}
+
 function setupAppSheet_(ss) {
   var name = SH.app.name;
-  var s = ss.getSheetByName(name);
+  var s = findSheet_(ss, name);
   var fresh = !s;
   if (fresh) s = ss.insertSheet(name);
   if (s.getMaxColumns() < 5) s.insertColumnsAfter(s.getMaxColumns(), 5 - s.getMaxColumns());
@@ -436,7 +1673,68 @@ function setupAppSheet_(ss) {
     ['ยกยอดเลขใบแจ้งหนี้มาจาก', 0],
     ['ยกยอดเลขใบเสนอราคามาจาก', 0],
     ['ยกยอดเลขใบรับเงินมัดจำมาจาก', 0],
-    ['ใบเสนอราคายืนราคากี่วัน', 7]
+    ['ใบเสนอราคายืนราคากี่วัน', 7],
+    /* ลายเซ็นฝั่งร้าน — เซ็นในแอปครั้งเดียว (ตั้งค่า → ลายเซ็น) แล้วประทับให้ทุกใบ
+       เก็บเป็นพิกัดเส้นแบบ JSON ไม่ใช่รูป จะได้คมตอนพิมพ์และไม่ล้นช่อง
+       ห้ามพิมพ์ทับด้วยมือ ให้เซ็นใหม่ในแอปแทน */
+    ['ลายเซ็นผู้รับเงิน/พนักงานขาย', ''],
+    ['ลายเซ็นผู้มีอำนาจลงนาม', ''],
+
+    /* ============================================================
+       ค่าที่เพิ่มทีหลัง ต้องต่อท้ายตรงนี้เท่านั้น ห้ามแทรกกลางรายการเด็ดขาด
+
+       ตัวเขียนข้างล่างจับคู่ "ป้ายกับค่า" ด้วยลำดับแถว ไม่ใช่ด้วยชื่อป้าย
+       และค่าที่เจ้าของร้านกรอกไว้แล้วจะไม่ถูกทับ (เขียนให้เฉพาะตอนช่องยังว่าง)
+       แทรกแถวกลางรายการเมื่อไร ป้ายทั้งหมดที่อยู่ต่ำกว่าจะเลื่อนลงหนึ่งแถว
+       แต่ค่าอยู่ที่เดิม — ทุกค่าตั้งแต่จุดนั้นลงไปจะไปจับคู่กับป้ายผิดตัวทันที
+       เช่น 230 ที่เป็น "ยกยอดเลขใบกำกับภาษี" จะกลายเป็นคำนำหน้าเลขของอีกชุดหนึ่ง
+
+       ต่อท้ายอย่างเดียวจึงปลอดภัยเสมอ และถ้าเคยเลื่อนไปแล้ว สั่ง setup อีกครั้ง
+       ด้วยลำดับที่ถูกต้อง ป้ายจะกลับมาตรงกับค่าเดิมของมันเองทั้งหมด
+       ============================================================ */
+    /* บิลเงินสดต้องเป็นคนละชุดเลขกับ ONIV เด็ดขาด — ชุด ONIV คือชุดใบกำกับภาษี
+       ที่ต้องเรียงต่อกันไม่ขาดและเป็นชุดที่สรรพากรตรวจ ถ้าบิลเงินสดไปกินเลขในชุดนั้น
+       เล่มใบกำกับภาษีจะมีเลขที่ไม่ใช่ใบกำกับภาษีปนอยู่ อธิบายตอนถูกตรวจไม่ได้ */
+    ['คำนำหน้าเลขบิลเงินสด', 'CS26-'],
+    ['ยกยอดเลขบิลเงินสดมาจาก', 0],
+
+    /* ---- บัญชีรับเงิน (ยังต่อท้ายอย่างเดียวตามกฎด้านบน) ----
+       ร้านใช้สองบัญชีจริง ๆ แยกตามว่าใบนั้นออก VAT หรือไม่ออก
+       ระบบจะเลือกให้เองตามช่อง VAT ของออเดอร์ พนักงานไม่ต้องจำ
+
+       ชุด "ไม่มี VAT" เว้นว่างไว้ตั้งใจ เพราะเป็นบัญชีชื่อบุคคล
+       ไม่ควรอยู่ในไฟล์โค้ดที่คนนอกเปิดดูได้ ให้กรอกลงชีทเอาเอง
+
+       ช่องพร้อมเพย์กรอกได้สามแบบ เบอร์มือถือ 10 หลัก · เลขผู้เสียภาษี/บัตรประชาชน
+       13 หลัก · เลข e-Wallet 15 หลัก  ว่างไว้ก็ได้ แค่จะไม่มี QR ให้ มีแต่เลขบัญชี */
+    ['ธนาคารที่รับเงิน บิลมี VAT', 'ไทยพาณิชย์ (SCB)'],
+    ['ชื่อบัญชี บิลมี VAT', 'บริษัท เคมีคอล อินโนเวชั่น เทคโนโลยี แอนด์ อินสตรูเมนท์ จำกัด'],
+    ['เลขบัญชี บิลมี VAT', '431-039435-5'],
+    ['พร้อมเพย์ บิลมี VAT', ''],
+    ['ธนาคารที่รับเงิน บิลไม่มี VAT', ''],
+    ['ชื่อบัญชี บิลไม่มี VAT', ''],
+    ['เลขบัญชี บิลไม่มี VAT', ''],
+    ['พร้อมเพย์ บิลไม่มี VAT', ''],
+
+    /* ลิงก์ให้ลูกค้ากดเปิดแอพธนาคาร — ไม่ได้กรอกเลขบัญชีหรือยอดให้
+       ลูกค้ายังต้องพิมพ์เองทั้งหมด ลิงก์นี้แค่ช่วยให้ไม่ต้องไปหาแอพเอง
+
+       ไม่ฝังลิงก์ของธนาคารไว้ในโค้ดตั้งใจ — ลิงก์พวกนี้ธนาคารเปลี่ยนเองได้ตลอด
+       ฝังไว้แล้ววันที่มันตาย จะไม่มีอะไรฟ้อง ลูกค้ากดแล้วเจอหน้าว่างไปเรื่อย ๆ
+       ให้เจ้าของร้านวางลิงก์ที่กดแล้วใช้ได้จริงในวันที่กรอกลงมาเอง
+       เว้นว่าง = ไม่มีบรรทัดลิงก์ในข้อความ */
+    ['ลิงก์แอพธนาคาร บิลมี VAT', ''],
+    ['ลิงก์แอพธนาคาร บิลไม่มี VAT', ''],
+
+    /* ---- ใบวางบิล (ยังต่อท้ายอย่างเดียวตามกฎด้านบน) ----
+       เลขใบวางบิลเป็นคนละรูปแบบกับเอกสารอื่น — BL + ปีเดือนวัน + ลำดับในวันนั้น
+       เช่น BL260822-001 ตามใบจริงที่ร้านใช้ ช่องนี้กรอกแค่ตัว "BL" ที่เหลือระบบต่อให้
+
+       ใบวางบิลไม่ใช่เอกสารภาษี เลขจึงไม่ต้องเรียงต่อกันไม่ขาดเหมือนชุด ONIV
+       เครดิตกี่วันใช้ตอนคิดช่อง "วันครบกำหนด" ของแต่ละบรรทัด ถ้าอ่านจากข้อความ
+       เงื่อนไขชำระเงินของใบนั้นไม่ออก */
+    ['คำนำหน้าเลขใบวางบิล', 'BL'],
+    ['เครดิตกี่วัน (ใบวางบิล)', 30]
   ];
   for (var i = 0; i < rows.length; i++) {
     var r = DATA_ROW + i;
@@ -444,7 +1742,9 @@ function setupAppSheet_(ss) {
     // เบอร์โทรต้องเป็นช่องข้อความ ไม่งั้นชีทแปลงเป็นตัวเลขแล้วศูนย์นำหน้าหาย
     /* ช่องที่ขึ้นต้นด้วยศูนย์ต้องเป็นช่องข้อความ ไม่งั้นชีทแปลงเป็นตัวเลขแล้วศูนย์นำหน้าหาย
        เลขผู้เสียภาษี 0105558055790 จะกลายเป็น 105558055790 แล้วใบกำกับภาษีใช้ไม่ได้ */
-    if (/เบอร์โทร|มือถือ|แฟกซ์|ผู้เสียภาษี/.test(rows[i][0])) s.getRange(r, 2).setNumberFormat('@');
+    if (/เบอร์โทร|มือถือ|แฟกซ์|ผู้เสียภาษี|ลายเซ็น|พร้อมเพย์|เลขบัญชี/.test(rows[i][0])) {
+      s.getRange(r, 2).setNumberFormat('@');
+    }
     // ค่าที่เจ้าของร้านกรอกไว้แล้ว ห้ามทับ — เติมให้เฉพาะตอนที่ยังว่าง
     if (s.getRange(r, 2).getValue() === '') s.getRange(r, 2).setValue(rows[i][1]);
   }
@@ -473,10 +1773,210 @@ function setupAppSheet_(ss) {
     (fresh ? ' — อย่าลืมกรอกที่อยู่และเบอร์โทรผู้ส่ง ใบปะหน้าพัสดุใช้ค่านี้' : '');
 }
 
+/* --------------------------------------------- ขนส่งที่ Shopee ใช้ส่งของให้ */
+
+/** ขนส่งที่ต้องมีเพิ่ม เพราะออเดอร์จากแพลตฟอร์มใช้ชื่อพวกนี้ ไม่ใช่ชื่อที่ร้านเลือกเอง
+ *  ใส่ตัวย่อ (SPX) ไว้ในชื่อด้วยตั้งใจ เพราะไฟล์ที่ Shopee ส่งออกมาเขียนว่า
+ *  "Standard Delivery - ส่งธรรมดาในประเทศ-SPX Express" ซึ่งจับคู่ด้วยคำว่า SPX ได้ */
+var EXTRA_CARRIERS = ['Shopee Xpress (SPX)', 'J&T Express'];
+
+/**
+ * เติมขนส่งที่ขาด และขยายช่วง dropdown ให้ครอบของใหม่
+ *
+ * ของเดิม dropdown ผูกกับช่วงแคบ ๆ แค่ห้าแถว เติมชื่อที่หกลงไปเฉย ๆ ชีทจะขึ้น
+ * สามเหลี่ยมเตือนทุกแถวที่ใช้ค่าใหม่ ทั้งที่ค่านั้นถูกต้อง — จึงต้องผูกช่วงใหม่ด้วย
+ * ผูกกว้างไว้เลย 20 แถว เจ้าของร้านเติมเองรอบหน้าจะได้ไม่ต้องมาสั่ง setup อีก
+ */
+function setupCarrierList_(ss) {
+  var cfg = sheet_('cfg');
+  var head = findSheet_(ss, SH.head.name);
+  if (!head) throw new Error('ไม่พบชีท ' + SH.head.name);
+
+  var TOP = DATA_ROW + 1;          // แถว 7 = ค่าแรกของชุด dropdown
+  var ROWS = 20;                   // ช่วงที่ผูกไว้ กว้างกว่าที่ใช้จริงเผื่ออนาคต
+  if (cfg.getMaxRows() < TOP + ROWS - 1) {
+    cfg.insertRowsAfter(cfg.getMaxRows(), TOP + ROWS - 1 - cfg.getMaxRows());
+  }
+
+  var col = 5;                     // E = ช่องทางจัดส่ง
+  var have = {}, firstFree = 0;
+  var v = cfg.getRange(TOP, col, ROWS, 1).getValues();
+  for (var i = 0; i < ROWS; i++) {
+    var x = String(v[i][0] || '').trim();
+    if (x) have[x.toLowerCase()] = true;
+    else if (!firstFree) firstFree = TOP + i;
+  }
+
+  var added = [];
+  for (var k = 0; k < EXTRA_CARRIERS.length; k++) {
+    var want = EXTRA_CARRIERS[k];
+    if (have[want.toLowerCase()]) continue;
+    if (!firstFree) break;         // เต็มช่วงแล้ว ไม่ไปเขียนทับของใคร
+    cfg.getRange(firstFree, col).setValue(want).setFontColor(C_IN_FG);
+    have[want.toLowerCase()] = true;
+    added.push(want);
+    firstFree = (firstFree - TOP + 1 < ROWS) ? firstFree + 1 : 0;
+  }
+
+  /* ผูก dropdown ของช่องขนส่งในหัวบิลใหม่ ให้ครอบช่วงที่กว้างขึ้น
+     allowInvalid ไว้ ค่าที่มีอยู่เดิมจึงไม่ถูกตีว่าผิดแม้แต่แถวเดียว */
+  var last = formulaLimit_('head');
+  if (last >= DATA_ROW) {
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(cfg.getRange(TOP, col, ROWS, 1), true)
+      .setAllowInvalid(true).build();
+    head.getRange(DATA_ROW, SH.head.IN.carrier, last - DATA_ROW + 1, 1).setDataValidation(rule);
+  }
+
+  return added.length
+    ? 'เพิ่มขนส่ง ' + added.join(' · ') + ' ในชีท ' + SH.cfg.name + ' และขยายช่วงตัวเลือกให้แล้ว'
+    : 'ขนส่งครบอยู่แล้ว (ขยายช่วงตัวเลือกให้เผื่อเติมเองภายหลัง)';
+}
+
+/* ------------------------------------------ สถานะ "ตีกลับ" ที่ ออเดอร์_หัวบิล */
+
+/**
+ * เพิ่มสถานะ "ตีกลับ" เข้าชุด dropdown ของสถานะออเดอร์ (ชีท ตั้งค่า คอลัมน์ G)
+ *
+ * ยกเลิก = ยังไม่ได้ส่ง ลูกค้าเปลี่ยนใจก่อนแพ็ค
+ * ตีกลับ = ส่งไปแล้วแต่ของเดินทางกลับมา (ที่อยู่ผิด · ลูกค้าไม่รับ · เก็บเงินปลายทางไม่ได้)
+ *
+ * ผลต่อสต๊อกและยอดขายเหมือนกันเป๊ะ แต่ในสายตาเจ้าของร้านคนละเรื่อง —
+ * ตีกลับคือเสียค่าส่งไปแล้วสองเที่ยวและของอาจบุบ ถ้านับรวมกับยกเลิกจะไม่มีวันรู้ว่า
+ * เดือนนี้เสียค่าส่งฟรีไปกี่ใบ เพราะอะไร
+ */
+/* "รอชำระเครดิต 30วัน" แยกจาก "รอชำระ" เพราะสองอย่างนี้ทวงคนละเวลา
+   เงินสด   = ครบกำหนดวันที่ขายเลย ค้างข้ามวันคือเริ่มสาย
+   เครดิต 30 = ครบกำหนดอีก 30 วัน ยังไม่ถึงกำหนดก็ยังไม่ใช่ลูกหนี้ที่ต้องโทรตาม
+   ถ้าใช้คำว่า "รอชำระ" อย่างเดียว ใบเครดิตจะขึ้นแดงตั้งแต่วันแรกทั้งที่ยังไม่ถึงกำหนด
+   แล้วคนจะเลิกเชื่อสีแดงทั้งหน้า */
+var EXTRA_STATUS = ['ตีกลับ', 'รอชำระเครดิต 30วัน'];
+
+function setupStatusList_(ss) {
+  var cfg = sheet_('cfg');
+  var head = findSheet_(ss, SH.head.name);
+  if (!head) throw new Error('ไม่พบชีท ' + SH.head.name);
+
+  var TOP = DATA_ROW + 1;
+  var ROWS = 20;
+  if (cfg.getMaxRows() < TOP + ROWS - 1) {
+    cfg.insertRowsAfter(cfg.getMaxRows(), TOP + ROWS - 1 - cfg.getMaxRows());
+  }
+
+  var col = 7;                     // G = สถานะออเดอร์
+  var have = {}, firstFree = 0;
+  var v = cfg.getRange(TOP, col, ROWS, 1).getValues();
+  for (var i = 0; i < ROWS; i++) {
+    var x = String(v[i][0] || '').trim();
+    if (x) have[x] = true;
+    else if (!firstFree) firstFree = TOP + i;
+  }
+
+  var added = [];
+  for (var k = 0; k < EXTRA_STATUS.length; k++) {
+    var want = EXTRA_STATUS[k];
+    if (have[want]) continue;
+    if (!firstFree) break;         // เต็มช่วงแล้ว ไม่ไปเขียนทับของใคร
+    cfg.getRange(firstFree, col).setValue(want).setFontColor(C_IN_FG);
+    have[want] = true;
+    added.push(want);
+    firstFree = (firstFree - TOP + 1 < ROWS) ? firstFree + 1 : 0;
+  }
+
+  var last = formulaLimit_('head');
+  if (last >= DATA_ROW) {
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(cfg.getRange(TOP, col, ROWS, 1), true)
+      .setAllowInvalid(true).build();
+    head.getRange(DATA_ROW, SH.head.IN.status, last - DATA_ROW + 1, 1).setDataValidation(rule);
+  }
+
+  return added.length
+    ? 'เพิ่มสถานะ ' + added.join(' · ') + ' ในชีท ' + SH.cfg.name + ' และขยายช่วงตัวเลือกให้แล้ว'
+    : 'สถานะครบอยู่แล้ว (ขยายช่วงตัวเลือกให้เผื่อเติมเองภายหลัง)';
+}
+
+/* ----------------------------------------------- สถานะบัญชี ที่ ออเดอร์_หัวบิล */
+
+/** ตัวเลือกสถานะบัญชี — เจ้าของร้านแก้/เพิ่มเองในชีท ตั้งค่า คอลัมน์ I ได้ */
+var ACCT_LIST = ['ยังไม่ส่งบัญชี', 'รอเอกสาร', 'พร้อมส่งบัญชี', 'ส่งบัญชีแล้ว', 'บัญชีตีกลับ'];
+var ACCT_FIRST = ACCT_LIST[0];
+
+/**
+ * สามคอลัมน์ท้าย ออเดอร์_หัวบิล สำหรับงานส่งบัญชี
+ *
+ * ทำไมต้องแยกจากช่องสถานะออเดอร์ (Q): ของส่งถึงมือลูกค้าแล้วแต่ยังไม่ได้ส่งบัญชี
+ * เป็นเรื่องที่เกิดทุกวัน ถ้าใช้ช่องเดียวกันจะเห็นได้ทีละเรื่อง แล้วใบที่ตกหล่น
+ * จะรู้อีกทีตอนสิ้นเดือน — ซึ่งสายไปสำหรับการยื่นภาษี
+ *
+ * ไม่ยุ่งกับคอลัมน์เดิมสักช่อง เขียนเฉพาะ V W X ที่ยังว่างอยู่
+ * และไม่เขียนทับหัวคอลัมน์ที่มีของอื่นอยู่ก่อน — เจอแล้วหยุด ไม่ทับ
+ */
+function setupAccounting_(ss) {
+  var s = findSheet_(ss, SH.head.name);
+  if (!s) throw new Error('ไม่พบชีท ' + SH.head.name);
+
+  var C = SH.head.IN;
+  var cols = [
+    { col: C.acct, head: 'สถานะบัญชี', width: 130 },
+    { col: C.acctAt, head: 'วันที่ส่งบัญชี', width: 150 },
+    { col: C.acctWhat, head: 'ส่งบัญชีอะไรไปบ้าง', width: 320 }
+  ];
+
+  var need = SH.head.width;
+  if (s.getMaxColumns() < need) s.insertColumnsAfter(s.getMaxColumns(), need - s.getMaxColumns());
+
+  for (var i = 0; i < cols.length; i++) {
+    var cur = String(s.getRange(HEAD_ROW, cols[i].col).getValue() || '').trim();
+    if (cur && cur !== cols[i].head) {
+      throw new Error('คอลัมน์ที่ ' + cols[i].col + ' ของชีท ' + SH.head.name +
+        ' มีหัวข้อ "' + cur + '" อยู่แล้ว — หยุดไว้ก่อน ไม่เขียนทับของเดิม');
+    }
+    s.getRange(HEAD_ROW, cols[i].col).setValue(cols[i].head)
+      .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+      .setVerticalAlignment('middle').setWrap(true);
+    s.setColumnWidth(cols[i].col, cols[i].width);
+  }
+
+  /* รายการตัวเลือกไปอยู่ในชีท ตั้งค่า ที่เดียวกับ dropdown ชุดอื่น
+     เพื่อให้เจ้าของร้านเพิ่มสถานะเองได้โดยไม่ต้องแก้โค้ด */
+  var cfg = sheet_('cfg');
+  if (cfg.getMaxColumns() < 9) cfg.insertColumnsAfter(cfg.getMaxColumns(), 9 - cfg.getMaxColumns());
+  /* หัวตารางของชุด dropdown อยู่แถว 6 ค่าเริ่มแถว 7 — คนละที่กับหัวชีทอื่น
+     เขียนผิดแถวคือ cfgLists_ อ่านไม่เจอ แล้วสถานะบัญชีจะไม่มีให้เลือกสักตัว */
+  var LIST_HEAD = DATA_ROW, LIST_TOP = DATA_ROW + 1;
+  if (String(cfg.getRange(LIST_HEAD, 9).getValue() || '').trim() === '') {
+    cfg.getRange(LIST_HEAD, 9).setValue('สถานะบัญชี')
+      .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold');
+  }
+  var wrote = 0;
+  for (var k = 0; k < ACCT_LIST.length; k++) {
+    var cell = cfg.getRange(LIST_TOP + k, 9);
+    if (String(cell.getValue() || '').trim() === '') { cell.setValue(ACCT_LIST[k]); wrote++; }
+  }
+  cfg.setColumnWidth(9, 140);
+
+  /* ผูก dropdown กับช่วงในชีท ตั้งค่า ไม่ใช่รายการตายตัวในโค้ด
+     เพิ่มสถานะในชีทแล้วช่องในหัวบิลรับค่าใหม่ได้ทันทีโดยไม่ต้อง deploy */
+  var last = formulaLimit_('head');
+  if (last >= DATA_ROW) {
+    var n = last - DATA_ROW + 1;
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(cfg.getRange(LIST_TOP, 9, ACCT_LIST.length, 1), true)
+      .setAllowInvalid(true).build();
+    s.getRange(DATA_ROW, C.acct, n, 1).setDataValidation(rule).setFontColor(C_IN_FG);
+    s.getRange(DATA_ROW, C.acctAt, n, 1).setFontColor(C_IN_FG);
+    s.getRange(DATA_ROW, C.acctWhat, n, 1).setFontColor(C_IN_FG);
+  }
+
+  return 'เพิ่มคอลัมน์ V W X (สถานะบัญชี) ที่ชีท ' + SH.head.name +
+    (wrote ? ' และเติมตัวเลือกสถานะบัญชี ' + wrote + ' ค่าในชีท ' + SH.cfg.name : '');
+}
+
 /* ------------------------------------ คอลัมน์ "ล็อตที่ตัด" ที่ ออเดอร์_รายการ */
 
 function setupItemLotColumn_(ss) {
-  var s = ss.getSheetByName(SH.item.name);
+  var s = findSheet_(ss, SH.item.name);
   if (!s) throw new Error('ไม่พบชีท ' + SH.item.name);
   var col = SH.item.lot;  // 17 = Q
 
@@ -496,11 +1996,12 @@ function setupItemLotColumn_(ss) {
   var n = last - DATA_ROW + 1;
   if (n < 1) throw new Error('ชีท ' + SH.item.name + ' ไม่มีสูตรในแถวข้อมูลเลย — ชีทอาจถูกแก้');
 
-  var C = CUT_LAST;
+  var C = boundLast_(ss, SH.cut.name, CUT_LAST);
+  var CR2 = sheetRef_(ss, SH.cut.name);
   fillFormula_(s, col, n,
     '=IF($P6="","",IFERROR(TEXTJOIN(", ",TRUE,ARRAYFORMULA(' +
-    'IF(\'' + SH.cut.name + '\'!$H$6:$H$' + C + '=$P6,' +
-    '\'' + SH.cut.name + '\'!$E$6:$E$' + C + '&" x"&TEXT(\'' + SH.cut.name + '\'!$F$6:$F$' + C + ',"0"),""))),""))');
+    'IF(' + CR2 + '!$H$6:$H$' + C + '=$P6,' +
+    CR2 + '!$E$6:$E$' + C + '&" x"&TEXT(' + CR2 + '!$F$6:$F$' + C + ',"0"),""))),""))');
 
   s.getRange(DATA_ROW, col, n, 1).setBackground(C_CALC_BG);
   s.setColumnWidth(col, 200);
@@ -526,4 +2027,94 @@ function paintCols_(s, n, inCols, calcCols) {
   for (var j = 0; j < calcCols.length; j++) {
     s.getRange(DATA_ROW, calcCols[j], n, 1).setBackground(C_CALC_BG).setFontColor(null);
   }
+}
+
+/* ------------------------------- เขียนสูตร VAT / ยอดสุทธิ ที่ ออเดอร์_หัวบิล คืน */
+
+/**
+ * สูตรสองช่องที่ระบบยอมเขียนเองได้ — และเป็นที่เดียวในโปรแกรมทั้งหมด
+ *
+ * ปกติกฎเหล็กคือ "ไม่เดาสูตรของเจ้าของร้าน" repairOrderSheets จึงคัดลอกจากแถวที่ยังดี
+ * ในชีทเดียวกันเสมอ แต่ 7 ก.ย. 69 เกิดกรณีที่วิธีนั้นช่วยไม่ได้เลย:
+ * สูตร #REF! ถูกคัดลอกไปทับทั้งคอลัมน์ M กับ N จนไม่เหลือแถวดีให้เป็นต้นแบบสักแถว
+ *
+ * ทำไมถึงกล้าเขียนสูตรสองช่องนี้เอง — เพราะเทียบกับ "ใบที่ออกให้ลูกค้าไปแล้ว" ตรงทุกใบ:
+ *   VAT   = (ยอดสินค้า − ส่วนลด + ค่าจัดส่ง) × อัตราใน ตั้งค่า!B8  เฉพาะใบที่ "รับ VAT"
+ *   สุทธิ = ยอดสินค้า − ส่วนลด + ค่าจัดส่ง + VAT
+ *
+ * ค่าส่งอยู่ในฐานภาษีด้วย ตรงนี้เคยเข้าใจผิดมาก่อนแล้วเกือบทำพัง: ตัวเลขเก่าในชีท
+ * คิด VAT จากยอดสินค้าอย่างเดียว แต่ใบเสร็จที่ลูกค้าถืออยู่คิดรวมค่าส่งมาตลอด
+ *   ONIV26-00246 (AST-26-0020) ฐาน 1,350 VAT 94.50 · ONIV26-00247 (0023) ฐาน 287 VAT 20.09
+ *   ONIV26-00252 (0026) 18.35 · ONIV26-00255 (0032) 238.63 · ONIV26-00259 (0050) 134.75
+ * ชีทต่างหากที่เพี้ยนจากใบจริง ไม่ใช่ใบเพี้ยนจากชีท — ยึดใบที่ออกไปแล้วเป็นหลัก
+ * และตรงกับที่ buildDoc_() คิดภาษีตอนออกเอกสารด้วย ทั้งระบบจึงพูดตรงกันหมด
+ *
+ * ตั้งค่า!B8 คือช่องเดียวกับที่ cfgGet_() อ่านอัตรา VAT มาใช้ทั้งระบบ
+ */
+var HEAD_VAT_FORMULA =
+  '=IF($A{r}="","",IF($I{r}="รับ VAT",ROUND(($J{r}-$K{r}+$L{r})*ตั้งค่า!$B$8,2),0))';
+var HEAD_NET_FORMULA = '=IF($A{r}="","",$J{r}-$K{r}+$L{r}+$M{r})';
+
+/**
+ * เขียนสูตร VAT (M) กับ ยอดชำระสุทธิ (N) ของ ออเดอร์_หัวบิล ใหม่ทั้งคอลัมน์
+ *
+ * ใช้เฉพาะตอนที่ repairOrderSheets ช่วยไม่ได้ เพราะไม่เหลือแถวดีให้เป็นต้นแบบ
+ * ถ้าสูตรยังดีอยู่จะไม่ยอมเขียนทับ ต้องยืนยันด้วย writeVatFormulas('เขียนทับ')
+ * เขียนแค่สองคอลัมน์นี้ ในช่วงแถวที่มีสูตรอยู่แล้วเท่านั้น ช่องกรอกไม่ถูกแตะ
+ */
+function writeVatFormulas(confirm) {
+  var email = requireStaff_();
+  var sh = sheet_('head');
+  var limit = formulaLimit_('head');
+  if (limit < DATA_ROW) {
+    throw new Error('ชีท ' + SH.head.name + ' ไม่เหลือสูตรเลยแม้แต่แถวเดียว ' +
+      'ต้องกู้ชีทจากประวัติเวอร์ชันของ Google ก่อน');
+  }
+  var n = limit - DATA_ROW + 1;
+  var M = SH.head.vatAmt, N = SH.head.net;
+
+  var before = countHeadRef_(sh, n, M, N);
+  if (!before && String(confirm || '') !== 'เขียนทับ') {
+    var okMsg = 'ช่อง VAT กับ ยอดชำระสุทธิ ไม่มี #REF! เลยสักช่อง จึงไม่เขียนทับให้\n' +
+      'ถ้าตั้งใจจะเขียนสูตรใหม่จริง ๆ ให้สั่ง writeVatFormulas(\'เขียนทับ\')';
+    Logger.log(okMsg);
+    return okMsg;
+  }
+
+  var fm = [], fn = [];
+  for (var i = 0; i < n; i++) {
+    var r = DATA_ROW + i;
+    fm.push([HEAD_VAT_FORMULA.replace(/\{r\}/g, r)]);
+    fn.push([HEAD_NET_FORMULA.replace(/\{r\}/g, r)]);
+  }
+  sh.getRange(DATA_ROW, M, n, 1).setFormulas(fm);
+  sh.getRange(DATA_ROW, N, n, 1).setFormulas(fn);
+  SpreadsheetApp.flush();
+
+  var after = countHeadRef_(sh, n, M, N);
+  writeLog_(email, 'ซ่อมสูตร', SH.head.name, '', 'VAT + ยอดชำระสุทธิ',
+    '#REF! ' + before + ' ช่อง', 'เขียนสูตรใหม่ ' + (n * 2) + ' ช่อง',
+    'สูตรถูกคัดลอกทับจนไม่เหลือแถวต้นแบบ');
+
+  var msg = 'เขียนสูตรใหม่ที่ ' + SH.head.name + ' แถว ' + DATA_ROW + '-' + limit + '\n' +
+    '  ช่อง VAT (คอลัมน์ ' + M + ') และ ยอดชำระสุทธิ (คอลัมน์ ' + N + ') รวม ' + (n * 2) + ' ช่อง\n' +
+    '  #REF! ก่อนซ่อม ' + before + ' ช่อง → เหลือ ' + after + ' ช่อง\n' +
+    '  คอลัมน์อื่นไม่ถูกแตะเลย และลงบันทึกไว้ในชีท ' + SH.log.name + ' แล้ว';
+  if (after) {
+    msg += '\n\n  ยังเหลือ #REF! อยู่ แปลว่าชื่อชีท ตั้งค่า หรือช่อง B8 (อัตรา VAT) มีปัญหา — ' +
+      'เปิดชีท ตั้งค่า ดูว่าช่อง B8 เป็น 7.0% จริงไหม';
+  }
+  Logger.log(msg);
+  return msg;
+}
+
+/** นับ #REF! เฉพาะสองคอลัมน์นี้ ใช้ทั้งก่อนและหลังเขียน */
+function countHeadRef_(sh, n, M, N) {
+  var f = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
+  var c = 0;
+  for (var i = 0; i < f.length; i++) {
+    if (String(f[i][M - 1] || '').indexOf('#REF!') > -1) c++;
+    if (String(f[i][N - 1] || '').indexOf('#REF!') > -1) c++;
+  }
+  return c;
 }

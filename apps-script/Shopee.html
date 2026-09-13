@@ -1,0 +1,644 @@
+<script>
+/* ================================================== นำเข้าออเดอร์จาก Shopee
+
+   ทางเข้าข้อมูลคือ "วางข้อความ" ไม่ใช่อัปโหลดไฟล์ — ตั้งใจเลือกแบบนี้
+   ไฟล์ที่โหลดจาก Seller Centre เป็น .xlsx ซึ่งแกะเองในเบราว์เซอร์ไม่ได้
+   ถ้าจะแกะต้องลากไลบรารีจากเน็ตเข้ามา = แอปพังทันทีที่เน็ตร้านช้าหรือลิงก์ตาย
+   แต่คนขายต้องเปิดไฟล์ดูอยู่แล้ว เลือกทั้งแผ่นแล้วกดคัดลอก = ได้ตารางครบทุกคอลัมน์
+   วางลงช่องเดียวจบ ไม่ต้องแปลงไฟล์ ไม่ต้องพึ่งของนอกสักตัว
+
+   ทั้งไฟล์นี้ "ไม่เขียนอะไรลงชีทเอง" — ตอนกดยืนยันจะวนเรียก createOrder ตัวเดิม
+   ที่ผ่านการตัดล็อต FEFO · ถอยกลับตอนล้ม · กันบันทึกซ้ำ · ตรวจยอดกับชีท มาแล้ว
+   ของใหม่มีแค่ "อ่านตาราง" กับ "จับคู่สินค้า" ซึ่งพลาดแล้วยังไม่ทำข้อมูลเสีย
+   เพราะคนต้องเห็นหน้าตรวจก่อนเสมอ                                          */
+
+/* ---------------------------------------------------------- ตัวอ่านตาราง */
+
+/** ตัวคั่นคอลัมน์ — ก๊อปจาก Excel ได้แท็บ · โหลด .csv มาได้จุลภาค */
+function shopeeDelim(text) {
+  var head = String(text || "").split(/\r?\n/).slice(0, 5).join("\n");
+  var tab = 0, com = 0, semi = 0;
+  for (var i = 0; i < head.length; i++) {
+    var c = head.charAt(i);
+    if (c === "\t") tab++; else if (c === ",") com++; else if (c === ";") semi++;
+  }
+  if (tab && tab >= com && tab >= semi) return "\t";
+  if (semi > com) return ";";
+  return ",";
+}
+
+/**
+ * แยกข้อความเป็นตาราง
+ *
+ * ต้องรองรับเครื่องหมายคำพูดจริง ๆ ไม่ใช่ split(",") เฉย ๆ
+ * เพราะที่อยู่ลูกค้ามีจุลภาคเกือบทุกใบ และบางใบมีขึ้นบรรทัดใหม่อยู่ในช่องเดียว
+ * ตัดผิดทีเดียวคือคอลัมน์เลื่อนทั้งไฟล์ แล้วเบอร์โทรไปโผล่ช่องที่อยู่
+ *
+ * เปิดโหมดคำพูดเฉพาะตอนคำพูดอยู่ต้นช่องเท่านั้น ไม่งั้นชื่อสินค้าอย่าง
+ * 2" pipe จะกลืนทั้งไฟล์เข้าไปเป็นช่องเดียว
+ */
+function shopeeCells(text, dlm) {
+  text = String(text == null ? "" : text).replace(/^﻿/, "");
+  dlm = dlm || shopeeDelim(text);
+  var rows = [], row = [], f = "", q = false, i = 0;
+  while (i < text.length) {
+    var c = text.charAt(i);
+    if (q) {
+      if (c === '"') {
+        if (text.charAt(i + 1) === '"') { f += '"'; i += 2; continue; }
+        q = false; i++; continue;
+      }
+      f += c; i++; continue;
+    }
+    if (c === '"' && f === "") { q = true; i++; continue; }
+    if (c === dlm) { row.push(f); f = ""; i++; continue; }
+    if (c === "\r") { i++; continue; }
+    if (c === "\n") { row.push(f); rows.push(row); row = []; f = ""; i++; continue; }
+    f += c; i++;
+  }
+  row.push(f); rows.push(row);
+  return rows.filter(function (r) {
+    for (var k = 0; k < r.length; k++) if (String(r[k]).trim() !== "") return true;
+    return false;
+  });
+}
+
+/** หัวคอลัมน์แบบตัดเรื่องจุกจิกออก — Shopee ใส่วงเล็บ ดอกจัน เว้นวรรคไม่เท่ากัน */
+function shopeeNormHd(s) {
+  return String(s == null ? "" : s).toLowerCase()
+    .replace(/[ ​‌‍﻿]/g, "")
+    .replace(/[^0-9a-z฀-๿]/g, "");
+}
+
+/**
+ * คอลัมน์ที่ต้องหาให้เจอ
+ *
+ * เรียงคำใน pats ตามลำดับที่อยากได้ก่อน เช่นราคาเอา "ราคาขาย" (ที่ลูกค้าจ่ายจริง)
+ * ก่อน "ราคาตั้งต้น" (ราคาป้ายก่อนลด) — สลับกันเมื่อไรกำไรผิดทั้งไฟล์
+ *
+ * not คือคำที่ถ้าเจอแล้วห้ามใช้คอลัมน์นั้น กันหัวคอลัมน์ที่มีคำเดียวกันแย่งกัน
+ * เช่น "จำนวน" กับ "จำนวนเงินทั้งหมด"
+ */
+var SHOPEE_COLS = [
+  { key: "sn", label: "หมายเลขคำสั่งซื้อ", need: true,
+    pats: ["หมายเลขคำสั่งซื้อ", "เลขที่คำสั่งซื้อ", "ordersn", "orderid", "หมายเลขออเดอร์"] },
+  /* วันจัดส่งมาก่อนวันสั่งซื้อ เพราะยอดขายของร้านนับตอนของออกจากร้าน ไม่ใช่ตอนลูกค้ากดสั่ง
+     ใบที่ยังไม่ได้ส่งจะไม่มีวันจัดส่ง ตกไปใช้วันสั่งซื้อแทน ดีกว่าปล่อยว่าง */
+  { key: "shipDate", label: "วันจัดส่ง",
+    not: ["กำหนด", "ภายใน", "deadline", "estimate", "โดยประมาณ"],
+    pats: ["วันที่จัดส่งสินค้า", "เวลาส่งสินค้า", "เวลาที่ทำการจัดส่ง", "วันที่ส่งสินค้า",
+           "shipouttime", "shipoutdate", "วันที่ส่งของ"] },
+  { key: "date", label: "วันที่สั่งซื้อ",
+    pats: ["วันที่ทำการสั่งซื้อ", "เวลาการสั่งซื้อ", "วันที่สั่งซื้อ", "ordercreationdate",
+           "ordercreationtime", "orderpaidtime", "เวลาการชำระสินค้า"] },
+  { key: "cust", label: "ชื่อลูกค้า",
+    pats: ["ชื่อผู้รับ", "receivername", "ชื่อผู้ซื้อ", "buyerusername", "username"] },
+  /* สองช่องนี้ตัดสินว่าใบไหน "ของถึงมือลูกค้าแล้ว" กับใบไหน "ของกลับมาที่ร้าน"
+     ซึ่งเป็นเรื่องเป็นตายของสต๊อก — ใบที่ตีกลับถ้านำเข้าไปจะตัดของทิ้งฟรี ๆ */
+  { key: "status", label: "สถานะการสั่งซื้อ",
+    not: ["ยกเลิกคืนเงิน", "returnrefund"],
+    pats: ["สถานะการสั่งซื้อ", "สถานะคำสั่งซื้อ", "orderstatus"] },
+  { key: "back", label: "สถานะการยกเลิก/คืนเงิน",
+    pats: ["สถานะการยกเลิกคืนเงิน", "สถานะการคืนเงิน", "returnrefundstatus",
+           "cancelreason", "เหตุผลการยกเลิก"] },
+  { key: "name", label: "ชื่อสินค้า", need: true,
+    not: ["ตัวเลือก", "รุ่น", "variation"],
+    pats: ["ชื่อสินค้า", "productname"] },
+  { key: "variation", label: "ชื่อตัวเลือก",
+    pats: ["ชื่อตัวเลือก", "ชื่อรุ่นสินค้า", "variationname"] },
+  { key: "sku", label: "รหัสสินค้า",
+    pats: ["เลขอ้างอิงskuตัวเลือก", "skuสินค้า", "variationsku", "เลขอ้างอิงsku",
+           "skureferenceno", "parentsku", "sku"] },
+  { key: "qty", label: "จำนวน", need: true,
+    not: ["เงิน", "ราคา", "ทั้งหมด", "total", "amount", "ยกเลิก", "คืน"],
+    pats: ["จำนวน", "quantity", "จำนวนสินค้า"] },
+  { key: "price", label: "ราคาขาย",
+    not: ["สุทธิ", "ทั้งหมด", "รวม", "total", "subtotal"],
+    pats: ["ราคาขาย", "dealprice", "ราคาที่ชำระ", "ราคาตั้งต้น", "originalprice"] }
+];
+
+function shopeeBanned(c, h) {
+  var no = c.not || [];
+  for (var i = 0; i < no.length; i++) {
+    if (h.indexOf(shopeeNormHd(no[i])) > -1) return true;
+  }
+  return false;
+}
+
+/** จับหัวคอลัมน์ให้เข้ากับช่องที่เราต้องใช้ — คอลัมน์หนึ่งใช้ได้ครั้งเดียว */
+function shopeeFindCols(head) {
+  var norm = (head || []).map(shopeeNormHd);
+  var used = {}, map = {}, missing = [];
+  for (var n = 0; n < SHOPEE_COLS.length; n++) {
+    var c = SHOPEE_COLS[n], hit = -1;
+    for (var p = 0; p < c.pats.length && hit < 0; p++) {
+      var want = shopeeNormHd(c.pats[p]);
+      if (!want) continue;
+      /* ตรงเป๊ะก่อนเสมอ แล้วค่อยยอมแบบ "มีคำนี้อยู่ในหัวคอลัมน์" */
+      for (var i = 0; i < norm.length && hit < 0; i++) {
+        if (used[i] || !norm[i]) continue;
+        if (norm[i] === want && !shopeeBanned(c, norm[i])) hit = i;
+      }
+      for (var j = 0; j < norm.length && hit < 0; j++) {
+        if (used[j] || !norm[j]) continue;
+        if (norm[j].indexOf(want) > -1 && !shopeeBanned(c, norm[j])) hit = j;
+      }
+    }
+    if (hit > -1) { used[hit] = true; map[c.key] = hit; }
+    else if (c.need) missing.push(c.label);
+  }
+  return { map: map, missing: missing };
+}
+
+/**
+ * หาแถวหัวตาราง
+ *
+ * ไฟล์ที่โหลดมาบางทีมีบรรทัดชื่อรายงานอยู่ข้างบนก่อนหัวตาราง
+ * และคนก๊อปมาก็มักลากมาเกินไปหนึ่งสองบรรทัด จึงไม่ฟันธงว่าแถวแรกคือหัวตาราง
+ */
+function shopeeHeadRow(rows) {
+  var best = null;
+  for (var i = 0; i < rows.length && i < 12; i++) {
+    var f = shopeeFindCols(rows[i]);
+    if (!f.missing.length) return { row: i, cols: f.map, missing: [] };
+    if (!best || f.missing.length < best.f.missing.length) best = { row: i, f: f };
+  }
+  return best
+    ? { row: best.row, cols: best.f.map, missing: best.f.missing }
+    : { row: 0, cols: {}, missing: ["ทุกคอลัมน์"] };
+}
+
+/** ตัวเลขจากช่องในตาราง — ตัดจุลภาค สัญลักษณ์เงิน และช่องว่างออกก่อน */
+function shopeeNum(v) {
+  var s = String(v == null ? "" : v).replace(/[^0-9.\-]/g, "");
+  var n = Number(s);
+  return isFinite(n) ? n : 0;
+}
+
+/**
+ * วันที่ — Shopee ไทยเขียนแบบ วัน/เดือน/ปี ไม่ใช่ เดือน/วัน/ปี
+ * และไฟล์ที่เปิดผ่าน Excel ไทยบางเครื่องกลายเป็น พ.ศ. จึงแปลงกลับให้ด้วย
+ */
+function shopeeDate(s) {
+  s = String(s || "").trim();
+  var m = /(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/.exec(s);
+  if (m) return m[1] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[3]).slice(-2);
+  m = /(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/.exec(s);
+  if (m) {
+    var y = Number(m[3]);
+    if (y < 100) y += 2000;
+    if (y > 2400) y -= 543;
+    return y + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2);
+  }
+  return "";
+}
+
+/**
+ * อ่านข้อความที่วางมา → รายการออเดอร์พร้อมส่งไปตรวจกับชีท
+ *
+ * ไฟล์ Shopee เป็น "หนึ่งบรรทัด = หนึ่งสินค้า" ใบที่มีสามชิ้นจึงกินสามบรรทัด
+ * ข้อมูลระดับใบ (ลูกค้า ที่อยู่ ค่าส่ง) บางไฟล์ซ้ำทุกบรรทัด บางไฟล์ใส่แค่บรรทัดแรก
+ * จึงเก็บ "ค่าแรกที่ไม่ว่าง" ของแต่ละใบ และค่าเงินไม่บวกสะสม ไม่งั้นค่าส่งใบละ 50
+ * จะกลายเป็น 150 ในใบที่มีสามบรรทัด
+ */
+function shopeeRead(text) {
+  var rows = shopeeCells(text);
+  if (!rows.length) return { ok: false, orders: [], missing: [], headers: [] };
+
+  var h = shopeeHeadRow(rows);
+  var headers = (rows[h.row] || []).filter(function (x) { return String(x).trim() !== ""; });
+  if (h.missing.length) {
+    return { ok: false, orders: [], missing: h.missing, headers: headers };
+  }
+
+  var c = h.cols;
+  function cell(r, key) {
+    var i = c[key];
+    if (i === undefined || i === null) return "";
+    /* ="0812345678" คือวิธีที่ Excel กันเลข 0 หน้าหาย ต้องถอดออกก่อนใช้ */
+    return String(r[i] == null ? "" : r[i]).replace(/^=/, "").replace(/^"|"$/g, "").trim();
+  }
+  function first(o, k, v) { if (!o[k] && v) o[k] = v; }
+
+  var orders = [], byId = {}, lastSn = "";
+  for (var r = h.row + 1; r < rows.length; r++) {
+    var row = rows[r];
+    var sn = cell(row, "sn");
+    var nm = cell(row, "name");
+    var vr = cell(row, "variation");
+    var sk = cell(row, "sku");
+    if (!sn && !nm && !sk) continue;
+    if (!sn) sn = lastSn;
+    if (!sn) continue;
+    lastSn = sn;
+
+    var o = byId[sn];
+    if (!o) {
+      o = { sn: sn, date: "", cust: "", status: "", lines: [] };
+      byId[sn] = o;
+      orders.push(o);
+    }
+    /* วันจัดส่งก่อน ไม่มีค่อยใช้วันสั่งซื้อ */
+    first(o, "date", shopeeDate(cell(row, "shipDate")) || shopeeDate(cell(row, "date")));
+    first(o, "cust", cell(row, "cust"));
+    first(o, "status", cell(row, "status"));
+    first(o, "backWhy", cell(row, "back"));
+
+    if (nm || vr || sk) {
+      var pr = cell(row, "price");
+      o.lines.push({
+        name: [nm, vr].join(" ").replace(/\s+/g, " ").trim(),
+        sku: sk,
+        qty: shopeeNum(cell(row, "qty")),
+        price: pr === "" ? "" : shopeeNum(pr)
+      });
+    }
+  }
+
+  for (var k = 0; k < orders.length; k++) {
+    var od = orders[k];
+    /* Shopee ปิดบังชื่อผู้ซื้อในไฟล์บางแบบ ช่องชื่อจึงว่างได้จริง
+       ปล่อยว่างไว้คือบันทึกไม่ผ่านทั้งใบ จึงใส่ชื่อที่ตามกลับไปหาใบเดิมได้แทน
+       และหน้าตรวจโชว์ชื่อนี้ตรง ๆ ก่อนกดยืนยัน ไม่ได้เติมให้เงียบ ๆ */
+    if (!od.cust) od.cust = "ลูกค้า Shopee " + od.sn;
+    od.back = shopeeBack(od);
+    od.done = !od.back && shopeeDone(od);
+  }
+
+  return { ok: true, orders: orders, missing: [], headers: headers };
+}
+
+/**
+ * ใบนี้ของกลับมาที่ร้านแล้วหรือเปล่า
+ *
+ * ตัวนี้สำคัญที่สุดในไฟล์ — ใบที่ตีกลับหรือยกเลิก ของไม่เคยออกจากร้านจริง
+ * ถ้านำเข้าไป ระบบจะตัดสต๊อกให้ทันที กลายเป็นของหายจากชีททั้งที่ยังอยู่บนชั้น
+ * แล้วไม่มีใครรู้จนกว่าจะตรวจนับ จึงต้องคัดออกตั้งแต่หน้าตรวจ ไม่ให้กดนำเข้าได้เลย
+ *
+ * เช็ค "ไม่สำเร็จ" ก่อนคำว่า "สำเร็จ" เสมอ เพราะคำหลังเป็นส่วนหนึ่งของคำแรก
+ */
+function shopeeBack(o) {
+  /* Shopee ต่อท้ายสถานะ "ผู้ซื้อได้รับสินค้าแล้ว" ด้วยประโยคบอกสิทธิ์ว่าผู้ซื้อ
+     "สามารถยื่นคำขอคืนเงิน/คืนสินค้าได้จนถึง <วันที่>" — นั่นคือสิทธิ์ที่ยังไม่ได้ใช้
+     ไม่ใช่ของที่กลับมาแล้ว ถ้าไม่ตัดประโยคนี้ทิ้งก่อน ใบที่ถึงมือลูกค้าเรียบร้อยแล้ว
+     จะถูกคัดออกเป็นใบตีกลับ ทั้งที่เงินเข้าร้านแล้วและของออกจากชั้นไปแล้ว
+
+     ตัดเฉพาะในช่องสถานะ ไม่แตะช่องเหตุผลการคืน — ใบที่คืนของจริงจะมีคำในช่องนั้น
+     ถ้าตัดรวดเดียวทั้งสองช่อง ใบที่คืนจริงจะเล็ดลอดเข้ามาแทน */
+  var st = String(o.status || "").toLowerCase()
+    .replace(/โปรดทราบ[\s\S]*$/, " ")
+    .replace(/สามารถ[\s\S]{0,40}?คืน[\s\S]{0,40}?ได้จนถึง[\s\S]*$/, " ");
+  var t = st + " " + String(o.backWhy || "").toLowerCase();
+  return /ตีกลับ|คืนสินค้า|คืนเงิน|ยกเลิก|ไม่สำเร็จ|cancel|return|refund|failed|unsuccess/
+    .test(t);
+}
+
+/** ของถึงมือลูกค้าแล้ว — ใบพวกนี้ลงชีทเป็น "ส่งแล้ว" ได้เลย ไม่ต้องมาไล่แก้ทีหลัง
+
+   "ผู้ซื้อได้รับสินค้าแล้ว" คือถึงมือลูกค้าที่สุดเท่าที่สถานะจะบอกได้ ชัดกว่า "สำเร็จแล้ว"
+   ด้วยซ้ำ แต่ไม่มีคำว่าสำเร็จอยู่ในนั้น เคยตกหล่นไปทั้งที่เป็นใบที่จบสวยที่สุด */
+function shopeeDone(o) {
+  return /สำเร็จ|จัดส่งแล้ว|ส่งแล้ว|จัดส่งสำเร็จ|ได้รับสินค้าแล้ว|complete|delivered|shipped|received/
+    .test(String(o.status || "").toLowerCase());
+}
+
+/* ============================================ ยอดรายเดือนจากไฟล์ Shopee
+
+   คนละงานกับการนำเข้าออเดอร์ข้างบน — อันนั้นเอาทีละใบลงชีทเพื่อตัดสต๊อก
+   อันนี้เอาแค่ "ยอดรวมของเดือน" ไปกรอกในชีท สรุปเดือน ช่องทาง Shopee
+   ใช้กับเดือนที่ผ่านไปแล้วและไม่เคยผ่านระบบนี้ ของถูกส่งไปหมดแล้ว
+   จะมาตัดสต๊อกย้อนหลังไม่ได้ ต้องการแค่ตัวเลขยอดขายเพื่อดูกำไรกับค่าแอด
+
+   ใช้ตัวอ่านตารางชุดเดียวกับข้างบนทั้งหมด จะได้ไม่มีวันตีความไฟล์เดียวกันคนละแบบ
+
+   สองอย่างที่ห้ามเดาเด็ดขาด เพราะเดาแล้วได้ตัวเลขที่ดูน่าเชื่อแต่ผิด
+     ไม่มีคอลัมน์จำนวน   ใบที่ซื้อ 3 ชิ้นจะถูกนับเป็นชิ้นเดียว ยอดขาดหายไปเงียบ ๆ
+     ไม่มีคอลัมน์ราคาขาย  ไม่มีทางรู้ยอดเลย
+   ทั้งสองกรณีตอบว่าอ่านไม่ได้ พร้อมบอกว่าขาดคอลัมน์ไหน ดีกว่าคืนเลขที่เชื่อไม่ได้ */
+/** แถวนี้มีตัวหนังสืออยู่บ้างไหม — แถวเปล่าล้วนไม่ต้องรายงานว่าอ่านไม่ได้ */
+function rowHasText_(row) {
+  for (var i = 0; i < row.length; i++) {
+    if (String(row[i] == null ? "" : row[i]).trim() !== "") return true;
+  }
+  return false;
+}
+
+function monthTotals(text) {
+  var rows = shopeeCells(text);
+  if (!rows.length) return { ok: false, missing: [], months: [], headers: [] };
+
+  var h = shopeeHeadRow(rows);
+  var headers = (rows[h.row] || []).filter(function (x) { return String(x).trim() !== "" });
+  var miss = h.missing.slice();
+  var c = h.cols;
+  if (c.price === undefined || c.price === null) miss.push("ราคาขาย");
+  if ((c.date === undefined || c.date === null) &&
+      (c.shipDate === undefined || c.shipDate === null)) miss.push("วันที่สั่งซื้อ");
+  if (miss.length) return { ok: false, missing: miss, months: [], headers: headers };
+
+  function cell(r, key) {
+    var i = c[key];
+    if (i === undefined || i === null) return "";
+    return String(r[i] == null ? "" : r[i]).replace(/^=/, "").replace(/^"|"$/g, "").trim();
+  }
+
+  var by = {}, noDate = 0, lastSn = "";
+  for (var r = h.row + 1; r < rows.length; r++) {
+    var row = rows[r];
+    var sn = cell(row, "sn");
+    var nm = cell(row, "name");
+    /* แถวรวมยอดที่คนขายพิมพ์ไว้ท้ายแผ่นมีแต่ตัวเลขในช่องราคา ไม่มีเลขออเดอร์ ไม่มีชื่อสินค้า
+       ถ้านับเข้าไปคือยอดของเดือนคูณสอง แต่เงียบ ๆ ทิ้งไปก็ไม่ได้ ต้องนับให้คนเห็นว่ามีกี่แถว
+       จะได้รู้ว่าที่วางมาไม่ได้ถูกอ่านครบทุกแถว */
+    if (!sn && !nm) { if (rowHasText_(row)) noDate++; continue }
+    if (!sn) sn = lastSn;
+    if (!sn) continue;
+    lastSn = sn;
+
+    var ym = (shopeeDate(cell(row, "shipDate")) || shopeeDate(cell(row, "date"))).slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(ym)) { noDate++; continue }
+
+    var m = by[ym] || (by[ym] = {
+      ym: ym, orders: {}, lines: 0, sales: 0, dropLines: 0, dropSales: 0
+    });
+    var amt = shopeeNum(cell(row, "qty")) * shopeeNum(cell(row, "price"));
+    /* ใบที่ยกเลิกหรือคืนของ เงินไม่เคยเข้าร้าน ไม่ใช่ยอดขาย
+       ยอดรวมท้ายไฟล์ที่ Shopee ให้มามักบวกใบพวกนี้ด้วย ตัวเลขจึงไม่เท่ากัน — ตั้งใจ */
+    if (shopeeBack({ status: cell(row, "status"), backWhy: cell(row, "back") })) {
+      m.dropLines++; m.dropSales += amt;
+      continue;
+    }
+    m.orders[sn] = 1; m.lines++; m.sales += amt;
+  }
+
+  var out = [];
+  for (var k in by) {
+    var v = by[k];
+    var n = 0;
+    for (var s in v.orders) n++;
+    out.push({
+      ym: v.ym, orders: n, lines: v.lines,
+      sales: Math.round(v.sales * 100) / 100,
+      dropLines: v.dropLines,
+      dropSales: Math.round(v.dropSales * 100) / 100
+    });
+  }
+  out.sort(function (a, b) { return a.ym < b.ym ? -1 : (a.ym > b.ym ? 1 : 0) });
+  return { ok: true, missing: [], months: out, noDate: noDate, headers: headers };
+}
+
+/* ------------------------------------------------------------------ หน้าจอ */
+
+var SHOP = { ready: false, busy: false, match: null, channel: "" };
+
+/** ช่องทางขายชื่อ Shopee ในชีท ตั้งค่า — ไม่มีคือบันทึกไม่ได้สักใบ ต้องบอกก่อนเริ่ม */
+function shopChannel() {
+  var list = (typeof BOOT !== "undefined" && BOOT && BOOT.lists && BOOT.lists.channel) || [];
+  for (var i = 0; i < list.length; i++) if (/shopee/i.test(list[i])) return list[i];
+  return "";
+}
+
+function shopInit() {
+  if (!SHOP.ready) {
+    SHOP.ready = true;
+    $("#sp-read").onclick = shopRead;
+    $("#sp-go").onclick = shopGo;
+    $("#sp-back").onclick = function () { go("list"); };
+    $("#sp-clear").onclick = function () {
+      $("#sp-text").value = ""; SHOP.match = null; shopRender();
+    };
+  }
+
+  var st = (BOOT && BOOT.lists && BOOT.lists.status) || [];
+  fillSelect("#sp-status", st);
+  /* เงินของ Shopee เก็บผ่านแพลตฟอร์มไปแล้วตั้งแต่ลูกค้ากดสั่ง
+     ตั้งต้นเป็น "ชำระแล้ว" จึงตรงกับความจริงมากกว่า "รอชำระ" ซึ่งเป็นตัวแรกของรายการ */
+  for (var i = 0; i < st.length; i++) {
+    if (st[i].indexOf("ชำระแล้ว") > -1) { $("#sp-status").value = st[i]; break; }
+  }
+
+  var by = $("#f-by");
+  $("#sp-by").innerHTML = by ? by.innerHTML : "";
+  if (by && by.value) $("#sp-by").value = by.value;
+
+  SHOP.channel = shopChannel();
+  var warn = $("#sp-warn");
+  /* กล่องข้อความใช้คลาส on เป็นตัวเปิดปิด สั่ง style.display ตรง ๆ จะโดนคลาสทับ */
+  if (SHOP.channel) {
+    warn.classList.remove("on");
+  } else {
+    warn.classList.add("on");
+    warn.innerHTML = "<b>ชีท ตั้งค่า ยังไม่มีช่องทางขายชื่อ “Shopee”</b>" +
+      "ให้เปิดชีท <b>ตั้งค่า</b> แล้วเติมคำว่า Shopee ลงในคอลัมน์ “ช่องทางขาย” ก่อน " +
+      "ไม่งั้นบันทึกไม่ผ่านสักใบ";
+  }
+  shopRender();
+}
+
+function shopRead() {
+  clearMsg();
+  var txt = $("#sp-text").value;
+  if (!String(txt || "").trim()) { showErr("ยังไม่ได้วางข้อมูลจากไฟล์ Shopee"); return; }
+
+  var res = shopeeRead(txt);
+  if (!res.ok) {
+    /* บอกชื่อคอลัมน์ที่หาไม่เจอ พร้อมรายชื่อหัวคอลัมน์ที่อ่านได้จริง
+       เพื่อให้คนที่เจอปัญหาส่งกลับมาให้แก้ได้ทันที ไม่ต้องเดากันไปมา */
+      showErr("อ่านตารางไม่ได้ — หาคอลัมน์ไม่เจอ: <b>" + esc(res.missing.join(" · ")) + "</b>" +
+      (res.headers.length
+        ? "<br><br>หัวคอลัมน์ที่อ่านได้จากที่วางมา:<br>" + esc(res.headers.join(" · "))
+        : "<br><br>อ่านหัวคอลัมน์ไม่ได้เลย — ตอนคัดลอกให้ลากคลุมทั้งแผ่นรวมแถวหัวตารางด้วย"));
+    SHOP.match = null;
+    shopRender();
+    return;
+  }
+  if (!res.orders.length) {
+    showErr("อ่านหัวตารางได้ แต่ไม่เจอออเดอร์สักใบ — ตอนคัดลอกอาจได้มาแค่แถวหัวตาราง");
+    SHOP.match = null; shopRender(); return;
+  }
+
+  $("#sp-list").innerHTML = '<div class="load">กำลังตรวจกับชีท ' + res.orders.length + ' ใบ…</div>';
+  call("shopeeMatch", [res.orders], function (m) {
+    SHOP.match = m || null;
+    if (!SHOP.match) { showErr("ตรวจกับชีทไม่สำเร็จ ลองกดใหม่อีกครั้ง"); }
+    shopRender();
+  }, function (msg) {
+    SHOP.match = null;
+    $("#sp-list").innerHTML = '<div class="empty" style="color:var(--red)">ตรวจกับชีทไม่สำเร็จ<br>'
+      + esc(msg) + "</div>";
+  });
+}
+
+/** ใบที่กดนำเข้าได้จริง — ใบที่ตีกลับถูกคัดออกตรงนี้ ไม่ให้หลุดไปตัดสต๊อก */
+function shopReady() {
+  if (!SHOP.match || !SHOP.match.orders) return [];
+  return SHOP.match.orders.filter(function (o) { return o.ok && !o.back; });
+}
+
+/** สถานะที่จะลงชีท — ใบที่ส่งถึงแล้วลงเป็น "ส่งแล้ว" ไม่ต้องมาไล่แก้ทีหลัง */
+function shopStatus(o) {
+  var list = (BOOT && BOOT.lists && BOOT.lists.status) || [];
+  if (o.done) {
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i]).indexOf("ส่งแล้ว") > -1) return list[i];
+    }
+  }
+  return $("#sp-status").value;
+}
+
+function shopRender() {
+  var box = $("#sp-list"), sum = $("#sp-sum"), btn = $("#sp-go");
+  if (!SHOP.match) {
+    box.innerHTML = "";
+    sum.innerHTML = "";
+    btn.style.display = "none";
+    $("#sp-prog").innerHTML = "";
+    return;
+  }
+
+  var all = SHOP.match.orders || [];
+  var ok = shopReady();
+  var dup = all.filter(function (o) { return o.already && !o.back; }).length;
+  var back = all.filter(function (o) { return o.back; }).length;
+  var bad = all.length - ok.length - dup - back;
+
+  sum.innerHTML =
+    '<span class="tag ok">พร้อมนำเข้า ' + ok.length + ' ใบ</span> ' +
+    (dup ? '<span class="tag">เคยนำเข้าแล้ว ' + dup + ' ใบ</span> ' : "") +
+    (back ? '<span class="tag wait">ตีกลับ/ยกเลิก ' + back + ' ใบ</span> ' : "") +
+    (bad ? '<span class="tag bad">ติดปัญหา ' + bad + ' ใบ</span>' : "");
+
+  box.innerHTML = all.map(function (o) {
+    var lines = (o.items || []).map(function (it) {
+      var nm = it.ok
+        ? esc(it.sku) + " · " + esc(it.name)
+        : '<span style="color:var(--red)">' + esc(it.shopeeName || it.shopeeSku) + " — จับคู่ไม่ได้</span>";
+      /* จับคู่ได้แล้วชื่อไม่ตรงกันเป๊ะ ให้เห็นชื่อบน Shopee ด้วย
+         การจับคู่ยอมให้ชื่อขึ้นต้นตรงกันก็ผ่าน ซึ่งมีโอกาสไปโดนสินค้าคนละรุ่น
+         โชว์ทั้งสองชื่อคู่กันคือทางเดียวที่คนตรวจจะจับได้ก่อนกดยืนยัน */
+      var from = (it.ok && it.shopeeName && it.shopeeName !== it.name)
+        ? '<span style="color:var(--gray)"> ← ' + esc(it.shopeeName) + "</span>" : "";
+      return "<div>" + nm + " × " + it.qty +
+        (it.price === null || it.price === "" ? "" : " @ " + baht(it.price)) + from + "</div>";
+    }).join("");
+
+    var note = "";
+    if (o.back) {
+      /* ของกลับมาที่ร้านแล้ว นำเข้าไปคือตัดสต๊อกทิ้งฟรี ๆ จึงไม่ให้กดเลย */
+      note = '<div style="color:var(--amber)">ตีกลับ / ยกเลิก' +
+        (o.backWhy ? " (" + esc(o.backWhy) + ")" : "") +
+        " — <b>ไม่นำเข้า</b> เพราะของยังอยู่ที่ร้าน สต๊อกไม่ควรถูกตัด</div>";
+    } else if (o.already) {
+      note = '<div class="tag">นำเข้าไปแล้วเป็นใบ ' + esc(o.existingNo) + " — ข้ามใบนี้</div>";
+    } else if (o.issues && o.issues.length) {
+      note = '<div style="color:var(--red)">' + o.issues.map(esc).join("<br>") + "</div>";
+    }
+
+    /* ต้นทุนมาจากชีท ฐานสินค้า ไม่ใช่จากไฟล์ Shopee — ใบไหนมีสินค้าที่ยังไม่ได้ใส่ต้นทุน
+       จะบอกตรง ๆ ว่าคิดกำไรไม่ได้ ดีกว่าโชว์กำไรที่สูงเกินจริงเพราะต้นทุนเป็นศูนย์ */
+    var money = "ยอดขาย " + baht(o.subtotal);
+    if (o.costTotal !== null && o.costTotal !== undefined) {
+      money += " · ต้นทุน " + baht(o.costTotal) + " · กำไร " + baht(o.profit);
+    } else if (o.ok) {
+      money += ' · <span style="color:var(--amber)">ยังไม่มีต้นทุนในฐานสินค้า คิดกำไรไม่ได้</span>';
+    }
+
+    return '<div class="row"><div class="i">' +
+      "<b>" + esc(o.cust) + "</b>" +
+      "<span>" + esc(o.sn) + (o.date ? " · ส่งวันที่ " + esc(thaiDate(o.date)) : "") +
+      (o.status ? " · " + esc(o.status) : "") + "</span>" +
+      '<div style="font-size:0.82rem;margin-top:4px">' + lines + "</div>" +
+      '<div style="font-size:0.82rem;margin-top:4px;color:var(--gray)">' + money + "</div>" +
+      note + "</div></div>";
+  }).join("");
+
+  btn.style.display = ok.length ? "" : "none";
+  btn.textContent = "นำเข้า " + ok.length + " ใบ ลงชีท";
+  btn.disabled = !ok.length || SHOP.busy || !SHOP.channel;
+}
+
+/** ข้อมูลที่จะส่งไปบันทึกจริง — หน้าตรวจโชว์ทุกตัวที่อยู่ในนี้แล้ว */
+function shopPayload(o) {
+  return {
+    /* กุญแจกันซ้ำผูกกับหมายเลขของ Shopee ไม่ใช่เวลาที่กด
+       กดซ้ำ เน็ตหลุดแล้วกดใหม่ หรือวางไฟล์เดิมอีกรอบ ก็ไม่ได้ออเดอร์สองใบ */
+    clientKey: "sp-" + o.sn,
+    date: o.date || todayISO(),
+    channel: SHOP.channel,
+    cust: o.cust,
+    /* ที่อยู่ เบอร์โทร เลขพัสดุ ขนส่ง ค่าส่ง ส่วนลด — ไม่เอาเข้ามาโดยตั้งใจ
+       งานเดียวที่ต้องการจากออเดอร์ Shopee คือ "ตัดสต๊อกกับรู้กำไร"
+       ส่วนการส่งของ Shopee ทำเองทั้งหมด ตั้งแต่ใบปะหน้าจนถึงเก็บค่าส่ง
+       ดึงเข้ามาก็ไม่มีใครใช้ต่อ แถมหน้าตรวจรกจนดูของที่ต้องดูจริงไม่ทัน */
+    /* ออกใบกำกับภาษีผ่านแพลตฟอร์ม ไม่ได้ออกจากระบบนี้ จึงเป็นไม่รับ VAT
+       ใบไหนต้องออกจริงค่อยแก้ทีละใบในชีท */
+    vat: false,
+    discount: 0,
+    ship: 0,
+    status: shopStatus(o),
+    by: $("#sp-by").value,
+    note: "Shopee " + o.sn,
+    items: (o.items || []).map(function (x) {
+      return { sku: x.sku, qty: x.qty, price: (x.price === null ? "" : x.price) };
+    })
+  };
+}
+
+function shopGo() {
+  if (SHOP.busy) return;
+  clearMsg();
+
+  var pick = shopReady();
+  if (!pick.length) { showErr("ไม่มีใบไหนที่พร้อมนำเข้า"); return; }
+  if (!SHOP.channel) {
+    showErr("ชีท ตั้งค่า ยังไม่มีช่องทางขาย “Shopee” — เติมก่อนแล้วเปิดแอปใหม่");
+    return;
+  }
+  SHOP.busy = true;
+  var btn = $("#sp-go");
+  btn.disabled = true;
+
+  var done = [], failed = [], i = 0;
+  (function next() {
+    if (i >= pick.length) { shopFinish(done, failed); return; }
+    var o = pick[i];
+    $("#sp-prog").innerHTML = "กำลังบันทึก " + (i + 1) + " / " + pick.length +
+      " — " + esc(o.sn) + " …";
+    /* ทีละใบ ไม่ยิงพร้อมกัน — ฝั่งชีทจับล็อกทีละคำขออยู่แล้ว
+       ยิงพร้อมกันสิบใบคือรอคิวกันเองจนหมดเวลา แล้วได้ใบครึ่ง ๆ กลาง ๆ */
+    call("createOrder", [shopPayload(o)], function (res) {
+      done.push({ sn: o.sn, no: (res && res.no) || "", dup: !!(res && res.duplicate) });
+      i++; next();
+    }, function (msg) {
+      failed.push({ sn: o.sn, msg: msg });
+      i++; next();
+    });
+  })();
+}
+
+function shopFinish(done, failed) {
+  SHOP.busy = false;
+  $("#sp-prog").innerHTML = "";
+  $("#sp-go").disabled = false;
+
+  var html = "<b>นำเข้าสำเร็จ " + done.length + " ใบ</b>";
+  if (done.length) {
+    html += "<br>" + done.map(function (d) {
+      return esc(d.sn) + " → " + esc(d.no) + (d.dup ? " (มีอยู่แล้ว)" : "");
+    }).join("<br>");
+  }
+  if (failed.length) {
+    html += "<br><br><b>ไม่สำเร็จ " + failed.length + " ใบ</b><br>" + failed.map(function (f) {
+      return esc(f.sn) + " — " + esc(f.msg);
+    }).join("<br>");
+  }
+  if (failed.length) showErr(html); else showOk(html);
+
+  /* ล้างของที่นำเข้าไปแล้วออกจากหน้าจอ กันกดยืนยันซ้ำโดยไม่ตั้งใจ
+     (กดซ้ำจริงก็ไม่ได้ใบซ้ำ เพราะกุญแจกันซ้ำ แต่ไม่ควรให้กดได้ตั้งแต่แรก) */
+  SHOP.match = null;
+  shopRender();
+  /* รายการออเดอร์ต้องโหลดใหม่ ไม่งั้นกลับไปหน้าออเดอร์แล้วไม่เห็นใบที่เพิ่งเข้า */
+  ORDERS = [];
+}
+</script>

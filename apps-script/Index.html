@@ -5,17 +5,32 @@
 <!-- ลิงก์และการพิมพ์ต้องหลุดออกจาก iframe ของ Apps Script ไม่งั้นเปิดไม่ขึ้น -->
 <base target="_top">
 <!-- Sarabun = ฟอนต์มาตรฐานเอกสารราชการไทย เส้นหนากว่า Prompt พิมพ์ลงกระดาษแล้วชัดกว่า
-     ใบเสร็จ/ใบกำกับภาษีวาดด้วยฟอนต์นี้ ถ้าโหลดไม่ได้จะถอยไปใช้ฟอนต์ในเครื่องเอง -->
+     ใบเสร็จ/ใบกำกับภาษีวาดด้วยฟอนต์นี้ ถ้าโหลดไม่ได้จะถอยไปใช้ฟอนต์ในเครื่องเอง
+
+     ใช้เฉพาะตอนวาดเอกสาร — หน้าจอแอปใช้ฟอนต์ในเครื่อง (ดู body ข้างล่าง)
+     แต่ถ้าโหลดแบบปกติ เบราว์เซอร์จะ "รอ" ไฟล์จาก Google ให้เสร็จก่อนถึงจะวาดหน้าจอ
+     กลายเป็นรอเปล่า ๆ ทุกครั้งที่เปิดแอป และถ้าเน็ตเข้า Google Fonts ไม่ได้
+     (ไวไฟบางที่บล็อกไว้) หน้าจอจะขาวค้างหลายวินาทีกว่าจะยอมแพ้
+
+     media="print" ทำให้โหลดอยู่เบื้องหลังโดยไม่บล็อกการวาดหน้าจอ แล้วค่อยสลับ
+     เป็น all ตอนหน้าจอขึ้นแล้ว (fontSwap) · ตอนวาดเอกสารมี docFontsReady รออีกชั้น
+     เอกสารจึงยังได้ฟอนต์ถูกตัวเหมือนเดิม -->
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet"
+<link id="fontcss" rel="stylesheet" media="print"
       href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,500;0,700;1,700&display=swap">
 </head>
 <body>
 
 <style>
+/* ชุดสีดูดมาจากภาพตัวอย่างที่เจ้าของร้านส่งมา (10 ก.ย.) — ของเดิมเป็นโทนเทากลาง
+   ซึ่งบนจอมือถือกลางแดดอ่านแล้ว "จืด" ชุดนี้เปลี่ยนสองเรื่องพร้อมกัน
+     พื้นหลังกับเส้นขอบ เปลี่ยนจากเทาเป็นฟ้าจาง ทั้งหน้าจึงมีโทนเดียวกับหัวจอ
+     ตัวหนังสือเข้มขึ้นทั้งชุด ตัวหลักเกือบดำ ตัวรองเข้มกว่าเดิมสองระดับ
+   ค่าที่วัดได้จากภาพ: ปุ่ม #014dd6 · ตัวหนังสือ #000 · ตัวรอง #525d78 ·
+   พื้น #f1f7fe · เส้น #dfeaf9 */
 :root{
-  --ink:#15181d; --gray:#6b7280; --line:#e3e6ea; --bg:#f5f6f8; --card:#fff;
-  --blue:#1449C4; --green:#0a8f4d; --red:#c02626; --amber:#b06a00;
+  --ink:#0b0f18; --gray:#525d78; --line:#d7e5f8; --bg:#eef5fe; --card:#fff;
+  --blue:#0b4bd2; --green:#08814a; --red:#c40215; --amber:#a35c00;
   --r:12px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -27,11 +42,15 @@ body{margin:0;background:var(--bg);color:var(--ink);
   font:1rem/1.55 -apple-system,"Segoe UI",Roboto,"Noto Sans Thai","Prompt",sans-serif;
   padding-bottom:76px}
 
-/* ปุ่มปรับขนาดตัวอักษรบนแถบหัว */
-.fsz{margin-left:auto;display:flex;gap:6px;flex:none}
-.fsz button{width:38px;height:38px;border:1px solid rgba(255,255,255,.55);border-radius:9px;
-  background:rgba(255,255,255,.14);color:#fff;font-weight:700;font-size:0.85rem;padding:0;line-height:1}
-.fsz button:active{background:rgba(255,255,255,.3)}
+/* ปุ่มมุมขวาบน — มีคำกำกับใต้ปุ่ม เพราะ "?" กับ "ก−" ลำพังเดาหน้าที่ไม่ออก
+   คำกำกับวาดด้วย ::after จาก data-cap จึงไม่ต้องเพิ่ม element ให้ HTML รก */
+.fsz{margin-left:auto;display:flex;gap:7px;flex:none;align-items:flex-start}
+.fsz button{position:relative;width:40px;height:40px;border:1px solid rgba(255,255,255,.5);
+  border-radius:11px;background:rgba(255,255,255,.16);color:#fff;font-weight:800;
+  font-size:0.9rem;padding:0;line-height:1;display:block}
+.fsz button::after{content:attr(data-cap);position:absolute;left:50%;top:calc(100% + 3px);
+  transform:translateX(-50%);font-size:0.6rem;font-weight:400;opacity:.85;white-space:nowrap}
+.fsz button:active{background:rgba(255,255,255,.32)}
 h1,h2,h3{margin:0}
 button{font:inherit;cursor:pointer}
 input,select,textarea{font:inherit;width:100%;padding:13px 14px;border:1px solid var(--line);
@@ -39,17 +58,32 @@ input,select,textarea{font:inherit;width:100%;padding:13px 14px;border:1px solid
 input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
 textarea{resize:vertical}
 
-/* หัวเรื่อง — ทรงเดียวกับแอปเดิม: แถบน้ำเงินมุมล่างมน โลโก้กลมบนพื้นขาว */
-.top{background:var(--blue);color:#fff;padding:16px 18px 20px;border-radius:0 0 24px 24px;
-  display:flex;align-items:center;gap:12px}
-.top .logo{width:52px;height:52px;border-radius:50%;background:#fff;flex:none;overflow:hidden;
+/* หัวจอ — ไล่สีน้ำเงินกับแถบแสงเฉียง ให้ดูเป็นแอปของร้าน ไม่ใช่หน้าเว็บเปล่า ๆ
+   แถบแสงวาดด้วย gradient ไม่ใช่ไฟล์รูป จึงคมทุกความละเอียดจอและไม่กินที่เพิ่มเลย */
+.top{position:relative;overflow:hidden;color:#fff;padding:15px 16px 18px;
+  border-radius:0 0 26px 26px;display:flex;align-items:flex-start;gap:12px;
+  background:linear-gradient(115deg,#013690 0%,#032c7d 32%,#014eb2 62%,#0350bb 100%)}
+.top::after{content:"";position:absolute;top:-40%;right:-6%;width:56%;height:190%;
+  background:linear-gradient(100deg,rgba(255,255,255,0) 38%,rgba(255,255,255,.15) 50%,
+    rgba(255,255,255,0) 57%,rgba(255,255,255,.09) 68%,rgba(255,255,255,0) 75%);
+  transform:rotate(9deg);pointer-events:none}
+.top>*{position:relative;z-index:1}
+.top .logo{width:62px;height:62px;border-radius:50%;background:#fff;flex:none;overflow:hidden;
   display:flex;align-items:center;justify-content:center;
-  font-weight:700;color:var(--blue);font-size:0.82rem;box-shadow:0 2px 8px rgba(0,0,0,.16)}
+  font-weight:700;color:var(--blue);font-size:0.82rem;
+  box-shadow:0 0 0 3px rgba(255,255,255,.32),0 2px 10px rgba(0,0,0,.22)}
 .top .logo img{width:100%;height:100%;object-fit:cover}
-.top .ttl{min-width:0}
-.top b{display:block;font-size:1.18rem;font-weight:700;line-height:1.2;letter-spacing:-.01em}
-.top .who{display:block;margin-top:3px;font-size:0.8rem;opacity:.9;
+.top .ttl{min-width:0;flex:1}
+/* ชื่อร้านมาจากชีท ยาวสั้นไม่แน่นอน — ปล่อยให้ตกบรรทัดได้ ห้ามตัดท้ายด้วยจุดสามจุด
+   ชื่อร้านที่อ่านไม่ครบแย่กว่าหัวจอสูงขึ้นหนึ่งบรรทัด */
+.top b{display:block;font-size:1.12rem;font-weight:800;line-height:1.2;letter-spacing:-.012em;
+  text-transform:uppercase}
+/* คำโปรยใต้ชื่อร้าน — เขียนไว้ในหน้าเว็บ ไม่ได้ดึงจากชีท เพราะเป็นคำของแบรนด์
+   ไม่ใช่ข้อมูลที่เปลี่ยนตามการใช้งาน */
+.top .tag-en{display:block;font-size:0.76rem;font-style:italic;opacity:.85;margin-top:1px}
+.top .who{display:block;margin-top:5px;font-size:0.8rem;opacity:.92;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top .who::before{content:"✉ ";opacity:.85}
 
 .wrap{padding:14px;max-width:720px;margin:0 auto}
 /* จอกว้าง (จอพับ แท็บเล็ต คอมออฟฟิศ) ใช้พื้นที่เต็ม ไม่เหลือขอบว่างสองข้าง */
@@ -57,22 +91,27 @@ textarea{resize:vertical}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
 .fld{margin-bottom:13px}
 .fld label{display:block;font-size:0.82rem;color:var(--gray);margin-bottom:5px;font-weight:600}
+/* สองช่องเรียงข้างกัน — พอป้ายเป็นสองภาษาพร้อมไอคอน ช่องละครึ่งจอแคบเกินไป
+   ชื่อป้ายจะตกบรรทัดจนสองช่องสูงไม่เท่ากันและอ่านยาก บนมือถือจึงเรียงลงมาแทน */
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:430px){ .two{grid-template-columns:1fr;gap:0} }
 .hint{font-size:0.8rem;color:var(--gray);margin-top:5px;line-height:1.5}
 .subhd{font-size:0.85rem;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
+/* หัวข้อย่อยในกล่อง — ใช้ในหน้ารับของ นำเข้า Shopee และช่องลายเซ็น */
+.sec-hd{margin-bottom:10px}
+.sec-hd h2{font-size:1.02rem;font-weight:800;letter-spacing:-.01em}
 
 .btn{width:100%;padding:14px;border:0;border-radius:11px;background:var(--blue);color:#fff;
   font-weight:700;font-size:1.03rem}
 .btn[disabled]{opacity:.55}
+/* ลิงก์ที่หน้าตาเป็นปุ่ม — <a> เป็น inline โดยธรรมชาติ ถ้าไม่บอกให้เป็นบล็อก
+   จะได้ปุ่มแคบ ๆ ที่มีขีดใต้ ดูไม่เข้าพวกกับปุ่มอื่นในหน้าเดียวกัน */
+a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none;
+      margin-bottom:10px}
 .btn.dark{background:var(--ink)}
 .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .btn.green{background:#00B900}
 /* แถวปุ่มขอเอกสารบนหัวฟอร์ม — เรียงสามปุ่มเท่ากัน กดง่ายด้วยนิ้วหัวแม่มือ */
-.docbar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
-.docbar button{padding:11px 6px;border:1px solid var(--line);background:#fff;border-radius:10px;
-  font-size:0.8rem;font-weight:600;color:var(--ink);line-height:1.35}
-.docbar button:active{background:#eef3fa}
-@media (max-width:430px){ .docbar button{font-size:0.8rem;padding:10px 3px;letter-spacing:-.01em} }
 
 /* ติ๊กชื่อเอกสารที่จะให้ขึ้นเข้มบนหัวใบ — สองคอลัมน์ กดด้วยนิ้วหัวแม่มือได้ */
 .fchk{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
@@ -84,6 +123,47 @@ textarea{resize:vertical}
 
 .mini{padding:9px 14px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.85rem}
 .mini.red{color:var(--red);border-color:#f0c9c9}
+
+/* ปุ่มวางที่อยู่จากแชท — ปุ่มเดียวที่เหลือบนหัวฟอร์ม จึงให้เต็มความกว้างและกดง่าย
+   ลูกค้าวางที่อยู่มาเป็นก้อนแทบทุกใบ ปุ่มนี้คือทางลัดที่ใช้บ่อยที่สุดของหน้านี้ */
+.pastebtn{display:block;width:100%;padding:15px 14px;border:1.5px solid #2f4858;
+  border-radius:999px;background:linear-gradient(180deg,#f2fbfd,#e8f4f8);
+  color:var(--gray);font-size:1rem;font-weight:600;letter-spacing:.01em}
+.pastebtn:active{background:#dceaf0}
+
+/* แบนเนอร์หัวงาน — ไอคอนกลม · ชื่องานภาษาไทย · คำอธิบายบรรทัดเล็ก · ปุ่มลงมือทางขวา
+   ใช้ซ้ำได้ทั้งช่องวางที่อยู่จากแชทและหน้านำเข้า Shopee จะได้เป็นภาษาเดียวกันทั้งแอป */
+.banner{display:flex;align-items:center;gap:12px;padding:11px 12px;margin-bottom:12px;
+  border:1.5px solid #bcd6f5;border-radius:999px;
+  background:linear-gradient(100deg,#eaf3ff 0%,#dceaff 55%,#e9f1ff 100%);
+  box-shadow:0 2px 10px rgba(21,73,180,.10)}
+.banner .bn-ic{flex:none;width:46px;height:46px;border-radius:50%;background:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:1.35rem;
+  box-shadow:0 1px 5px rgba(21,73,180,.18)}
+.banner .bn-ic img{width:26px;height:26px;object-fit:contain}
+.banner .bn-tx{flex:1;min-width:0}
+.banner .bn-tx b{display:block;font-size:0.98rem;font-weight:800;color:#123a7a;line-height:1.25}
+.banner .bn-tx em{display:block;font-style:normal;font-size:0.74rem;color:#5a7196;
+  margin-top:2px;line-height:1.35}
+.banner .bn-go{flex:none;border:0;border-radius:999px;padding:11px 16px;color:#fff;
+  font-weight:800;font-size:0.86rem;background:linear-gradient(180deg,#2f7bf0,#1550c8);
+  box-shadow:0 2px 8px rgba(21,73,180,.35)}
+.banner .bn-go:active{background:#1246ad}
+@media (max-width:400px){
+  .banner{border-radius:20px;flex-wrap:wrap}
+  .banner .bn-go{width:100%;order:3}
+}
+
+/* ป้ายช่องกรอกสองภาษาพร้อมไอคอนกลม — ไทยตัวหนา อังกฤษบรรทัดเล็กใต้ลงมา
+   ป้ายไหนไม่ได้ใส่ data-en ก็ยังขึ้นไทยอย่างเดียวเหมือนเดิม ไม่ต้องแก้ทุกช่องพร้อมกัน */
+.fld label[data-en]{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+.fld label[data-en] .li{flex:none;width:34px;height:34px;border-radius:50%;background:#eaf1fd;
+  display:flex;align-items:center;justify-content:center;font-size:0.95rem}
+.fld label[data-en] .lt{min-width:0}
+.fld label[data-en] .lt b{display:block;font-size:0.9rem;color:var(--ink);font-weight:800}
+.fld label[data-en]::after{content:none}
+.fld label[data-en] .lt em{display:block;font-style:normal;font-size:0.72rem;color:var(--gray);
+  font-weight:500;margin-top:1px}
 
 .it{border:1px solid var(--line);border-radius:11px;padding:13px;margin-bottom:9px;background:#fbfcfd}
 .it .hd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
@@ -104,11 +184,64 @@ textarea{resize:vertical}
 .row .i b{display:block}
 .row .i span{font-size:0.82rem;color:var(--gray)}
 .row .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+/* จอแคบ: ปุ่มห้าอันเบียดจนชื่อลูกค้ากับเลขออเดอร์ตกบรรทัดทีละคำ อ่านยาก
+   ให้ปุ่มลงไปอยู่แถวของตัวเองเต็มความกว้างแทน ข้อความจะได้เต็มบรรทัด */
+@media (max-width:430px){
+  .row .i{flex:0 0 100%}
+  .row .acts{flex:0 0 100%;justify-content:flex-start;margin-top:8px}
+}
+/* กล่องถามเหตุผลตอนยกเลิกเอกสาร กินเต็มความกว้างของแถว ไม่เบียดปุ่ม */
+.row{flex-wrap:wrap}
+.vdbox{flex:0 0 100%;margin-top:10px;padding:11px;border:1px solid #f0c9c9;
+  border-radius:10px;background:#fff7f7}
+.vdbox input{margin:0}
+.row .i span+span{display:block;margin-top:2px}
+/* ป้ายสถานะเป็นชิปกลม ๆ ต้องอยู่ต่อท้ายยอดเงินในบรรทัดเดียวกัน
+   กฎ span+span ด้านบนมีไว้ให้ที่อยู่ขึ้นบรรทัดใหม่ ไม่ได้ตั้งใจให้ชิปยืดเต็มแถว */
+.row .i span+span.tag{display:inline-block;margin-top:0}
 .sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
+.sq.red{color:var(--red);border-color:#f0c9c9}
+/* ปุ่มบนแถวออเดอร์ใช้รูปจริง ขนาดผูกกับตัวอักษร ปุ่ม ก+ ก− จึงขยายไอคอนตามไปด้วย */
+.sq .sqic{width:1.5em;height:1.5em;object-fit:contain;display:block;margin:0 auto}
+.sq{display:flex;align-items:center;justify-content:center}
+/* แปดปุ่มต้องอยู่แถวเดียวกันเสมอ ถ้าตกบรรทัดหนึ่งปุ่มจะดูเหมือนปุ่มแปลกที่ไม่เข้าพวก
+   บนจอแคบจึงให้ปุ่มยืดหดเท่า ๆ กันเต็มความกว้างแถวแทนการขึ้นบรรทัดใหม่
+   เจาะจงเฉพาะแถวออเดอร์ ไม่ใช่ทุกแถวที่มีปุ่ม — แถวรายการเอกสารใช้ปุ่มตัวหนังสือ
+   ถ้าโดนบีบไม่ให้ตกบรรทัด คำว่า "ทำเป็นออเดอร์" จะถูกหั่นเป็นตัวละบรรทัด */
+@media (max-width:520px){
+  #list .row .acts{flex-wrap:nowrap;gap:5px}
+  #list .row .acts .sq{flex:1 1 0;width:auto;min-width:0}
+}
+/* ปุ่มตัวหนังสือบนแถวเอกสาร กว้างเท่าที่ข้อความต้องการ ล้นก็ตกบรรทัดทั้งปุ่ม */
+.row .acts .mini{flex:0 0 auto;white-space:nowrap}
+
+/* สามเหลี่ยมสีหน้าชื่อลูกค้า บอกว่าใบนี้ต้องทำอะไรต่อ — วาดด้วย border ไม่ใช้ไฟล์รูป
+   จึงคมทุกความละเอียดจอ และเปลี่ยนสีได้ทันทีโดยไม่ต้องโหลดอะไรเพิ่ม */
+.flag{display:inline-block;width:0;height:0;vertical-align:1px;margin-right:7px;
+  border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid #ccc}
+.flag.pay{border-bottom-color:#0047c2}
+.flag.noac{border-bottom-color:#c40215}
+.flag.rdy{border-bottom-color:#86d76d}
+.flag.sent{border-bottom-color:#fedb04}
+/* คำอธิบายสี วางไว้เหนือลิสต์ครั้งเดียว ไม่ใช่ซ้ำทุกแถว */
+.flagkey{display:flex;flex-wrap:wrap;gap:4px 14px;padding:2px 2px 10px;
+  font-size:0.74rem;color:var(--gray)}
+.flagkey span{display:flex;align-items:center;gap:5px}
+.flagkey i{margin:0}
 .tag{display:inline-block;font-size:0.8rem;padding:2px 8px;border-radius:99px;background:#eef1f5;color:var(--gray)}
 .tag.ok{background:#e6f5ec;color:var(--green)}
 .tag.wait{background:#fdf1e0;color:var(--amber)}
 .tag.bad{background:#fbe9e9;color:var(--red)}
+/* ช่องทางขายที่มีตราของตัวเอง — โลโก้เล็ก ๆ กับสีประจำแบรนด์
+   ให้กวาดตาหาเจอในลิสต์ยาว ๆ ว่าใบไหนมาจากไหน โดยไม่ต้องอ่านทีละบรรทัด
+   ไอคอนใช้ vertical-align กับ margin ให้นั่งพอดีกับบรรทัด ไม่ดันบรรทัดให้สูงขึ้น
+   ต้องเจาะจงกว่า ".row .i span" ที่ทาสีเทาไว้ทั้งบรรทัด ไม่งั้นสีแบรนด์แพ้ */
+.chan-shopee, .chan-fb,
+.row .i span.chan-shopee,
+.row .i span.chan-fb{font-weight:700;white-space:nowrap}
+.chan-shopee, .row .i span.chan-shopee{color:#ee4d2d}
+.chan-fb,     .row .i span.chan-fb    {color:#1877f2}
+.chan-ic{width:13px;height:13px;vertical-align:-2px;margin-right:3px;display:inline-block}
 
 .pv{border:1px solid var(--blue);border-radius:11px;padding:12px;margin:10px 0;background:#f7f9ff}
 .pv .r{display:flex;gap:8px;padding:5px 0;font-size:0.8rem;border-bottom:1px dashed #dfe4ee}
@@ -125,10 +258,44 @@ textarea{resize:vertical}
 
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:var(--card);
   border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-.tabs button{flex:1;border:0;background:none;padding:11px 4px 13px;font-size:0.8rem;color:var(--gray);
-  display:flex;flex-direction:column;align-items:center;gap:3px}
-.tabs button.on{color:var(--blue);font-weight:700}
-.tabs button em{font-style:normal;font-size:1.12rem;line-height:1}
+/* ปุ่มมีเส้นคั่นระหว่างกัน กวาดตาแล้วเห็นว่าเป็นหกช่องแยกกัน ไม่ใช่ข้อความยาวพืด
+   ปุ่มที่ยืนอยู่มีขีดสั้น ๆ ใต้ปุ่ม บอกตำแหน่งได้แม้มองแวบเดียว */
+.tabs button{position:relative;flex:1;min-width:0;border:0;background:none;padding:8px 2px 9px;
+  font-size:0.76rem;color:var(--gray);display:flex;flex-direction:column;align-items:center;
+  gap:2px;line-height:1.2;text-align:center}
+.tabs button+button::before{content:"";position:absolute;left:0;top:9px;bottom:9px;
+  width:1px;background:var(--line)}
+.tabs button b{font-weight:700;display:block}
+.tabs button em{font-style:normal;font-size:0.62rem;opacity:.75;display:block}
+.tabs button.on{color:var(--blue)}
+.tabs button.on::after{content:"";position:absolute;left:50%;transform:translateX(-50%);
+  bottom:2px;width:26px;height:3px;border-radius:99px;background:var(--blue)}
+/* ไอคอนเป็นรูปจริง ความสูงผูกกับขนาดตัวอักษร ปุ่ม ก+ ก− จึงขยายไอคอนตามไปด้วย
+   ปุ่มที่เลือกอยู่ให้ไอคอนเข้มเต็มที่ ปุ่มอื่นหรี่ลงหน่อยเพื่อให้รู้ว่ายืนอยู่หน้าไหน */
+/* กำหนดความสูง ปล่อยความกว้างให้เต็มช่อง — ไอคอนแต่ละอันสัดส่วนไม่เท่ากัน
+   ป้าย ORDER เป็นแนวนอนยาว ถ้าบังคับให้เป็นสี่เหลี่ยมจัตุรัสมันจะลีบจนเล็กกว่าเพื่อน
+   แบบนี้ทุกอันสูงเท่ากันและกว้างตามธรรมชาติของรูป */
+.tabs button img{height:1.6em;width:100%;object-fit:contain;display:block;
+  opacity:.55;transition:opacity .15s}
+.tabs button.on img{opacity:1}
+/* ชื่อปุ่มยาวขึ้นตามที่เจ้าของร้านตั้ง (ออเดอร์ทั้งหมด · รับเข้าสินค้า · ใบเสนอราคา)
+   หกปุ่มบนจอมือถือจึงตกสองบรรทัดแน่นอน ย่อตัวอักษรกับระยะบรรทัดลงให้แถบไม่สูงจน
+   กินที่อ่านข้อมูล แต่พื้นที่ที่นิ้วกดยังเต็มความกว้างของปุ่มเหมือนเดิม */
+@media (max-width:460px){
+  .tabs button{font-size:0.66rem;padding:6px 1px 9px;letter-spacing:-.02em}
+  .tabs button em{font-size:0.56rem}
+  .tabs button img{height:1.5em}
+}
+/* ชื่อร้านกับคำโปรยบนจอแคบ ย่อลงหน่อยจะได้ไม่ตกสามบรรทัด */
+@media (max-width:430px){
+  .top{padding:13px 13px 16px;gap:10px}
+  .top .logo{width:54px;height:54px}
+  .top b{font-size:0.98rem}
+  /* คำโปรยเป็นคำของแบรนด์ ไม่ใช่ข้อมูล ตกบรรทัดแล้วดันหัวจอสูงโดยไม่ได้อะไรเพิ่ม */
+  .top .tag-en{font-size:0.66rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .top .who{font-size:0.74rem}
+  .fsz button{width:36px;height:36px;font-size:0.82rem}
+}
 
 .modal{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.42);display:none;align-items:flex-end}
 .modal.on{display:flex}
@@ -165,6 +332,121 @@ textarea{resize:vertical}
 .kpi.wide{grid-column:1 / -1}
 .kpi.good b{color:var(--green)}
 
+/* ---------------- หน้าค้างชำระ ----------------
+   แถบกรองสี่กลุ่มด้านบน กดแล้วดูเฉพาะกลุ่มนั้น ตัวเลขมุมขวาบอกว่ามีกี่ใบ
+   ไอคอนเป็นรูปจริง เหมือนแถบล่าง เพราะกวาดตาหาเจอเร็วกว่าอ่านตัวหนังสือ */
+.paytabs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.paytabs button{position:relative;border:1px solid var(--line);background:var(--card);
+  border-radius:12px;padding:9px 3px 8px;display:flex;flex-direction:column;align-items:center;
+  gap:5px;font-size:0.7rem;line-height:1.15;color:var(--gray);text-align:center}
+.paytabs button img{height:26px;width:100%;object-fit:contain;display:block;opacity:.5}
+.paytabs button.on{border-color:var(--blue);background:#f4f8ff;color:var(--ink);font-weight:700}
+.paytabs button.on img{opacity:1}
+.paytabs button i{position:absolute;top:-6px;right:-4px;min-width:19px;height:19px;
+  border-radius:99px;background:var(--gray);color:#fff;font-style:normal;font-size:0.68rem;
+  font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px}
+.paytabs button.on i{background:var(--blue)}
+
+/* สถานะเงินของแถว — เส้นบาง ๆ กับตัวหนังสือสี ไม่ใช่แถบสีเต็มแท่ง
+   แถบสีทึบเต็มความกว้างทุกแถวทำให้ทั้งหน้าแดงไปหมด แล้วสีแดงก็หมดความหมาย
+   เส้นบางพอให้กวาดตาเห็นว่าแถวไหนเป็นสีอะไร โดยไม่กลบข้อมูลที่ต้องอ่านจริง ๆ */
+/* แฟ้มเอกสาร — ใบคนละชนิดอยู่คนละแฟ้ม ไม่กองรวมกันเป็นรายการเดียว
+   ใบเสนอราคาคือใบที่ยัง "อาจจะขาย" · ใบกำกับภาษีคือใบที่ขายไปแล้วและแจ้งสรรพากรแล้ว
+   สองอย่างนี้ความสำคัญคนละชั้น เอามาเรียงปนกันคือหาใบที่ต้องใช้จริงไม่เจอ */
+.fold{display:flex;align-items:center;gap:11px;border:1px solid var(--line);
+  border-radius:12px;padding:12px 13px;margin-bottom:8px;background:var(--card);
+  cursor:pointer}
+.fold:active{background:var(--bg)}
+/* รูปหน้าแฟ้มเป็นภาพถ่ายพื้นขาว จึงต้องมีกรอบขาวของตัวเองให้ดูตั้งใจ
+   ไม่ใช่รูปสี่เหลี่ยมขาวลอยอยู่บนพื้นการ์ดที่เปลี่ยนสีตอนกด */
+.fold-ic{flex:0 0 auto;width:50px;height:64px;border-radius:10px;
+  background:#fff;border:1px solid var(--line);object-fit:cover;display:block}
+.fold-em{font-size:1.7rem;line-height:64px;text-align:center;border:0;background:none}
+.fold-tx{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.fold-tx b{font-size:0.97rem}
+.fold-tx em{font-style:normal;font-size:0.76rem;color:var(--gray)}
+.fold-n{flex:0 0 auto;font-size:0.82rem;font-weight:700;color:var(--blue);
+  white-space:nowrap}
+/* แฟ้มเปล่าต้องดูออกว่าเปล่า ไม่ใช่กดแล้วเจอหน้าว่างเปล่าแล้วสงสัยว่าแอปพัง */
+.fold.none{cursor:default;opacity:0.55}
+.fold.none .fold-n{color:var(--gray);font-weight:400}
+/* หัวข้อสามกองในแฟ้ม — สีต้องต่างกันพอให้กวาดตาเจอตั้งแต่ยังไม่อ่าน
+   กองยกเลิกคือกองที่หยิบผิดแล้วเดือดร้อนที่สุด จึงเป็นกองเดียวที่ได้สีแดง */
+/* ---------------- หน้ารับเงิน ----------------
+   QR ต้องใหญ่พอให้กล้องมือถืออีกเครื่องจับได้จากบนจอ ไม่ใช่แค่ตอนพิมพ์ออกมา
+   และพื้นขาวรอบ QR (quiet zone) ห้ามหาย ไม่งั้นบางแอปสแกนไม่ติด */
+.qr{width:min(320px,72vw);height:auto;
+    border:1px solid var(--line);border-radius:12px;background:#fff}
+/* ข้อความเรียกเก็บเงิน โชว์ตลอด ไม่ใช่ .msg ที่ซ่อนไว้จนกว่าจะมีเรื่องแจ้ง */
+/* แถวบัญชี — ไอคอนธนาคารซ้าย รายละเอียดขวา ไอคอนไม่ยืดไม่หดตามข้อความ */
+.bankrow{display:flex;gap:12px;align-items:center}
+.bankic{width:40px;height:40px;flex:0 0 40px;border-radius:10px;display:block}
+.paymsg{white-space:pre-wrap;word-break:break-word;font:inherit;font-size:0.86rem;
+        line-height:1.65;background:var(--card);border:1px solid var(--line);
+        border-radius:12px;padding:12px 13px;margin:0 0 11px}
+.ok-note{padding:9px 11px;border-radius:0 8px 8px 0;margin-top:9px;
+         border-left:3px solid var(--green);background:#f2fbf6}
+.subhd.grp-revised{color:var(--blue)}
+.subhd.grp-dead{color:var(--red)}
+
+/* ตารางสรุปรายเดือน — บนมือถืออ่านเป็นการ์ดต่อเดือน ไม่ใช่ตารางที่ต้องเลื่อนข้าง */
+.mrow{border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-bottom:10px;
+  background:var(--card)}
+.mrow .mhd{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.mrow .mhd b{font-size:1.02rem}
+.mrow .mhd span{font-size:0.78rem;color:var(--gray)}
+.mgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 12px;margin-top:9px}
+.mgrid div{font-size:0.86rem;color:var(--gray)}
+.mgrid div b{display:block;font-size:1rem;color:var(--ink)}
+.mgrid div.net b{color:var(--green)}
+.mgrid div.neg b{color:var(--red)}
+/* ตัวเลขที่คนกรอกเองต้องแยกออกจากตัวเลขที่ระบบคิด ไม่งั้นจะเถียงกันเองว่าเลขไหนจริง */
+.mtyped{display:block;font-size:0.68rem;color:var(--blue);font-weight:700;
+  white-space:nowrap;margin-top:1px}
+.mrow .medit{margin-top:10px;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.mrow .medit input{width:auto;flex:1 1 100%;padding:9px 11px}
+.mrow .medit button{flex:0 0 auto}
+/* ยอดของเดือนแยกตามช่องทางขาย — ไฟล์รายเดือนที่ร้านมีเป็นยอดของ Shopee ล้วน
+   ถ้าวางรวมกันในการ์ดเดียวจะอ่านเป็นยอดทั้งร้านทันที การ์ดซ้อนจึงต้องเห็นชัดว่าซ้อน */
+.mchans{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.mchan{border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:10px;
+  padding:10px 11px;background:var(--bg)}
+.mchan .mchd{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.mchan .mchd b{font-size:0.95rem}
+.mchan .mchd span{font-size:0.76rem;color:var(--gray)}
+.mchan .medit{margin-top:9px}
+.mchan .medit input{background:var(--card)}
+/* ป้ายบนช่องกรอก — สามช่องเรียงกันโดยไม่มีป้าย เดาไม่ออกว่าช่องไหนคืออะไร */
+.mfld{flex:1 1 120px;display:flex;flex-direction:column;gap:3px}
+.mfld>span{font-size:0.74rem;color:var(--gray)}
+.mrow .medit .mfld input{flex:0 0 auto;width:100%}
+.madd{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.madd select{width:auto;flex:1 1 160px;padding:8px 10px;font-size:0.85rem}
+.madd button{flex:0 0 auto}
+
+/* แถบเรียงลำดับหน้าลูกค้า — ตัวหนังสือล้วน ไม่มีไอคอน เพราะสามปุ่มนี้
+   เป็นการ "เรียง" ไม่ใช่ "ไปที่ไหน" รูปจะทำให้ดูเหมือนเมนูอีกชั้น */
+.sorts{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.sorts button{border:1px solid var(--line);background:var(--card);border-radius:99px;
+  padding:6px 14px;font-size:0.83rem;color:var(--gray)}
+.sorts button.on{border-color:var(--blue);background:#f4f8ff;color:var(--ink);font-weight:700}
+/* ทั้งแถวกดได้ ไม่ใช่แค่ชื่อ — นิ้วบนมือถือเล็งตัวหนังสือบรรทัดเดียวยาก */
+.cu-row{cursor:pointer}
+.cu-row:active{background:#f4f8ff}
+.mini-w{width:auto;padding:7px 14px;font-size:0.83rem}
+.paybar{display:block;margin-top:7px;font-size:0.8rem;font-weight:700;line-height:1.3}
+.paybar::after{content:"";display:block;height:3px;border-radius:99px;margin-top:4px;
+  background:currentColor;opacity:.85}
+/* ต้องเจาะจงกว่า ".row .i span" ที่ทาสีเทาไว้ทั้งบรรทัด (เรื่องเดียวกับ .chan-shopee)
+   ไม่งั้นแถบบอกสถานะเงินจะเป็นสีเทาหมดทุกอัน — ซึ่งเป็นอย่างนั้นมาตลอด
+   ทั้งที่ทั้งแถบมีไว้เพื่อให้ใบที่เกินกำหนดชำระสะดุดตาโดยเฉพาะ */
+.paybar.paid, .row .i span.paybar.paid{color:#0b9a5b}
+.paybar.due,  .row .i span.paybar.due {color:#c40215}
+.paybar.cr30, .row .i span.paybar.cr30{color:#a35c00}
+.paybar.over, .row .i span.paybar.over{color:#8f0110}
+.paybar.dead, .row .i span.paybar.dead{color:#8a93a6}
+.sq.ok{color:var(--green);border-color:#bfe6cd;font-size:1.05rem}
+
 .brow{margin:12px 0 0}
 .brow:first-of-type{margin-top:4px}
 .btop{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:0.82rem}
@@ -173,6 +455,43 @@ textarea{resize:vertical}
 .btrack{height:8px;background:var(--bg);border-radius:4px;margin-top:6px;overflow:hidden}
 .btrack i{display:block;height:100%;background:var(--blue);border-radius:0 4px 4px 0;min-width:3px}
 .bsub{font-size:0.8rem;color:var(--gray);margin-top:4px}
+
+/* ---------------- หน้าปิดยอดวัน ----------------
+   หน้าสรุปยอดตอบคำถาม "ช่วงนี้เป็นยังไง" ส่วนหน้านี้ตอบ "วันนั้นขายไปเท่าไร"
+   ซึ่งเป็นคนละงานกัน — ปิดยอดคือดูวันเดียวให้ครบทุกใบแล้วจบวัน
+   ปุ่ม ◀ ▶ จึงอยู่ติดกับวันที่ เพราะการใช้งานจริงคือเดินทีละวัน ไม่ใช่กระโดดหาช่วง */
+.daynav{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.daynav button{flex:none;width:44px;height:44px;border:1px solid var(--line);background:var(--card);
+  border-radius:11px;font-size:0.95rem;color:var(--ink);padding:0}
+.daynav button:disabled{color:#c9ced6}
+.dymid{flex:1;min-width:0;text-align:center}
+.dymid input{margin:0;text-align:center;font-weight:700}
+.dywhen{font-size:0.8rem;color:var(--gray);margin-top:4px}
+/* แท่งที่กดได้ — ใช้กับ 7 วันย้อนหลัง กดแล้วเด้งไปปิดยอดวันนั้นเลย */
+.tapbar{display:block;width:100%;text-align:left;border:0;background:none;padding:0}
+.tapbar.on .btrack i{background:var(--green)}
+.tapbar.on .bname{color:var(--ink);font-weight:700}
+/* รายการตำบล/อำเภอที่ค้นเจอ กดได้ทั้งแถว นิ้วโป้งกดง่ายบนมือถือ */
+.thhit{margin-top:6px}
+.thhit button{display:block;width:100%;text-align:left;padding:11px 12px;margin-top:6px;
+  border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.9rem;line-height:1.45}
+.thhit button b{color:var(--ink)}
+.thhit .none{font-size:0.82rem;color:var(--gray);padding:6px 2px}
+/* กระดานเซ็นลายเซ็น — ซ้อนเหนือ modal ได้ เพราะบางจอเรียกจากในหน้าต่างที่เป็น modal อยู่แล้ว */
+.signwrap{position:fixed;inset:0;z-index:120;background:rgba(15,23,42,.55);
+  display:flex;align-items:center;justify-content:center;padding:14px}
+.signbox{background:#fff;border-radius:16px;padding:15px;width:100%;max-width:520px;
+  box-shadow:0 18px 50px rgba(0,0,0,.28)}
+.signhd{font-weight:700;font-size:1rem;margin-bottom:3px}
+.signhint{font-size:0.8rem;color:var(--gray);margin-bottom:9px;line-height:1.5}
+/* touch-action:none ไม่งั้นลากนิ้วบนกระดานแล้วหน้าจอเลื่อนตามแทนที่จะเขียนเส้น */
+.signcv{width:100%;display:block;border:1.5px dashed var(--line);border-radius:11px;
+  background:#fcfcfd;touch-action:none;cursor:crosshair}
+.signrow{display:flex;gap:8px;margin-top:11px}
+.signrow .btn{margin:0;flex:1}
+/* ลายเซ็นที่เก็บไว้แล้ว โชว์ตัวอย่างในหน้าตั้งค่า */
+.signprev{border:1px solid var(--line);border-radius:10px;background:#fff;padding:6px;margin-top:8px}
+.signprev canvas{width:100%;display:block}
 .giftck{display:flex;align-items:center;gap:8px;margin-top:11px;font-size:0.85rem;color:var(--gray)}
 .giftck input{width:auto;transform:scale(1.3)}
 /* ปุ่มทำงานต่อหลังบันทึก — พิมพ์ใบปะหน้า / ส่งข้อความ อยู่ในกล่องเขียวเลย
@@ -180,17 +499,38 @@ textarea{resize:vertical}
 .okact{display:flex;gap:8px;margin-top:11px}
 .okact button{flex:1;padding:12px 8px;border-radius:10px;border:1px solid var(--green);
   background:#fff;color:var(--green);font-weight:700;font-size:0.85rem}
+
+/* คู่มือ — พับเก็บทีละหัวข้อ เปิดมาเห็นสารบัญก่อน ไม่ใช่กำแพงตัวหนังสือ */
+.hp details{border:1px solid var(--line);border-radius:11px;background:#fff;margin-bottom:9px}
+.hp summary{padding:13px 14px;font-weight:700;cursor:pointer;list-style:none;line-height:1.4}
+.hp summary::-webkit-details-marker{display:none}
+.hp summary::after{content:"＋";float:right;color:var(--gray);font-weight:400}
+.hp details[open] summary::after{content:"−"}
+.hp details[open] summary{border-bottom:1px solid var(--line)}
+.hp .bd{padding:12px 14px 15px;font-size:0.86rem;line-height:1.65}
+.hp .bd b{color:var(--ink)}
+.hp .bd ol,.hp .bd ul{margin:6px 0;padding-left:20px}
+.hp .bd li{margin-bottom:5px}
+/* กล่องเตือนสองแบบ เริ่มจากคู่มืออย่างเดียว แต่ที่อื่นก็ต้องเตือนคนเหมือนกัน
+   จึงถอดออกมาเป็นของกลาง ขนาดตัวหนังสือติดมาด้วย ไม่งั้นนอกคู่มือจะโตกว่าที่อื่นทั้งหน้า */
+.warn,.stop{padding:9px 11px;border-radius:0 8px 8px 0;margin-top:9px;
+  font-size:0.86rem;line-height:1.6}
+.warn{border-left:3px solid var(--amber);background:#fffaf1}
+.stop{border-left:3px solid var(--red);background:#fff6f6}
+.hp .bd .warn,.hp .bd .stop{font-size:inherit;line-height:inherit}
 </style>
 
 <div class="top">
   <div class="logo" id="logo">STOCK</div>
   <div class="ttl">
     <b id="brand">AST Chem-Tooling</b>
+    <span class="tag-en">Tools for a Better Tomorrow</span>
     <span class="who" id="who"></span>
   </div>
   <div class="fsz">
-    <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง">ก−</button>
-    <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น">ก+</button>
+    <button id="fs-help" title="คู่มือใช้งาน" aria-label="คู่มือใช้งาน" data-cap="ช่วยเหลือ">?</button>
+    <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง" data-cap="ย่อ">ก−</button>
+    <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น" data-cap="ขยาย">ก+</button>
   </div>
 </div>
 
@@ -206,16 +546,18 @@ textarea{resize:vertical}
       <!-- ออเดอร์จากเพจ แอดมินเป็นคนสรุปเอง ไม่ได้อ่านจากข้อความลูกค้า
            กล่องนี้จึงย่อเก็บไว้ เปิดใช้เฉพาะตอนลูกค้าวางที่อยู่มาเป็นก้อน -->
       <div class="card" id="paste-card">
-        <button class="mini" id="btn-paste-open" style="width:100%">วางที่อยู่จากแชท</button>
-
-        <!-- ปุ่มขอเอกสาร วางไว้บนหัวฟอร์มตามที่เจ้าของร้านขอ — กรอก · ส่ง · ปริ้น จบในหน้าเดียว
-             กดก่อนบันทึกได้ ระบบจะถามแล้วบันทึกออเดอร์ให้ก่อนค่อยออกใบ
-             เพราะใบกำกับภาษีต้องมีเลขออเดอร์และยอดที่ชีทคำนวณแล้วจริง ๆ -->
-        <div class="docbar" id="docbar">
-          <button type="button" data-doc="rec">🧾 ใบกำกับภาษี</button>
-          <button type="button" data-doc="inv">📄 บิลเงินสด</button>
-          <button type="button" data-doc="quote">◇ ใบเสนอราคา</button>
+        <div class="banner">
+          <span class="bn-ic">🧾</span>
+          <span class="bn-tx"><b>วางที่อยู่จากแชท</b>
+            <em>วางที่อยู่ลูกค้าจากแชท Shopee / Lazada / Line ได้ที่นี่…</em></span>
+          <button class="bn-go" id="btn-paste-open">วางข้อมูล</button>
         </div>
+
+        <!-- เคยมีปุ่มขอเอกสารสามอันตรงนี้ (ใบกำกับภาษี · บิลเงินสด · ใบเสนอราคา) เอาออกแล้ว
+             ใบกำกับภาษีกับบิลเงินสดออกก่อนบันทึกออเดอร์ไม่ได้อยู่ดี เพราะต้องอ้างเลขออเดอร์
+             และยอดที่ชีทคำนวณจริง กดแล้วระบบก็แค่ถามให้บันทึกก่อน จึงไม่ได้ช่วยให้เร็วขึ้น
+             ทางที่ใช้จริงคือปุ่ม 📄 ที่แถวออเดอร์ ซึ่งมีใบครบกว่า (รวมใบรับเงินมัดจำ)
+             ส่วนใบเสนอราคามีแท็บของตัวเองอยู่ที่แถบล่างแล้ว ปุ่มนี้แค่กระโดดไปที่เดิม -->
         <div id="paste-box" style="display:none;margin-top:10px">
           <div class="fld">
             <textarea id="paste" rows="4" placeholder="วางข้อความที่ลูกค้าส่งมา เช่น ชื่อ เบอร์ ที่อยู่"></textarea>
@@ -228,18 +570,22 @@ textarea{resize:vertical}
 
       <div class="card">
         <div class="fld">
-          <label>ผู้คีย์ออเดอร์</label>
+          <label data-en="1"><span class="li">👤</span><span class="lt"><b>ผู้คีย์ออเดอร์</b><em>Order by</em></span></label>
           <select id="f-by"></select>
           <input id="f-by-new" placeholder="พิมพ์ชื่อคนคีย์" style="margin-top:8px;display:none">
           <div class="hint">ไม่มีชื่อในรายการ เลือก “✎ พิมพ์ชื่อเอง” แล้วพิมพ์ได้เลย · เครื่องนี้จะจำไว้ให้</div>
         </div>
         <div class="two">
-          <div class="fld"><label>วันที่</label><input id="f-date" type="date"></div>
-          <div class="fld"><label>ช่องทางขาย</label><select id="f-channel"></select></div>
+          <div class="fld"><label data-en="1"><span class="li">📅</span><span class="lt"><b>วันที่</b><em>Order Date</em></span></label><input id="f-date" type="date"></div>
+          <div class="fld"><label data-en="1"><span class="li">🏪</span><span class="lt"><b>ช่องทางขาย</b><em>Sales Channel</em></span></label><select id="f-channel"></select></div>
         </div>
-        <div class="fld"><label>ชื่อลูกค้า</label><input id="f-cust" placeholder="ชื่อผู้รับ"></div>
-        <div class="fld"><label>เบอร์โทร</label><input id="f-tel" inputmode="tel"></div>
-        <div class="fld"><label>ที่อยู่จัดส่ง</label><textarea id="f-addr" rows="3"></textarea></div>
+        <div class="fld"><label data-en="1"><span class="li">👥</span><span class="lt"><b>ชื่อลูกค้า</b><em>Customer Name</em></span></label><input id="f-cust" placeholder="ชื่อผู้รับ" autocomplete="off">
+          <div id="f-cust-hit" class="thhit"></div>
+          <div class="hint">พิมพ์ชื่อลูกค้าเก่า แล้วกดเลือก ระบบจะเติมเบอร์กับที่อยู่ครั้งล่าสุดให้</div></div>
+        <div class="fld"><label data-en="1"><span class="li">📞</span><span class="lt"><b>เบอร์โทร</b><em>Phone</em></span></label><input id="f-tel" inputmode="tel"></div>
+        <div class="fld"><label>ที่อยู่จัดส่ง</label><textarea id="f-addr" rows="3"></textarea>
+          <input id="f-addr-find" placeholder="พิมพ์ตำบล อำเภอ จังหวัด หรือรหัสไปรษณีย์ แล้วเลือก">
+          <div id="f-addr-hit" class="thhit"></div></div>
         <div class="two">
           <div class="fld"><label>ช่องทางจัดส่ง</label><select id="f-carrier"></select></div>
           <div class="fld"><label>เลขพัสดุ (ใส่ทีหลังได้)</label><input id="f-track"></div>
@@ -277,7 +623,482 @@ textarea{resize:vertical}
 
   <!-- ------------------------------------------------------ ออเดอร์ -->
   <section id="pg-list" style="display:none">
+    <!-- จอโชว์ใบล่าสุดแค่ 40 ใบ ที่ร้านคีย์วันละ 8-10 ใบ
+         ใบเมื่อสองสัปดาห์ก่อนจึงหลุดจอไปแล้วตอนลูกค้าโทรมาถาม -->
+    <div class="card" style="padding-bottom:10px">
+      <input id="ord-q" placeholder="ค้นหา — เลขออเดอร์ · หมายเลขคำสั่งซื้อ Shopee · ชื่อ · เบอร์ · เลขพัสดุ"
+             autocomplete="off">
+      <div class="hint" id="ord-q-hint">ปล่อยว่างไว้ = ใบล่าสุด 40 ใบ · พิมพ์ 2 ตัวอักษรขึ้นไปเพื่อค้นทั้งชีท</div>
+      <button class="btn ghost" id="btn-shop" style="margin-top:10px">
+        <img id="btn-shop-ic" alt="" style="height:1.15em;vertical-align:-0.18em;margin-right:7px">
+        นำเข้าออเดอร์จาก Shopee</button>
+      <button class="btn ghost" id="btn-cust" style="margin-top:8px">👥 ลูกค้าทั้งหมด</button>
+    </div>
     <div class="card" id="list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <!-- ------------------------------------------------------------- หน้าลูกค้า
+       ไม่ทำเป็นแท็บ แถบล่างเต็มแล้ว เข้าจากปุ่มบนหน้าออเดอร์ทั้งหมด
+       เหมือนหน้านำเข้า Shopee แท็บ "ออเดอร์" จึงยังติดไฟค้างไว้ -->
+  <section id="pg-cust" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>ลูกค้าทั้งหมด</h2></div>
+      <input id="cu-q" placeholder="ค้นหาลูกค้า — ชื่อ หรือเบอร์โทร" autocomplete="off">
+      <div class="hint" id="cu-hint">กดที่ชื่อเพื่อดูประวัติการซื้อทั้งหมด
+        และคีย์ออเดอร์ซ้ำจากใบเก่าได้เลย</div>
+      <button class="btn ghost" id="cu-back" style="margin-top:10px">← กลับไปหน้าออเดอร์</button>
+    </div>
+    <div class="card" id="cu-list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <!-- ---------------------------------------------------------- คู่มือใช้งาน
+       ไม่ทำเป็นแท็บ เพราะแถบล่างเต็มแล้ว และคู่มือเป็นของที่เปิดนาน ๆ ครั้ง
+       เข้าจากปุ่ม ? บนหัวจอ ซึ่งเห็นได้จากทุกหน้า -->
+  <section id="pg-help" style="display:none">
+    <div class="card hp">
+      <div class="sec-hd"><h2>คู่มือใช้งาน</h2></div>
+      <div class="hint" style="padding:0 2px 12px">กดหัวข้อเพื่อเปิดอ่าน ·
+        ทุกอย่างในนี้ทำจากมือถือได้หมด ไม่ต้องเปิดชีท</div>
+
+      <details><summary>1. คีย์ออเดอร์</summary><div class="bd">
+        <ol>
+          <li>แท็บ <b>คีย์ออเดอร์</b> → กรอกชื่อลูกค้า เบอร์ ที่อยู่<br>
+            พิมพ์ชื่อลูกค้าเก่า ระบบจะเด้งชื่อขึ้นมาให้เลือก แล้วเติมเบอร์กับที่อยู่ให้เอง</li>
+          <li>ที่อยู่จำไม่ได้ ใช้ช่อง <b>ค้นตำบล/อำเภอ</b> พิมพ์ชื่อตำบล จะได้รหัสไปรษณีย์ให้เลย</li>
+          <li>เลือกสินค้า ใส่จำนวน — ราคาขึ้นเองจากฐานสินค้า ขายราคาพิเศษให้พิมพ์ทับได้</li>
+          <li>กด <b>บันทึกออเดอร์ลงชีท</b></li>
+        </ol>
+        <b>ลูกค้าส่งข้อความมาเป็นชุด</b> — วางข้อความลงช่องบนสุดแล้วกด “อ่านข้อความให้”
+        ระบบจะแยกชื่อ เบอร์ ที่อยู่ สินค้า ให้ดูก่อน แล้วค่อยกดใช้
+        <div class="warn"><b>สต๊อกถูกตัดตอนกดบันทึก</b> ไม่ใช่ตอนส่งของ
+          ถ้ายังไม่แน่ใจว่าลูกค้าเอาแน่ ให้ออกใบเสนอราคาแทน (ไม่ตัดสต๊อก)</div>
+      </div></details>
+
+      <details><summary>2. รับของเข้าสต๊อก (แท็บ รับเข้าสินค้า)</summary><div class="bd">
+        เลือกสินค้า → ใส่จำนวนกับต้นทุน → ถ้าเป็นของที่คุมล็อต ต้องใส่เลขล็อตกับวันหมดอายุด้วย
+        → กดบันทึก
+        <div class="warn"><b>ของที่คุมล็อตต้องมีเลขล็อตเสมอ</b>
+          ลงแต่จำนวนโดยไม่มีล็อต = ของเข้าสต๊อกแต่ขายไม่ได้ เพราะระบบไม่มีล็อตให้ตัด
+          (เคยเกิดจริงกับ IPA 1000ml)</div>
+        ระบบตัดของที่ <b>หมดอายุก่อน ขายก่อน</b> ให้เองอัตโนมัติ ไม่ต้องเลือกล็อตเอง
+      </div></details>
+
+      <details><summary>3. ออกเอกสาร (ปุ่ม 📄 ที่แถวออเดอร์)</summary><div class="bd">
+        <ul>
+          <li><b>ใบเสร็จรับเงิน / ใบกำกับภาษี</b> — ลูกค้าจ่ายแล้วและขอใบกำกับภาษี ·
+            มี VAT · เลขชุด <b>ONIV26-</b></li>
+          <li><b>บิลเงินสด</b> — ขายแบบ<b>ไม่ออกใบกำกับภาษี</b> · ไม่มี VAT ·
+            เลขชุด <b>CS26-</b> คนละเล่มกับใบกำกับภาษี</li>
+          <li><b>ใบแจ้งหนี้</b> — วางบิล ยังไม่ได้รับเงิน</li>
+          <li><b>ใบรับเงินมัดจำ</b> — รับมัดจำก่อน ยังส่งของไม่ครบ</li>
+        </ul>
+        ใบที่ออกแล้วกด <b>พิมพ์ซ้ำ</b> ได้ตลอด ได้ใบเดิมเป๊ะ เพราะระบบถ่ายรูปใบไว้ตอนออก
+        <div class="stop"><b>ออกใบผิดห้ามแก้ทับ</b> ให้กด <b>ยกเลิกใบ</b> พร้อมบอกเหตุผล
+          แล้วออกใบใหม่ — ใบที่ลูกค้าถืออยู่กับในระบบจะได้ตรงกันเสมอ เวลาสรรพากรตรวจ</div>
+        <div class="warn"><b>กด “เสีย VAT” ผิด แล้วอยากแก้ให้ไม่มี VAT — แก้ที่ใบเดิมไม่ได้</b><br>
+          เลขใบนั้นมาจากเล่มใบกำกับภาษี ซึ่งต้องเรียงต่อกันไม่ขาดและเป็นเล่มที่สรรพากรตรวจ
+          ถ้าปล่อยให้กลายเป็นใบไม่มีภาษีทั้งที่ยังถือเลขเล่มนั้น เล่มจะมีใบที่ไม่ใช่
+          ใบกำกับภาษีปนอยู่ตรงกลาง<br>
+          ทางที่ถูก: <b>ยกเลิกใบเดิม</b> → ถ้าออเดอร์กดรับ VAT ไว้ ให้แก้เป็น
+          <b>ไม่รับ VAT</b> ที่ปุ่ม ✏️ แก้รายการ (ยอดคิดใหม่ทั้งใบให้) →
+          <b>ออกใหม่เป็นบิลเงินสด</b></div>
+        <ul>
+          <li>เลือก <b>ไม่คิด VAT</b> ในช่องภาษี ระบบจะสลับชนิดให้เป็นบิลเงินสดเอง —
+            เพราะใบที่ไม่คิดภาษี ไม่ใช่ใบกำกับภาษี</li>
+          <li>บิลเงินสดไม่มีบรรทัดภาษีบนกระดาษ และหัวใบพิมพ์ว่า
+            <b>บิลเงินสด / CASH BILL</b> ไม่ใช่สี่ชื่อของฟอร์มใบกำกับภาษี</li>
+        </ul>
+      </div></details>
+
+      <details><summary>4. เก็บเงิน — QR พร้อมเพย์ &amp; สลิป (ปุ่ม 💰 ที่แถวออเดอร์)</summary><div class="bd">
+        <b>ขอเก็บเงิน</b>
+        <ol>
+          <li>กด 💰 ที่แถวออเดอร์ (หรือที่หน้า <b>ค้างชำระ</b> ก็มีปุ่มเดียวกัน)</li>
+          <li>ระบบเลือกบัญชีให้เองแล้ว — ใบที่ <b>มี VAT</b> ไปบัญชีบริษัท
+              ใบที่ <b>ไม่มี VAT</b> ไปอีกบัญชีหนึ่ง ไม่ต้องจำเอง</li>
+          <li>กด <b>คัดลอกข้อความเรียกเก็บเงิน</b> แล้วเอาไปวางในไลน์/แชทได้เลย</li>
+          <li>ถ้ากรอก <b>ลิงก์แอพธนาคาร</b> ไว้ในชีทตั้งค่าแอป ข้อความจะมีลิงก์ให้ลูกค้ากด
+              เปิดแอพธนาคารได้ทันที — <b>ลิงก์นี้ไม่ได้กรอกเลขบัญชีหรือยอดให้</b>
+              ลูกค้ายังต้องพิมพ์เองทั้งหมด มันแค่ช่วยไม่ให้ต้องไปหาแอพเอง</li>
+          <li>ถ้าเปิดใช้ QR ไว้ ให้ <b>กดค้างที่รูป QR</b> แล้วเลือกบันทึกรูป จากนั้นส่งเข้าแชท</li>
+        </ol>
+        <div class="warn"><b>QR ในระบบนี้ล็อกยอดไว้แล้ว</b> ลูกค้าสแกนแล้วจำนวนเงินขึ้นเอง
+          ไม่ต้องพิมพ์ — ต่างจาก QR ถาวรที่เคยส่งกัน ซึ่งลูกค้าพิมพ์ยอดเองแล้วพิมพ์ผิดได้
+          ยอดใน QR มาจากช่อง <b>ยอดชำระสุทธิ</b> ของออเดอร์ใบนั้นตรง ๆ</div>
+        <div class="warn"><b>ตอนนี้ร้านตั้งไว้แบบไม่ใช้ QR</b> — รับเงินด้วยการโอนเข้าบัญชี
+          อย่างเดียว หน้าจอจึงมีแต่เลขบัญชีกับข้อความให้คัดลอก ซึ่งถูกต้องแล้ว
+          ถ้าวันหนึ่งอยากได้ QR ให้ลูกค้าสแกน (ยอดขึ้นเอง ไม่ต้องพิมพ์)
+          ไปกรอกช่อง <b>พร้อมเพย์</b> ในชีท <b>ตั้งค่าแอป</b> แล้ว QR จะขึ้นมาเอง</div>
+        <div class="stop"><b>ขึ้นว่ายังไม่ได้กรอกเลขบัญชี?</b> ไปกรอกในชีท <b>ตั้งค่าแอป</b>
+          — หน้าจอจะบอกว่าขาดช่องไหน ระบบไม่เดาเลขบัญชีให้เด็ดขาด
+          เพราะเดาผิดครั้งเดียวคือเงินลูกค้าเข้าบัญชีคนอื่น</div>
+
+        <b>แนบสลิปที่ลูกค้าส่งมา</b>
+        <ol>
+          <li>ในหน้าเดียวกัน เลื่อนลงมาที่ <b>แนบสลิปที่ลูกค้าส่งมา</b></li>
+          <li>เลือกไฟล์ (รูปหรือ PDF ไม่เกิน 10 MB) ใส่วันที่โอนกับยอดตามสลิป แล้วกดแนบ</li>
+          <li>ไฟล์จะไปอยู่ในโฟลเดอร์ไดรฟ์ <b>AST_สลิปโอนเงิน</b> แยกตามเดือน
+              และมีบรรทัดในชีท <b>หลักฐานการชำระเงิน</b> ผูกกับเลขออเดอร์</li>
+          <li>ตรวจแล้วเงินเข้าจริง กด ✔ ที่สลิปใบนั้น ระบบจะถามว่าจะปิดยอดออเดอร์ด้วยไหม
+              — กด <b>ตกลง</b> คือทำเครื่องหมายว่าชำระแล้วในทีเดียว</li>
+        </ol>
+        <ul>
+          <li><b>ยอดในสลิปไม่ตรงยอดออเดอร์</b> ระบบยังรับไฟล์ แต่ขึ้นเตือนให้เห็น
+              (ลูกค้าโอนมัดจำก่อนเป็นเรื่องปกติ) ไม่ปิดยอดให้อัตโนมัติ</li>
+          <li><b>ออเดอร์เดียวแนบได้หลายใบ</b> โอนสองรอบ หรือโอนผิดแล้วโอนใหม่ ก็เก็บไว้ได้หมด</li>
+          <li><b>ลูกค้าส่งสลิปผิดใบ</b> กด ✖ เปลี่ยนเป็น "ไม่ใช่ของใบนี้"
+              <b>อย่าลบแถวในชีททิ้ง</b> — หลักฐานที่หายไปคือหลักฐานที่อธิบายไม่ได้ตอนถูกถาม</li>
+          <li>ออเดอร์ที่มีสลิปรออยู่จะขึ้นป้าย <b>สลิปรอตรวจ</b> ทั้งในรายการออเดอร์
+              และในหน้าค้างชำระ</li>
+        </ul>
+
+        <b>ส่งให้บัญชีสิ้นเดือน</b>
+        <ol>
+          <li>ไปแท็บ <b>สรุปยอด</b> → หัวข้อ <b>หลักฐานการโอน</b></li>
+          <li>เลือกเดือน แล้วกด <b>โหลดไฟล์ Excel</b> — ไฟล์ชื่อ <b>AST-slip-2026-09.xlsx</b>
+              ลงในโฟลเดอร์ดาวน์โหลด ส่งต่อทางไลน์หรืออีเมลได้เลย
+              (ชื่อไฟล์เป็นอังกฤษเพราะเบราว์เซอร์ทิ้งชื่อไฟล์ที่เป็นภาษาไทย
+              ข้างในไฟล์ยังเป็นไทยทั้งหมด)</li>
+        </ol>
+        <ul>
+          <li>ในไฟล์มีช่อง <b>ต่างจากยอดออเดอร์</b> ให้บัญชีเห็นทันทีว่าใบไหนโอนไม่ครบ</li>
+          <li>และมี <b>ลิงก์เปิดรูปสลิป</b> ทีละใบ บัญชีกดจากใน Excel ได้เลย ไม่ต้องขอไฟล์เพิ่ม</li>
+          <li>เดือนที่ยังไม่มีสลิปจะไม่ยอมสร้างไฟล์ให้ และบอกว่าเดือนนั้นว่าง —
+              ไฟล์เปล่าที่เปิดแล้วไม่มีอะไร แยกไม่ออกจาก "เดือนนั้นไม่มีใครโอนเงินมา"</li>
+        </ul>
+      </div></details>
+
+      <details><summary>5. ใบวางบิล — รวมหลายบิลของลูกค้ารายเดียว</summary><div class="bd">
+        <b>ใบวางบิลไม่เหมือนเอกสารชนิดอื่น</b> — ชนิดอื่นคือ 1 ใบต่อ 1 ออเดอร์
+        แต่ใบวางบิลคือ 1 ใบรวมหลายบิล จึงไม่ได้อยู่ในปุ่ม 📄 ของแถวออเดอร์
+        <ol>
+          <li>ไปแท็บ <b>ใบเสนอราคา</b> → แถบ <b>แฟ้มเอกสาร</b></li>
+          <li>กด <b>＋ ออกใบวางบิล</b></li>
+          <li>เลือกลูกค้า → ติ๊กใบที่จะวางบิล (หรือกด <b>ติ๊กทั้งหมด</b>) → ยอดรวมขึ้นให้ดูทันที</li>
+          <li>ใส่วันที่วางบิล · ผู้ติดต่อ · เงื่อนไขชำระเงิน แล้วกด <b>ออกใบวางบิล</b></li>
+          <li>ระบบวาดกระดาษให้เลย พิมพ์หรือบันทึกรูปส่งลูกค้าได้ทันที</li>
+        </ol>
+        <ul>
+          <li>รวมได้เฉพาะ <b>ใบเสร็จ/ใบกำกับภาษี</b> กับ <b>ใบแจ้งหนี้</b>
+              ที่ยังไม่ถูกยกเลิก — ใบเสนอราคากับบิลเงินสดไม่ใช่การเรียกเก็บเงิน</li>
+          <li><b>เลขใบเป็นคนละแบบกับ ONIV</b> — เป็น <b>BL260822-001</b>
+              (วันที่ + ลำดับในวันนั้น) ตามที่ร้านใช้อยู่ ใบวางบิลไม่ใช่เอกสารภาษี
+              เลขจึงไม่ต้องเรียงต่อกันไม่ขาด</li>
+          <li>ช่อง <b>ครบกำหนด</b> ของแต่ละบรรทัดคิดจากวันที่ในใบนั้นบวกเครดิต —
+              พิมพ์ "เครดิต 60 วัน" ก็คิดให้ 60 วัน</li>
+          <li>หนึ่งใบพิมพ์ได้ <b>14 บรรทัด</b> เกินกว่านั้นระบบไม่ยอมออกใบ ให้แยกเป็นสองใบ
+              — ใบที่โชว์ไม่ครบแต่ยอดรวมเป็นของทั้งหมด คือใบที่ลูกค้าตรวจไม่ได้</li>
+        </ul>
+        <div class="stop"><b>ใบเดิมวางบิลซ้ำไม่ได้</b> ระบบจำเองว่าใบไหนอยู่ในใบวางบิลใบไหนแล้ว
+          และโชว์ให้เห็นในรายการ (ไม่ได้ซ่อนทิ้ง) — ถ้าใบวางบิลเดิมใช้ไม่ได้
+          ให้ <b>ยกเลิกใบวางบิลใบนั้นก่อน</b> แล้วใบข้างในจะกลับมาเลือกได้เอง</div>
+        <div class="warn">ใบวางบิลหนึ่งใบเป็นของ<b>ลูกค้ารายเดียว</b>เท่านั้น
+          เลือกใบของหลายรายมาปนกันระบบจะไม่ยอมออกให้ — ไม่งั้นลูกค้าคนหนึ่งจะเห็นยอดของอีกคน</div>
+      </div></details>
+
+      <details><summary>6. ส่งบัญชี (ปุ่ม 🧾 ที่แถวออเดอร์)</summary><div class="bd">
+        ติ๊กว่าจะส่งใบไหน แล้วกด <b>ส่งบัญชี</b> — ไฟล์จะไปอยู่ในโฟลเดอร์ไดรฟ์
+        <b>AST_ส่งบัญชี</b> แยกตามเดือน บัญชีเปิดดูเองได้ตลอด ไม่ต้องรออีเมล<br>
+        สถานะบัญชีแยกจากสถานะออเดอร์ ของส่งถึงลูกค้าแล้วแต่ยังไม่ส่งบัญชีก็เห็นได้<br>
+        ยังไม่มีเอกสารจะส่ง ให้ตั้งสถานะเป็น <b>รอเอกสาร</b> ไว้ก่อน
+      </div></details>
+
+      <details><summary>7. นำเข้าออเดอร์ Shopee</summary><div class="bd">
+        <ol>
+          <li>Seller Centre → คำสั่งซื้อของฉัน → <b>ส่งออก</b> แล้วเปิดไฟล์ด้วย Excel</li>
+          <li><b>Ctrl+A</b> แล้ว <b>Ctrl+C</b> (ต้องคลุมแถวหัวตารางมาด้วย)</li>
+          <li>แท็บ <b>ออเดอร์ทั้งหมด</b> → 📦 นำเข้าออเดอร์จาก Shopee → วาง → อ่านข้อมูล</li>
+          <li>ตรวจทีละใบแล้วกดนำเข้า</li>
+        </ol>
+        เอาเข้ามาแค่ <b>ชื่อ · สินค้า · จำนวน · ราคาขาย · สถานะ</b> เพราะงานเดียวที่ต้องการคือ
+        ตัดสต๊อกกับรู้กำไร ส่วนการส่งของ Shopee ทำเองหมดแล้ว
+        <div class="warn"><b>ใบที่ตีกลับ/ยกเลิก ระบบไม่นำเข้าให้</b>
+          เพราะของยังอยู่ที่ร้าน ถ้านำเข้าไปจะกลายเป็นตัดสต๊อกทิ้งฟรี ๆ</div>
+        <b>จับคู่สินค้าไม่ได้?</b> ไปใส่รหัสของร้าน (เช่น SKU-141) ในช่อง
+        “เลขอ้างอิง SKU” ของสินค้านั้นใน Shopee ทำครั้งเดียว ใช้ได้ตลอดไป
+      </div></details>
+
+      <details><summary>8. ลูกค้าคืนของ / ของตีกลับ (ปุ่ม ↩️ ที่แถวออเดอร์)</summary><div class="bd">
+        <div class="warn"><b>ยกเลิก กับ ตีกลับ ไม่เหมือนกัน</b><br>
+          <b>✖ ยกเลิก</b> = ยังไม่ได้ส่ง ลูกค้าเปลี่ยนใจก่อนแพ็ค<br>
+          <b>↩️ ตีกลับ</b> = ส่งไปแล้วแต่ของเดินทางกลับมา (ที่อยู่ผิด · ไม่รับสาย ·
+          เก็บเงินปลายทางไม่ได้)<br>
+          ของคืนเข้าสต๊อกเหมือนกันทั้งคู่ แต่ตีกลับคือ<b>เสียค่าส่งไปแล้วสองเที่ยว</b>
+          ถ้ากดยกเลิกแทน สิ้นเดือนจะไม่มีทางรู้ว่าเสียค่าส่งฟรีไปกี่ใบ</div>
+        <ol>
+          <li>หาใบนั้นก่อน — <b>พิมพ์หมายเลขคำสั่งซื้อ Shopee ในช่องค้นหาได้เลย</b>
+            ระบบค้นในหมายเหตุให้ด้วย จึงเจอว่าเป็นออเดอร์ AST เลขไหน</li>
+          <li>กดปุ่ม <b>↩️</b> ที่แถวนั้น</li>
+          <li>ใส่จำนวนที่<b>กลับมาถึงร้านแล้วจริง</b> ทีละบรรทัด (คืนไม่ครบก็ได้)<br>
+            คืนทั้งใบให้กดปุ่ม <b>คืนทั้งใบ</b> จะเติมจำนวนเต็มให้ทุกบรรทัด</li>
+          <li>บอกเหตุผล แล้วกด <b>บันทึกของตีกลับ</b></li>
+        </ol>
+        <ul>
+          <li>คืนบางส่วน → ยอดของใบเหลือเท่าที่ลูกค้าเก็บไว้ สถานะเดิมไม่เปลี่ยน</li>
+          <li>คืนครบทุกชิ้น → สถานะกลายเป็น <b>ตีกลับ</b> ยอดเป็น ฿0</li>
+          <li><b>ค่าจัดส่งถูกล้างทุกกรณี</b> เพราะของไม่ได้อยู่กับลูกค้าแล้ว</li>
+          <li>ของกลับเข้า<b>ล็อตเดิม</b> ระบบจึงยังคุมวันหมดอายุได้ถูกต้อง</li>
+        </ul>
+        <div class="stop"><b>ใส่จำนวนตอนของถึงร้านแล้วเท่านั้น</b>
+          ถ้าใส่ตอนขนส่งเพิ่งแจ้งว่าจะตีกลับ ระบบจะคิดว่าของอยู่บนชั้นแล้ว
+          แล้วเอาไปขายให้ลูกค้าคนต่อไปทั้งที่ของยังอยู่บนรถ</div>
+      </div></details>
+
+      <details><summary>9. ใบเสนอราคา → ลูกค้าตกลงสั่ง</summary><div class="bd">
+        <ol>
+          <li>แท็บ <b>ใบเสนอราคา</b> → กรอกลูกค้ากับรายการ → <b>ออกใบเสนอราคา</b>
+            (ขั้นนี้ <b>สต๊อกยังไม่ถูกตัด</b> เพราะยังไม่ใช่ออเดอร์)</li>
+          <li>ส่งใบให้ลูกค้าด้วยปุ่ม <b>แชร์ / สั่งพิมพ์</b></li>
+          <li>ลูกค้าตอบตกลง → กด <b>ลูกค้าสั่งแล้ว → ทำเป็นออเดอร์</b>
+            (อยู่ใต้ปุ่มพิมพ์ ในกล่องเดียวกับใบที่เพิ่งออก)</li>
+          <li>ถ้าลูกค้าตอบมาทีหลัง เข้าแท็บ <b>ใบเสนอราคา</b> แล้วเลื่อนลงไปที่
+            <b>ใบที่ออกไปแล้ว</b> → ปุ่ม <b>ทำเป็นออเดอร์</b> ของใบนั้น</li>
+          <li>ลูกค้า รายการ และราคาจะถูกดึงมาใส่หน้าคีย์ออเดอร์ให้ —
+            <b>ตรวจแล้วกดบันทึกเอง</b> สต๊อกตัดตอนนี้</li>
+        </ol>
+        <div class="stop"><b>ถ้าขึ้นว่า “ยอดไม่เท่ากัน”</b><br>
+          ใบเสนอราคาคิด VAT รวมค่าจัดส่ง แต่สูตรในชีทคิด VAT เฉพาะค่าสินค้า
+          ถ้าต้องเก็บเท่าที่เสนอไป ให้ปรับค่าจัดส่งหรือส่วนลดก่อนกดบันทึก</div>
+      </div></details>
+
+      <details><summary>10. ปิดยอดวัน (แท็บ ปิดยอดวัน)</summary><div class="bd">
+        ตอบคำถามเดียวคือ <b>วันนั้นขายไปเท่าไร</b> — กด ◀ ▶ เดินทีละวัน
+        หรือแตะช่องวันที่เพื่อเลือกวันย้อนหลังก็ได้
+        <ul>
+          <li><b>ยอดขายรวม</b> คือยอดชำระสุทธิของทุกใบในวันนั้น (ไม่นับใบที่ยกเลิก)</li>
+          <li><b>เก็บเงินแล้ว / ยังไม่เก็บ</b> แยกตามสถานะ — นับว่าเก็บได้เฉพาะใบที่สถานะ
+            <b>ชำระแล้ว</b> เหมือนที่หน้าค้างชำระนับ ตัวเลขสองหน้าจึงตรงกันเสมอ</li>
+          <li>กด <b>คัดลอกสรุปวันนี้เป็นข้อความ</b> แล้ววางส่งเข้าไลน์กลุ่มได้เลย</li>
+          <li>แถบ <b>7 วันย้อนหลัง</b> กดแท่งไหนก็เด้งไปปิดยอดวันนั้นทันที</li>
+        </ul>
+        หน้านี้ถามชีทด้วยวันที่ตรง ๆ จึงย้อนไปไกลแค่ไหนก็ได้ครบทุกใบ
+        ต่างจากแท็บ <b>สรุปยอด</b> ที่ดูภาพรวมเป็นช่วง (7 วัน / เดือนนี้) จากใบล่าสุดที่โหลดมา
+      </div></details>
+
+      <details><summary>11. เวลาเจอปัญหา</summary><div class="bd">
+        <ul>
+          <li><b>“ล็อตมีของไม่พอ”</b> — ไปแท็บ รับเข้าสินค้า ลงล็อตที่เพิ่งซื้อเข้ามาก่อน</li>
+          <li><b>“ช่องสูตรเสียในชีท”</b> ขึ้นแดงที่แถวออเดอร์ — เปิด Apps Script
+            สั่งฟังก์ชัน <b>repairOrderSheets</b> หนึ่งครั้ง</li>
+          <li><b>บันทึกไม่สำเร็จ / เน็ตหลุด</b> — กดซ้ำได้เลย ระบบกันออเดอร์ซ้ำไว้แล้ว
+            จะไม่ได้สองใบ</li>
+          <li><b>ลูกค้าไม่รับของ</b> — กดปุ่ม ✖ ที่แถวออเดอร์ ของจะคืนเข้าสต๊อกและล็อตให้เอง
+            ไม่ใช่แค่เปลี่ยนคำว่ายกเลิก</li>
+          <li><b>ลูกค้าเปลี่ยนใจขอส่งด่วน</b> — กด 🖨 แล้วเปลี่ยนช่อง <b>ขนส่ง</b>
+            ในหน้าต่างใบปะหน้าได้เลย ระบบบันทึกลงชีทให้ด้วย และถามว่าจะล้าง
+            เลขพัสดุเดิมไหม (เลขของเจ้าเดิมใช้กับเจ้าใหม่ไม่ได้)</li>
+        </ul>
+      </div></details>
+
+      <details><summary>12. ลูกค้าประจำ และการคีย์ออเดอร์ซ้ำ</summary><div class="bd">
+        <ol>
+          <li>แท็บ <b>ออเดอร์ทั้งหมด</b> → ปุ่ม <b>👥 ลูกค้าทั้งหมด</b></li>
+          <li>เรียงได้สามแบบ — <b>ซื้อล่าสุด</b> · <b>ยอดสูงสุด</b> · <b>ค้างชำระ</b>
+            (ใครติดเงินร้านอยู่ กดปุ่มเดียวก็เห็นทั้งหมด)</li>
+          <li>กดที่ชื่อ → เห็นทุกใบของลูกค้ารายนั้น พร้อมยอดรวม กำไร
+            เฉลี่ยต่อใบ และยอดที่ยังค้าง</li>
+          <li>ในใบเก่าแต่ละใบมีปุ่ม <b>คีย์ออเดอร์ซ้ำ</b> — กดแล้วชื่อ เบอร์ ที่อยู่
+            รายการสินค้าและราคาที่เคยขาย เด้งเข้าฟอร์มให้ครบ</li>
+        </ol>
+        <div class="stop"><b>ใบที่คีย์ซ้ำเป็นใบใหม่เสมอ</b><br>
+          วันที่ตั้งเป็นวันนี้ให้ · เลขพัสดุกับหมายเหตุของใบเก่าไม่ติดมาด้วย ·
+          ยังต้องกดบันทึกเอง ตรวจของให้ครบก่อน</div>
+        <ul>
+          <li>ใบที่ยกเลิกหรือตีกลับ ไม่ถูกนับเป็นยอดซื้อของลูกค้า
+            (แต่ยังคีย์ซ้ำจากใบนั้นได้ ลูกค้าเคยอยากได้ของชุดนั้นจริง)</li>
+          <li>ชื่อลูกค้าที่สะกดต่างกันนิดเดียวจะถือเป็นคนละคน ถ้าเห็นชื่อซ้ำสองบรรทัด
+            ให้แก้ให้สะกดเหมือนกันในชีท <b>ออเดอร์_หัวบิล</b></li>
+        </ul>
+      </div></details>
+
+      <details><summary>13. แฟ้มเอกสาร &amp; สรุปรายเดือน</summary><div class="bd">
+        <ol>
+          <li>แท็บ <b>ใบเสนอราคา</b> → ปุ่ม <b>📂 แฟ้มเอกสาร &amp; สรุปรายเดือน</b></li>
+          <li>แท็บ <b>เอกสารที่ออกแล้ว</b> — แยกเป็น <b>สี่แฟ้มตามชนิดใบ</b>
+            (ใบเสร็จ/ใบกำกับภาษี · ใบแจ้งหนี้ · ใบเสนอราคา · ใบรับเงินมัดจำ)
+            กดที่แฟ้มเพื่อดูใบข้างใน กดพิมพ์ซ้ำ แก้ไข หรือยกเลิกได้จากตรงนั้น</li>
+          <li>รู้เลขใบอยู่แล้ว พิมพ์ในช่องค้นหาได้เลย ไม่ต้องเข้าแฟ้ม —
+            ค้นได้ทั้งเลขที่เอกสาร ชื่อลูกค้า และเลขออเดอร์ ผลลัพธ์ยังแยกหัวข้อ
+            ตามชนิดใบให้</li>
+          <li>ข้างในแฟ้มยังแยกอีกสามกอง — <b>ใช้ได้ตามปกติ</b> ·
+            <b>เคยแก้ไข</b> · <b>ยกเลิกแล้ว</b></li>
+          <li>แท็บ <b>สรุปรายเดือน</b> — ย้อนหลัง 12 เดือน ทุกเดือนแตกเป็น
+            <b>การ์ดของแต่ละช่องทางขาย</b></li>
+          <li>เดือนก่อนเริ่มใช้ระบบ กด <b>เพิ่มช่องทาง</b> → เลือก Shopee →
+            กรอกยอดขาย ต้นทุน ค่าแอด จากไฟล์เดิม → <b>บันทึก</b></li>
+          <li>ไฟล์ Shopee ยาวเป็นพันบรรทัด ไม่ต้องบวกเอง — กด
+            <b>📋 วางตารางจาก Excel</b> → เปิดไฟล์ → <b>Ctrl+A</b> <b>Ctrl+C</b> →
+            วางลงช่อง → <b>คิดยอดให้</b> → <b>กรอกทั้งหมด</b></li>
+        </ol>
+        <div class="warn"><b>แผ่นที่วางต้องมีทั้งช่อง “ราคาขาย” และช่อง “จำนวน”</b><br>
+          ขาดช่องจำนวน ใบที่ลูกค้าซื้อ 3 ชิ้นจะถูกคิดเป็นชิ้นเดียว ยอดหายไปเงียบ ๆ ·
+          ขาดช่องราคาขาย ก็ไม่มีทางรู้ยอด — สองกรณีนี้ระบบตอบว่าอ่านไม่ได้
+          พร้อมบอกชื่อคอลัมน์ที่ขาด ให้กลับไปส่งออกไฟล์ใหม่</div>
+        <ul>
+          <li><b>ยอดที่คิดได้จะไม่เท่ากับยอดรวมท้ายไฟล์ของ Shopee</b> — ยอดนั้นมัก
+            บวกใบที่ยกเลิกและใบที่คืนของเข้าไปด้วย ซึ่งเงินไม่เคยเข้าร้าน
+            หน้าจอจะบอกว่าตัดออกไปเท่าไร</li>
+          <li>วางทีละแผ่น หนึ่งไฟล์มีหลายเดือนก็คิดแยกให้เอง</li>
+          <li>กรอกแล้วทับเฉพาะ <b>ยอดขาย</b> ของช่องทาง Shopee ·
+            ต้นทุนกับค่าแอดที่เคยกรอกไว้ไม่ถูกแตะ</li>
+        </ul>
+        <div class="stop"><b>ยอดจากไฟล์ Shopee ต้องลงที่ช่องทาง Shopee</b><br>
+          ไฟล์รายเดือนที่ดาวน์โหลดจากแอปขายของ เป็นยอดของแพลตฟอร์มนั้นแพลตฟอร์มเดียว
+          ไม่ใช่ยอดทั้งร้าน · ถ้ากรอกรวมกัน ยอดของช่องทางอื่นจะหายไปในตัวเลขก้อนเดียว
+          แล้วไม่มีทางแยกกลับได้อีก</div>
+        <ul>
+          <li>ยอดของเดือน = <b>ผลรวมของทุกช่องทาง</b> ในเดือนนั้น ไม่ได้เก็บแยกอีกที่
+            จึงไม่มีวันขัดกันเอง</li>
+          <li><b>เว้นช่องว่างไว้ = ให้ระบบคิดให้จากออเดอร์จริง</b> · กรอกตัวเลขลงไป =
+            ทับตัวเลขที่ระบบคิด (จะมีป้าย <b>กรอกเอง</b> ขึ้นให้เห็น) ·
+            ลบตัวเลขทิ้งแล้วบันทึก = กลับไปใช้ที่ระบบคิด</li>
+          <li><b>ค่าแอด</b> ต้องกรอกเองทุกเดือน เพราะบิลค่าโฆษณาไม่เคยผ่านระบบออเดอร์ —
+            กำไรที่ยังไม่หักค่าแอด ไม่ใช่กำไรจริง</li>
+          <li>ใบที่ยกเลิกหรือตีกลับ ไม่ถูกนับเป็นยอดขายของเดือน</li>
+          <li>แก้ในชีท <b>สรุปเดือน</b> ตรง ๆ ก็ได้ หนึ่งแถว = หนึ่งเดือน × หนึ่งช่องทาง</li>
+          <li><b>ใบกำกับภาษีอยู่คนละแฟ้มกับใบเสนอราคาเสมอ</b> — ใบเสนอราคาคือใบที่
+            ยังไม่ได้ขาย ใบกำกับภาษีคือใบที่ขายจบแล้วและใช้ยื่นภาษี
+            เอามาเรียงปนกันคือหาใบที่ต้องใช้จริงไม่เจอ</li>
+          <li><b>จำนวนใบที่ขึ้นบนแฟ้มไม่นับใบที่ยกเลิกแล้ว</b> เพราะใบที่ยกเลิกคือ
+            ใบที่ใช้ไม่ได้ ไม่ใช่ใบที่มี — แต่ไม่ได้ซ่อน บอกไว้ใต้ชื่อแฟ้มว่าข้างใน
+            มีใบแก้ไขกี่ใบ ใบยกเลิกกี่ใบ</li>
+          <li>ใบในกอง <b>เคยแก้ไข</b> บอกว่าแก้ไปกี่ครั้งและแก้เพราะอะไร —
+            ยอดในระบบตอนนี้อาจไม่เท่ากับใบที่พิมพ์ออกไปครั้งแรก
+            ถ้าใบนั้นถูกส่งให้ลูกค้าไปแล้วต้องยกเลิกแล้วออกใหม่ ไม่ใช่แก้</li>
+        </ul>
+      </div></details>
+
+      <details><summary>14. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
+        <div class="stop"><b>ลบสินค้าออกจากฐานสินค้า ให้ลบ “ค่าในช่อง” ไม่ใช่ “ลบทั้งแถว”</b><br>
+          ลบทั้งแถวทีไร สูตรของชีทอื่นที่ชี้มาจะพังเป็น #REF! ทั้งคอลัมน์ทุกที
+          (เคยพังไป 38 แถว)</div>
+        <ul>
+          <li><b>ช่องพื้นเทาคือสูตร ห้ามพิมพ์ทับ</b> — พิมพ์ทับแล้วเลขจะนิ่งอยู่อย่างนั้น
+            ไม่อัปเดตตามอีกเลย และไม่มีอะไรเตือน<br>
+            เผลอไปแล้วซ่อมได้ — ใน Apps Script สั่ง <b>checkStaticCells</b> ดูก่อนว่ามีช่องไหนบ้าง
+            แล้วสั่ง <b>fixStaticCells</b> เพื่อเอาสูตรกลับมา (ค่าเดิมถูกเก็บไว้ในชีท Log ให้แล้ว)</li>
+          <li>อยากเพิ่มตัวเลือกใน dropdown (ช่องทางขาย ขนส่ง สถานะ) เติมในชีท
+            <b>ตั้งค่า</b> ได้เลย ไม่ต้องแก้โค้ด</li>
+          <li>ชีทถูกสำรองอัตโนมัติทุกวันตอนตี 1 เก็บย้อนหลัง 30 วัน
+            อยู่ในโฟลเดอร์ <b>AST_สำรองชีทอัตโนมัติ</b></li>
+        </ul>
+      </div></details>
+
+      <button class="btn ghost" id="hp-back" style="margin-top:6px">← กลับ</button>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------- แฟ้มเอกสาร
+       เอกสารที่ออกไปแล้วทุกใบ + สรุปยอดรายเดือน อยู่คนละเรื่องกับการ "ออกใบ"
+       จึงแยกหน้า ไม่เอาไปต่อท้ายฟอร์มใบเสนอราคาให้เลื่อนยาว -->
+  <section id="pg-file" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>แฟ้มเอกสาร &amp; สรุปรายเดือน</h2></div>
+      <div class="paytabs" id="fl-tabs" style="grid-template-columns:repeat(2,1fr)">
+        <button data-fl="doc" class="on"><b>เอกสารที่ออกแล้ว</b></button>
+        <button data-fl="month"><b>สรุปรายเดือน</b></button>
+      </div>
+      <button class="btn ghost" id="fl-back">← กลับไปหน้าใบเสนอราคา</button>
+    </div>
+
+    <div class="card" id="fl-doc-card">
+      <input id="fl-q" placeholder="ค้นหา — เลขที่เอกสาร · ชื่อลูกค้า · เลขออเดอร์" autocomplete="off">
+      <div class="hint">พิมพ์ค้นหา = หาทุกแฟ้มพร้อมกัน (ยังแยกหัวข้อตามชนิดใบให้)</div>
+      <button class="btn ghost" id="fl-bill" style="margin-top:10px">＋ ออกใบวางบิล
+        (รวมหลายบิลของลูกค้ารายเดียว)</button>
+      <div id="fl-docs" style="margin-top:10px"><div class="load">กำลังโหลด…</div></div>
+    </div>
+
+    <div class="card" id="fl-month-card" style="display:none">
+      <div class="hint" style="padding:0 2px 10px">
+        ทุกยอดในหน้านี้ <b>แยกตามช่องทางขาย</b> — ยอดจากไฟล์ Shopee ต้องอยู่ใน Shopee
+        ไม่ใช่ยอดรวมทั้งร้าน · เดือนที่มีออเดอร์ในระบบ ระบบคิด <b>ยอดขาย</b> กับ
+        <b>ต้นทุน</b> ให้เองแยกช่องทางอยู่แล้ว · <b>ค่าแอด</b> ต้องกรอกเองทุกเดือน
+        เพราะบิลค่าโฆษณาไม่ได้ผ่านระบบออเดอร์ · เดือนก่อนเริ่มใช้ระบบ (ม.ค.–มี.ค.)
+        กด <b>เพิ่มช่องทาง</b> แล้วกรอกยอดจากไฟล์เดิมได้เลย
+      </div>
+      <button class="btn ghost" id="fl-paste-open" style="margin-bottom:10px">
+        📋 วางตารางจาก Excel — คิดยอด Shopee ให้ทั้งปี</button>
+
+      <!-- กล่องวางตาราง: ปิดไว้ก่อน หน้านี้เปิดมาเพื่อ "ดูยอด" ไม่ใช่ "กรอกยอด"
+           คนเปิดดูสิบครั้งจะกรอกจริงครั้งเดียว ช่องกรอกจึงไม่ควรกินที่ถาวร -->
+      <div id="fl-paste" style="display:none;margin-bottom:12px">
+        <div class="hint" style="padding:0 2px 8px">
+          <b>ขั้นที่ 1</b> เปิดไฟล์ยอดขายจาก Shopee ด้วย Excel หรือ Google ชีต
+          (แผ่นไหนก็ได้ ทีละแผ่น)<br>
+          <b>ขั้นที่ 2</b> <b>Ctrl+A</b> คลุมทั้งแผ่น <i>รวมแถวหัวตาราง</i> แล้ว <b>Ctrl+C</b><br>
+          <b>ขั้นที่ 3</b> วางลงข้างล่างนี้ แล้วกด <b>คิดยอดให้</b>
+        </div>
+        <div class="stop" style="margin-bottom:8px">
+          <b>แผ่นที่วางต้องมีทั้งช่อง “ราคาขาย” และช่อง “จำนวน”</b><br>
+          ขาดช่องจำนวน ใบที่ลูกค้าซื้อ 3 ชิ้นจะถูกคิดเป็นชิ้นเดียว ยอดหายไปเงียบ ๆ ·
+          ขาดช่องราคาขาย ก็ไม่มีทางรู้ยอด — ทั้งสองกรณีระบบจะบอกว่าอ่านไม่ได้
+          ไม่คิดเลขมั่วให้
+        </div>
+        <textarea id="fl-text" rows="5"
+          placeholder="วางตารางที่คัดลอกมาจากไฟล์ Shopee ทั้งแผ่นตรงนี้"></textarea>
+        <div class="two" style="margin-top:10px">
+          <button class="btn" id="fl-read">คิดยอดให้</button>
+          <button class="btn ghost" id="fl-paste-close">ปิด</button>
+        </div>
+        <div id="fl-paste-out" style="margin-top:10px"></div>
+      </div>
+
+      <div id="fl-months"><div class="load">กำลังโหลด…</div></div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------ นำเข้าออเดอร์ Shopee
+       ไม่ทำเป็นแท็บที่หก เพราะแถบล่างของมือถือรับได้ห้าปุ่มพอดี
+       และงานนี้ทำวันละครั้ง ไม่ใช่ของที่ต้องกดถึงตลอดวันเหมือนอีกห้าอัน -->
+  <section id="pg-shop" style="display:none">
+    <div class="card">
+      <div class="banner">
+        <span class="bn-ic"><img id="sp-ic" alt=""></span>
+        <span class="bn-tx"><b>วางตาราง Shopee ทั้งแผ่นตรงนี้</b>
+          <em>Shopee Order Plan &amp; Import · จัดการออเดอร์จาก Shopee จบในที่เดียว</em></span>
+      </div>
+      <div class="msg err" id="sp-warn" style="display:none"></div>
+      <div class="hint" style="padding:0 2px 10px">
+        <b>ขั้นที่ 1</b> เปิด Shopee Seller Centre → <b>คำสั่งซื้อของฉัน</b> → <b>ส่งออก</b>
+        แล้วเปิดไฟล์ที่โหลดมาด้วย Excel หรือ Google ชีต<br>
+        <b>ขั้นที่ 2</b> กด <b>Ctrl+A</b> (คลุมทั้งแผ่นรวมแถวหัวตาราง) แล้ว <b>Ctrl+C</b><br>
+        <b>ขั้นที่ 3</b> วางลงในช่องข้างล่างนี้ แล้วกด “อ่านข้อมูล”
+      </div>
+      <textarea id="sp-text" rows="5"
+        placeholder="วางตารางที่คัดลอกมาจากไฟล์ Shopee ทั้งแผ่นตรงนี้"></textarea>
+      <div class="two" style="margin-top:10px">
+        <button class="btn" id="sp-read">อ่านข้อมูล</button>
+        <button class="btn ghost" id="sp-clear">ล้างช่อง</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="two">
+        <div class="fld">
+          <label>สถานะที่จะบันทึก</label>
+          <select id="sp-status"></select>
+        </div>
+        <div class="fld">
+          <label>ผู้บันทึก</label>
+          <select id="sp-by"></select>
+        </div>
+      </div>
+      <div class="hint">งานเดียวที่ต้องการจากออเดอร์ Shopee คือ <b>ตัดสต๊อกกับรู้กำไร</b>
+        จึงนำเข้าแค่ <b>ชื่อลูกค้า · สินค้า · จำนวน · ราคาขาย</b>
+        (ต้นทุนกับกำไรชีทคิดให้เองจากฐานสินค้า)<br>
+        ที่อยู่ เบอร์โทร เลขพัสดุ ขนส่ง ค่าส่ง ส่วนลด <b>ไม่เอาเข้ามา</b> —
+        Shopee ส่งของเองทั้งหมด ตั้งแต่ใบปะหน้าจนถึงเก็บค่าส่ง<br>
+        บันทึกเป็น <b>ไม่รับ VAT</b> เสมอ เพราะใบกำกับภาษีออกผ่านแพลตฟอร์ม</div>
+    </div>
+
+    <div class="card">
+      <div id="sp-sum" style="margin-bottom:8px"></div>
+      <div id="sp-list"></div>
+      <div class="hint" id="sp-prog" style="text-align:center"></div>
+      <button class="btn" id="sp-go" style="display:none;margin-top:10px">นำเข้าลงชีท</button>
+      <button class="btn ghost" id="sp-back" style="margin-top:10px">← กลับหน้าออเดอร์</button>
+    </div>
   </section>
 
   <!-- ------------------------------------------------------ ใบเสนอราคา
@@ -292,7 +1113,9 @@ textarea{resize:vertical}
         <div class="fld"><label>วันที่</label><input id="q-date" type="date"></div>
         <div class="fld"><label>ยืนราคาถึง</label><input id="q-valid" type="date"></div>
       </div>
-      <div class="fld"><label>ชื่อลูกค้า / ชื่อบริษัท</label><input id="q-name" placeholder="บริษัท ... จำกัด"></div>
+      <div class="fld"><label>ชื่อลูกค้า / ชื่อบริษัท</label>
+        <input id="q-name" placeholder="บริษัท ... จำกัด" autocomplete="off">
+        <div id="q-name-hit" class="thhit"></div></div>
       <div class="two">
         <div class="fld"><label>เลขประจำตัวผู้เสียภาษี</label>
           <input id="q-tax" inputmode="numeric" maxlength="17"></div>
@@ -331,22 +1154,134 @@ textarea{resize:vertical}
     <!-- ใบเสนอราคาไม่ผูกกับออเดอร์ ถ้าไม่มีรายการนี้ใบที่ออกไปแล้วจะหาย
          ตามหาไม่เจอ ต้องเปิดชีทดูเอง แล้วก็พิมพ์ซ้ำไม่ได้อยู่ดี -->
     <div class="card">
+      <button class="btn ghost" id="btn-file" style="margin-bottom:12px">📂 แฟ้มเอกสาร &amp; สรุปรายเดือน</button>
       <div id="q-old"></div>
     </div>
   </section>
 
   <!-- --------------------------------------------------------- สรุป -->
+  <!-- รับของเข้าสต๊อก — ลงชีท รับเข้า กับ ล็อตสินค้า พร้อมกันในครั้งเดียว
+       ก่อนมีหน้านี้ต้องเปิดชีทลงเองสองที่ ซึ่งลืมอันใดอันหนึ่งเมื่อไรคือพังเงียบ ๆ -->
+  <section id="pg-recv" style="display:none">
+    <div class="card">
+      <div class="fld">
+        <label>สินค้าที่รับเข้า</label>
+        <select id="r-sku"></select>
+        <div class="hint" id="r-now">เลือกสินค้าก่อน</div>
+      </div>
+      <div class="two">
+        <div class="fld">
+          <label>จำนวนที่รับเข้า</label>
+          <input id="r-qty" type="number" inputmode="decimal" min="0" step="any" placeholder="0">
+        </div>
+        <div class="fld">
+          <label>ต้นทุนต่อหน่วย (บาท)</label>
+          <input id="r-cost" type="number" inputmode="decimal" min="0" step="any" placeholder="เว้นว่างได้">
+        </div>
+      </div>
+      <div class="two">
+        <div class="fld">
+          <label>วันที่รับเข้า</label>
+          <input id="r-date" type="date">
+        </div>
+        <div class="fld">
+          <label>ประเภทรับเข้า</label>
+          <select id="r-type"></select>
+        </div>
+      </div>
+      <div class="two">
+        <div class="fld">
+          <label>เลขที่เอกสาร</label>
+          <input id="r-doc" placeholder="เช่น PO-26-005">
+        </div>
+        <div class="fld">
+          <label>อ้างอิง / ผู้ขาย</label>
+          <input id="r-ref" placeholder="ชื่อร้านที่ซื้อมา">
+        </div>
+      </div>
+    </div>
+
+    <!-- กล่องล็อตขึ้นเองเมื่อสินค้าตัวนั้นคุมล็อต และบังคับกรอกด้วย
+         เพราะลงรับเข้าเฉย ๆ โดยไม่มีล็อต = ของเข้าสต๊อกแต่ขายไม่ได้ -->
+    <div class="card" id="r-lot-card">
+      <div class="sec-hd"><h2>ล็อตของก้อนนี้</h2></div>
+      <div class="hint" id="r-lot-why" style="padding:0 2px 8px"></div>
+      <div class="two">
+        <div class="fld">
+          <label>เลขล็อต</label>
+          <input id="r-lot" placeholder="เช่น I1070926">
+        </div>
+        <div class="fld">
+          <label>วันหมดอายุ</label>
+          <input id="r-exp" type="date">
+        </div>
+      </div>
+      <div class="hint">ไม่มีวันหมดอายุก็เว้นว่างได้ · ระบบจะตัดล็อตที่หมดอายุก่อนเสมอ (FEFO)</div>
+    </div>
+
+    <div class="card">
+      <div class="fld">
+        <label>หมายเหตุ</label>
+        <input id="r-note" placeholder="เว้นว่างได้">
+      </div>
+      <div class="fld">
+        <label>ผู้บันทึก</label>
+        <select id="r-by"></select>
+      </div>
+      <button class="btn" id="btn-recv">บันทึกรับของเข้า</button>
+      <div class="hint">บันทึกครั้งเดียวลงทั้งชีท <b>รับเข้า</b> และ <b>ล็อตสินค้า</b>
+        จำนวนสองที่มาจากเลขเดียวกันเสมอ จึงไม่มีทางกรอกไม่ตรงกัน</div>
+    </div>
+    <div id="r-done"></div>
+  </section>
+
+  <section id="pg-day" style="display:none">
+    <div class="sec-hd"><h2>ปิดยอดวัน</h2></div>
+    <div class="daynav">
+      <button id="dy-prev" title="วันก่อนหน้า">◀</button>
+      <div class="dymid">
+        <input type="date" id="dy-date">
+        <div class="dywhen" id="dy-when"></div>
+      </div>
+      <button id="dy-next" title="วันถัดไป">▶</button>
+    </div>
+    <div class="chips" id="dy-quick"></div>
+    <div id="dy-body"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
   <section id="pg-sum" style="display:none">
+    <!-- สองกล่องนี้อยู่บนสุดโดยตั้งใจ เป็นเรื่องที่ต้องรู้ก่อนดูยอดขาย
+         เงินที่ยังไม่ได้เก็บ และของที่กำลังจะหมด -->
+    <div id="sum-due"></div>
+    <div id="sum-alert"></div>
     <div class="chips" id="sum-range"></div>
     <div id="summary"><div class="load">กำลังโหลด…</div></div>
+    <!-- หลักฐานการโอนอยู่หน้านี้เพราะเป็นของที่ทำเป็นรอบ (ส่งบัญชีสิ้นเดือน)
+         ไม่ใช่ของที่ทำทีละใบเหมือนตอนแนบสลิป -->
+    <div class="sec-hd" style="margin-top:22px"><h2>หลักฐานการโอน</h2></div>
+    <div class="hint" style="padding:0 2px 8px">โหลดตารางสลิปทั้งเดือนเป็นไฟล์ Excel
+      ส่งต่อให้บัญชีได้เลย · ในไฟล์มีลิงก์เปิดรูปสลิปแต่ละใบด้วย</div>
+    <div id="slip-xl"><div class="load">กำลังโหลด…</div></div>
+
+    <!-- ลายเซ็นของร้านอยู่นอกกล่องสรุปยอด เพราะกล่องนั้นจะถูกแทนที่ด้วยข้อความ
+         "ยังไม่มีออเดอร์ในช่วงนี้" เมื่อช่วงเวลาที่เลือกไม่มีออเดอร์
+         ถ้าวางไว้ข้างใน ที่ตั้งลายเซ็นจะหายไปทั้งอันโดยไม่มีอะไรบอก -->
+    <div class="sec-hd" style="margin-top:22px"><h2>ลายเซ็นของร้าน</h2></div>
+    <div class="hint" style="padding:0 2px 4px">เซ็นเก็บไว้ครั้งเดียว
+      แล้วเอกสารทุกใบจะมีลายเซ็นขึ้นเอง ไม่ต้องพิมพ์ออกมาเซ็นแล้วสแกนกลับ<br>
+      ใบที่ออกไปแล้วก็ได้ด้วย เพราะระบบวาดใบใหม่ทุกครั้งที่กดพิมพ์ซ้ำ<br>
+      ช่อง “ลายเซ็นของผู้รับของ” ไม่ได้อยู่ตรงนี้ — ให้ลูกค้าเซ็นตอนส่งของ จากหน้าเอกสารของใบนั้น</div>
+    <div id="sig-box"></div>
   </section>
 </div>
 
 <div class="tabs">
-  <button data-go="new" class="on"><em>＋</em>คีย์ออเดอร์</button>
-  <button data-go="list"><em>▤</em>ออเดอร์</button>
-  <button data-go="quote"><em>◇</em>เสนอราคา</button>
-  <button data-go="sum"><em>▦</em>สรุปยอด</button>
+  <button data-go="new" class="on"><img alt=""><b>คีย์ออเดอร์</b><em>New Order</em></button>
+  <button data-go="list"><img alt=""><b>ออเดอร์ทั้งหมด</b><em>All Orders</em></button>
+  <button data-go="recv"><img alt=""><b>รับเข้าสินค้า</b><em>Stock In</em></button>
+  <button data-go="quote"><img alt=""><b>ใบเสนอราคา</b><em>Quotation</em></button>
+  <button data-go="day"><img alt=""><b>ปิดยอดวัน</b><em>Daily Report</em></button>
+  <button data-go="sum"><img alt=""><b>สรุปยอด</b><em>Summary</em></button>
 </div>
 
 <div class="modal" id="modal"><div class="sheet">
@@ -363,6 +1298,33 @@ var baht=function(n){return "฿"+Number(n||0).toLocaleString("th-TH",{minimumFr
 var esc=function(s){return String(s||"").replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
 function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("on")},2400)}
 
+/* ฟอนต์เอกสารถูกตั้งเป็น media="print" ไว้ตอนโหลด เพื่อไม่ให้หน้าจอต้องรอไฟล์
+   จาก Google ก่อนวาด — พอหน้าจอขึ้นแล้วค่อยสลับเป็นใช้งานจริง
+   เรียกทั้งสองจังหวะเพราะถ้าไฟล์ทั้งหน้าโหลดเสร็จไปก่อนแล้ว DOMContentLoaded
+   จะไม่ยิงอีก แล้วฟอนต์จะค้างอยู่ที่ print ตลอดไป */
+function fontSwap(){
+  var l = document.getElementById("fontcss");
+  if (l && l.media !== "all") l.media = "all";
+}
+if (document.readyState === "loading")
+  document.addEventListener("DOMContentLoaded", fontSwap);
+else fontSwap();
+
+/* จำนวนกับหน่วยเขียนติดกันในช่องเดียว (ใบจริงไม่มีคอลัมน์หน่วยแยก)
+   ถ้าหน่วยขึ้นต้นด้วยตัวเลข ลูกค้าจะอ่านรวมเป็นเลขเดียวกัน —
+   ของจริงในใบเสนอราคา QO26-00006 ขึ้นว่า "1 10" (1 ชุด บรรจุ 10 ชิ้น)
+   ซึ่งอ่านได้ว่าหนึ่งร้อยสิบ ต่างกันสิบเท่าและเป็นเรื่องเงิน
+     หน่วยที่เป็นตัวเลขล้วน = ไม่ใช่หน่วย (คนกรอกใส่ขนาดบรรจุมา) ไม่พิมพ์
+     หน่วยที่ขึ้นต้นด้วยตัวเลข = ใส่วงเล็บคั่นให้เห็นว่าเป็นคนละตัวเลข */
+function qtyUnit(qty, unit){
+  var q = String(qty === null || qty === undefined ? "" : qty);
+  var u = String(unit === null || unit === undefined ? "" : unit).trim();
+  if (!u) return q;
+  if (/^[\d.,]+$/.test(u)) return q;
+  if (/^\d/.test(u)) return q + " (" + u + ")";
+  return q + " " + u;
+}
+
 /* CFG มีไว้ให้โค้ดที่ยกมาจากแอปเดิม (ตัวอ่านข้อความ + ใบปะหน้า) ใช้ได้โดยไม่ต้องแก้
    ของเดิมมาจาก localStorage ตัวนี้มาจากชีท — ชื่อฟิลด์เหมือนเดิมทุกตัว */
 var CFG = { products:[], sender:{name:"",addr:"",tel:""}, codFee:0, logo:"", brand:"",
@@ -370,10 +1332,14 @@ var CFG = { products:[], sender:{name:"",addr:"",tel:""}, codFee:0, logo:"", bra
 var STAFF_EMAIL = "<?= staffEmail ?>";
 </script>
 
+<?!= include_('ThaiAddr'); ?>
 <?!= include_('Assets'); ?>
 <?!= include_('Parse'); ?>
 <?!= include_('Label'); ?>
+<?!= include_('Sign'); ?>
 <?!= include_('Doc'); ?>
+<?!= include_('Acct'); ?>
+<?!= include_('Shopee'); ?>
 <?!= include_('App'); ?>
 
 </body>

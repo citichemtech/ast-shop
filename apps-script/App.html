@@ -25,20 +25,43 @@ function showOk(msg){
 }
 function clearMsg(){ $("#err").classList.remove("on"); $("#ok").classList.remove("on") }
 
+/**
+ * เน็ตหลุดกลางทาง — แปลเป็นข้อความที่บอกได้ว่าต้องทำอะไรต่อ
+ *
+ * ของเดิมโชว์ดิบ ๆ ว่า "NetworkError: การเชื่อมต่อล้มเหลวเนื่องจาก HTTP 0"
+ * ซึ่งไม่ตอบคำถามเดียวที่คนกดอยากรู้ตอนนั้นเลย: บันทึกลงชีทแล้วหรือยัง
+ * แล้วสิ่งที่คนจะทำเองคือกดซ้ำรัว ๆ ซึ่งเป็นทางเดียวที่ทำให้ข้อมูลซ้ำได้จริง
+ *
+ * HTTP 0 คือคำขอไม่ถึงเซิร์ฟเวอร์หรือขาดตอนกลางทาง จึงไม่มีใครรู้ผล
+ * เจอบ่อยตอนเปิดหน้าค้างไว้นานจนเซสชันของ Google หมดอายุ หรือมีการปล่อย
+ * เวอร์ชันใหม่ระหว่างที่หน้าเดิมยังเปิดอยู่ — ทางออกคือเปิดแอปใหม่
+ */
+function netMsg_(m){
+  m = String(m == null ? "" : m);
+  if(!/HTTP 0|NetworkError|Failed to fetch|network ?error|เชื่อมต่อล้มเหลว/i.test(m)) return m;
+  return "เน็ตหลุดตอนกำลังส่งขึ้นชีท — ยังไม่รู้ว่าบันทึกลงไปแล้วหรือยัง\n"
+       + "กดปุ่มเดิมซ้ำได้เลย ระบบกันงานซ้ำไว้ให้แล้ว ไม่มีทางได้สองรอบ\n"
+       + "ถ้ายังไม่ได้อีก ให้ปิดแอปแล้วเปิดลิงก์ใหม่ (มักเกิดตอนเปิดหน้าค้างไว้นาน "
+       + "หรือเพิ่งปล่อยเวอร์ชันใหม่) แล้วดูในแท็บ ออเดอร์ ก่อนว่าลงไปแล้วไหม";
+}
+
 /* เรียกฟังก์ชันฝั่งเซิร์ฟเวอร์ — ทุกจุดที่ล้มต้องมีทางออกที่ผู้ใช้เห็น */
 function call(fn, args, done, fail){
   google.script.run
     .withSuccessHandler(function(r){ try{ done(r) }catch(e){ showErr("แสดงผลไม่สำเร็จ: "+e.message) } })
     .withFailureHandler(function(e){
-      var m=(e&&e.message)?e.message:String(e);
+      var m=netMsg_((e&&e.message)?e.message:String(e));
       if(fail) fail(m); else showErr(m);
     })[fn].apply(null, args||[]);
 }
 
 /* แบบ promise สำหรับจุดที่ต้องต่อหลายขั้น (ออกเลขเอกสาร → วาดกระดาษ → แชร์) */
-function api(fn, args){
+/* ส่งค่าได้หลายตัว ไม่ใช่ตัวเดียว — voidDoc ต้องส่งทั้งเลขใบ เหตุผล และชื่อคนกด
+   ที่เรียกด้วยค่าเดียวอยู่เดิมยังทำงานเหมือนเดิมทุกที่ */
+function api(fn){
+  var args = Array.prototype.slice.call(arguments, 1);
   return new Promise(function(res, rej){
-    call(fn, [args], res, function(m){ rej(new Error(m)) });
+    call(fn, args, res, function(m){ rej(new Error(m)) });
   });
 }
 
@@ -49,7 +72,7 @@ function boot(){
   $("#btn-paste-open").onclick = function(){
     var b = $("#paste-box"), open = b.style.display === "";
     b.style.display = open ? "none" : "";
-    this.textContent = open ? "วางที่อยู่จากแชท" : "ซ่อนช่องวางข้อความ";
+    this.textContent = open ? "วางข้อมูล" : "ซ่อนช่อง";
     if (!open) $("#paste").focus();
   };
   /* โลโก้บนหัวจอ ใส่ก่อนโหลดชีทเลย จะได้ไม่วูบตอนเปิด
@@ -58,11 +81,15 @@ function boot(){
              : (typeof SHOP_LOGO !== "undefined" ? SHOP_LOGO : "");
   if (hdLogo) $("#logo").innerHTML = '<img src="' + hdLogo + '" alt="">';
   call("getBootstrap", [], function(b){
+    /* ชีทส่ง null มาได้จริงถ้ามีอะไรในนั้นข้ามมาไม่ได้ — บอกให้ชัดดีกว่าพังเป็น
+       "Cannot read properties of null" ซึ่งไม่มีใครเดาออกว่าต้องไปแก้ตรงไหน */
+    if(!b){ throw new Error("ชีทส่งข้อมูลกลับมาไม่ได้ — ลองเปิดชีทดูว่ามีช่องไหนขึ้น #REF! หรือ #N/A อยู่"); }
     BOOT = b; APP = b.app || {};
-    CFG.products = b.products.map(function(p){
+    CFG.products = (b.products||[]).map(function(p){
       /* รูปทรงเดียวกับสินค้าในแอปเดิม ตัวอ่านข้อความจากไลน์จะได้ใช้ได้โดยไม่ต้องแก้ */
       return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
-               unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group };
+               unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
+               reorder:p.reorder };
     });
     CFG.sender = APP.sender || CFG.sender;
     CFG.codFee = Number(APP.codFee||0);
@@ -78,7 +105,11 @@ function boot(){
        โลโก้บนเอกสารใช้ตัวความละเอียดสูงกว่าของใบปะหน้า เพราะพิมพ์ลง A4 */
     CFG.doc = { co: APP.co || {}, bank: APP.bank || "", thanks: APP.thanks || "",
                 terms: APP.docTerms || "", website: APP.website || "",
-                logo: (typeof DOC_LOGO !== "undefined") ? DOC_LOGO : CFG.logo };
+                logo: (typeof DOC_LOGO !== "undefined") ? DOC_LOGO : CFG.logo,
+                /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ครั้งเดียว — ประทับให้ทุกใบเอง
+                   ยังไม่ได้เซ็นก็ออกใบได้ตามปกติ ช่องนั้นจะว่างไว้ให้เซ็นมือเหมือนเดิม */
+                sign: (APP.sign || {}) };
+    /* ลายเซ็นของผู้รับของอยู่กับใบแต่ละใบ ไม่ใช่ค่าตั้งของร้าน จึงไม่อยู่ตรงนี้ */
     CFG.docSeller = APP.docSeller || "";
     CFG.docSellerEmail = APP.docSellerEmail || "";
 
@@ -133,7 +164,10 @@ function boot(){
     $("#booting").style.display="none";
     $("#form").style.display="";
     if(!itemRows().length) addItem();
+    /* หน้าที่เปิดค้างไว้ก่อนสินค้าจะมาถึง ต้องได้รายการสินค้าด้วย */
+    refreshProdOptions();
     recalc();
+    if(typeof qCalc === "function" && Q_READY) qCalc();
   }, function(m){
     $("#booting").innerHTML='<div style="color:var(--red);line-height:1.7">โหลดข้อมูลจากชีทไม่สำเร็จ<br>'
       +esc(m)+'<br><br><button class="mini" onclick="location.reload()">ลองใหม่</button></div>';
@@ -153,6 +187,10 @@ function todayISO(){
 /* --------------------------------------------------------- รายการสินค้าหลายแถว */
 
 function prodOptions(sel){
+  /* ช่องเลือกสินค้าที่ว่างเปล่า อ่านได้ว่า "ร้านไม่มีสินค้าเลย" ซึ่งไม่จริง
+     ความจริงคือรายการยังโหลดมาไม่ถึง ต้องเขียนให้ตรงกับที่เป็นอยู่จริง */
+  if(!CFG.products || !CFG.products.length)
+    return '<option value="">— ยังโหลดรายการสินค้าไม่เสร็จ รอสักครู่ —</option>';
   return '<option value="">— เลือกสินค้า —</option>' + CFG.products.map(function(p){
     var left = (p.remain===null||p.remain===undefined) ? "" : "  (เหลือ "+p.remain+")";
     return '<option value="'+esc(p.sku)+'"'+(sel===p.sku?" selected":"")+'>'
@@ -161,6 +199,19 @@ function prodOptions(sel){
 }
 function itemRows(){ return $$("#items .it") }
 
+/* รายการสินค้ามาจากชีท ซึ่งโหลดเสร็จหลังหน้าจอขึ้นเสมอ ใครกดเข้าหน้าใบเสนอราคา
+   ระหว่างนั้น ช่องเลือกสินค้าจะถูกสร้างตอนที่ยังไม่มีสินค้าสักตัว แล้วค้างว่าง
+   อยู่อย่างนั้นตลอด เพราะหน้านั้นสร้างแถวแรกครั้งเดียวจบ
+   โหลดเสร็จเมื่อไรจึงต้องเติมตัวเลือกให้ช่องที่สร้างไปแล้วด้วย
+   ของที่เลือกค้างไว้ต้องไม่หาย — คนอาจกำลังกรอกใบอยู่ตอนที่รายการมาถึงพอดี */
+function refreshProdOptions(){
+  $$(".i-sku, .q-sku, #r-sku").forEach(function(sel){
+    var keep = sel.value;
+    sel.innerHTML = prodOptions(keep);
+    if(keep) sel.value = keep;
+  });
+}
+
 function addItem(v){
   v = v || {};
   var d = document.createElement("div");
@@ -168,15 +219,21 @@ function addItem(v){
   d.innerHTML =
     '<div class="hd"><b>รายการที่ <span class="n"></span></b>'
    +'<button class="mini red rm" type="button">ลบ</button></div>'
-   +'<div class="fld" style="margin-bottom:8px"><select class="i-sku">'+prodOptions(v.sku)+'</select></div>'
+   +'<div class="fld sku-wrap" style="margin-bottom:8px"><select class="i-sku">'+prodOptions(v.sku)+'</select></div>'
+   /* ของซื้อมาขายไปไม่มีในฐานสินค้า และมักไม่ได้ขายซ้ำ — พิมพ์ชื่อลงไปตรง ๆ ได้เลย */
+   +'<div class="fld free-wrap" style="margin-bottom:8px;display:none">'
+   +'<input class="i-name" type="text" placeholder="พิมพ์ชื่อสินค้า" value="'+esc(v.name||"")+'"></div>'
    +'<div class="three">'
    +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
    +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||"")+'"></div>'
-   +'<div><label style="font-size:13px;color:var(--gray)">ราคามาตรฐาน</label>'
+   +'<div class="std-cell"><label style="font-size:13px;color:var(--gray)">ราคามาตรฐาน</label>'
    +'<input class="i-std" readonly tabindex="-1" style="background:#f2f4f7;color:var(--gray)"></div>'
+   +'<div class="cost-cell" style="display:none"><label style="font-size:13px;color:var(--gray)">ต้นทุน/หน่วย</label>'
+   +'<input class="i-cost" type="number" inputmode="decimal" min="0" placeholder="ไม่ใส่ก็ได้" value="'+(v.cost||"")+'"></div>'
    +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
    +'<input class="i-price" type="number" inputmode="decimal" min="0" placeholder="ปล่อยว่าง" value="'+(v.price||"")+'"></div>'
    +'</div>'
+   +'<label class="giftck"><input type="checkbox" class="i-free"'+(v.free?" checked":"")+'> ซื้อมาขายไป — พิมพ์ชื่อและราคาเอง ไม่ต้องมีรหัสสินค้า</label>'
    /* ของแถมต้องเป็นรายการสินค้าจริง ไม่ใช่ข้อความลอย ๆ สต๊อกจะได้ถูกตัดตามไปด้วย
       ว่าแถมอะไรไปกี่ชิ้น — ติ๊กช่องนี้แล้วราคาขายจริงกลายเป็น 0 */
    +'<label class="giftck"><input type="checkbox" class="i-gift"'+(v.gift?" checked":"")+'> แถมฟรี (ราคา 0 แต่ยังตัดสต๊อก)</label>'
@@ -190,6 +247,10 @@ function addItem(v){
   d.querySelector(".i-sku").onchange = function(){ recalc() };
   d.querySelector(".i-qty").oninput  = function(){ recalc() };
   d.querySelector(".i-price").oninput= function(){ recalc() };
+  d.querySelector(".i-name").oninput = function(){ recalc() };
+  d.querySelector(".i-cost").oninput = function(){ recalc() };
+  d.querySelector(".i-free").onchange = function(){ freeToggle(d) };
+  if(v.free) freeToggle(d);
   d.querySelector(".i-gift").onchange = function(){
     var pr = d.querySelector(".i-price");
     if (this.checked) { pr.value = "0"; pr.readOnly = true; pr.style.background = "#f2f4f7"; }
@@ -202,10 +263,26 @@ function addItem(v){
 function renumber(){
   itemRows().forEach(function(r,i){ r.querySelector(".n").textContent = i+1 });
 }
+
+/* สลับแถวระหว่าง "เลือกจากฐานสินค้า" กับ "พิมพ์ชื่อเอง"
+   ซ่อนช่องที่ไม่ใช้แทนที่จะเพิ่มช่องใหม่ แถวจึงสูงเท่าเดิม อ่านบนมือถือได้เหมือนกัน */
+function freeToggle(d){
+  var on = d.querySelector(".i-free").checked;
+  d.querySelector(".sku-wrap").style.display  = on ? "none" : "";
+  d.querySelector(".free-wrap").style.display = on ? "" : "none";
+  d.querySelector(".std-cell").style.display  = on ? "none" : "";
+  d.querySelector(".cost-cell").style.display = on ? "" : "none";
+  recalc();
+}
+function isFree(r){ return r.querySelector(".i-free").checked }
 function readItems(){
   return itemRows().map(function(r){
+    var free = isFree(r);
     return {
-      sku:   r.querySelector(".i-sku").value,
+      free:  free,
+      sku:   free ? "" : r.querySelector(".i-sku").value,
+      name:  free ? r.querySelector(".i-name").value.trim() : "",
+      cost:  free ? r.querySelector(".i-cost").value : "",
       qty:   r.querySelector(".i-qty").value,
       price: r.querySelector(".i-gift").checked ? "0" : r.querySelector(".i-price").value
     };
@@ -227,10 +304,19 @@ function suggestShip(sub){
 function recalc(){
   var sub = 0, need = {};
   itemRows().forEach(function(r){
-    var sku = r.querySelector(".i-sku").value;
-    var p   = prodBySku(sku);
     var qty = Number(r.querySelector(".i-qty").value)||0;
     var ov  = r.querySelector(".i-price").value;
+
+    /* แถวพิมพ์ชื่อเองไม่มีราคามาตรฐานให้ดึง ยอดจึงมาจากราคาที่กรอกล้วน ๆ
+       และไม่มีล็อตให้ตัด เพราะของยังไม่เคยเข้าสต๊อก */
+    if(isFree(r)){
+      if(qty>0) sub += Math.round(qty*(Number(ov)||0)*100)/100;
+      freeLine(r);
+      return;
+    }
+
+    var sku = r.querySelector(".i-sku").value;
+    var p   = prodBySku(sku);
     r.querySelector(".i-std").value = p ? Number(p.price).toFixed(2) : "";
     var unit = (ov==="" ? (p?Number(p.price):0) : Number(ov))||0;
     if(p && qty>0) sub += Math.round(qty*unit*100)/100;
@@ -241,10 +327,12 @@ function recalc(){
      แถวเดียวไม่ต้องเขียนทับ เพราะข้อความรายแถวบอกละเอียดกว่าอยู่แล้ว */
   var rowsPerSku = {};
   itemRows().forEach(function(r){
+    if(isFree(r)) return;
     var sku = r.querySelector(".i-sku").value;
     if(sku) rowsPerSku[sku] = (rowsPerSku[sku]||0) + 1;
   });
   itemRows().forEach(function(r){
+    if(isFree(r)) return;
     var sku = r.querySelector(".i-sku").value;
     if(!sku || rowsPerSku[sku] < 2) return;
     var lot = (BOOT&&BOOT.lots)?BOOT.lots[sku]:null;
@@ -272,6 +360,27 @@ function recalc(){
   $("#s-vat").textContent  = baht(vat);
   $("#s-vat-row").style.display = isVat ? "" : "none";
   $("#s-net").textContent  = baht(sub-disc+ship+vat);
+}
+
+/* บอกตรงนั้นเลยว่าติ๊กหรือไม่ติ๊กต้นทุนแล้วผลต่างกันยังไง
+   เพราะเป็นจุดเดียวที่ตัวเลขกำไรในชีทจะเพี้ยนได้โดยไม่มีอะไรฟ้อง */
+function freeLine(r){
+  var el = r.querySelector(".lotline");
+  el.className = "lotline"; el.textContent = "";
+  var nm = r.querySelector(".i-name").value.trim();
+  if(!nm) return;
+  var qty = Number(r.querySelector(".i-qty").value)||0;
+  if(r.querySelector(".i-cost").value === ""){
+    /* ไม่ใส่ต้นทุนก็ยังเข้าฐานสินค้า แค่เว้นช่องต้นทุนไว้ให้ชีทเตือนเอง
+       (ของเดิมไม่ลงฐานสินค้า ชื่อสินค้าบนใบเลยขึ้นว่า "ไม่พบ SKU" ส่งลูกค้าไปแล้ว) */
+    el.className = "lotline warn";
+    el.textContent = "จะเพิ่ม \u201C"+nm+"\u201D เข้าฐานสินค้าให้ โดยเว้นช่องต้นทุนไว้ — "
+      + "ชีทจะขึ้นเตือน \u201Cยังไม่มีต้นทุน\u201D และกำไรใบนี้จะสูงเกินจริงจนกว่าจะไปเติมต้นทุน";
+    return;
+  }
+  el.className = "lotline ok";
+  el.textContent = "จะเพิ่ม \u201C"+nm+"\u201D เข้าฐานสินค้าให้ พร้อมลงรับเข้า "+qty
+    + " ชิ้นเท่าที่ขาย สต๊อกจึงเป็นศูนย์ ไม่ติดลบ และกำไรคิดจากต้นทุนจริง";
 }
 
 function lotLine(r, p, sku){
@@ -324,11 +433,16 @@ function save(){
   if(SAVING) return;
   clearMsg();
 
-  var items = readItems().filter(function(it){ return it.sku });
+  var items = readItems().filter(function(it){ return it.free ? it.name : it.sku });
   if(!items.length){ showErr("ยังไม่ได้เลือกสินค้า"); return }
   for(var i=0;i<items.length;i++){
     var q=Number(items[i].qty);
     if(!(q>0)){ showErr("รายการที่ "+(i+1)+": ยังไม่ได้ใส่จำนวน"); return }
+    if(items[i].free && items[i].price===""){
+      showErr("รายการที่ "+(i+1)+" ("+esc(items[i].name)+"): สินค้าที่พิมพ์ชื่อเอง"
+        +" ต้องใส่ราคาขายจริงด้วย เพราะไม่มีราคามาตรฐานในฐานสินค้าให้ดึง");
+      return;
+    }
   }
   if(!$("#f-cust").value.trim()){ showErr("ยังไม่ได้ใส่ชื่อลูกค้า"); return }
 
@@ -370,16 +484,15 @@ function save(){
     $("#ok-lb").onclick = function(){ openLabel(LAST_SAVED) };
     $("#ok-mg").onclick = function(){ openMsg(LAST_SAVED) };
     $("#ok-dc").onclick = function(){ openDoc(LAST_SAVED) };
-    /* กดปุ่มขอเอกสารไว้ตั้งแต่ยังไม่บันทึก — บันทึกเสร็จแล้วต่อให้เลย ไม่ต้องกดซ้ำ */
-    if(PENDING_DOC){ var ty=PENDING_DOC; PENDING_DOC=null; openDoc(LAST_SAVED, ty); }
     CLIENT_KEY = newKey();
     resetForm();
     ORDERS = []; SUM_CACHE = null;
     call("getBootstrap", [], function(b){
       BOOT=b; $("#next-no").textContent=b.nextNo;
-      CFG.products = b.products.map(function(p){
+      CFG.products = (b.products||[]).map(function(p){
         return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
-                 unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group };
+                 unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
+                 reorder:p.reorder };
       });
     }, function(){ /* ตัวเลขคงเหลือไม่สดก็ไม่เป็นไร ออเดอร์บันทึกไปแล้ว */ });
   }, function(m){
@@ -413,7 +526,14 @@ function orderFromForm_(payload, r){
 }
 
 function resetForm(){
-  ["f-cust","f-tel","f-addr","f-track","f-note"].forEach(function(id){ $("#"+id).value="" });
+  ["f-cust","f-tel","f-addr","f-track","f-note","f-addr-find"].forEach(function(id){
+    if ($("#"+id)) $("#"+id).value="";
+  });
+  if ($("#f-addr-hit")) $("#f-addr-hit").innerHTML = "";
+  if ($("#f-cust-hit")) $("#f-cust-hit").innerHTML = "";
+  /* บันทึกใบนี้แล้ว รายชื่อลูกค้าที่จำไว้เก่าไปหนึ่งใบ โหลดใหม่ตอนพิมพ์ครั้งหน้า
+     ไม่งั้นลูกค้าที่เพิ่งคีย์ไปเมื่อกี้จะยังไม่ขึ้นให้เลือกจนกว่าจะรีเฟรชหน้า */
+  CUSTS = null;
   $("#f-disc").value=0;
   $("#f-ship").value=0; $("#f-ship").dataset.touched="";
   $("#paste").value=""; $("#pv-slot").innerHTML="";
@@ -509,66 +629,378 @@ function pickOption(sel, want){
 /* ------------------------------------------------------------ รายการออเดอร์ */
 
 function loadOrders(force){
+  /* กำลังค้นอยู่ ให้ค้นใหม่แทนการโหลดใบล่าสุดทับ
+     ไม่งั้นบันทึกอะไรสักอย่างเสร็จ ผลค้นหาที่ดูอยู่จะหายไปเฉย ๆ */
+  if(ORD_Q){ runSearch(ORD_Q, true); return }
   if(ORDERS.length && !force){ renderOrders(); return }
   $("#list").innerHTML='<div class="load">กำลังโหลดออเดอร์จากชีท…</div>';
-  call("getOrders",[40],function(list){ ORDERS=list; renderOrders() },
+  /* list||[] ไม่ใช่ความระแวงเปล่า ๆ — ถ้าฝั่งชีทส่งอะไรที่ข้ามมาไม่ได้
+     google.script.run จะส่ง null มาให้เฉย ๆ แล้วหน้าออเดอร์ค้างทั้งจอ */
+  /* ดึงรายการสลิปที่ยังไม่ตรวจมาพร้อมกัน แล้วค่อยวาด ป้ายจะได้ขึ้นตั้งแต่รอบแรก
+     ไม่ใช่ขึ้นเอาตอนกดเข้าไปดูใบใดใบหนึ่งแล้วกลับออกมา */
+  call("getOrders",[40],function(list){
+      ORDERS = list || [];
+      renderOrders();
+      slipWaitLoad(function(){ if(!ORD_Q) renderOrders() });
+    },
     function(m){ $("#list").innerHTML='<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'+esc(m)+'</div>' });
+}
+
+/* ------------------------------------------------------------ ค้นหาออเดอร์
+
+   หน้าจอโหลดใบล่าสุด 40 ใบ ซึ่งพอสำหรับงานประจำวัน แต่ไม่พอตอนลูกค้าโทรมา
+   ถามใบเก่า การค้นจึงยิงไปหาทั้งชีท ไม่ใช่กรองเฉพาะที่โหลดมาแล้ว   */
+
+var ORD_Q = "";        /* คำค้นที่กำลังแสดงผลอยู่ "" = โหมดใบล่าสุด */
+var ORD_TIMER = null;
+
+function ordSearchInit(){
+  var el = $("#ord-q");
+  if(!el) return;
+  el.oninput = function(){
+    var q = el.value.trim();
+    clearTimeout(ORD_TIMER);
+    /* หน่วงไว้ครึ่งวินาที ไม่งั้นพิมพ์ชื่อยาว ๆ ทีเดียวยิงเซิร์ฟเวอร์สิบรอบ */
+    ORD_TIMER = setTimeout(function(){ runSearch(q) }, 450);
+  };
+  el.onkeydown = function(e){
+    if(e.key !== "Enter") return;
+    e.preventDefault();
+    clearTimeout(ORD_TIMER);
+    runSearch(el.value.trim());
+  };
+}
+
+function runSearch(q, quiet){
+  q = String(q||"").trim();
+  if(q.length < 2){
+    ORD_Q = "";
+    $("#ord-q-hint").textContent =
+      "ปล่อยว่างไว้ = ใบล่าสุด 40 ใบ · พิมพ์ 2 ตัวอักษรขึ้นไปเพื่อค้นทั้งชีท";
+    loadOrders(true);
+    return;
+  }
+  ORD_Q = q;
+  if(!quiet) $("#list").innerHTML = '<div class="load">กำลังค้น “'+esc(q)+'” ทั้งชีท…</div>';
+  call("searchOrders",[q,30],function(list){
+    /* พิมพ์ต่อไปแล้วระหว่างรอ ผลของคำเก่าต้องไม่เด้งขึ้นมาทับ */
+    if(ORD_Q !== q) return;
+    ORDERS = list || [];
+    $("#ord-q-hint").textContent = ORDERS.length
+      ? "เจอ " + ORDERS.length + " ใบ ที่ตรงกับ “" + q + "”"
+      : "ไม่เจอใบไหนที่ตรงกับ “" + q + "”";
+    renderOrders();
+    if(!ORDERS.length){
+      $("#list").innerHTML = '<div class="empty"><b>ไม่เจอออเดอร์</b>'
+        + 'ลองค้นด้วยเลขออเดอร์ ชื่อลูกค้า เบอร์โทร หรือเลขพัสดุ</div>';
+    }
+  }, function(m){
+    $("#list").innerHTML = '<div class="empty" style="color:var(--red)">ค้นไม่สำเร็จ<br>'+esc(m)+'</div>';
+  });
+}
+
+/* ช่องทางขายเป็นสีเทาเหมือนกันหมด ไล่หาใบของ Shopee ในลิสต์ยาว ๆ เลยตาลาย
+   Shopee เป็นช่องทางที่มาทีละหลายสิบใบพร้อมกันจากการนำเข้า ต้องแยกออกจากใบที่คีย์เอง
+   ได้ในแวบเดียว จึงติดโลโก้กับสีส้มประจำแบรนด์ให้ ช่องทางอื่นคงเดิมทุกอย่าง */
+var SHOPEE_ORANGE = "#ee4d2d";
+
+/* ช่องทางที่มีตราของตัวเอง — ชื่อช่องทางมาจากชีท คนพิมพ์เองได้ จึงจับด้วยคำ
+   ไม่ใช่เทียบตรงตัว ("เพจ Facebook" · "Facebook" · "เฟซบุ๊ก" ต้องเจอหมด)
+   ตัวไหนไม่อยู่ในนี้ เขียนเหมือนเดิมทุกอย่าง ไม่ต้องมีตราให้รกตา */
+var CHAN_MARK = [
+  { key:"shopee", re:/shopee|ช[้๊]อ?ปป?[ี้]/i,        icon:"SHOPEE_ICON"   },
+  { key:"fb",     re:/facebook|เฟ[ซส]บุ[๊ก]?ก|เพจ\s*fb/i, icon:"FACEBOOK_ICON" }
+];
+
+function chanTag(chan){
+  var c = String(chan || "").trim();
+  if (!c) return "-";
+  for (var i = 0; i < CHAN_MARK.length; i++) {
+    var m = CHAN_MARK[i];
+    if (!m.re.test(c)) continue;
+    /* ไฟล์รูปหายไปก็ยังต้องอ่านชื่อช่องทางออกเหมือนเดิม แค่ไม่มีตรา */
+    var src = (typeof window[m.icon] !== "undefined") ? window[m.icon] : "";
+    var ic = src ? '<img src="' + src + '" alt="" class="chan-ic">' : "";
+    return '<span class="chan-' + m.key + '">' + ic + esc(c) + '</span>';
+  }
+  return esc(c);
+}
+
+/* ไอคอนของปุ่มบนแถวออเดอร์ — ถ้าไฟล์รูปหายไป ยังตกกลับไปใช้อักขระเดิมได้
+   ปุ่มจึงไม่มีทางกลายเป็นปุ่มเปล่าที่เดาไม่ออกว่าทำอะไร */
+function rowIc(key, fallback){
+  var src = (typeof ROW_ICONS !== "undefined") && ROW_ICONS[key];
+  return src ? '<img class="sqic" src="' + src + '" alt="">' : fallback;
+}
+
+/* สีบอกว่า "ใบนี้ต้องทำอะไรต่อ" — เรียงตามลำดับความเร่งของงานจริง
+     🔵 รอชำระ        ยังไม่ได้เงิน เป็นเรื่องเร่งที่สุด งานบัญชียังไม่ต้องคิด
+     🔴 ยังไม่ส่งบัญชี  ได้เงินแล้วแต่บัญชียังไม่ได้เอกสาร
+     🟢 พร้อมส่งบัญชี  เอกสารครบแล้ว รอกดส่ง
+     🟡 ส่งบัญชีแล้ว   จบงานของใบนี้
+   หนึ่งแถวมีสามเหลี่ยมเดียว เพราะออเดอร์หนึ่งใบมีงานถัดไปได้ทีละอย่าง */
+var FLAG_LIST = [
+  { key:"pay",  label:"รอชำระ"        },
+  { key:"noac", label:"ยังไม่ส่งบัญชี" },
+  { key:"rdy",  label:"พร้อมส่งบัญชี"  },
+  { key:"sent", label:"ส่งบัญชีแล้ว"   }
+];
+
+function orderFlag(o){
+  if (isDead(o)) return null;
+  if (String((o&&o.status)||"").trim() !== "ชำระแล้ว") return FLAG_LIST[0];
+  var a = String((o&&o.acct)||"").trim();
+  if (a === "ส่งบัญชีแล้ว")  return FLAG_LIST[3];
+  if (a === "พร้อมส่งบัญชี") return FLAG_LIST[2];
+  return FLAG_LIST[1];
+}
+
+function flagTag(o){
+  var f = orderFlag(o);
+  return f ? '<span class="flag ' + f.key + '" title="' + esc(f.label) + '"></span>' : "";
+}
+
+function flagLegend(){
+  return '<div class="flagkey">' + FLAG_LIST.map(function(f){
+    return '<span><i class="flag ' + f.key + '"></i>' + esc(f.label) + '</span>';
+  }).join("") + '</div>';
 }
 
 function statusTag(s){
   if(s==="ส่งแล้ว") return "ok";
-  if(s==="ยกเลิก") return "bad";
+  if(s==="ยกเลิก"||s==="ตีกลับ") return "bad";
   if(s==="ชำระแล้ว"||s==="จัดของแล้ว") return "ok";
   return "wait";
 }
 
+/* ยกเลิก = ยังไม่ได้ส่ง · ตีกลับ = ส่งไปแล้วของกลับมา — สองอย่างนี้ของคืนสต๊อกไปแล้วทั้งคู่
+   จึงไม่นับเป็นยอดขาย และไม่มีปุ่มอะไรให้กดต่อเหมือนกัน */
+var DEAD_STATUS = ["ยกเลิก", "ตีกลับ"];
+function isDead(o){ return DEAD_STATUS.indexOf(String((o&&o.status)||"").trim()) > -1 }
+
 function renderOrders(){
+  if(!ORDERS) ORDERS = [];
   if(!ORDERS.length){ $("#list").innerHTML='<div class="empty"><b>ยังไม่มีออเดอร์</b>กดแท็บ “คีย์ออเดอร์” เพื่อบันทึกใบแรก</div>'; return }
-  $("#list").innerHTML = ORDERS.map(function(o,i){
+  $("#list").innerHTML = flagLegend() + ORDERS.map(function(o,i){
+    var dead = isDead(o);
     return '<div class="row"><div class="i">'
-      +'<b>'+esc(o.cust||"ไม่ระบุชื่อ")+'</b>'
-      +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))+' · '+esc(o.channel||"-")
+      + '<b>'+flagTag(o)+esc(o.cust||"ไม่ระบุชื่อ")+'</b>'
+      +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))+' · '+chanTag(o.channel)
       + (o.track?' · '+esc(o.track):'')+'</span><br>'
       +'<span style="color:var(--ink);font-weight:700">'+baht(o.net)+'</span> '
       +'<span class="tag '+statusTag(o.status)+'">'+esc(o.status||"-")+'</span>'
+      + slipBadge(o.no)
       + (o.check && o.check!=="OK" ? ' <span class="tag bad">'+esc(o.check)+'</span>' : '')
+      /* สถานะบัญชีแยกจากสถานะออเดอร์ — ของถึงมือลูกค้าแล้วแต่ยังค้างส่งบัญชี
+         เป็นเรื่องที่เกิดทุกวัน ถ้าไม่โชว์คู่กันจะรู้อีกทีตอนสิ้นเดือน */
+      + (dead ? '' : ' ' + acctTag(o))
       +'</div><div class="acts">'
-      +'<button class="sq" data-lb="'+i+'" title="ใบปะหน้า">🖨</button>'
-      +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">📦</button>'
-      +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">💬</button>'
-      +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">📄</button>'
+      /* ใบที่ยกเลิกแล้วไม่มีปุ่มอะไรให้กด — ของคืนสต๊อกไปแล้ว ยอดเป็นศูนย์แล้ว
+         ถ้ายังพิมพ์ใบปะหน้าหรือออกเอกสารจากใบนี้ได้ วันหนึ่งจะมีคนส่งของตามใบที่ยกเลิก */
+      + (dead ? '<span class="hint" style="text-align:right">'
+          + esc(String(o.status||"ยกเลิก").trim()) + 'แล้ว<br>ของคืนสต๊อกแล้ว</span>'
+        : '<button class="sq" data-lb="'+i+'" title="ใบปะหน้า">'+rowIc("lb","🖨")+'</button>'
+        +'<button class="sq" data-tk="'+i+'" title="เลขพัสดุ">'+rowIc("tk","📦")+'</button>'
+        +'<button class="sq" data-sm="'+i+'" title="ข้อความแจ้งลูกค้า">'+rowIc("sm","💬")+'</button>'
+        /* เก็บเงิน — QR ล็อกยอด + ที่เก็บสลิป อยู่ก่อนปุ่มเอกสารเพราะเงินมาก่อนใบเสร็จ */
+        +'<button class="sq" data-py="'+i+'" title="ขอเก็บเงิน / แนบสลิป">'+rowIc("py","💰")+'</button>'
+        +'<button class="sq" data-dc="'+i+'" title="ออกเอกสาร / ใบกำกับภาษี">'+rowIc("dc","📄")+'</button>'
+        /* ส่งบัญชีเป็นคนละงานกับออกเอกสาร จึงเป็นคนละปุ่ม */
+        +'<button class="sq" data-ac="'+i+'" title="ส่งบัญชี">'+rowIc("ac","🧾")+'</button>'
+        /* ลูกค้าทักมาขอเพิ่มของก่อนร้านแพ็คส่ง เป็นเรื่องปกติของหน้างาน
+           ทางที่เคยทำได้มีแค่ยกเลิกใบเดิมแล้วคีย์ใหม่ทั้งใบ เสียเลขออเดอร์ไปหนึ่งใบทุกครั้ง */
+        +'<button class="sq" data-ed="'+i+'" title="แก้รายการสินค้า / เพิ่มสินค้า">'+rowIc("ed","✏️")+'</button>'
+        /* ลูกค้าเปลี่ยนใจไม่รับของ เกิดขึ้นจริงทุกสัปดาห์ ก่อนหน้านี้ทำได้แค่
+           เปลี่ยนสถานะเป็นยกเลิกด้วยมือในชีท ซึ่งของที่ตัดไปแล้วไม่เคยคืนกลับมา */
+        /* ของส่งออกไปแล้วแต่เดินทางกลับมา เป็นคนละเรื่องกับยกเลิกก่อนแพ็ค
+           แยกปุ่มเพราะสิ้นเดือนต้องตอบให้ได้ว่าเสียค่าส่งฟรีไปกี่ใบ เพราะอะไร */
+        +'<button class="sq" data-rt="'+i+'" title="ลูกค้าคืนของ / ของตีกลับ">'+rowIc("rt","↩️")+'</button>'
+        +'<button class="sq red" data-cx="'+i+'" title="ยกเลิกออเดอร์ คืนของเข้าสต๊อก">'+rowIc("cx","✖")+'</button>')
       +'</div></div>';
   }).join("");
 }
 
-/* ------------------------------------------------- ปุ่มขอเอกสารบนหัวฟอร์ม
+/* ------------------------------------------------ ลูกค้าคืนของ / ของตีกลับ
 
-   เจ้าของร้านอยากได้ กรอก → ส่ง → ปริ้น จบในหน้าเดียว จึงวางปุ่มไว้บนหัวฟอร์ม
-   แต่ใบกำกับภาษีอ้างเลขออเดอร์และยอดที่ชีทคำนวณจริง จะออกก่อนบันทึกไม่ได้
-   ปุ่มจึงบันทึกออเดอร์ให้ก่อน แล้วเปิดหน้าออกเอกสารต่อทันที โดยถามก่อนหนึ่งครั้ง
-   ไม่บันทึกเงียบ ๆ เพราะบันทึกแล้วสต๊อกถูกตัดจริง ถอยกลับไม่ได้ง่าย ๆ            */
+   ยกเลิก = ยังไม่ได้ส่ง ลูกค้าเปลี่ยนใจก่อนแพ็ค
+   ตีกลับ = ส่งไปแล้วแต่ของเดินทางกลับมา (ที่อยู่ผิด · ไม่รับสาย · เก็บเงินปลายทางไม่ได้)
 
-function docBarInit(){
-  $("#docbar").addEventListener("click", function(e){
-    var b = e.target.closest("button[data-doc]");
-    if(!b) return;
-    var type = b.dataset.doc;
+   ผลต่อสต๊อกเหมือนกันเป๊ะ แต่คนละเรื่องกันสำหรับเจ้าของร้าน — ตีกลับคือเสียค่าส่ง
+   ไปแล้วสองเที่ยวและของอาจบุบ ถ้านับรวมกับยกเลิกจะไม่มีวันรู้ว่าเดือนนี้เสียไปกี่ใบ
 
-    /* ใบเสนอราคาไม่ผูกออเดอร์เลย ข้ามไปหน้าของมันได้ทันที ไม่ต้องบันทึกอะไร */
-    if(type === "quote"){ go("quote"); return; }
+   คืนบางชิ้นก็ได้ เพราะลูกค้าสั่งสามตัวแล้วคืนตัวเดียวเป็นเรื่องปกติ            */
 
-    if(LAST_SAVED){ openDoc(LAST_SAVED, type); return; }
-    if(SAVING){ toast("กำลังบันทึกอยู่ รอสักครู่"); return; }
+var RT_WHY = ["ที่อยู่ผิด ส่งไม่ถึง", "ลูกค้าไม่รับสาย ติดต่อไม่ได้",
+              "เก็บเงินปลายทางไม่ได้", "ของเสียหายระหว่างส่ง", "ลูกค้าสั่งผิดรุ่น"];
+var RT_KEY = null;
 
-    if(!confirm("ต้องบันทึกออเดอร์ลงชีทก่อนจึงออกเอกสารได้\n"
-              + "(บันทึกแล้วสต๊อกจะถูกตัดตามจริง)\n\nบันทึกแล้วออกเอกสารเลยไหม")) return;
-    PENDING_DOC = type;
-    save();
+function openReturn(o){
+  RT_KEY = newKey();
+  var its = (o.items||[]).filter(function(it){ return Number(it.qty) > 0 });
+  if(!its.length){
+    openModal("ของตีกลับ — " + o.no,
+      '<div class="msg err" style="display:block">ใบนี้ไม่มีรายการสินค้าให้คืน</div>');
+    return;
+  }
+
+  openModal("ลูกค้าคืนของ / ของตีกลับ — " + o.no,
+     '<div class="hint" style="margin-bottom:10px">'
+    +'ใส่จำนวนที่<b>เดินทางกลับมาถึงร้านแล้ว</b> ของจะถูกคืนเข้าสต๊อกและล็อตทันที<br>'
+    +'คืนไม่ครบก็ได้ — ยอดของใบจะเหลือเท่าที่ลูกค้าเก็บไว้ · '
+    +'คืนครบทุกชิ้นจะกลายเป็นใบ <b>ตีกลับ</b> ยอดเป็น ฿0<br>'
+    +'<b>ค่าจัดส่งจะถูกล้าง</b> เพราะของไม่ได้อยู่กับลูกค้าแล้ว</div>'
+    +'<div class="sec-hd"><h2>คืนกี่ชิ้น</h2></div>'
+    + its.map(function(it,k){
+        return '<div class="fld" style="margin-bottom:8px">'
+          +'<label>'+esc(it.name||it.sku)+' <span class="hint" style="font-weight:400">· ขายไป '
+          + num_(it.qty) + ' ' + esc(it.unit||"ชิ้น") + '</span></label>'
+          +'<input type="number" inputmode="numeric" id="rt-q'+k+'" value="0" min="0" max="'
+          + Number(it.qty) + '" data-sku="'+esc(it.sku)+'" data-max="'+Number(it.qty)+'">'
+          +'</div>';
+      }).join("")
+    +'<button class="btn ghost" id="rt-all" style="margin-bottom:12px">คืนทั้งใบ '
+    +'(ใส่จำนวนเต็มให้ทุกบรรทัด)</button>'
+    +'<div class="chips" id="rt-quick">'
+    + RT_WHY.map(function(w){ return '<button type="button" data-w="'+esc(w)+'">'+esc(w)+'</button>' }).join("")
+    +'</div>'
+    +'<div class="fld"><label>ตีกลับเพราะอะไร</label>'
+    +'<input id="rt-why" placeholder="พิมพ์เอง หรือกดเลือกจากด้านบน"></div>'
+    +'<button class="btn" id="rt-go">บันทึกของตีกลับ</button>'
+    +'<div id="rt-msg" style="margin-top:10px"></div>');
+
+  $("#rt-all").onclick = function(){
+    its.forEach(function(it,k){ $("#rt-q"+k).value = Number(it.qty) });
+  };
+  $$("#rt-quick button").forEach(function(b){
+    b.onclick = function(){ $("#rt-why").value = b.getAttribute("data-w"); $("#rt-why").focus() };
+  });
+  $("#rt-go").onclick = function(){ rtSave(o, its, this) };
+}
+
+/** อ่านจำนวนที่คืนจากหน้าจอ — คืนทั้ง lines ที่จะส่งขึ้นชีท และสรุปให้คนอ่านก่อนกดยืนยัน */
+function rtRead(its){
+  var lines = [], back = 0, all = true, over = null;
+  its.forEach(function(it,k){
+    var el = $("#rt-q"+k);
+    var q = Math.floor(Number(el ? el.value : 0) || 0);
+    if(q < 0) q = 0;
+    if(q > Number(it.qty)) over = (it.name||it.sku);
+    if(q > 0){ lines.push({ sku: it.sku, qty: q }); back += q; }
+    if(q < Number(it.qty)) all = false;
+  });
+  return { lines: lines, back: back, all: all, over: over };
+}
+
+function rtSave(o, its, btn){
+  var r = rtRead(its);
+  var why = $("#rt-why").value.trim();
+  function err(m){
+    $("#rt-msg").innerHTML = '<div class="msg err" style="display:block">'+esc(m)+'</div>';
+  }
+  if(r.over) return err("คืน " + r.over + " มากกว่าที่ขายไปในใบนี้ไม่ได้");
+  if(!r.back) return err("ยังไม่ได้ใส่จำนวนที่คืน — ถ้าคืนทั้งใบ กดปุ่ม “คืนทั้งใบ” ได้เลย");
+  if(why.length < 5){
+    $("#rt-why").focus();
+    return err("ต้องบอกเหตุผลอย่างน้อย 5 ตัวอักษร — สิ้นเดือนย้อนมาดูจะได้รู้ว่าตีกลับเพราะอะไร");
+  }
+  if(!confirm((r.all ? "ตีกลับทั้งใบ " : "คืนของ " + r.back + " ชิ้นของใบ ") + o.no + " ?\n\n"
+    + "ของจะถูกคืนเข้าสต๊อกและล็อต\n"
+    + (r.all ? "ยอดของใบนี้จะเป็น ฿0\n" : "ยอดของใบจะเหลือเท่าที่ลูกค้าเก็บไว้\n")
+    + "ย้อนกลับไม่ได้")) return;
+
+  btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+  $("#rt-msg").innerHTML = "";
+  if(!RT_KEY) RT_KEY = newKey();
+  api("returnOrder", {
+    no: o.no, why: why, by: byName(),
+    clientKey: o.no + "-" + RT_KEY,
+    /* คืนครบทุกบรรทัด = ส่ง lines ว่างไป ฝั่งเซิร์ฟเวอร์จะได้เดินทางยกเลิกทั้งใบ
+       ซึ่งเป็นทางเดียวที่ทำให้ยอดเป็นศูนย์จริง (ใบที่ไม่มีสินค้าเลยบันทึกไม่ได้) */
+    lines: r.all ? [] : r.lines
+  }).then(function(res){
+    RT_KEY = newKey();
+    $("#rt-msg").innerHTML = '<div class="msg ok" style="display:block">'
+      + (res.whole ? 'ตีกลับทั้งใบ <b>' + esc(o.no) + '</b> แล้ว · ยอดเป็น ฿0'
+                   : 'คืนของใบ <b>' + esc(o.no) + '</b> แล้ว')
+      + (res.returned && res.returned.length
+          ? ' · ของที่คืนเข้าสต๊อก ' + esc(res.returned.join(" · ")) : '')
+      + '</div>';
+    btn.disabled = false; btn.textContent = "บันทึกแล้ว";
+    SUM_CACHE = null;
+    loadOrders(true);
+  }, function(e){
+    btn.disabled = false; btn.textContent = "บันทึกของตีกลับ";
+    err(e && e.message ? e.message : e);
   });
 }
 
-/* ชนิดเอกสารที่กดค้างไว้ก่อนบันทึก — พอบันทึกเสร็จให้เปิดหน้าออกเอกสารต่อเอง */
-var PENDING_DOC = null;
+/* -------------------------------------------------------- ยกเลิกทั้งออเดอร์
+
+   ลูกค้าเปลี่ยนใจไม่รับของ ของที่ตัดไปแล้วต้องกลับเข้าสต๊อกจริง
+   ไม่ใช่แค่เปลี่ยนคำในช่องสถานะ ซึ่งเป็นสิ่งเดียวที่ทำได้มาตลอดถ้าแก้ในชีทเอง */
+
+var CX_WHY = ["ลูกค้าเปลี่ยนใจไม่รับของ", "ลูกค้าไม่รับสาย ติดต่อไม่ได้",
+              "ของหมด ส่งให้ไม่ได้", "คีย์ผิดใบ ออเดอร์ซ้ำ"];
+
+/* กุญแจกันงานซ้ำต้องเป็นตัวเดิมตลอดการกดซ้ำของงานชิ้นเดียวกัน
+   ถ้าสร้างใหม่ทุกครั้งที่กด ด่านกันซ้ำฝั่งเซิร์ฟเวอร์จะไม่มีความหมายเลย —
+   และพังตรงกรณีเดียวที่มันมีไว้เพื่อ: เน็ตหลุด ไม่รู้ผล จึงกดซ้ำ
+   เปลี่ยนเป็นตัวใหม่เมื่อสำเร็จแล้วเท่านั้น การกดครั้งต่อไปจึงเป็นงานใหม่จริง */
+var CX_KEY = null, ED_KEY = null, DC_KEY = null;
+
+function openCancel(o){
+  CX_KEY = newKey();
+  openModal("ยกเลิกออเดอร์ — " + o.no,
+     '<div class="hint" style="margin-bottom:10px">'
+    +'<b>ของในใบนี้จะถูกคืนเข้าสต๊อกและล็อตทันที</b> · ยอดของใบนี้จะกลายเป็น ฿0 '
+    +'(ค่าส่งกับส่วนลดถูกล้างด้วย ไม่งั้นใบที่ยกเลิกจะยังมียอดขายค้างในหน้าสรุป)<br>'
+    +'หัวบิลยังอยู่ในชีท เลข <b>'+esc(o.no)+'</b> จึงไม่ถูกเอาไปใช้ซ้ำกับลูกค้าคนอื่น<br>'
+    +'<b>ยกเลิกแล้วย้อนกลับไม่ได้</b> ถ้าลูกค้ากลับมาสั่งใหม่ให้คีย์เป็นใบใหม่</div>'
+    +'<div class="chips" id="cx-quick">'
+    + CX_WHY.map(function(w){ return '<button type="button" data-w="'+esc(w)+'">'+esc(w)+'</button>' }).join("")
+    +'</div>'
+    +'<div class="fld"><label>เหตุผลที่ยกเลิก</label>'
+    +'<input id="cx-why" placeholder="พิมพ์เอง หรือกดเลือกจากด้านบน"></div>'
+    +'<button class="btn" id="cx-go" style="background:var(--red)">ยกเลิกออเดอร์ '+esc(o.no)+'</button>'
+    +'<div id="cx-msg" style="margin-top:10px"></div>');
+
+  $$("#cx-quick button").forEach(function(b){
+    b.onclick = function(){ $("#cx-why").value = b.getAttribute("data-w"); $("#cx-why").focus() };
+  });
+  $("#cx-why").onkeydown = function(e){ if(e.key==="Enter") $("#cx-go").click() };
+  $("#cx-go").onclick = function(){ cxSave(o, this) };
+}
+
+function cxSave(o, btn){
+  var why = $("#cx-why").value.trim();
+  if(why.length < 5){
+    $("#cx-msg").innerHTML = '<div class="msg err" style="display:block">'
+      +'ต้องบอกเหตุผลอย่างน้อย 5 ตัวอักษร — เดือนหน้าย้อนมาดูจะได้รู้ว่าใบนี้หายไปเพราะอะไร</div>';
+    $("#cx-why").focus();
+    return;
+  }
+  if(!confirm("ยกเลิกออเดอร์ "+o.no+" ?\n\n"
+            + "ของจะถูกคืนเข้าสต๊อก และยอดของใบนี้จะเป็น ฿0\nย้อนกลับไม่ได้")) return;
+
+  btn.disabled = true; btn.textContent = "กำลังยกเลิก…";
+  $("#cx-msg").innerHTML = "";
+  /* กุญแจกันกดซ้ำ — เน็ตช้าแล้วกดสองที ต้องไม่ยกเลิกสองรอบ */
+  if(!CX_KEY) CX_KEY = newKey();
+  api("cancelOrder", o.no, why, byName(), "cx-" + o.no + "-" + CX_KEY).then(function(r){
+    CX_KEY = newKey();
+    $("#cx-msg").innerHTML = '<div class="msg ok" style="display:block">ยกเลิก <b>'
+      + esc(o.no) + '</b> แล้ว · คืนของเข้าสต๊อก ' + (r.items||0) + ' รายการ'
+      + (r.lots && r.lots.length ? ' · ล็อตที่คืน ' + esc(r.lots.join(" · ")) : '')
+      + '</div>';
+    btn.disabled = false; btn.textContent = "ยกเลิกแล้ว";
+    SUM_CACHE = null;          /* ยอดสรุปเปลี่ยนแล้ว ต้องโหลดใหม่ ไม่ใช้ของที่จำไว้ */
+    loadOrders(true);
+  }, function(e){
+    btn.disabled = false; btn.textContent = "ยกเลิกออเดอร์ " + o.no;
+    $("#cx-msg").innerHTML = '<div class="msg err" style="display:block">'
+      + esc(e && e.message ? e.message : e) + '</div>';
+  });
+}
 
 /* ---------------------------------------------------------------- ใบเสนอราคา
 
@@ -590,6 +1022,17 @@ function quoteInit(){
   /* ใบเสนอราคาที่เคยออก — พิมพ์ซ้ำหรือส่งซ้ำให้ลูกค้าได้ ไม่ต้องคีย์ใหม่
      ใบพวกนี้ไม่ผูกกับออเดอร์ ถ้าไม่มีรายการนี้ก็ตามหากลับไม่ได้เลย */
   drawOldDocs("", "#q-old");
+  /* ใบเสนอราคาส่วนใหญ่ออกให้ลูกค้าบริษัทที่เคยซื้อแล้ว เลขผู้เสียภาษี 13 หลัก
+     กับที่อยู่จดทะเบียนเป็นสองอย่างที่พิมพ์ผิดง่ายที่สุดและตรวจยากที่สุด */
+  bindCustFind("#q-name", "#q-name-hit", function(c){
+    $("#q-name").value = c.name;
+    custToast(custFill([
+      ["#q-tax",   c.taxId,               "เลขผู้เสียภาษี"],
+      ["#q-tel",   c.tel,                 "โทรศัพท์"],
+      ["#q-addr",  c.taxAddr || c.addr,   "ที่อยู่"],
+      ["#q-email", c.email,               "อีเมล"]
+    ]));
+  });
   $("#q-add").onclick  = function(){ qAdd(); qCalc() };
   $("#q-make").onclick = qMake;
   ["#q-disc","#q-ship","#q-vat"].forEach(function(sel){
@@ -706,9 +1149,19 @@ function qMake(){
         +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
         +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
         +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
-        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>';
+        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+        +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
+        /* ลูกค้าตอบตกลงตอนไหนก็ได้ ทั้งตอนนี้เลยหรืออีกสามวัน ปุ่มนี้จึงต้องอยู่
+           ตรงที่ตาอยู่แล้วหลังออกใบ ไม่ใช่ให้เลื่อนผ่านใบ A4 ทั้งใบไปหาข้างล่าง
+           (ปุ่มเดิมยังอยู่ในรายการ "ใบที่ออกไปแล้ว" เหมือนเดิม สำหรับใบเก่า) */
+        +'<div class="subhd" style="margin-top:18px">ลูกค้าตอบตกลงแล้ว?</div>'
+        +'<button class="btn dark" id="q2o-now">ลูกค้าสั่งแล้ว → ทำเป็นออเดอร์</button>'
+        +'<div class="hint" style="margin-top:6px">ดึงลูกค้า รายการ และราคาจากใบนี้'
+        +' ไปใส่หน้าคีย์ออเดอร์ให้ · ยังไม่บันทึกจนกว่าจะกดบันทึกเอง'
+        +' · สต๊อกตัดตอนบันทึกออเดอร์ ไม่ใช่ตอนออกใบเสนอราคา</div>';
       bindLabelButtons(url, r.no+".png", "a4");
       bindDocCopy("#q-out", r, m, r.no);
+      $("#q2o-now").onclick = function(){ quoteToOrder(r.no, this) };
       drawOldDocs("", "#q-old");
       btn.disabled = false;
     });
@@ -719,37 +1172,417 @@ function qMake(){
   });
 }
 
+/* --------------------------------------------- ค้นตำบล/อำเภอ/จังหวัด */
+
+/**
+ * ผูกช่องค้นหาที่อยู่เข้ากับช่องที่อยู่หนึ่งช่อง
+ *
+ * ที่ร้านทำอยู่ตอนนี้คือเปิดกูเกิลหารหัสไปรษณีย์ทีละใบ แล้วพิมพ์ตามมือ
+ * ซึ่งพิมพ์ผิดได้ และผิดทีคือพัสดุไปผิดจังหวัด
+ * พิมพ์ชื่อตำบลสองตัวอักษรแล้วเลือกจากรายการ จบในสองแตะ
+ *
+ * เติมต่อท้ายที่อยู่เดิม ไม่เขียนทับ เพราะบ้านเลขที่กับชื่อหมู่บ้าน
+ * ลูกค้าพิมพ์มาเองในแชท ไม่มีในฐานข้อมูลไปรษณีย์
+ */
+function bindAddrFind(findSel, hitSel, addrSel){
+  var f = $(findSel), box = $(hitSel), addr = $(addrSel);
+  if (!f || !box || !addr) return;
+
+  function draw(){
+    var q = f.value.trim();
+    if (q.length < 2) { box.innerHTML = ""; return }
+    var hits = thFind(q);
+    if (!hits.length) {
+      box.innerHTML = '<div class="none">ไม่พบ "' + esc(q) + '" — พิมพ์ชื่อตำบล อำเภอ '
+        + 'จังหวัด หรือรหัสไปรษณีย์</div>';
+      return;
+    }
+    box.innerHTML = hits.map(function(r, i){
+      return '<button type="button" data-th="' + i + '">' + esc(thLine(r)) + '</button>';
+    }).join("");
+    box.querySelectorAll("[data-th]").forEach(function(b){
+      b.onclick = function(){
+        var line = thLine(hits[+b.getAttribute("data-th")]);
+        var cur = addr.value.replace(/\s+$/, "");
+        addr.value = cur ? cur + "\n" + line : line;
+        f.value = ""; box.innerHTML = "";
+        addr.focus();
+        toast("เติมที่อยู่ให้แล้ว");
+      };
+    });
+  }
+
+  f.oninput = draw;
+  /* กด Enter แล้วเลือกตัวแรกเลย มือถือจะได้ไม่ต้องเลื่อนหา */
+  f.onkeydown = function(e){
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    var first = box.querySelector("[data-th]");
+    if (first) first.click();
+  };
+}
+
+/* ------------------------------------------------ ลูกค้าเก่า เติมให้อัตโนมัติ
+
+   ลูกค้าประจำสั่งซ้ำเดือนละหลายครั้ง แต่ทุกครั้งต้องพิมพ์ชื่อ เบอร์ และที่อยู่ใหม่หมด
+   ที่อยู่ยาวสามบรรทัดพิมพ์บนมือถือ พลาดตัวเดียวคือพัสดุไปผิดที่
+
+   โหลดรายชื่อครั้งเดียวตอนพิมพ์ครั้งแรก แล้วค้นในเครื่อง ไม่ยิงเซิร์ฟเวอร์ทุกตัวอักษร */
+
+var CUSTS = null, CUST_WAIT = null;
+
+function custList(cb){
+  if(CUSTS){ cb(CUSTS); return }
+  if(CUST_WAIT){ CUST_WAIT.push(cb); return }
+  CUST_WAIT = [cb];
+  function done(list){
+    CUSTS = list || [];
+    var w = CUST_WAIT; CUST_WAIT = null;
+    w.forEach(function(f){ try{ f(CUSTS) }catch(e){} });
+  }
+  /* โหลดรายชื่อไม่ได้ไม่ใช่เรื่องคอขาดบาดตาย พิมพ์เองได้เหมือนเดิม
+     แต่ต้องจำไว้ว่าลองแล้วไม่ได้ ไม่ใช่ยิงซ้ำทุกตัวอักษรที่พิมพ์ */
+  call("getCustomers", [400], done, function(){ done([]) });
+}
+
+function custFind(q){
+  q = String(q||"").trim().toLowerCase();
+  if(q.length < 2) return [];
+  var qd = q.replace(/\D/g,"");
+  var list = CUSTS || [], hit = [];
+  for(var i=0;i<list.length;i++){
+    var c = list[i];
+    var name = String(c.name||"").toLowerCase();
+    var tel = String(c.tel||"").replace(/\D/g,"");
+    var score = -1;
+    if(name.indexOf(q)===0) score = 0;
+    else if(qd.length>2 && tel.indexOf(qd)===0) score = 1;
+    else if(name.indexOf(q)>0) score = 2;
+    else if(qd.length>2 && tel.indexOf(qd)>0) score = 3;
+    if(score>=0) hit.push([score,i,c]);
+  }
+  /* รายชื่อเรียงคนซื้อล่าสุดมาก่อนอยู่แล้ว ลำดับเดิมจึงเป็นตัวตัดสินเมื่อคะแนนเท่ากัน */
+  hit.sort(function(a,b){ return a[0]-b[0] || a[1]-b[1] });
+  return hit.slice(0,6).map(function(x){ return x[2] });
+}
+
+function bindCustFind(inSel, hitSel, fill){
+  var el = $(inSel), box = $(hitSel);
+  if(!el || !box) return;
+  function draw(){
+    var q = el.value.trim();
+    if(q.length < 2){ box.innerHTML = ""; return }
+    custList(function(){
+      /* พิมพ์ต่อไปแล้วระหว่างรอโหลด ผลของคำเก่าต้องไม่เด้งขึ้นมาทับ */
+      if(el.value.trim() !== q) return;
+      var hits = custFind(q);
+      if(!hits.length){ box.innerHTML = ""; return }
+      box.innerHTML = hits.map(function(c,i){
+        var addr = String(c.addr || c.taxAddr || "").replace(/\s+/g," ").trim();
+        return '<button type="button" data-cu="'+i+'"><b>'+esc(c.name)+'</b>'
+          + (c.tel ? ' · '+esc(c.tel) : '')
+          + (c.n>1 ? ' · ซื้อแล้ว '+c.n+' ครั้ง' : '')
+          + (addr ? '<br><span style="color:var(--gray)">'+esc(addr.slice(0,64))+'</span>' : '')
+          + '</button>';
+      }).join("");
+      box.querySelectorAll("[data-cu]").forEach(function(b){
+        b.onclick = function(){
+          var c = hits[+b.getAttribute("data-cu")];
+          box.innerHTML = "";
+          fill(c);
+        };
+      });
+    });
+  }
+  el.oninput = draw;
+  el.addEventListener("focus", draw);
+}
+
+/**
+ * เติมเฉพาะช่องที่ยังว่าง ช่องที่พิมพ์ไว้แล้วไม่ถูกทับ
+ *
+ * ลูกค้าเก่าสั่งให้ส่งที่ใหม่เป็นเรื่องปกติ ถ้าคนคีย์พิมพ์ที่อยู่ใหม่ไว้ก่อนแล้ว
+ * แล้วมากดเลือกชื่อทีหลัง ที่อยู่ที่เพิ่งพิมพ์ต้องไม่หายไปเฉย ๆ
+ * คืนรายชื่อช่องที่ไม่ได้ทับ เพื่อบอกให้รู้ว่าอันไหนยังเป็นของที่พิมพ์เอง
+ */
+function custFill(pairs){
+  var kept = [];
+  pairs.forEach(function(p){
+    var el = $(p[0]);
+    var v = String(p[1] === null || p[1] === undefined ? "" : p[1]).trim();
+    if(!el || !v) return;
+    if(!String(el.value||"").trim()) el.value = v;
+    else if(String(el.value).trim() !== v) kept.push(p[2]);
+  });
+  return kept;
+}
+
+function custToast(kept){
+  toast(kept.length
+    ? "ใส่ข้อมูลลูกค้าเก่าให้แล้ว · " + kept.join(" กับ ") + " ที่พิมพ์ไว้ไม่ถูกทับ"
+    : "ใส่ข้อมูลของครั้งล่าสุดให้แล้ว ตรวจอีกครั้งก่อนบันทึก");
+}
+
 /* ------------------------------------------------------- พิมพ์เอกสารซ้ำ */
 
 /* พิมพ์ซ้ำไม่ออกเลขใหม่ ไม่แตะสต๊อก ไม่เขียนอะไรลงชีท — แค่วาดใบเดิมออกมาอีกครั้ง */
-function drawOldDocs(orderNo, boxSel){
+/** หนึ่งบรรทัดของเอกสารหนึ่งใบ
+
+    ใช้ร่วมกันทั้งในหน้าออเดอร์ หน้าใบเสนอราคา และแฟ้มเอกสาร — ปุ่มไหนกดได้กดไม่ได้
+    ต้องตัดสินด้วยกฎเดียวกันทุกที่ ถ้าเขียนแยกกันสามที่ วันหนึ่งจะมีที่หนึ่งที่ยอมให้แก้
+    ใบที่ส่งลูกค้าไปแล้ว */
+function docRowHtml(d){
+
+      var dead = !!d.voidWhy;
+      /* ใบที่ยังไม่ได้ส่ง = ยังอยู่ในร้าน แก้ด้วยเลขเดิมได้ไม่จำกัด
+         ใบที่กดส่งแล้ว = ลูกค้าถือกระดาษอยู่ ห้ามแก้ ต้องยกเลิกแล้วออกใหม่ */
+      var sent = String(d.sentAt || "");
+      return '<div class="row"><div class="i">'
+        +'<b>'+esc(d.no)+'</b>'
+        /* ประวัติที่ไม่มีชื่อลูกค้า หาใบที่ต้องการไม่เจอ — เลขใบอย่างเดียว
+           ไม่มีใครจำได้ว่าใบไหนของใคร */
+        + (d.custName ? '<span style="color:var(--ink);font-weight:600">'
+                      + esc(d.custName) + '</span>' : '')
+        +'<span>'+esc(d.type)+' · '+esc(d.date||"")+' · '+baht(d.total)
+        + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
+        + (!dead && sent ? ' · <span style="color:var(--green)">ส่งแล้ว</span>' : '')
+        + (!dead && !sent ? ' · <span style="color:var(--amber)">ยังไม่ได้ส่ง</span>' : '')
+        /* ใบที่เคยแก้ยอด กระดาษที่พิมพ์ไปครั้งแรกกับตัวเลขในระบบไม่เหมือนกันแล้ว
+           ต้องเห็นตั้งแต่ในรายการ ไม่ใช่รู้ตอนเปิดใบมาเทียบทีละใบ */
+        + (!dead && Number(d.revised) ? ' · <span style="color:var(--blue)">แก้ไขแล้ว '
+            + Number(d.revised) + ' ครั้ง</span>' : '')
+        +'</span>'
+        + (dead ? '<span style="color:var(--red)">'+esc(d.voidWhy)+'</span>' : '')
+        + (!dead && d.lastRevise
+           ? '<span style="color:var(--blue)">'+esc(d.lastRevise)+'</span>' : '')
+        + (!dead && sent ? '<span style="color:var(--gray)">ส่งเมื่อ '+esc(sent)+'</span>' : '')
+        +'</div><div class="acts">'
+        +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
+        /* ใบเสนอราคาที่ลูกค้าตอบตกลงแล้ว ของเดิมต้องคีย์รายการใหม่ทั้งชุด
+           ทั้งที่ข้อมูลอยู่ในใบครบแล้ว — พิมพ์ใหม่ทีคือพิมพ์ผิดได้ที */
+        + (!dead && !d.orderNo && d.type === "ใบเสนอราคา"
+           ? '<button class="mini" data-q2o="'+esc(d.no)+'">ทำเป็นออเดอร์</button>' : '')
+        /* ใบที่ยกเลิกไปแล้วไม่มีปุ่มให้กดซ้ำ เหตุผลครั้งแรกจะได้ไม่ถูกทับหาย */
+        + (dead || sent ? '' : '<button class="mini" data-rv="'+esc(d.no)+'">แก้ไขใบ</button>')
+        + (dead || sent ? '' : '<button class="mini" data-sd="'+esc(d.no)+'">ส่งแล้ว</button>')
+        + (dead ? '' : '<button class="mini red" data-vd="'+esc(d.no)+'">ยกเลิก</button>')
+        +'</div></div>';
+}
+
+/** ผูกปุ่มในรายการเอกสาร — redraw คือวิธีวาดรายการนั้นใหม่หลังข้อมูลเปลี่ยน
+    ต่างที่กันวาดคนละแบบ (บางที่เป็นรายการของออเดอร์ บางที่เป็นแฟ้มทั้งชนิด)
+    จึงส่งวิธีวาดเข้ามา แทนที่จะให้ตัวนี้เดาเอาเองว่าอยู่หน้าไหน */
+function bindDocRows(box, outId, redraw){
+  box.querySelectorAll("[data-rp]").forEach(function(b){
+    b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
+  });
+  box.querySelectorAll("[data-q2o]").forEach(function(b){
+    b.onclick = function(){ quoteToOrder(b.getAttribute("data-q2o"), b) };
+  });
+  box.querySelectorAll("[data-rv]").forEach(function(b){
+    b.onclick = function(){ askRevise(b.getAttribute("data-rv"), b, redraw) };
+  });
+  box.querySelectorAll("[data-sd]").forEach(function(b){
+    b.onclick = function(){
+      var no = b.getAttribute("data-sd");
+      if(!confirm("ทำเครื่องหมายว่าส่งใบ "+no+" ให้ลูกค้าแล้ว?\n\n"
+                + "หลังจากนี้จะแก้ใบนี้ไม่ได้อีก ต้องยกเลิกแล้วออกใบใหม่แทน")) return;
+      b.disabled = true; b.textContent = "กำลังบันทึก…";
+      api("markSent", no, byName()).then(function(){
+        toast("บันทึกว่าส่งใบ "+no+" แล้ว");
+        redraw();
+      }, function(e){
+        b.disabled = false; b.textContent = "ส่งแล้ว";
+        toast("ไม่สำเร็จ: " + (e && e.message ? e.message : e));
+      });
+    };
+  });
+  box.querySelectorAll("[data-vd]").forEach(function(b){
+    b.onclick = function(){ askVoid(b.getAttribute("data-vd"), b, redraw) };
+  });
+}
+
+function drawOldDocs(orderNo, boxSel, query){
   var sel = boxSel || "#dc-old", box = $(sel);
   if (!box) return;
   /* ที่วางผลพิมพ์ซ้ำต้องเป็นคนละ id กันในแต่ละที่ ไม่งั้นตอนเปิดหน้าใบเสนอราคา
      ค้างไว้แล้วไปกดพิมพ์ซ้ำในหน้าออเดอร์ รูปจะไปโผล่ผิดที่ */
   var outId = "rp-out-" + sel.replace(/[^a-zA-Z0-9]/g, "");
-  box.innerHTML = '<div class="hint">กำลังดูว่าเคยออกใบให้ออเดอร์นี้ไว้หรือยัง…</div>';
+  var rfId  = "rp-again-" + sel.replace(/[^a-zA-Z0-9]/g, "");
+  /* ไม่ระบุออเดอร์ = หน้าใบเสนอราคา ซึ่งรายการนี้คือ "ประวัติใบที่เคยออก"
+     ไม่ใช่ "ใบของออเดอร์นี้" — คนละเรื่องกัน หัวข้อจึงต้องเขียนคนละอย่าง */
+  var isQuote = !String(orderNo || "").trim();
+  var title = isQuote ? "ใบเสนอราคาที่เคยออก" : "ใบที่ออกไปแล้ว — กดพิมพ์ซ้ำได้เลย";
+  /* หัวข้อกับปุ่มโหลดใหม่ต้องขึ้นทุกกรณี รวมทั้งตอนที่ยังไม่มีใบสักใบ
+     กล่องว่างเปล่าไม่มีอะไรเลย อ่านได้ทั้ง "ไม่มีใบ" และ "แอปพัง" ซึ่งคนละเรื่องกัน */
+  function shell(inner, n){
+    return '<div class="subhd">' + title + (n ? ' (' + n + ' ใบ)' : '') + '</div>'
+      + inner
+      + (isQuote ? '<button class="mini" id="' + rfId + '" style="margin-top:10px">'
+                 + 'โหลดรายการใหม่</button>' : '');
+  }
+  function bindAgain(){
+    var r = $("#" + rfId);
+    if(r) r.onclick = function(){ drawOldDocs(orderNo, sel) };
+  }
+  box.innerHTML = '<div class="hint">' + (isQuote
+      ? 'กำลังโหลดใบเสนอราคาที่เคยออก…' : 'กำลังดูว่าเคยออกใบให้ออเดอร์นี้ไว้หรือยัง…')
+    + '</div>';
   api("listDocs", orderNo || "").then(function(list){
-    if (!list || !list.length) { box.innerHTML = ""; return }
-    box.innerHTML = '<div class="subhd">ใบที่ออกไปแล้ว — กดพิมพ์ซ้ำได้เลย</div>'
-      + list.map(function(d){
-          var dead = !!d.voidWhy;
-          return '<div class="row"><div class="i">'
-            +'<b>'+esc(d.no)+'</b>'
-            +'<span>'+esc(d.type)+' · '+esc(d.date||"")+' · '+baht(d.total)
-            + (dead ? ' · <span style="color:var(--red)">ยกเลิกแล้ว</span>' : '')
-            +'</span></div><div class="acts">'
-            +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
-            +'</div></div>';
-        }).join("")
-      + '<div id="'+outId+'" style="margin-top:10px"></div>';
-    box.querySelectorAll("[data-rp]").forEach(function(b){
-      b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
+    /* คำค้นกรองในเครื่อง — ชีทส่งใบล่าสุดมาให้แล้ว ไม่ต้องยิงซ้ำทุกตัวอักษร */
+    var want = String(query || "").trim().toLowerCase();
+    if (want && list) list = list.filter(function(d){
+      return String(d.no||"").toLowerCase().indexOf(want) > -1
+          || String(d.custName||"").toLowerCase().indexOf(want) > -1
+          || String(d.orderNo||"").toLowerCase().indexOf(want) > -1;
     });
+    if (!list || !list.length) {
+      box.innerHTML = shell(want
+        ? '<div class="empty"><b>ไม่พบเอกสารที่ค้นหา</b>พิมพ์เลขที่เอกสารหรือชื่อลูกค้าบางส่วนก็ได้</div>'
+        : (isQuote
+        ? '<div class="empty"><b>ยังไม่มีใบเสนอราคาที่เคยออก</b>'
+          + 'ใบที่ออกจากฟอร์มด้านบนจะมาขึ้นตรงนี้ พร้อมปุ่มพิมพ์ซ้ำและทำเป็นออเดอร์</div>'
+        : '<div class="hint">ยังไม่เคยออกเอกสารให้ออเดอร์นี้</div>'), 0);
+      bindAgain();
+      return;
+    }
+    box.innerHTML = shell(list.map(docRowHtml).join("")
+      + '<div id="'+outId+'" style="margin-top:10px"></div>', list.length)
+      /* ชีทส่งมาให้ 20 ใบล่าสุด ใบเก่ากว่านั้นยังอยู่ในชีท เอกสาร ครบทุกใบ
+         ต้องบอกไว้ ไม่งั้นจะเข้าใจว่าใบเก่าหายไปแล้ว */
+      + (list.length >= 20 && isQuote
+         ? '<div class="hint" style="margin-top:8px">แสดง 20 ใบล่าสุด · '
+           + 'ใบเก่ากว่านี้ดูได้ในชีท <b>เอกสาร</b></div>' : '');
+    bindAgain();
+    bindDocRows(box, outId, function(){ drawOldDocs(orderNo, sel) });
   }, function(e){
     box.innerHTML = '<div class="hint" style="color:var(--red)">ดูใบเก่าไม่ได้: '
       + esc(e && e.message ? e.message : e) + '</div>';
   });
+}
+
+/* ยกเลิกเอกสารที่ออกผิด
+   ไม่ทำเป็น "แก้ไข" ที่เขียนทับใบเดิม เพราะใบที่ออกไปแล้วลูกค้าถืออยู่ในมือ
+   แก้ในระบบเงียบ ๆ แล้วใบสองใบไม่ตรงกันคือปัญหาตอนสรรพากรตรวจ
+   วิธีที่ถูกคือติดป้ายว่ายกเลิกพร้อมเหตุผล แล้วออกใบใหม่แทน */
+/* แก้เนื้อใบที่ออกผิดแต่ยังไม่ได้ส่งให้ลูกค้า — เลขใบเดิม ไม่กินเลขใหม่
+
+   เจ้าของร้านเจอทุกวัน: กดออกใบแล้วเพิ่งเห็นว่ายอดหรือชื่อผิด ทั้งที่ใบยังอยู่ในจอ
+   ทางเดิมมีแค่ยกเลิกแล้วออกใหม่ ซึ่งถูกเมื่อใบถึงมือลูกค้าแล้ว
+   แต่ถ้าใบยังไม่ออกจากร้าน มันแค่เผาเลขทิ้งใบหนึ่งทุกครั้งที่พิมพ์ผิด
+
+   ปุ่มนี้จึงถามยืนยันเรื่องเดียวที่ตัดสินว่าทำได้ไหม: ใบถึงมือลูกค้าหรือยัง */
+function askRevise(no, btn, redraw){
+  var row = btn.closest(".row");
+  if (row.querySelector(".rvbox")) { row.querySelector(".rv-why").focus(); return }
+
+  var box = document.createElement("div");
+  box.className = "rvbox";
+  box.innerHTML =
+    '<div class="hint" style="margin-bottom:6px">แก้ใบ <b>'+esc(no)+'</b> โดยใช้เลขเดิม — '
+      +'ระบบจะประกอบใบใหม่จากออเดอร์ตอนนี้ทั้งใบ (ยอด ข้อมูลผู้ซื้อ และตัวกระดาษ)<br>'
+      +'<b>วันที่กับชนิดเอกสารไม่เปลี่ยน</b> · ยอดเดิมถูกจดไว้ในหมายเหตุของใบทุกครั้ง<br>'
+      +'<b style="color:var(--red)">แก้ได้จนกว่าจะกดปุ่ม "ส่งแล้ว"</b> — '
+      +'พอกดส่งแล้ว ใบนี้จะแก้ไม่ได้อีก ต้องยกเลิกแล้วออกใบใหม่แทน</div>'
+    +'<input class="rv-why" placeholder="เหตุผล เช่น ยอดผิด แก้ราคาแล้วออกใหม่">'
+    +'<div style="display:flex;gap:8px;margin-top:8px">'
+    +'<button class="mini rv-go">ยืนยันแก้ใบนี้</button>'
+    +'<button class="mini rv-no">ไม่แก้</button></div>'
+    +'<div class="rv-msg hint" style="margin-top:6px"></div>';
+  row.appendChild(box);
+
+  var why = box.querySelector(".rv-why");
+  var msg = box.querySelector(".rv-msg");
+  why.focus();
+  box.querySelector(".rv-no").onclick = function(){ box.remove() };
+  why.onkeydown = function(e){ if (e.key === "Enter") box.querySelector(".rv-go").click() };
+
+  /* กุญแจกันซ้ำต่อการกดหนึ่งครั้ง เน็ตหลุดแล้วกดใหม่ต้องไม่แก้สองรอบ */
+  var rvKey = newKey();
+
+  box.querySelector(".rv-go").onclick = function(){
+    var r = why.value.trim();
+    if (r.length < 5) {
+      msg.style.color = "var(--red)";
+      msg.textContent = "ต้องบอกเหตุผลอย่างน้อย 5 ตัวอักษร — ใบเดียวกันที่ยอดเปลี่ยนต้องอธิบายได้";
+      why.focus();
+      return;
+    }
+    if (!confirm("แก้ใบ " + no + " โดยใช้เลขเดิม?\n\n"
+               + "ยืนยันว่าใบนี้ยังไม่ได้ส่งให้ลูกค้า")) return;
+
+    var go = box.querySelector(".rv-go");
+    go.disabled = true; go.textContent = "กำลังแก้…";
+    msg.style.color = ""; msg.textContent = "";
+    /* ข้อมูลผู้ซื้อใช้ของที่กรอกไว้บนหน้าจอตอนนี้ ถ้ายังเปิดหน้าออกเอกสารค้างอยู่
+       ไม่งั้นการแก้ยอดจะล้างชื่อผู้เสียภาษีของใบเดิมทิ้งไปโดยไม่ตั้งใจ */
+    var cust = $("#dc-name") ? {
+      name: $("#dc-name").value.trim(), taxId: $("#dc-tax").value.replace(/[^\d]/g,""),
+      branch: $("#dc-branch").value, addr: $("#dc-addr").value.trim(),
+      tel: $("#dc-tel").value.trim(), email: $("#dc-email").value.trim()
+    } : null;
+    var vatSel = $("#dc-vat") ? $("#dc-vat").value : "excl";
+
+    api("reviseDoc", {
+      no: no, why: r, by: byName(), cust: cust,
+      po: $("#dc-po") ? $("#dc-po").value.trim() : "",
+      terms: $("#dc-terms") ? $("#dc-terms").value : "",
+      vatMode: vatSel === "incl" ? "incl" : "excl", novat: vatSel === "none",
+      clientKey: "rv-" + no + "-" + rvKey
+    }).then(function(res){
+      toast("แก้ใบ " + no + " แล้ว · ยอดใหม่ " + baht(res.doc ? res.doc.total : 0));
+      redraw();
+    }, function(e){
+      go.disabled = false; go.textContent = "ยืนยันแก้ใบนี้";
+      msg.style.color = "var(--red)";
+      msg.textContent = "แก้ไม่สำเร็จ: " + (e && e.message ? e.message : e);
+    });
+  };
+}
+
+function askVoid(no, btn, redraw){
+  var row = btn.closest(".row");
+  if (row.querySelector(".vdbox")) { row.querySelector(".vd-why").focus(); return }
+
+  var box = document.createElement("div");
+  box.className = "vdbox";
+  box.innerHTML =
+    '<div class="hint" style="margin-bottom:6px">ยกเลิกใบ <b>'+esc(no)+'</b> — '
+      +'ใบเดิมยังเก็บไว้ในระบบและพิมพ์ดูย้อนหลังได้ แต่จะถูกตีตราว่ายกเลิก '
+      +'และออกใบใหม่ให้ออเดอร์นี้ได้ทันที</div>'
+    +'<input class="vd-why" placeholder="เหตุผล เช่น ออกผิดชนิดเอกสาร / ชื่อลูกค้าผิด">'
+    +'<div style="display:flex;gap:8px;margin-top:8px">'
+    +'<button class="mini red vd-go">ยืนยันยกเลิก</button>'
+    +'<button class="mini vd-no">ไม่ยกเลิก</button></div>'
+    +'<div class="vd-msg hint" style="margin-top:6px"></div>';
+  row.appendChild(box);
+
+  var why = box.querySelector(".vd-why");
+  var msg = box.querySelector(".vd-msg");
+  why.focus();
+  box.querySelector(".vd-no").onclick = function(){ box.remove() };
+  why.onkeydown = function(e){ if (e.key === "Enter") box.querySelector(".vd-go").click() };
+
+  box.querySelector(".vd-go").onclick = function(){
+    var r = why.value.trim();
+    if (r.length < 5) {
+      msg.style.color = "var(--red)";
+      msg.textContent = "ต้องบอกเหตุผลอย่างน้อย 5 ตัวอักษร — บัญชีกับสรรพากรจะอ่านช่องนี้";
+      why.focus();
+      return;
+    }
+    var go = box.querySelector(".vd-go");
+    go.disabled = true; go.textContent = "กำลังยกเลิก…";
+    msg.style.color = ""; msg.textContent = "";
+    api("voidDoc", no, r, byName()).then(function(){
+      toast("ยกเลิกใบ " + no + " แล้ว ออกใบใหม่ได้เลย");
+      redraw();
+    }, function(e){
+      go.disabled = false; go.textContent = "ยืนยันยกเลิก";
+      msg.style.color = "var(--red)";
+      msg.textContent = "ยกเลิกไม่สำเร็จ: " + (e && e.message ? e.message : e);
+    });
+  };
 }
 
 function reprint(no, btn, outSel){
@@ -782,10 +1615,13 @@ function reprint(no, btn, outSel){
         +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
         +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
         +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+        +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
+        + (m.voidWhy ? '' : '<button class="btn ghost" id="dc-sign" style="margin-top:9px">ให้ลูกค้าเซ็นรับของ</button>')
         +'<div class="hint" style="text-align:center;margin-top:10px">'
         +'พิมพ์ซ้ำใบเดิม เลขที่เอกสารยังเป็น '+esc(no)+' · ไม่ได้ออกใบใหม่ ไม่ตัดสต๊อกซ้ำ</div>';
       bindLabelButtons(url, no+".png", "a4");
       bindDocCopy(outSel || "#rp-out", r, m, no);
+      bindDocSign(outSel || "#rp-out", r, m, no);
       if (btn) { btn.disabled = false; btn.textContent = "พิมพ์ซ้ำ" }
     });
   }).catch(function(e){
@@ -842,7 +1678,11 @@ function byName(){
 
 var DOC_BTN = [
   { key:"rec",   label:"ใบเสร็จรับเงิน / ใบกำกับภาษี", hint:"ลูกค้าจ่ายเงินแล้ว และขอใบกำกับภาษี" },
-  { key:"inv",   label:"ใบแจ้งหนี้ / บิลเงินสด",       hint:"วางบิล ยังไม่ได้รับเงิน" },
+  /* บิลเงินสดเคยถูกเขียนพ่วงไว้กับใบแจ้งหนี้ ทั้งที่เป็นคนละใบคนละเรื่อง
+     คนหาบิลเงินสดจึงไม่เจอ แล้วไปออกใบเสร็จ/ใบกำกับภาษีแบบติ๊กไม่คิด VAT แทน
+     ซึ่งกินเลขชุดใบกำกับภาษีไปฟรี ๆ ใบละหนึ่งเลข */
+  { key:"cash",  label:"บิลเงินสด",                   hint:"ไม่ออกใบกำกับภาษี ไม่มี VAT · เลขคนละชุดกับใบกำกับภาษี" },
+  { key:"inv",   label:"ใบแจ้งหนี้",                  hint:"วางบิล ยังไม่ได้รับเงิน" },
   { key:"dep",   label:"ใบรับเงินมัดจำ",              hint:"รับมัดจำไว้ก่อน ยังไม่ส่งของครบ" },
   { key:"quote", label:"ใบเสนอราคา",                 hint:"ยังไม่มีออเดอร์ ออกจากแท็บใบเสนอราคา" }
 ];
@@ -857,6 +1697,7 @@ function taxMemoSave(name, o){
 }
 
 function openDoc(o, preType){
+  DC_KEY = newKey();
   var memo = taxMemo(o.cust) || {};
   openModal("ออกเอกสาร — "+o.no,
      '<div id="dc-old"></div>'
@@ -878,7 +1719,8 @@ function openDoc(o, preType){
     +'</div>'
     +'<div class="subhd">ข้อมูลผู้ซื้อบนเอกสาร</div>'
     +'<div class="fld"><label>ชื่อผู้เสียภาษี / ชื่อบริษัท</label>'
-    +'<input id="dc-name" value="'+esc(memo.name||o.cust||"")+'"></div>'
+    +'<input id="dc-name" autocomplete="off" value="'+esc(memo.name||o.cust||"")+'">'
+    +'<div id="dc-name-hit" class="thhit"></div></div>'
     +'<div class="fld"><label>เลขประจำตัวผู้เสียภาษี 13 หลัก</label>'
     +'<input id="dc-tax" inputmode="numeric" maxlength="17" value="'+esc(memo.taxId||"")+'">'
     +'<div class="hint" id="dc-taxmsg">เว้นว่างได้ถ้าลูกค้าเป็นบุคคลธรรมดาไม่ขอใบกำกับภาษี</div></div>'
@@ -897,7 +1739,8 @@ function openDoc(o, preType){
     +'<div class="fld"><label>ภาษีมูลค่าเพิ่ม</label>'
     +'<select id="dc-vat"><option value="excl">บวก VAT 7% จากราคา</option>'
     +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
-    +'<option value="none">ไม่คิด VAT</option></select></div></div>'
+    +'<option value="none">ไม่คิด VAT (= บิลเงินสด)</option></select>'
+    +'<div class="hint" id="dc-vatmsg"></div></div></div>'
     +'<button class="btn" id="dc-make">ออกเอกสาร</button>'
     +'<div id="dc-out" style="margin-top:12px"></div>');
 
@@ -910,9 +1753,43 @@ function openDoc(o, preType){
       c.checked = def.indexOf(Number(c.value)) > -1;
     });
   }
-  formTick();
+
+  /* บิลเงินสดไม่มี VAT โดยนิยาม เลือกไม่ได้ว่าจะคิดหรือไม่คิด
+     และในทางกลับกัน "ไม่คิด VAT" บนใบกำกับภาษีก็ไม่มีอยู่จริง — ถ้าไม่คิดภาษี
+     ใบนั้นไม่ใช่ใบกำกับภาษี จึงสลับชนิดให้เลย แทนที่จะปล่อยให้ออกใบผิดชนิด
+     แล้วไปกินเลขชุดใบกำกับภาษี ซึ่งเอาคืนไม่ได้ */
+  function vatTick(){
+    var type = (document.querySelector('input[name=dctype]:checked')||{}).value || "rec";
+    var sel = $("#dc-vat"), msg = $("#dc-vatmsg");
+    if(!sel) return;
+    if(type === "cash"){
+      sel.value = "none"; sel.disabled = true;
+      msg.textContent = "บิลเงินสดไม่มี VAT และใช้เลขคนละชุดกับใบกำกับภาษี";
+      msg.style.color = "var(--gray)";
+    } else {
+      sel.disabled = false;
+      if(sel.value === "none") sel.value = "excl";
+      msg.textContent = "";
+    }
+  }
+  function toCash(){
+    var r = document.querySelector('#dc-pick input[value="cash"]');
+    if(r){ r.checked = true; if(!DC_FORM_TOUCHED) formTick(); vatTick(); }
+    var msg = $("#dc-vatmsg");
+    if(msg){
+      msg.textContent = "ไม่คิด VAT = ใบนี้ไม่ใช่ใบกำกับภาษี เปลี่ยนชนิดให้เป็นบิลเงินสดแล้ว";
+      msg.style.color = "var(--amber)";
+    }
+  }
+  formTick(); vatTick();
   $$("#dc-pick input[name=dctype]").forEach(function(r){
-    r.addEventListener("change", function(){ if(!DC_FORM_TOUCHED) formTick() });
+    r.addEventListener("change", function(){
+      if(!DC_FORM_TOUCHED) formTick();
+      vatTick();
+    });
+  });
+  $("#dc-vat").addEventListener("change", function(){
+    if(this.value === "none") toCash();
   });
   var DC_FORM_TOUCHED = false;
   $$("#dc-form .fchk-i").forEach(function(c){
@@ -923,6 +1800,19 @@ function openDoc(o, preType){
      ก่อนหน้านี้ใบที่ออกไปแล้วเปิดกลับมาดูไม่ได้เลย กดออกใหม่ก็โดนกันใบซ้ำ
      คนเลยตันอยู่ตรงนั้น ทั้งที่แค่อยากได้กระดาษอีกแผ่น */
   drawOldDocs(o.no);
+
+  /* ลูกค้าบริษัทที่เคยออกใบให้แล้ว ไม่ต้องพิมพ์เลข 13 หลักกับที่อยู่จดทะเบียนใหม่
+     ของเดิมจำไว้ในเครื่องที่ออกใบเท่านั้น เปลี่ยนเครื่องทีก็ต้องพิมพ์ใหม่ทั้งชุด */
+  bindCustFind("#dc-name", "#dc-name-hit", function(c){
+    $("#dc-name").value = c.name;
+    if(c.branch) pickOption("#dc-branch", c.branch);
+    custToast(custFill([
+      ["#dc-tax",   c.taxId,             "เลขผู้เสียภาษี"],
+      ["#dc-tel",   c.tel,               "โทรศัพท์"],
+      ["#dc-addr",  c.taxAddr || c.addr, "ที่อยู่"],
+      ["#dc-email", c.email,             "อีเมล"]
+    ]));
+  });
 
   /* เลขผู้เสียภาษีผิดหลักเดียว ลูกค้าเอาใบไปใช้เครดิตภาษีซื้อไม่ได้
      เตือนทันทีตอนพิมพ์ แต่ไม่บล็อก เพราะลูกค้าบุคคลธรรมดาไม่มีเลขนี้ */
@@ -948,9 +1838,18 @@ function openDoc(o, preType){
       terms:$("#dc-terms").value, date:o.date, by:byName(),
       vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
       form: readFormTicks(),
-      clientKey: "dc-"+o.no+"-"+type+"-"+Date.now()
+      /* เน็ตหลุดตอนออกเอกสารคือกรณีที่แพงที่สุด เพราะเลขเอกสารอาจถูกใช้ไปแล้ว
+         กุญแจตัวเดิมทำให้กดซ้ำได้ใบเดิม ไม่ใช่กินเลขใหม่ไปอีกใบ */
+      clientKey: "dc-"+o.no+"-"+type+"-"+DC_KEY
     }).then(function(r){
       drawDoc(r, o, cust, type, readFormTicks());
+      DC_KEY = newKey();   /* ออกใบถัดไปในหน้าต่างเดิมเป็นงานใหม่ ไม่ใช่การกดซ้ำ */
+      /* ข้อมูลผู้เสียภาษีของลูกค้ารายนี้เพิ่งลงชีทไป โหลดรายชื่อใหม่รอบหน้า
+         ใบต่อไปของลูกค้าคนเดิมจะได้ดึงเลข 13 หลักมาให้เลย ไม่ต้องพิมพ์ซ้ำ */
+      CUSTS = null;
+      /* รีเฟรชรายการใบที่ออกไปแล้วทันที ตอนที่รู้ตัวว่าออกผิดคือตอนเพิ่งเห็นใบ
+         ปุ่มยกเลิกจึงต้องอยู่ตรงนั้นเลย ไม่ใช่ต้องปิดหน้าต่างแล้วเปิดใหม่ */
+      drawOldDocs(o.no);
     }, function(e){
       btn.disabled=false;
       $("#dc-out").innerHTML='<div style="color:var(--red)">ออกเอกสารไม่สำเร็จ: '
@@ -967,11 +1866,19 @@ function readFormTicks(){
 }
 
 function drawDoc(r, o, cust, type, form){
+  /* กล่องออกเอกสารปิดไปแล้วก็ไม่มีที่ให้วาง
+
+     ทั้งการยิงไปลงทะเบียนในชีทและการวาดใบ A4 ใช้เวลาเป็นวินาที คนกดปิดกล่อง
+     ระหว่างนั้นได้ตลอด (และจะกดจริง ๆ เวลาเน็ตร้านช้า)
+     ใบยังลงทะเบียนในชีทเรียบร้อยแล้ว ไม่ได้หายไปไหน กดพิมพ์ซ้ำจากแฟ้มเอกสารได้เลย
+     จึงเงียบไปเฉย ๆ ดีกว่าโยน error ใส่หน้าจอที่ไม่มีใครดูอยู่แล้ว */
+  if(!$("#dc-out")) return;
   var m = { no:r.no, date:o.date, cust:cust, po:$("#dc-po")?$("#dc-po").value.trim():"",
             terms:$("#dc-terms")?$("#dc-terms").value:"", seller:CFG.docSeller||"",
             sellerEmail:CFG.docSellerEmail||"", note:"", form:form||[] };
   $("#dc-out").innerHTML='<div class="load">กำลังวาดเอกสาร…</div>';
   buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+    if(!$("#dc-out")) return;
     $("#dc-out").innerHTML =
        '<div class="msg ok" style="display:block">ออกใบ <b>'+esc(r.no)+'</b> แล้ว '
       +'ลงทะเบียนในชีท เอกสาร เรียบร้อย</div>'
@@ -980,10 +1887,13 @@ function drawDoc(r, o, cust, type, form){
       +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
       +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
       +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+      +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
+      +'<button class="btn ghost" id="dc-sign" style="margin-top:9px">ให้ลูกค้าเซ็นรับของ</button>'
       +'<div class="hint" style="text-align:center;margin-top:10px">A4 · พิมพ์ได้ · ส่งเป็นรูปในแชทได้<br>'
       +'พิมพ์ต้นฉบับให้ลูกค้า แล้วกด “ดูสำเนา” พิมพ์อีกใบเก็บส่งบัญชี</div>';
     bindLabelButtons(url, r.no+".png", "a4");
     bindDocCopy("#dc-out", r, m, r.no);
+    bindDocSign("#dc-out", r, m, r.no);
   }, function(e){
     $("#dc-out").innerHTML='<div style="color:var(--red)">ใบลงชีทแล้ว (เลข '+esc(r.no)
       +') แต่วาดรูปไม่สำเร็จ: '+esc(e&&e.message?e.message:e)+'</div>';
@@ -999,27 +1909,431 @@ function taxIdOk(v){
   return (11-(sum%11))%10 === Number(t.charAt(12));
 }
 
+/* --------------------------------------------- แก้รายการสินค้าของออเดอร์ที่คีย์แล้ว
+
+   ลูกค้าทักมาขอเพิ่มของก่อนร้านแพ็คส่ง เป็นเรื่องปกติของหน้างาน
+   ของเดิมทำได้ทางเดียวคือยกเลิกใบเดิมแล้วคีย์ใหม่ทั้งใบ เสียเลขออเดอร์ไปหนึ่งใบทุกครั้ง
+
+   ฝั่งชีทรื้อรายการเดิมกับล็อตที่ตัดไปออกก่อน แล้ววางแผนใหม่ทั้งชุด
+   จึงได้ FEFO ที่ถูกต้อง — หน้าจอนี้แค่รวบรวมว่ารายการใหม่ทั้งใบมีอะไรบ้าง       */
+
+var ED_ORDER = null;
+
+function openEditItems(o){
+  ED_ORDER = o;
+  openModal("แก้รายการสินค้า — " + o.no,
+    /* คำอธิบายสั้นที่สุดเท่าที่ยังบอกครบ — บนมือถือ ถ้ายาวกว่านี้
+       ของที่ต้องแก้จริงจะถูกดันตกจอไปหมด ต้องเลื่อนก่อนถึงจะเริ่มทำงานได้ */
+     '<div class="hint" style="margin-bottom:10px">'
+    +'<b>สต๊อกกับล็อตคิดใหม่ทั้งใบ</b> ให้ตรงกับรายการที่เหลือ · '
+    +'เลขออเดอร์ ลูกค้า ค่าส่ง ส่วนลด ยังเป็นของเดิม<br>'
+    +'ใบที่ออกเอกสารไปแล้ว ต้องยกเลิกใบเดิมก่อนจึงแก้ได้</div>'
+    +'<div id="ed-rows"></div>'
+    +'<button class="btn ghost" id="ed-add" style="margin-top:8px">+ เพิ่มสินค้า</button>'
+    /* ค่าส่งกับส่วนลดต้องแก้ได้ตรงนี้ด้วย ไม่งั้นแก้รายการเสร็จแล้วยอดสุทธิยังผิด
+       เพราะค่าส่งเดิมยังค้างอยู่ ต้องไปเปิดชีทแก้เองซึ่งพลาดง่ายมาก */
+    +'<div class="two" style="margin-top:12px">'
+    +'<div class="fld"><label>ส่วนลด (บาท)</label>'
+    +'<input id="ed-disc" type="number" inputmode="decimal" min="0" step="0.01" value="'
+    + (Number(o.discount)||0) + '"></div>'
+    +'<div class="fld"><label>ค่าจัดส่ง (บาท)</label>'
+    +'<input id="ed-ship" type="number" inputmode="decimal" min="0" step="0.01" value="'
+    + (Number(o.ship)||0) + '"></div></div>'
+    /* กด "รับ VAT" ผิดตอนคีย์ออเดอร์เกิดขึ้นจริง และเดิมแก้ได้ทางเดียวคือเปิดชีท
+       ไปแก้เอง แล้วยอดสุทธิก็ไม่ได้คิดใหม่ตามให้ ต้องไล่แก้อีกช่อง — ยอดผิดทั้งใบได้ง่าย */
+    +'<div class="fld" style="margin-top:10px"><label>ภาษีมูลค่าเพิ่มของออเดอร์นี้</label>'
+    +'<select id="ed-vat">'
+    +'<option value="รับ VAT"'+(String(o.vat||"").indexOf("ไม่")!==0?" selected":"")+'>'
+    +'รับ VAT — บวก 7% จากยอดสินค้า</option>'
+    +'<option value="ไม่รับ VAT"'+(String(o.vat||"").indexOf("ไม่")===0?" selected":"")+'>'
+    +'ไม่รับ VAT — ไม่มีภาษี (ออกเป็นบิลเงินสด)</option></select>'
+    +'<div class="hint">เปลี่ยนตรงนี้แล้วยอดสุทธิคิดใหม่ทั้งใบ · '
+    +'ถ้าออกใบกำกับภาษีไปแล้วต้องยกเลิกใบเดิมก่อน แล้วออกใหม่เป็นบิลเงินสด</div></div>'
+    +'<label class="giftck"><input type="checkbox" id="ed-fixdoc">'
+    +' แก้ใบที่ออกไปแล้วตามด้วย (ใช้เลขเดิม) — เฉพาะใบที่ยังไม่ได้กด “ส่งแล้ว”</label>'
+    +'<div class="sum" id="ed-sum" style="margin-top:12px"></div>'
+    +'<button class="btn" id="ed-save" style="margin-top:12px">บันทึกรายการใหม่</button>'
+    +'<div id="ed-msg" style="margin-top:10px"></div>');
+
+  (o.items||[]).forEach(function(it){
+    /* ของซื้อมาขายไปที่พิมพ์ชื่อเอง จะไม่มีรหัสอยู่ในรายการสินค้า
+       เปิดมาเป็นโหมดพิมพ์ชื่อให้เลย ไม่ใช่ปล่อยช่องเลือกว่างแล้วให้เดาเอง */
+    edRow({ sku: it.sku, name: it.name, qty: it.qty, price: it.price,
+            free: !prodBySku(it.sku) });
+  });
+  if(!(o.items||[]).length) edRow({});
+
+  ED_KEY = newKey();
+  $("#ed-add").onclick = function(){ edRow({}); };
+  $("#ed-save").onclick = function(){ edSave(o, this); };
+  ["#ed-disc","#ed-ship"].forEach(function(sel){
+    $(sel).addEventListener("input", function(){ edSum(o) });
+  });
+  $("#ed-vat").addEventListener("change", function(){ edSum(o) });
+  edSum(o);
+}
+
+function edRow(v){
+  var box = $("#ed-rows");
+  var d = document.createElement("div");
+  d.className = "it edrow";
+  d.innerHTML =
+     '<div class="hd"><b>รายการที่ <span class="n"></span></b>'
+    +'<button class="mini red rm" type="button">ลบ</button></div>'
+    +'<div class="fld ed-sku-wrap" style="margin-bottom:8px">'
+    +'<select class="i-sku">'+prodOptions(v.sku||"")+'</select></div>'
+    +'<div class="fld ed-free-wrap" style="margin-bottom:8px;display:none">'
+    +'<input class="i-name" type="text" placeholder="พิมพ์ชื่อสินค้า" value="'+esc(v.name||"")+'">'
+    +'<input class="i-cost" type="number" inputmode="decimal" min="0" '
+    +'placeholder="ต้นทุน/หน่วย (ไม่ใส่ก็ได้)" style="margin-top:6px"></div>'
+    +'<div class="three">'
+    +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
+    +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||1)+'"></div>'
+    +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
+    +'<input class="i-price" type="number" inputmode="decimal" min="0" '
+    +'placeholder="ปล่อยว่าง = ราคามาตรฐาน" value="'+(v.price===""||v.price===undefined?"":v.price)+'"></div>'
+    +'<div></div></div>'
+    +'<label class="giftck"><input type="checkbox" class="i-free"'+(v.free?" checked":"")+'>'
+    +' ซื้อมาขายไป — พิมพ์ชื่อและราคาเอง</label>'
+    /* หน้าคีย์ออเดอร์มีช่องนี้มาตั้งแต่แรก แต่กล่องแก้รายการไม่มี
+       เวลาที่ต้องใช้จริงที่สุดคือตอนรู้ตัวว่าคิดเงินของแถมไปแล้ว ซึ่งเป็นตอนที่ต้องมาแก้
+       ถ้าไม่มีช่องนี้ต้องพิมพ์เลข 0 เอง และคนจะลบให้ว่างแทน ซึ่งกลายเป็นราคาป้าย */
+    +'<label class="giftck"><input type="checkbox" class="i-gift"'
+    + (Number(v.price) === 0 && v.price !== "" && v.price !== undefined ? " checked" : "")
+    +'> แถมฟรี (ราคา 0 แต่ยังตัดสต๊อก)</label>';
+  box.appendChild(d);
+
+  function toggle(){
+    var on = d.querySelector(".i-free").checked;
+    d.querySelector(".ed-sku-wrap").style.display  = on ? "none" : "";
+    d.querySelector(".ed-free-wrap").style.display = on ? "" : "none";
+    edSum();
+  }
+  d.querySelector(".i-free").onchange = toggle;
+
+  /* ติ๊กแล้วตรึงราคาเป็นศูนย์ไปเลย ไม่ใช่แค่พิมพ์ 0 ให้ — กันไม่ให้เผลอลบจนว่าง
+     แล้วกลายเป็นราคาป้ายโดยไม่รู้ตัว ซึ่งเป็นวิธีที่ของแถมกลับมาคิดเงินอีกครั้ง */
+  function giftToggle(){
+    var pr = d.querySelector(".i-price");
+    if (d.querySelector(".i-gift").checked) {
+      pr.value = "0"; pr.readOnly = true; pr.style.background = "#f2f4f7";
+    } else {
+      if (Number(pr.value) === 0) pr.value = "";
+      pr.readOnly = false; pr.style.background = "";
+    }
+    edSum();
+  }
+  d.querySelector(".i-gift").onchange = giftToggle;
+  if (d.querySelector(".i-gift").checked) giftToggle();
+  /* แถวสินค้าไม่รู้จักหัวบิล จึงคิดยอดสุทธิเองไม่ได้ ให้กล่องสรุปไปอ่านค่าจากฟอร์มเอง */
+  if(v.free) toggle();
+
+  d.querySelector(".rm").onclick = function(){
+    if($$("#ed-rows .edrow").length <= 1){ toast("ต้องมีสินค้าอย่างน้อย 1 รายการ"); return }
+    d.remove(); edSum();
+  };
+  ["i-sku","i-qty","i-price","i-name"].forEach(function(c){
+    var el = d.querySelector("."+c);
+    if(el) el.oninput = el.onchange = edSum;
+  });
+  edSum();
+}
+
+function edItems(){
+  return $$("#ed-rows .edrow").map(function(r){
+    var free = r.querySelector(".i-free").checked;
+    var gift = r.querySelector(".i-gift") && r.querySelector(".i-gift").checked;
+    return {
+      free: free,
+      sku:   free ? "" : r.querySelector(".i-sku").value,
+      name:  free ? r.querySelector(".i-name").value.trim() : "",
+      cost:  free ? r.querySelector(".i-cost").value : "",
+      qty:   r.querySelector(".i-qty").value,
+      /* ส่งเลขศูนย์ไปตรง ๆ ไม่ใช่ค่าว่าง — ค่าว่างแปลว่า "ใช้ราคามาตรฐาน" */
+      price: gift ? "0" : r.querySelector(".i-price").value
+    };
+  });
+}
+
+/** ยอดสินค้าที่คิดให้ดูก่อนกดบันทึก — ยอดจริงยังยึดที่ชีทคำนวณเสมอ */
+function edSum(o){
+  var box = $("#ed-sum");
+  if(!box) return;
+  /* แถวสินค้าเรียก edSum() มาแบบไม่มีหัวบิล จึงต้องจำใบที่กำลังแก้ไว้
+     ไม่งั้นบรรทัด VAT จะหายไปทุกครั้งที่พิมพ์จำนวนหรือราคา */
+  o = o || ED_ORDER;
+  $$("#ed-rows .edrow").forEach(function(r,i){ r.querySelector(".n").textContent = i+1 });
+  var sub = 0, unknown = 0;
+  edItems().forEach(function(it){
+    var qty = Number(it.qty)||0;
+    var pr = it.price === "" ? null : Number(it.price);
+    if(pr === null){
+      var p = it.free ? null : prodBySku(it.sku);
+      if(p) pr = Number(p.price)||0; else { unknown++; pr = 0; }
+    }
+    sub += qty * pr;
+  });
+  /* คิดยอดสุทธิให้ดูด้วย เพราะหน้าจอเดิมโชว์แต่ยอดก่อน VAT
+     แล้วคนอ่านนึกว่ายอดผิด ทั้งที่ VAT กับค่าส่งยังไม่ได้บวกเข้าไป */
+  var disc = Number(($("#ed-disc")||{}).value || 0) || 0;
+  var ship = Number(($("#ed-ship")||{}).value || 0) || 0;
+  /* อ่านจากช่องที่คนกำลังเลือกอยู่ ไม่ใช่จากค่าที่เก็บไว้ในออเดอร์
+     ไม่งั้นสลับเป็นไม่รับ VAT แล้วยอดตรงหน้ายังบวกภาษีอยู่ ซึ่งอ่านแล้วไม่เชื่อมือ */
+  var vatSel = $("#ed-vat");
+  var isVat = vatSel ? vatSel.value.indexOf("ไม่") !== 0
+                     : (o && String(o.vat||"").indexOf("ไม่") !== 0);
+  var rate = Number(BOOT ? BOOT.vatRate : 0) || 0;
+  var vat = isVat ? Math.round((sub - disc) * rate * 100) / 100 : 0;
+  var net = Math.round((sub - disc + ship + vat) * 100) / 100;
+
+  box.innerHTML = '<div class="line"><span>ยอดสินค้า</span><b>'+baht(sub)+'</b></div>'
+    + (disc ? '<div class="line"><span>ส่วนลด</span><b>-'+baht(disc)+'</b></div>' : '')
+    + (isVat ? '<div class="line"><span>ภาษีมูลค่าเพิ่ม '+Math.round(rate*100)+'%</span><b>'+baht(vat)+'</b></div>' : '')
+    + (ship ? '<div class="line"><span>ค่าจัดส่ง</span><b>'+baht(ship)+'</b></div>' : '')
+    + '<div class="line"><span><b>ยอดสุทธิ (ประมาณ)</b></span><b>'+baht(net)+'</b></div>'
+    + (unknown ? '<div class="hint">มี '+unknown+' บรรทัดที่ยังไม่ได้เลือกสินค้าหรือใส่ราคา</div>' : '')
+    + '<div class="hint">ยอดจริงชีทเป็นคนคิดตอนบันทึก ตัวเลขนี้ไว้ดูคร่าว ๆ ก่อนกด</div>';
+}
+
+function edSave(o, btn){
+  var items = edItems();
+  for(var i=0;i<items.length;i++){
+    var it = items[i];
+    if(!(Number(it.qty)>0)){ toast("รายการที่ "+(i+1)+": จำนวนต้องมากกว่า 0"); return }
+    if(it.free && !it.name){ toast("รายการที่ "+(i+1)+": ยังไม่ได้ใส่ชื่อสินค้า"); return }
+    if(!it.free && !it.sku){ toast("รายการที่ "+(i+1)+": ยังไม่ได้เลือกสินค้า"); return }
+  }
+  if(!confirm("บันทึกรายการใหม่ของออเดอร์ "+o.no+" ?\n\n"
+            + "สต๊อกกับล็อตจะถูกคิดใหม่ทั้งใบให้ตรงกับรายการนี้")) return;
+
+  btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+  $("#ed-msg").innerHTML = "";
+  /* กุญแจกันบันทึกซ้ำ — กดสองทีเพราะเน็ตช้า ต้องไม่ได้ผลสองรอบ */
+  if(!ED_KEY) ED_KEY = newKey();
+  var fixDoc = $("#ed-fixdoc") && $("#ed-fixdoc").checked;
+  api("editOrderItems", o.no, items, byName(), "ed-" + o.no + "-" + ED_KEY,
+      { reviseDocs: !!fixDoc,
+        ship: $("#ed-ship") ? $("#ed-ship").value : undefined,
+        discount: $("#ed-disc") ? $("#ed-disc").value : undefined,
+        vat: $("#ed-vat") ? $("#ed-vat").value : undefined }).then(function(r){
+    /* สำเร็จแล้วเปลี่ยนกุญแจ ไม่งั้นถ้าแก้รายการต่ออีกรอบในหน้าต่างเดิม
+       เซิร์ฟเวอร์จะเห็นเป็นการกดซ้ำของงานเดิม แล้วไม่ทำอะไรให้เงียบ ๆ */
+    ED_KEY = newKey();
+    $("#ed-msg").innerHTML = '<div class="msg ok" style="display:block">แก้รายการของ <b>'
+      + esc(o.no) + '</b> แล้ว จาก ' + r.before + ' เป็น ' + r.after + ' รายการ · ยอดสินค้า '
+      + baht(r.subtotal)
+      + (r.net !== undefined ? ' · <b>ยอดสุทธิ ' + baht(r.net) + '</b>' : '')
+      + (r.vat && String(r.vat) !== String(o.vat || '')
+          ? ' · เปลี่ยนเป็น <b>' + esc(r.vat) + '</b>' : '')
+      + (r.lots && r.lots.length ? '<br>ล็อตที่ตัด: ' + esc(r.lots.join(" · ")) : '')
+      + (r.docs && r.docs.length ? '<br>แก้ใบตามให้แล้ว: ' + esc(r.docs.join(" · ")) : '')
+      + '</div>';
+    btn.disabled = false; btn.textContent = "บันทึกรายการใหม่";
+    SUM_CACHE = null;          /* ยอดสรุปเปลี่ยนแล้ว ต้องโหลดใหม่ ไม่ใช้ของที่จำไว้ */
+    loadOrders(true);
+  }, function(e){
+    btn.disabled = false; btn.textContent = "บันทึกรายการใหม่";
+    $("#ed-msg").innerHTML = '<div class="msg err" style="display:block">'
+      + esc(e && e.message ? e.message : e) + '</div>';
+  });
+}
+
+/* ------------------------------------------- ใบเสนอราคา → ฟอร์มคีย์ออเดอร์
+
+   ลูกค้าตอบตกลงแล้ว ของเดิมต้องคีย์ชื่อ ที่อยู่ และรายการสินค้าใหม่ทั้งชุด
+   ทั้งที่ทุกอย่างอยู่ในใบเสนอราคาครบแล้ว พิมพ์ใหม่ทีคือพิมพ์ผิดได้ที
+   และราคาที่เสนอไปกับราคาที่คีย์จริงอาจไม่ตรงกันโดยไม่มีใครรู้
+
+   ตัวนี้แค่ "เติมฟอร์มให้" ยังไม่บันทึกอะไร — คนคีย์ตรวจแล้วกดบันทึกเอง
+   เพราะบันทึกแล้วสต๊อกถูกตัดจริง ถอยกลับไม่ได้ง่าย ๆ                      */
+
+/** ชื่อสินค้าบนใบ → รหัสในฐานสินค้า จับแบบตรงตัวก่อน แล้วค่อยจับแบบหลวม */
+function skuByName(name){
+  var want = String(name||"").trim().toLowerCase();
+  if(!want) return null;
+  var list = CFG.products || [];
+  for(var i=0;i<list.length;i++){
+    if(String(list[i].name||"").trim().toLowerCase() === want) return list[i];
+  }
+  /* ชื่อบนใบมักมีคำต่อท้ายเพิ่ม เช่นหน่วยนับหรือหมายเหตุ จับแบบ "ขึ้นต้นตรงกัน" ต่อ */
+  for(var j=0;j<list.length;j++){
+    var n = String(list[j].name||"").trim().toLowerCase();
+    if(n && (want.indexOf(n) === 0 || n.indexOf(want) === 0)) return list[j];
+  }
+  return null;
+}
+
+function quoteToOrder(no, btn){
+  /* ปุ่มนี้มีสองที่และเขียนไม่เหมือนกัน จำข้อความเดิมไว้ ไม่ใช่เดาเอาว่าเขียนว่าอะไร */
+  var was = btn ? btn.textContent : "";
+  if(btn){ btn.disabled = true; btn.textContent = "กำลังดึง…" }
+  api("getDoc", no).then(function(r){
+    var d = r.doc || {}, m = r.meta || {}, cu = m.cust || {};
+
+    /* ใบที่ออกแบบ "ราคารวม VAT แล้ว" ราคาต่อหน่วยบนใบคือราคาที่รวมภาษีไปแล้ว
+       แต่ช่องราคาในออเดอร์เก็บราคาก่อน VAT เสมอ แล้วชีทค่อยบวก 7% ทับทีหลัง
+       ยกราคามาตรง ๆ คือบวกภาษีซ้ำ ยอดที่เสนอไปกับยอดที่เก็บจะไม่เท่ากัน */
+    var incl = (m.vatMode === "incl") && !m.novat && Number(d.vatRate || 0) > 0;
+    var rate = Number(d.vatRate || 0.07) || 0.07;
+    var un = function(v){
+      var n = Number(v) || 0;
+      return incl ? Math.round(n / (1 + rate) * 100) / 100 : n;
+    };
+
+    var lines = (d.lines || []).filter(function(l){
+      /* ค่าส่งกับส่วนลดถูกใส่เป็นบรรทัดบนใบ แต่ในออเดอร์เป็นช่องของมันเอง */
+      return !/^ค่าจัดส่ง|^ค่าส่ง|^ส่วนลด/.test(String(l.name||"").trim());
+    });
+
+    /* ค่าส่งกับส่วนลดที่เคยเป็นบรรทัดบนใบ ดึงกลับมาใส่ช่องให้ถูกที่ */
+    var ship = 0, disc = 0;
+    (d.lines || []).forEach(function(l){
+      var nm = String(l.name||"").trim();
+      var amt = Number(l.amount || 0);
+      if(/^ค่าจัดส่ง|^ค่าส่ง/.test(nm)) ship += amt;
+      else if(/^ส่วนลด/.test(nm)) disc += Math.abs(amt);
+    });
+
+    go("new");
+    resetForm();
+    var set = function(sel, v){ if($(sel) && v) $(sel).value = v };
+    set("#f-cust", cu.name || m.custName || "");
+    set("#f-tel",  cu.tel  || "");
+    set("#f-addr", cu.addr || "");
+    if($("#f-disc")) $("#f-disc").value = un(disc) || 0;
+    if($("#f-ship")){ $("#f-ship").value = un(ship) || 0; $("#f-ship").dataset.touched = "1" }
+    /* ใบที่เสนอไปว่าไม่คิด VAT ออเดอร์ก็ต้องไม่คิด ไม่งั้นยอดที่เก็บจริงจะไม่ตรงกับที่เสนอ */
+    if($("#f-vat")) $("#f-vat").value = m.novat ? "ไม่รับ VAT" : "รับ VAT";
+    /* จดเลขใบเสนอราคาไว้ เวลาลูกค้าทักมาถามจะได้ตามกลับไปถึงใบที่เสนอจริง */
+    if($("#f-note")) $("#f-note").value = "จากใบเสนอราคา " + no;
+
+    $("#items").innerHTML = "";
+    var miss = 0;
+    lines.forEach(function(l){
+      var p = skuByName(l.name);
+      if(p){
+        addItem({ sku: p.sku, qty: l.qty, price: un(l.price) });
+      } else {
+        /* จับคู่ไม่ได้ = ของซื้อมาขายไป ให้ติ๊กช่องนั้นไว้พร้อมชื่อกับราคาเดิม
+           ดีกว่าปล่อยช่องเลือกสินค้าว่างแล้วให้คนคีย์เดาเอง */
+        miss++;
+        addItem({ free: true, name: l.name, qty: l.qty, price: un(l.price) });
+      }
+    });
+    if(!lines.length) addItem();
+    recalc();
+
+    var msg = "ดึงใบ " + no + " มาแล้ว ตรวจอีกครั้งก่อนกดบันทึก";
+    if(miss) msg += " · มี " + miss
+      + " รายการที่ไม่มีในฐานสินค้า ตั้งเป็นซื้อมาขายไปให้";
+    if(incl) msg += " · ใบนี้เสนอราคารวม VAT ถอด VAT ออกให้แล้ว ยอดสุทธิเท่าเดิม";
+    toast(msg);
+
+    /* ยอดที่ออเดอร์คิดได้ต้องเท่ากับยอดที่เสนอลูกค้าไป ถ้าไม่เท่าต้องบอกตรงนี้
+       ไม่ใช่ปล่อยให้รู้ตอนลูกค้าโอนมาไม่ตรงบิล — ที่ต่างกันได้จริงคือ VAT ค่าส่ง
+       ใบเสนอราคาคิด VAT รวมค่าจัดส่งด้วย แต่สูตรในชีทคิด VAT เฉพาะค่าสินค้า */
+    var net = Number(String($("#s-net").textContent).replace(/[^\d.]/g, "")) || 0;
+    var quoted = Math.round(Number(d.total || 0) * 100) / 100;
+    var gap = Math.round((net - quoted) * 100) / 100;
+    if(Math.abs(gap) >= 0.01){
+      showErr("ดึงใบ " + no + " มาแล้ว แต่ยอดไม่เท่ากัน — ออเดอร์คิดได้ " + baht(net)
+        + " ส่วนใบที่เสนอไปคือ " + baht(quoted) + " ต่างกัน " + baht(Math.abs(gap))
+        + " (ใบเสนอราคาคิด VAT รวมค่าจัดส่งด้วย แต่สูตรในชีทคิด VAT เฉพาะค่าสินค้า) — "
+        + "ถ้าต้องเก็บเท่าที่เสนอไป ให้ปรับค่าจัดส่งหรือส่วนลดก่อนกดบันทึก");
+    } else {
+      showOk(msg);
+    }
+    if(btn){ btn.disabled = false; btn.textContent = was }
+  }, function(e){
+    if(btn){ btn.disabled = false; btn.textContent = was }
+    toast("ดึงใบไม่สำเร็จ: " + (e && e.message ? e.message : e));
+  });
+}
+
 /* -------------------------------------------------------------- ใบปะหน้าพัสดุ */
 
 function openLabel(o){
   /* ชีทไม่มีช่อง "เก็บเงินปลายทาง" จึงไม่เดาให้ — ให้คนพิมพ์ยืนยันเอง
      พิมพ์ผิดว่าเก็บเงินปลายทางเท่าไร คือเงินจริงที่หายไป */
+  var cars = (BOOT && BOOT.lists && BOOT.lists.carrier) || [];
   openModal("ใบปะหน้าพัสดุ — "+o.no,
-     '<div class="fld"><label><input type="checkbox" id="lb-cod" style="width:auto;margin-right:8px;transform:scale(1.25)">'
+    /* ลูกค้าเปลี่ยนใจขอรับส่งด่วนตอนจะแพ็คของ เป็นเรื่องที่เกิดจริงหน้างาน
+       ของเดิมต้องไปแก้ในชีทก่อนแล้วค่อยกลับมาพิมพ์ ซึ่งคนมักลืมแก้
+       ใบปะหน้าเลยพิมพ์โลโก้ขนส่งเจ้าเดิม แล้วข้อความแจ้งลูกค้าให้ลิงก์ผิดเจ้าตามไปด้วย */
+     '<div class="fld"><label>ขนส่ง</label><select id="lb-car">'
+    + '<option value="">— ไม่ระบุขนส่ง —</option>'
+    + cars.map(function(c){
+        return '<option value="'+esc(c)+'"'+(c===o.carrier?" selected":"")+'>'+esc(c)+'</option>';
+      }).join("")
+    +'</select>'
+    +'<div class="hint" id="lb-car-hint">เปลี่ยนตรงนี้แล้ว <b>บันทึกลงชีทให้ด้วย</b> '
+    +'ไม่ใช่เปลี่ยนแค่บนกระดาษ</div></div>'
+    /* เลขพัสดุของเจ้าเดิมใช้กับเจ้าใหม่ไม่ได้ ติดไปบนใบก็สแกนไม่ผ่าน
+       และลูกค้าเอาไปเช็คก็ไม่เจอ จึงถามให้ล้างทิ้ง โดยติ๊กไว้ให้เลย */
+    + (o.track
+       ? '<div class="fld" id="lb-clr-box" style="display:none">'
+         +'<label><input type="checkbox" id="lb-clr" checked '
+         +'style="width:auto;margin-right:8px;transform:scale(1.25)">'
+         +'ล้างเลขพัสดุเดิม (<b>'+esc(o.track)+'</b>) ทิ้งด้วย</label>'
+         +'<div class="hint">เลขของขนส่งเจ้าเดิม ใช้กับเจ้าใหม่ไม่ได้</div></div>'
+       : '')
+    +'<div class="fld"><label><input type="checkbox" id="lb-cod" style="width:auto;margin-right:8px;transform:scale(1.25)">'
     +'เก็บเงินปลายทาง '+baht(o.net)+'</label>'
     +'<div class="hint">ไม่ติ๊ก = ใบปะหน้าจะพิมพ์ว่า “ไม่ต้องเก็บเงิน”</div></div>'
+    /* ที่อยู่ผู้ส่งมาจากชีท ตั้งค่าแอป ถ้าเว้นว่างไว้ ใบปะหน้าจะไม่มีที่อยู่ผู้ส่ง
+       แล้วไม่มีอะไรฟ้องเลย รู้ตัวอีกทีตอนพิมพ์แปะกล่องไปแล้ว จึงบอกก่อนตรงนี้ */
+    + (String((CFG.sender||{}).addr||"").trim() ? ""
+       : '<div class="msg err" style="display:block">ยังไม่ได้กรอก '
+         +'<b>ที่อยู่ผู้ส่ง</b> ในชีท <b>ตั้งค่าแอป</b> (คอลัมน์ A แถวที่เขียนว่า "ที่อยู่ผู้ส่ง" '
+         +'ใส่ค่าที่คอลัมน์ B) — ใบปะหน้าจะพิมพ์ออกมาโดยไม่มีที่อยู่ผู้ส่ง</div>')
     +'<button class="btn" id="lb-make">สร้างใบปะหน้า</button>'
     +'<div id="lb-out" style="margin-top:12px"></div>');
 
+  /* ช่องล้างเลขพัสดุโผล่เฉพาะตอนที่เปลี่ยนขนส่งจริง ๆ ไม่งั้นรกเปล่า ๆ */
+  var carBox = $("#lb-clr-box");
+  $("#lb-car").onchange = function(){
+    if (carBox) carBox.style.display = ($("#lb-car").value === o.carrier) ? "none" : "";
+  };
+
   $("#lb-make").onclick = function(){
     var cod = $("#lb-cod").checked;
+    var car = $("#lb-car").value;
+    var clr = !!($("#lb-clr") && $("#lb-clr").checked && car !== o.carrier);
     $("#lb-out").innerHTML='<div class="load">กำลังสร้าง…</div>';
-    buildLabel(labelData(o, cod)).then(function(url){
-      $("#lb-out").innerHTML =
-        '<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+
+    /* บันทึกขนส่งใหม่ลงชีทก่อนวาดใบ ใบที่พิมพ์กับชีทจะได้ตรงกันเสมอ
+       บันทึกไม่สำเร็จก็ยังวาดใบให้ แต่บอกตรง ๆ ว่าชีทยังไม่ขยับ —
+       ของต้องส่งวันนี้ ห้ามให้ระบบขวางงานหน้าร้านเพราะเน็ตสะดุด */
+    var saved = (car === o.carrier && !clr)
+      ? Promise.resolve(null)
+      : api("setTracking", o.no, clr ? "" : null, null, car);
+
+    saved.then(function(r){
+      if (r) {
+        o.carrier = car;
+        if (clr) o.track = "";
+        for (var i=0;i<ORDERS.length;i++) if (ORDERS[i].no === o.no) {
+          ORDERS[i].carrier = o.carrier; ORDERS[i].track = o.track;
+        }
+        renderOrders();
+      }
+      return "";
+    }, function(e){
+      return '<div class="msg err" style="display:block">ใบปะหน้าใช้ขนส่งใหม่แล้ว '
+           + 'แต่<b>บันทึกลงชีทไม่สำเร็จ</b> — ต้องไปแก้ช่องขนส่งของใบ '+esc(o.no)
+           + ' ในชีทเอง<br>'+esc(e&&e.message?e.message:e)+'</div>';
+    }).then(function(warn){
+      o.carrier = car;
+      if (clr) o.track = "";
+      return buildLabel(labelData(o, cod)).then(function(url){ return [url, warn||""] });
+    }).then(function(pair){
+      var url = pair[0], warn = pair[1];
+      $("#lb-out").innerHTML = warn
+       +'<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
        +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
        +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
+       +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
        +'<div class="hint" style="text-align:center;margin-top:10px">ขนาด 100×150 มม.</div>';
       bindLabelButtons(url, "ใบปะหน้า-"+o.no+".png");
     }, function(e){
@@ -1039,33 +2353,60 @@ function labelData(o, cod){
   };
 }
 
+function savePdf(blob, pname){
+  try{
+    var href=URL.createObjectURL(blob);
+    var a=document.createElement("a"); a.href=href; a.download=pname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){URL.revokeObjectURL(href)},4000);
+    toast("บันทึก PDF แล้ว ดูในโฟลเดอร์ดาวน์โหลด");
+  }catch(e){ toast("บันทึก PDF ไม่ได้") }
+}
+
 function bindLabelButtons(url, name, paper){
   /* paper "a4" สำหรับเอกสารขาย · ไม่ใส่ = ใบปะหน้าพัสดุ 100x150 มม. เหมือนเดิม
      ถ้าส่ง A4 ไปพิมพ์ด้วยขนาดซอง เครื่องพิมพ์จะย่อหน้าลง ตัวหนังสือที่เพิ่งขยายจะเล็กกลับไปอีก */
   var pg = paper === "a4" ? "@page{size:A4;margin:6mm}" : "@page{size:100mm 150mm;margin:0}";
+
+  /* เอกสาร A4 เซฟเป็น JPEG ไม่ใช่ PNG
+
+     กระดาษ A4 ที่ 300 dpi เป็น PNG ได้ไฟล์ราวหนึ่งเมกะไบต์ ส่งในไลน์ทีนึงหนักมาก
+     เจ้าของร้านต้องเอาไปบีบเองก่อนทุกใบ · JPEG คุณภาพ 0.85 เล็กลงราวหนึ่งในสาม
+     โดยตัวหนังสือยังคมเท่าเดิมเมื่อดูที่ 1:1 และพิมพ์ลงกระดาษได้เหมือนกัน
+     (ความละเอียดยังเป็น 300 dpi เท่าเดิม ไม่ได้ย่อรูป — ซูมดูในมือถือยังไม่แตก)
+
+     ใบปะหน้าพัสดุยังเป็น PNG เพราะไฟล์เล็กอยู่แล้ว และเป็นเส้นคมล้วน
+     ที่เครื่องพิมพ์ความร้อนพิมพ์ออกมาสวยกว่าเมื่อไม่มีรอยบีบ */
+  var isDoc = paper === "a4";
+  var fileName = isDoc ? name.replace(/\.png$/i, ".jpg") : name;
+  var fileType = isDoc ? "image/jpeg" : "image/png";
+  var filePromise = isDoc ? toJpegUrl(url, 0.85) : Promise.resolve(url);
+
   var toFile=function(){
-    var b=atob(url.split(",")[1]), n=b.length, u8=new Uint8Array(n);
-    while(n--) u8[n]=b.charCodeAt(n);
-    var blob=new Blob([u8],{type:"image/png"});
-    return {blob:blob, file:new File([blob],name,{type:"image/png"})};
+    return filePromise.then(function(u){
+      var b=atob(u.split(",")[1]), n=b.length, u8=new Uint8Array(n);
+      while(n--) u8[n]=b.charCodeAt(n);
+      var blob=new Blob([u8],{type:fileType});
+      return {blob:blob, file:new File([blob],fileName,{type:fileType})};
+    });
   };
   $("#lb-share").onclick=async function(){
     try{
-      var f=toFile();
+      var f=await toFile();
       if(navigator.canShare && navigator.canShare({files:[f.file]})){
-        await navigator.share({files:[f.file],title:"ใบปะหน้าพัสดุ"}); return;
+        await navigator.share({files:[f.file],title:fileName}); return;
       }
     }catch(e){ if(e&&e.name==="AbortError") return; }
     try{ window.print() }catch(e){ toast("เครื่องนี้แชร์ไม่ได้ ลองปุ่มบันทึกลงเครื่องแทน") }
   };
   $("#lb-save").onclick=function(){
-    try{
-      var f=toFile(), href=URL.createObjectURL(f.blob);
-      var a=document.createElement("a"); a.href=href; a.download=name;
+    toFile().then(function(f){
+      var href=URL.createObjectURL(f.blob);
+      var a=document.createElement("a"); a.href=href; a.download=fileName;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){URL.revokeObjectURL(href)},4000);
       toast("บันทึกแล้ว ดูในโฟลเดอร์ดาวน์โหลด");
-    }catch(e){ toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่") }
+    }, function(){ toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่") });
   };
   /* แตะที่ตัวรูปได้เลย เท่ากับกดปุ่มเปิดในแท็บใหม่ — บนมือถือคนหาปุ่มไม่เจอ
      แล้วไปถ่างนิ้วบนรูปเล็กในแอปแทน ซึ่งซูมไม่ขึ้นเพราะติดกรอบ iframe ของ Apps Script */
@@ -1075,6 +2416,30 @@ function bindLabelButtons(url, name, paper){
     thumb.title = "แตะเพื่อดูเต็มจอ / ซูม";
     thumb.onclick = function(){ $("#lb-open").click() };
   }
+  /* PDF — บัญชีกับลูกค้าองค์กรขอเป็น PDF ไม่ใช่รูป และ PDF พิมพ์ออกมาได้ขนาดกระดาษตรง
+     ไม่ต้องลุ้นว่าเครื่องพิมพ์จะย่อหรือขยายรูปเอง เขียนไฟล์เองในเครื่อง ไม่ต้องพึ่งเน็ต */
+  if ($("#lb-pdf")) $("#lb-pdf").onclick=function(){
+    var b=this; b.disabled=true; b.textContent="กำลังทำไฟล์ PDF…";
+    var mm = paper==="a4" ? [210,297] : [100,150];
+    var pname = name.replace(/\.png$/,"") + ".pdf";
+    pdfFromDataURL(url, mm[0], mm[1], name.replace(/\.png$/,"")).then(function(blob){
+      b.disabled=false; b.textContent="บันทึกเป็นไฟล์ PDF";
+      var f=new File([blob],pname,{type:"application/pdf"});
+      /* มือถือเปิดแชร์ได้ ส่งเข้าไลน์/อีเมลได้เลยโดยไม่ต้องหาไฟล์ในเครื่องก่อน
+         เครื่องที่แชร์ไฟล์ไม่ได้ค่อยตกไปเป็นดาวน์โหลดตามปกติ */
+      if(navigator.canShare && navigator.canShare({files:[f]})){
+        navigator.share({files:[f],title:pname}).catch(function(e){
+          if(e&&e.name==="AbortError") return;
+          savePdf(blob,pname);
+        });
+        return;
+      }
+      savePdf(blob,pname);
+    }, function(e){
+      b.disabled=false; b.textContent="บันทึกเป็นไฟล์ PDF";
+      toast("ทำไฟล์ PDF ไม่สำเร็จ: "+(e&&e.message?e.message:e));
+    });
+  };
   $("#lb-open").onclick=function(){
     var w=window.open();
     if(!w){ toast("เบราว์เซอร์บล็อกแท็บใหม่"); return }
@@ -1102,6 +2467,43 @@ function bindLabelButtons(url, name, paper){
    สองใบเนื้อความเหมือนกันทุกตัวอักษร ต่างกันแค่ตราชุดมุมขวาบน
    ปุ่มนี้จึงวาดใบเดิมซ้ำในโหมดสำเนา ไม่ได้ออกเลขใหม่ เลขที่เอกสารยังเป็นใบเดียวกัน
    (ออกเลขใหม่ให้สำเนา = เอกสารภาษีซ้ำซ้อน บัญชีจะตีกลับ) */
+/* ให้ลูกค้าเซ็นรับของบนใบที่ออกไปแล้ว
+
+   ใบเสนอราคายังไม่มีการส่งของ จึงไม่มีปุ่มนี้ · ใบที่ยกเลิกแล้วก็ไม่มี
+   เซ็นแล้วเขียนลงคอลัมน์ของตัวเองในชีท ไม่แตะภาพถ่ายของใบตอนที่ออก
+   แล้ววาดใบใหม่ให้เห็นลายเซ็นทันที จะได้กดบันทึก/แชร์ใบที่มีลายเซ็นส่งต่อได้เลย */
+function bindDocSign(boxSel, r, m, no){
+  var box = $(boxSel);
+  if(!box) return;
+  var b = box.querySelector("#dc-sign");
+  if(!b) return;
+  b.onclick = function(){
+    signPad("ลายเซ็นผู้รับของ — " + no,
+      "ให้ลูกค้าเซ็นในกรอบด้วยนิ้วหรือปากกาสไตลัส แล้วกด “ใช้ลายเซ็นนี้”")
+    .then(function(sig){
+      if(!sig){ toast("ยังไม่ได้เซ็น"); return; }
+      b.disabled = true; b.textContent = "กำลังบันทึกลายเซ็น…";
+      api("signDoc", no, JSON.stringify(sig), byName()).then(function(){
+        m.sign = m.sign || {};
+        m.sign.recv = sig;
+        m.signDate = todayISO();
+        return buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+          var img = box.querySelector("img.docimg");
+          if (img) img.src = url;
+          bindLabelButtons(url, no + ".png", "a4");
+          bindDocCopy(boxSel, r, m, no);
+          b.disabled = false;
+          b.textContent = "เซ็นรับของใหม่";
+          toast("เก็บลายเซ็นผู้รับของแล้ว");
+        });
+      }).catch(function(e){
+        b.disabled = false; b.textContent = "ให้ลูกค้าเซ็นรับของ";
+        toast("บันทึกลายเซ็นไม่สำเร็จ: " + (e && e.message ? e.message : e));
+      });
+    });
+  };
+}
+
 function bindDocCopy(boxSel, r, m, no){
   var box = $(boxSel), b = box.querySelector("#dc-copy");
   if(!b) return;
@@ -1207,6 +2609,12 @@ function num_(n){
 
 function orderMsg(o){
   var t = "📦 สรุปออเดอร์ลูกค้า\n📅 วันที่ " + dmy_(o.date) + "\n\n";
+  /* ชื่อกับเบอร์อยู่หัวข้อความ ตำแหน่งเดียวกับที่ร้านพิมพ์เองมาตลอด
+     ลูกค้าจะได้เห็นว่าเราจดชื่อเบอร์ถูก และร้านเอาไปเทียบกับใบปะหน้าได้
+     (ข้อความนี้ยังอ่านกลับด้วยตัวแยกข้อความของแอปเองได้เหมือนเดิม) */
+  if (o.cust) t += "👤 " + o.cust + "\n";
+  if (o.tel)  t += "📞 " + o.tel + "\n";
+  if (o.cust || o.tel) t += "\n";
   var lastFam = null;
   (o.items||[]).forEach(function(it){
     var p = splitName_(it.name || it.sku);
@@ -1214,7 +2622,7 @@ function orderMsg(o){
     if (p.size) t += "🔷 " + p.size + "\n";
     /* ราคา 0 = ของแถม เขียนให้ลูกค้าอ่านรู้เรื่องว่าได้อะไรฟรีไปบ้าง */
     if (Number(it.price) === 0)
-      t += "🎁 แถมฟรี " + num_(it.qty) + " " + (it.unit || "ชิ้น") + "\n";
+      t += "🎁 แถมฟรี " + qtyUnit(num_(it.qty), it.unit || "ชิ้น") + "\n";
     else
       t += "💰 " + num_(it.price) + "×" + num_(it.qty) + " = " + num_(it.total) + "\n";
   });
@@ -1222,6 +2630,19 @@ function orderMsg(o){
   t += "💵 รวมค่าสินค้า : " + num_(o.subtotal) + " บาท\n";
   if (Number(o.discount) > 0) t += "🏷️ ส่วนลด : " + num_(o.discount) + " บาท\n";
   t += "🚚 ค่าจัดส่ง : " + num_(o.ship) + " บาท\n";
+
+  /* บรรทัด VAT ต้องมี ไม่งั้นตัวเลขในข้อความบวกไม่ลง แล้วลูกค้าทักมาว่าคิดเงินผิด
+     ของจริง: 237 + ค่าส่ง 50 = 287 แต่ยอดชำระขึ้น 303.59 (ส่วนต่างคือ VAT 16.59)
+
+     ยอดที่เหลือคิดจาก "ยอดสุทธิ ลบด้วยบรรทัดที่พิมพ์ไปแล้ว" ไม่ใช่คูณ 7% เอาเอง
+     ยอดสุทธิเป็นตัวที่ชีทคำนวณและเป็นตัวที่ลูกค้าต้องจ่ายจริง บรรทัดที่พิมพ์
+     จึงต้องบวกได้เท่านั้นเสมอ ไม่ว่าสูตรในชีทจะคิด VAT จากฐานไหน */
+  var shown = Number(o.subtotal||0) - Number(o.discount||0) + Number(o.ship||0);
+  var rest = Math.round((Number(o.net||0) - shown) * 100) / 100;
+  if (Math.abs(rest) >= 0.01) {
+    t += (String(o.vat||"").indexOf("ไม่") !== 0 ? "🧾 ภาษีมูลค่าเพิ่ม : " : "➕ ค่าใช้จ่ายอื่น : ")
+       + num_(rest) + " บาท\n";
+  }
   t += "✅ ยอดชำระทั้งหมด : " + num_(o.net) + " บาท\n";
   if (o.addr) t += "━━━━━━━━━━━━━\n📍 ที่อยู่จัดส่ง\n" + o.addr + "\n";
   return t;
@@ -1256,6 +2677,404 @@ function copyText(text, okMsg){
   document.body.removeChild(ta);
   if(!done && navigator.clipboard){ navigator.clipboard.writeText(text).then(function(){toast(okMsg)}) }
   else toast(done?okMsg:"กดค้างที่ข้อความเพื่อคัดลอก");
+}
+
+
+/* ------------------------------------------------------------- ใบวางบิล
+
+   ใบเดียวรวมหลายบิลของลูกค้ารายเดียว ต่างจากเอกสารอีกห้าชนิดที่เป็น 1 ใบ = 1 ออเดอร์
+   จึงมีหน้าจอของตัวเอง ไม่ได้อยู่ในปุ่ม 📄 ของแถวออเดอร์
+
+   สิ่งที่หน้าจอนี้ต้องทำให้ไม่พลาดคือ "ใบไหนวางบิลไปแล้ว" — ใบตัวอย่างที่เจ้าของร้าน
+   ส่งมามีหมายเหตุเขียนมือว่าใบไหนเคยวางแล้ว แปลว่าตอนนี้ใช้ความจำคนล้วน
+   ระบบจึงต้องโชว์ให้เห็น ไม่ใช่แค่ซ่อนใบพวกนั้นออกไปเงียบ ๆ                    */
+
+var BILL_ALL = null;      /* รายการใบทั้งหมดที่ดึงมารอบนี้ */
+var BILL_KEY = "";
+
+function openBill(){
+  BILL_KEY = newKey();
+  openModal("ออกใบวางบิล", '<div class="hint">กำลังอ่านทะเบียนเอกสาร…</div>');
+  call("billCandidates", [""], function(res){
+    BILL_ALL = res || { rows: [], custs: [] };
+    drawBillPick();
+  }, function(m){
+    if($("#m-body")) $("#m-body").innerHTML =
+      '<div class="stop">อ่านทะเบียนเอกสารไม่ได้<br>' + esc(m) + '</div>';
+  });
+}
+
+function drawBillPick(){
+  if(!$("#m-body")) return;
+  var custs = BILL_ALL.custs || [];
+  if(!custs.length){
+    $("#m-body").innerHTML = '<div class="empty" style="padding:18px 8px">'
+      + '<b>ยังไม่มีใบให้วางบิล</b>ใบวางบิลรวมได้เฉพาะ <b>ใบเสร็จ/ใบกำกับภาษี</b> '
+      + 'กับ <b>ใบแจ้งหนี้</b> ที่ออกไปแล้วและยังไม่ถูกยกเลิก</div>';
+    return;
+  }
+  $("#m-body").innerHTML =
+      '<div class="fld"><label>ลูกค้า</label><select id="bl-cust">'
+    + '<option value="">— เลือกลูกค้า —</option>'
+    + custs.map(function(c){ return '<option>' + esc(c) + '</option>' }).join("")
+    + '</select></div>'
+    + '<div id="bl-rows"><div class="hint">เลือกลูกค้าก่อน แล้วจะขึ้นรายการใบให้ติ๊ก</div></div>';
+  $("#bl-cust").onchange = drawBillRows;
+}
+
+function billPicked(){
+  return $$("#bl-rows input[data-no]:checked").map(function(b){ return b.getAttribute("data-no") });
+}
+
+function billSum(){
+  var box = $("#bl-sum");
+  if(!box) return;
+  var want = {}; billPicked().forEach(function(n){ want[n] = 1 });
+  var base = 0, vat = 0, total = 0, n = 0;
+  (BILL_ALL.rows || []).forEach(function(r){
+    if(!want[r.no]) return;
+    base += Number(r.base) || 0; vat += Number(r.vat) || 0; total += Number(r.total) || 0; n++;
+  });
+  box.innerHTML = n
+    ? '<div class="kpi"><span>เลือกไว้ ' + n + ' ฉบับ</span><b>' + baht(total) + '</b></div>'
+      + '<div class="hint">ก่อน VAT ' + baht(base) + ' · VAT ' + baht(vat) + '</div>'
+    : '<div class="hint">ยังไม่ได้ติ๊กใบไหนเลย</div>';
+}
+
+function drawBillRows(){
+  var cust = $("#bl-cust").value;
+  var box = $("#bl-rows");
+  if(!cust){ box.innerHTML = '<div class="hint">เลือกลูกค้าก่อน</div>'; return }
+
+  var mine = (BILL_ALL.rows || []).filter(function(r){ return r.custName === cust });
+  var open = mine.filter(function(r){ return !r.billedOn });
+  var done = mine.filter(function(r){ return r.billedOn });
+
+  var h = '';
+  if(!open.length){
+    h += '<div class="warn">ใบของลูกค้ารายนี้ถูกวางบิลไปหมดแล้ว '
+       + 'ถ้าใบวางบิลเดิมใช้ไม่ได้ ให้ยกเลิกใบเดิมก่อน แล้วใบข้างในจะกลับมาเลือกได้</div>';
+  }else{
+    h += '<div class="subhd">เลือกใบที่จะวางบิล</div>'
+       + '<button class="btn ghost" id="bl-all">ติ๊กทั้งหมด</button>'
+       + open.map(function(r){
+           return '<label class="mrow" style="display:block">'
+             + '<input type="checkbox" data-no="' + esc(r.no) + '"> <b>' + esc(r.no) + '</b>'
+             + '<br><span class="hint" style="display:inline">' + esc(thaiDate(r.date))
+             + (r.po ? ' · PO ' + esc(r.po) : '') + ' · ' + baht(r.total) + '</span></label>';
+         }).join("");
+  }
+  if(done.length){
+    /* โชว์ให้เห็น ไม่ซ่อน — ใบที่หายไปจากรายการโดยไม่บอกเหตุผล คนจะนึกว่าระบบลืม */
+    h += '<div class="subhd">วางบิลไปแล้ว — เลือกซ้ำไม่ได้</div>'
+       + done.map(function(r){
+           return '<div class="mrow"><b>' + esc(r.no) + '</b> ' + baht(r.total)
+             + '<br><span class="hint" style="display:inline">อยู่ในใบ ' + esc(r.billedOn)
+             + '</span></div>';
+         }).join("");
+  }
+
+  h += '<div id="bl-sum"></div>'
+     + '<div class="fld"><label>วันที่วางบิล</label>'
+     + '<input type="date" id="bl-date" value="' + esc(todayISO()) + '"></div>'
+     + '<div class="fld"><label>เงื่อนไขชำระเงิน</label>'
+     + '<input id="bl-terms" value="เครดิต 30 วัน"></div>'
+     + '<div class="hint">ใช้คิดช่อง “ครบกำหนด” ของแต่ละบรรทัด — '
+     + 'พิมพ์ “เครดิต 60 วัน” ก็คิดให้ 60 วัน</div>'
+     + '<div class="fld"><label>ผู้ติดต่อฝั่งลูกค้า</label><input id="bl-contact"></div>'
+     + '<div class="fld"><label>โทรศัพท์ผู้ติดต่อ</label><input id="bl-tel"></div>'
+     + '<div class="fld"><label>หมายเหตุ</label><input id="bl-note"></div>'
+     + (open.length ? '<button class="btn" id="bl-go">ออกใบวางบิล</button>' : '')
+     + '<div id="bl-say"></div>';
+  box.innerHTML = h;
+
+  $$("#bl-rows input[data-no]").forEach(function(b){ b.onchange = billSum });
+  if($("#bl-all")) $("#bl-all").onclick = function(){
+    var on = billPicked().length < open.length;
+    $$("#bl-rows input[data-no]").forEach(function(b){ b.checked = on });
+    billSum();
+  };
+  billSum();
+  if($("#bl-go")) $("#bl-go").onclick = billIssue;
+}
+
+function billIssue(){
+  var picked = billPicked();
+  if(!picked.length){ toast("ยังไม่ได้ติ๊กใบไหนเลย"); return }
+  var b = $("#bl-go");
+  b.disabled = true; b.textContent = "กำลังออกใบ…";
+  call("issueBill", [{
+    docs: picked, cust: $("#bl-cust").value, date: $("#bl-date").value,
+    terms: $("#bl-terms").value.trim(), contact: $("#bl-contact").value.trim(),
+    contactTel: $("#bl-tel").value.trim(), note: $("#bl-note").value.trim(),
+    by: byName(), clientKey: BILL_KEY
+  }], function(res){
+    BILL_KEY = newKey();          /* ออกสำเร็จแล้ว กุญแจต้องเปลี่ยน ไม่งั้นใบต่อไปจะเงียบหาย */
+    openModal("ใบวางบิล " + res.no, '<div id="rp-out"></div>');
+    reprint(res.no, null, "#rp-out");
+    toast("ออกใบวางบิล " + res.no + " แล้ว");
+  }, function(m){
+    b.disabled = false; b.textContent = "ออกใบวางบิล";
+    $("#bl-say").innerHTML = '<div class="stop">' + esc(m) + '</div>';
+  });
+}
+
+/* ------------------------------------------------------------------ รับเงิน
+
+   สองงานคนละเวลา แต่อยู่หน้าเดียวกันเพราะเป็นเงินก้อนเดียวกัน
+     1. ขอเก็บเงิน — QR พร้อมเพย์ที่ล็อกยอดไว้แล้ว + ข้อความคัดลอกไปวางในแชท
+     2. แนบสลิป   — เก็บหลักฐานลงไดรฟ์ ผูกกับเลขออเดอร์
+
+   ทำไมต้องล็อกยอดใน QR: QR ถาวรที่ร้านใช้อยู่ ลูกค้าต้องพิมพ์จำนวนเงินเอง
+   พิมพ์ผิดหลักเดียวก็ต้องมาตามคืนเงินกันทีหลัง และร้านไม่มีทางรู้ล่วงหน้า
+
+   ทำไมบัญชีเลือกให้อัตโนมัติ: ร้านใช้คนละบัญชีระหว่างใบมี VAT กับไม่มี VAT
+   ให้พนักงานจำเองเมื่อไร วันหนึ่งจะมีเงินเข้าผิดบัญชีแล้วบัญชีปิดยอดไม่ลง   */
+
+var SLIP_WAIT = { total: 0, byOrder: {} };
+
+/** สลิปที่ยังไม่มีใครตรวจ — ป้ายเตือนพังไม่ใช่เหตุให้ทั้งหน้าพัง จึงกลืน error ตรงนี้ */
+function slipWaitLoad(then){
+  call("slipsWaiting", [], function(w){
+    SLIP_WAIT = w || { total:0, byOrder:{} };
+    if(then) then();
+  }, function(){ if(then) then() });
+}
+
+function slipBadge(no){
+  var n = (SLIP_WAIT.byOrder||{})[no] || 0;
+  return n ? ' <span class="tag wait">สลิปรอตรวจ ' + n + '</span>' : '';
+}
+
+/**
+ * วาด QR ลงผ้าใบแล้วคืนเป็นรูป
+ *
+ * ที่ต้องแปลงเป็นรูปเพราะบนมือถือคนจะกดค้างเพื่อ "บันทึกรูป" แล้วส่งเข้าไลน์
+ * ผ้าใบเปล่า ๆ กดค้างแล้วไม่มีเมนูนั้นให้ ต้องเป็น img เท่านั้น
+ */
+function qrImg(rows, px){
+  var n = rows.length, quiet = 4;
+  var sc = Math.max(2, Math.floor((px || 320) / (n + quiet * 2)));
+  var w = (n + quiet * 2) * sc;
+  var cv = document.createElement("canvas");
+  cv.width = w; cv.height = w;
+  var g = cv.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, w, w);
+  g.fillStyle = "#000";
+  for(var i=0;i<n;i++){
+    for(var j=0;j<n;j++){
+      if(rows[i].charAt(j) === "1") g.fillRect((j+quiet)*sc, (i+quiet)*sc, sc, sc);
+    }
+  }
+  return cv.toDataURL("image/png");
+}
+
+/* ออเดอร์ใบที่เปิดหน้ารับเงินอยู่ — เก็บไว้เพราะข้อความ "สรุปออเดอร์" ต้องใช้รายการสินค้า
+   ซึ่งฝั่งชีทไม่ได้ส่งมากับข้อมูลการชำระเงิน (คนละเรื่องกัน ไม่ควรผูกติดกัน) */
+var PAY_ORD = null;
+
+/* ชื่อธนาคารในชีทเขียนได้หลายแบบ — "ไทยพาณิชย์ (SCB)" · "SCB" · "ธนาคารกรุงศรีอยุธยา"
+   จึงจับด้วยคำสำคัญ ไม่ใช่เทียบทั้งสตริง  จับไม่ได้ = ไม่มีไอคอน ไม่ใช่ไอคอนมั่ว */
+var BANK_MATCH = [
+  { re: /ไทยพาณิชย์|scb/i,   key: "scb" },
+  { re: /กรุงศรี|krungsri/i, key: "krungsri" }
+];
+
+function bankIc(name){
+  if(typeof BANK_ICONS === "undefined") return "";
+  for(var i = 0; i < BANK_MATCH.length; i++){
+    if(BANK_MATCH[i].re.test(String(name || ""))){
+      var src = BANK_ICONS[BANK_MATCH[i].key];
+      if(src) return '<img class="bankic" src="' + src + '" alt="">';
+    }
+  }
+  return "";
+}
+
+function openPay(o){
+  PAY_ORD = o;
+  openModal("รับเงิน — " + o.no, '<div class="hint">กำลังอ่านบัญชีและยอด…</div>');
+  call("payAsk", [o.no], drawPay, function(m){
+    if(!$("#m-body")) return;
+    $("#m-body").innerHTML = '<div class="stop">เปิดหน้ารับเงินไม่ได้<br>' + esc(m) + '</div>';
+  });
+}
+
+function slipRowHtml(sp){
+  var cls = sp.status === "ยืนยันแล้ว" ? "ok" : (sp.status === "รอตรวจสอบ" ? "wait" : "bad");
+  return '<div class="row"><div class="i">'
+    + '<b>' + esc(sp.fileName) + '</b>'
+    + '<span>' + (sp.amount ? baht(sp.amount) + ' · ' : '')
+    + esc(String(sp.paidAt||"").slice(0,10) || "ไม่ได้ระบุวันโอน")
+    + (sp.bank ? ' · ' + esc(sp.bank) : '')
+    + ' · แนบโดย ' + esc(String(sp.by||"").split("@")[0]) + '</span>'
+    + '<span class="tag ' + cls + '">' + esc(sp.status) + '</span>'
+    + (sp.checkBy ? ' <span class="hint" style="display:inline">ตรวจโดย '
+        + esc(String(sp.checkBy).split("@")[0]) + '</span>' : '')
+    + '</div><div class="acts">'
+    + '<a class="sq" href="' + esc(sp.fileUrl) + '" target="_blank" rel="noopener" title="เปิดไฟล์">🔍</a>'
+    + (sp.status === "รอตรวจสอบ"
+        ? '<button class="sq ok" data-sok="' + esc(sp.fileId) + '" title="ยืนยันว่าเงินเข้าแล้ว">✔</button>'
+          + '<button class="sq red" data-sno="' + esc(sp.fileId) + '" title="ไม่ใช่สลิปของใบนี้">✖</button>'
+        : '')
+    + '</div></div>';
+}
+
+function drawPay(p){
+  if(!$("#m-body")) return;                 /* ปิดหน้าต่างไปก่อนข้อมูลมาถึง */
+  var h = '';
+
+  h += '<div class="kpi"><span>ยอดที่ต้องเก็บ</span><b>' + baht(p.net) + '</b></div>';
+  h += '<div class="hint">' + esc(p.cust||"") + ' · '
+     + (p.wantVat ? 'ใบนี้มี VAT ออกใบกำกับภาษีได้' : 'ใบนี้ไม่มี VAT ไม่ออกใบกำกับภาษี')
+     + '</div>';
+
+  if(p.miss && p.miss.length){
+    h += '<div class="stop"><b>ยังส่งให้ลูกค้าไม่ได้</b><br>'
+       + 'ยังไม่ได้กรอกในชีท ตั้งค่าแอป:<br>· ' + p.miss.map(esc).join('<br>· ') + '</div>';
+  }else{
+    if(p.acct.drift) h += '<div class="warn">' + esc(p.acct.drift) + '</div>';
+    h += '<div class="subhd">โอนเข้าบัญชีนี้ (' + esc(p.acct.which) + ')</div>';
+    h += '<div class="mrow bankrow">' + bankIc(p.acct.bank)
+       + '<div><b>' + esc(p.acct.bank) + '</b><br>'
+       + esc(p.acct.acct) + '<br><span class="hint" style="display:inline">'
+       + esc(p.acct.name) + '</span></div></div>';
+
+    if(p.acct.link){
+      /* เปิดแท็บใหม่ ไม่ใช่ทับหน้าแอป — พนักงานกำลังคีย์งานค้างอยู่ */
+      h += '<a class="btn ghost" href="' + esc(p.acct.link) + '" target="_blank" rel="noopener">'
+         + 'เปิดแอพธนาคาร</a>';
+    }
+    if(p.qr){
+      h += '<div style="text-align:center;margin:12px 0">'
+         /* วาดใหญ่กว่าที่โชว์ตั้งใจ — คนกดค้างบันทึกรูปไปส่งในแชท ปลายทางจะได้ไม่แตก
+            บนจอย่อลงด้วยการไล่สีปกติ (ไม่ใช่ pixelated) ขอบจุดจะได้ไม่กะพร่องกะแพร่ง */
+         + '<img class="qr" src="' + qrImg(p.qr.rows, 480) + '" alt="QR พร้อมเพย์ ' + baht(p.net) + '">'
+         + '<div class="hint">สแกนแล้วยอด ' + baht(p.net) + ' ขึ้นเอง ลูกค้าไม่ต้องพิมพ์<br>'
+         + 'พร้อมเพย์ ' + esc(p.qr.kind) + ' ' + esc(p.qr.target) + '<br>'
+         + 'กดค้างที่รูปเพื่อบันทึกแล้วส่งเข้าแชทได้เลย</div></div>';
+    }else if(p.qrOff){
+      /* ตั้งใจไม่ใช้ QR — บอกเบา ๆ พอ ไม่ใช่กล่องเตือนสีเหลืองที่ขึ้นทุกใบ */
+      h += '<div class="hint">' + esc(p.qrWhy) + '</div>';
+    }else if(p.qrWhy){
+      h += '<div class="warn">ไม่มี QR ให้สแกน — ' + esc(p.qrWhy) + '</div>';
+    }
+
+    /* สองปุ่ม เพราะสองสถานการณ์จริงที่ต่างกัน
+         ใบใหม่ ลูกค้ายังไม่เคยเห็นรายการ  -> ส่งสรุปออเดอร์พร้อมวิธีโอนไปทีเดียว
+         ใบเก่า คุยกันไปแล้ว มาทวงเงินอย่างเดียว -> ส่งแต่วิธีโอน ไม่ต้องยาว */
+    h += '<button class="btn" id="py-copy2">คัดลอกสรุปออเดอร์ + วิธีโอน</button>';
+    h += '<button class="btn ghost" id="py-copy">คัดลอกเฉพาะวิธีโอน</button>';
+    /* บอกให้ชัดว่าทำไมถึงได้บัญชีนี้ และแก้ที่ไหนถ้าผิด — พนักงานที่เห็นบัญชีผิด
+       แล้วไม่รู้ว่าแก้ตรงไหน จะไปพิมพ์เลขบัญชีเองในแชท ซึ่งพิมพ์ผิดได้ */
+    h += '<div class="hint">ระบบเลือกช่องทาง “' + esc(p.acct.which) + '” ให้เอง '
+       + 'ตามช่อง VAT ของออเดอร์ใบนี้ — ถ้าผิด ให้แก้ VAT ที่ปุ่ม ✏️ แก้รายการ '
+       + 'แล้วเปิดหน้านี้ใหม่ ยอดจะเปลี่ยนตามด้วย</div>';
+    h += '<pre class="paymsg" id="py-msg">' + esc(p.msg) + '</pre>';
+  }
+
+  h += '<div class="subhd">หลักฐานการโอน</div>';
+  h += '<div id="py-slips">'
+     + (p.slips && p.slips.length
+        ? p.slips.map(slipRowHtml).join("")
+        : '<div class="hint">ยังไม่มีสลิปของใบนี้</div>')
+     + '</div>';
+
+  h += '<div class="subhd">แนบสลิปที่ลูกค้าส่งมา</div>'
+     + '<div class="fld"><label>ไฟล์สลิป (รูปหรือ PDF)</label>'
+     + '<input type="file" id="py-file" accept="image/*,application/pdf"></div>'
+     + '<div class="fld"><label>วันที่โอนตามสลิป</label>'
+     + '<input type="date" id="py-date" value="' + esc(todayISO()) + '"></div>'
+     + '<div class="fld"><label>ยอดตามสลิป</label>'
+     + '<input type="number" step="0.01" id="py-amt" value="' + Number(p.net||0) + '"></div>'
+     + '<div class="fld"><label>โอนเข้าบัญชี</label>'
+     + '<input id="py-bank" value="' + esc(p.acct.bank||"") + '"></div>'
+     + '<button class="btn" id="py-add">แนบสลิปเข้าออเดอร์นี้</button>'
+     + '<div id="py-say"></div>';
+
+  $("#m-body").innerHTML = h;
+  payBind(p);
+}
+
+function payBind(p){
+  var c = $("#py-copy");
+  if(c) c.onclick = function(){ copyText(p.msg, "คัดลอกวิธีโอนแล้ว เอาไปวางในแชทได้เลย") };
+
+  var c2 = $("#py-copy2");
+  if(c2) c2.onclick = function(){
+    var head = PAY_ORD ? orderMsg(PAY_ORD) : "";
+    copyText(head ? head + "\n\n" + p.msg : p.msg,
+      "คัดลอกสรุปออเดอร์พร้อมวิธีโอนแล้ว");
+  };
+
+  $$("#py-slips [data-sok]").forEach(function(b){
+    b.onclick = function(){ paySetSlip(p, b.getAttribute("data-sok"), "ยืนยันแล้ว", b) };
+  });
+  $$("#py-slips [data-sno]").forEach(function(b){
+    b.onclick = function(){ paySetSlip(p, b.getAttribute("data-sno"), "ไม่ใช่ของใบนี้", b) };
+  });
+
+  var add = $("#py-add");
+  if(!add) return;
+  add.onclick = function(){
+    var f = $("#py-file").files[0];
+    if(!f){ toast("ยังไม่ได้เลือกไฟล์สลิป"); return }
+    /* กันไว้ตั้งแต่ในเครื่อง ดีกว่าให้รออัปโหลดสิบวินาทีแล้วค่อยบอกว่าใหญ่เกิน */
+    if(f.size > 10*1024*1024){
+      toast("ไฟล์ใหญ่ " + Math.round(f.size/1024/1024*10)/10 + " MB เกิน 10 MB — ย่อรูปก่อน");
+      return;
+    }
+    add.disabled = true; add.textContent = "กำลังอัปโหลด…";
+    var r = new FileReader();
+    r.onerror = function(){
+      add.disabled = false; add.textContent = "แนบสลิปเข้าออเดอร์นี้";
+      toast("อ่านไฟล์ไม่ได้ ลองเลือกใหม่อีกครั้ง");
+    };
+    r.onload = function(){
+      call("addSlip", [p.no, {
+        data: r.result, paidAt: $("#py-date").value,
+        amount: $("#py-amt").value, bank: $("#py-bank").value.trim()
+      }], function(res){
+        add.disabled = false; add.textContent = "แนบสลิปเข้าออเดอร์นี้";
+        $("#py-file").value = "";
+        p.slips = res.slips;
+        $("#py-slips").innerHTML = res.slips.map(slipRowHtml).join("");
+        payBind(p);
+        $("#py-say").innerHTML = res.warn
+          ? '<div class="warn">แนบแล้ว แต่ ' + esc(res.warn) + '</div>'
+          : '<div class="ok-note">แนบสลิปเรียบร้อย</div>';
+        slipWaitLoad();
+      }, function(m){
+        add.disabled = false; add.textContent = "แนบสลิปเข้าออเดอร์นี้";
+        $("#py-say").innerHTML = '<div class="stop">แนบไม่สำเร็จ<br>' + esc(m) + '</div>';
+      });
+    };
+    r.readAsDataURL(f);
+  };
+}
+
+function paySetSlip(p, fileId, status, btn){
+  var paid = false;
+  if(status === "ยืนยันแล้ว"){
+    paid = confirm("ยืนยันว่าเงินเข้าบัญชีแล้ว\n\nกด ตกลง = ทำเครื่องหมายว่าออเดอร์ "
+      + p.no + " ชำระแล้วด้วย\nกด ยกเลิก = ยืนยันแค่สลิป ยังไม่ปิดยอดออเดอร์");
+  }
+  btn.disabled = true;
+  call("setSlipStatus", [fileId, status, "", paid], function(res){
+    toast(status === "ยืนยันแล้ว"
+      ? (paid ? "ยืนยันแล้ว และปิดยอด " + p.no : "ยืนยันสลิปแล้ว")
+      : "ทำเครื่องหมายว่าไม่ใช่สลิปของใบนี้");
+    slipWaitLoad();
+    if(paid) loadOrders(true);
+    p.slips = res.slips;
+    var box = $("#py-slips");
+    if(!box) return;                        /* ปิดหน้าต่างไปแล้วระหว่างรอ */
+    box.innerHTML = res.slips.map(slipRowHtml).join("");
+    payBind(p);                             /* ปุ่มชุดใหม่ต้องผูกใหม่ ไม่งั้นกดไม่ติด */
+  }, function(m){
+    btn.disabled = false;
+    toast("ไม่สำเร็จ: " + m);
+  });
 }
 
 /* ------------------------------------------------------------------ สรุปยอด */
@@ -1315,6 +3134,68 @@ function section_(title, rows){
   return '<div class="card"><div class="subhd" style="margin-top:0">' + esc(title) + '</div>' + rows + '</div>';
 }
 
+
+/* ------------------------------------------- ส่งออกหลักฐานการโอนเป็น Excel
+
+   บัญชีทำงานเป็นรอบเดือน ไม่ได้ตามดูทีละใบ ตารางทั้งเดือนไฟล์เดียวจึงตรงกับงานจริง
+   ในไฟล์มีลิงก์เปิดรูปสลิปแต่ละใบ บัญชีกดจากใน Excel ได้เลย ไม่ต้องขอไฟล์เพิ่ม   */
+
+function b64Blob_(dataUrl){
+  var i = dataUrl.indexOf(",");
+  var head = dataUrl.slice(0, i);
+  var mime = (/data:([^;]+)/.exec(head) || [])[1] || "application/octet-stream";
+  var bin = atob(dataUrl.slice(i + 1));
+  var arr = new Uint8Array(bin.length);
+  for(var k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k);
+  return new Blob([arr], { type: mime });
+}
+
+function drawSlipXl(){
+  var box = $("#slip-xl");
+  if(!box) return;
+  call("slipMonths", [], function(r){
+    if(!$("#slip-xl")) return;
+    var months = (r && r.months) || [];
+    if(!months.length){
+      box.innerHTML = '<div class="empty" style="padding:16px 8px"><b>ยังไม่มีสลิปในระบบ</b>'
+        + 'แนบสลิปจากปุ่ม 💰 ที่แถวออเดอร์ก่อน แล้วค่อยกลับมาโหลดไฟล์</div>';
+      return;
+    }
+    box.innerHTML = '<div class="fld"><label>เลือกเดือน</label><select id="sx-ym">'
+      + '<option value="">ทุกเดือน (' + r.total + ' ใบ)</option>'
+      + months.map(function(m){ return '<option value="' + esc(m) + '">' + esc(m) + '</option>' }).join("")
+      + '</select></div>'
+      + '<button class="btn" id="sx-go">โหลดไฟล์ Excel</button>'
+      + '<div id="sx-say"></div>';
+
+    $("#sx-go").onclick = function(){
+      var b = $("#sx-go"), ym = $("#sx-ym").value;
+      b.disabled = true; b.textContent = "กำลังสร้างไฟล์…";
+      call("exportSlips", [ym], function(res){
+        b.disabled = false; b.textContent = "โหลดไฟล์ Excel";
+        try{
+          var href = URL.createObjectURL(b64Blob_(res.data));
+          var a = document.createElement("a");
+          a.href = href; a.download = res.name;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function(){ URL.revokeObjectURL(href) }, 4000);
+          $("#sx-say").innerHTML = '<div class="ok-note">โหลดแล้ว ' + res.count
+            + ' บรรทัด · ดูในโฟลเดอร์ดาวน์โหลด</div>';
+        }catch(e){
+          /* บันทึกไม่ได้ ต้องบอก ไม่ใช่เงียบแล้วปล่อยให้ไปหาไฟล์ที่ไม่มีอยู่ */
+          $("#sx-say").innerHTML = '<div class="stop">เครื่องนี้บันทึกไฟล์ไม่ได้<br>'
+            + esc(e.message || e) + '</div>';
+        }
+      }, function(m){
+        b.disabled = false; b.textContent = "โหลดไฟล์ Excel";
+        $("#sx-say").innerHTML = '<div class="stop">' + esc(m) + '</div>';
+      });
+    };
+  }, function(m){
+    if($("#slip-xl")) box.innerHTML = '<div class="stop">อ่านรายการสลิปไม่ได้<br>' + esc(m) + '</div>';
+  });
+}
+
 function loadSummary(){
   /* ปุ่มช่วงเวลาวาดครั้งเดียว กดสลับแล้วคำนวณจากข้อมูลชุดเดิม ไม่ต้องยิงชีทซ้ำ */
   if (!$("#sum-range").innerHTML){
@@ -1330,20 +3211,1031 @@ function loadSummary(){
       if (SUM_CACHE) drawSummary(SUM_CACHE);
     });
   }
-  if (SUM_CACHE) { drawSummary(SUM_CACHE); return; }
+  /* วาดที่ตั้งลายเซ็นทุกครั้งที่เข้าหน้านี้ ไม่ผูกกับว่ามีออเดอร์ในช่วงที่เลือกหรือไม่ */
+  drawSigSettings();
+  drawSlipXl();
+  drawAlerts();
+  if (SUM_CACHE) { drawSummary(SUM_CACHE); drawDue(SUM_CACHE); return; }
   $("#summary").innerHTML = '<div class="load">กำลังโหลด…</div>';
   call("getOrders", [500], function(list){
+    list = list || [];
     SUM_CACHE = list;
     if (!ORDERS.length) ORDERS = list;
     drawSummary(list);
+    drawDue(list);
   }, function(m){
     $("#summary").innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>' + esc(m) + '</div>';
   });
 }
 
+/* ------------------------------------------------------------ ค้างชำระ
+
+   ชีทมีช่องสถานะอยู่แล้ว แต่ไม่มีที่ไหนรวมให้ดูว่าใครยังไม่จ่าย รวมเท่าไร
+   ของที่เก็บเงินปลายทางกับลูกค้าเครดิต ถ้าไม่มีที่รวมก็ตกหล่นได้ทั้งใบ
+   เรียงใบเก่าสุดขึ้นก่อน เพราะใบที่ค้างนานที่สุดคือใบที่ต้องโทรก่อน   */
+
+/* สถานะการเงินของใบหนึ่ง — คิดที่เดียว ใช้ทั้งแถบกรอง ป้ายสี และข้อความทวง
+
+   ร้านมีเงื่อนไขจ่ายสองแบบเท่านั้น
+     เงินสด            ครบกำหนดวันที่ขายเลย ค้างข้ามวันคือเริ่มสาย
+     เครดิต 30 วัน     ครบกำหนดอีก 30 วัน ยังไม่ถึงกำหนดยังไม่ใช่ลูกหนี้ที่ต้องโทรตาม
+
+   แยกสองแบบนี้ให้ออกเป็นเรื่องสำคัญ ถ้าใบเครดิตขึ้นแดงตั้งแต่วันแรก
+   คนจะเลิกเชื่อสีแดงทั้งหน้า แล้วใบที่สายจริงก็จะถูกมองข้ามไปด้วย   */
+
+var CREDIT_STATUS = "รอชำระเครดิต 30วัน";
+var CREDIT_DAYS = 30;
+
+function payDays_(iso){
+  var a = new Date(String(iso)+"T00:00:00"), b = new Date(todayISO()+"T00:00:00");
+  var n = Math.round((b-a)/86400000);
+  return isNaN(n) ? 0 : n;
+}
+
+/** คืน {key, label, days, over} — key ใช้จับคู่กับแถบกรองและสีของป้าย */
+function payState(o){
+  var st = String((o&&o.status)||"").trim();
+  if (isDead(o))        return { key:"dead",  label:st || "ยกเลิก", days:0, over:0 };
+  if (st === "ชำระแล้ว") return { key:"paid",  label:"ชำระเรียบร้อย", days:0, over:0 };
+
+  var credit = st === CREDIT_STATUS;
+  var d = payDays_(o && o.date);
+  var over = credit ? d - CREDIT_DAYS : d;
+  if (over > 0) {
+    return { key:"over", label:"เกินกำหนดชำระ " + over + " วัน", days:d, over:over };
+  }
+  return credit
+    ? { key:"cr30", label:CREDIT_STATUS, days:d, over:over }
+    : { key:"due",  label:"รอชำระ",      days:d, over:over };
+}
+
+/* แถบกรองด้านบน — กดแล้วดูเฉพาะกลุ่มนั้น ค่าตั้งต้นคือใบที่ยังไม่ได้เงิน */
+var PAY_TABS = [
+  { key:"paid", label:"ชำระเรียบร้อย",  ic:"paid" },
+  { key:"due",  label:"ค้างชำระ",       ic:"due"  },
+  { key:"cr30", label:"เครดิต 30 วัน",  ic:"cr30" },
+  { key:"over", label:"เกินกำหนดชำระ",  ic:"over" }
+];
+var PAY_PICK = "due";
+
+function drawDue(all){
+  var box = $("#sum-due");
+  if(!box) return;
+
+  var live = (all||[]).filter(function(o){ return !isDead(o) && Number(o.net||0) > 0 });
+  var mine = live.filter(function(o){
+    var k = payState(o).key;
+    /* "ค้างชำระ" หมายถึงเงินที่ยังไม่ได้ทั้งหมด ไม่ว่าจะถึงกำหนดหรือยัง
+       ไม่งั้นกดดูค้างชำระแล้วยอดไม่ตรงกับที่ค้างจริง ซึ่งเป็นตัวเลขที่ใช้ตัดสินใจ */
+    return PAY_PICK === "due" ? k !== "paid" : k === PAY_PICK;
+  });
+
+  var total = 0;
+  mine.forEach(function(o){ total += Number(o.net)||0 });
+  /* เก่าสุดขึ้นก่อน — ใบที่ค้างนานที่สุดคือใบที่ต้องโทรก่อน */
+  mine.sort(function(a,b){ return String(a.date) < String(b.date) ? -1 : 1 });
+
+  var count = {};
+  PAY_TABS.forEach(function(t){ count[t.key] = 0 });
+  /* ใบเครดิตกับใบเกินกำหนดก็คือเงินที่ยังไม่ได้เหมือนกัน จึงนับเข้า "ค้างชำระ" ด้วย
+     ตัวเลขบนแถบจึงบวกกันได้เกินจำนวนใบทั้งหมด ซึ่งถูกแล้ว เพราะเป็นการมองคนละมุม */
+  live.forEach(function(o){
+    var k = payState(o).key;
+    if (k === "paid") { count.paid++; return; }
+    count.due++;
+    if (k === "cr30" || k === "over") count[k]++;
+  });
+
+  var head = PAY_TABS.filter(function(t){ return t.key === PAY_PICK })[0] || PAY_TABS[1];
+  var money = PAY_PICK === "paid" ? "var(--green)"
+            : (PAY_PICK === "over" ? "var(--red)" : "var(--amber)");
+
+  box.innerHTML =
+      '<div class="paytabs" id="pay-tabs">'
+    + PAY_TABS.map(function(t){
+        return '<button data-pay="' + t.key + '"' + (t.key===PAY_PICK ? ' class="on"' : '') + '>'
+          + '<img alt="" data-payic="' + t.ic + '">'
+          + '<span>' + esc(t.label) + '</span>'
+          + '<i>' + (count[t.key]||0) + '</i></button>';
+      }).join("")
+    + '</div>'
+    + '<div class="card">'
+    + '<div class="sum big" style="border:0;margin:0;padding:2px 0">'
+    +   '<span>' + esc(head.label) + ' ' + mine.length + ' ใบ</span>'
+    +   '<b style="color:' + money + '">' + baht(total) + '</b></div>'
+    + (mine.length
+      ? '<div id="due-list" style="margin-top:6px">'
+        + mine.slice(0,12).map(function(o){
+            var p = payState(o);
+            return '<div class="row"><div class="i">'
+              + '<b>' + esc(o.cust||"ไม่ระบุชื่อ") + '</b>'
+              + '<span>' + esc(o.no) + ' · ' + esc(thaiDate(o.date))
+              + (p.key !== "paid" && p.days > 0
+                  ? ' · <span style="color:' + (p.over>0?'var(--red)':'var(--amber)') + '">ค้าง '
+                    + p.days + ' วัน</span>' : '')
+              + '</span>'
+              + '<span style="color:var(--ink);font-weight:700;font-size:1.02rem">'
+              + baht(o.net) + '</span>'
+              + '<span class="paybar ' + p.key + '">' + esc(p.label) + '</span>'
+              + slipBadge(o.no)
+              + '</div><div class="acts">'
+              + '<button class="sq" data-due-sm="' + esc(o.no) + '" title="ทวงถาม / ส่งข้อความ">💬</button>'
+              + '<button class="sq" data-due-py="' + esc(o.no) + '" title="ส่ง QR เก็บเงิน / แนบสลิป">💰</button>'
+              /* ปุ่มเขียว = เปิดประวัติของลูกค้ารายนี้ และปิดยอดจากในนั้นได้
+                 ตอนถือสายทวงเงิน ต้องรู้ก่อนว่ารายนี้ซื้อกับเรามาแค่ไหน
+                 ค้างใบเดียวจากสิบใบ กับค้างใบเดียวเพราะเพิ่งซื้อครั้งแรก คนละเรื่องกัน */
+              + '<button class="sq ok" data-due-cu="' + esc(o.cust||"") + '" '
+              + 'data-no="' + esc(o.no) + '" title="ประวัติคำสั่งซื้อ / ปิดยอด">✔</button>'
+              + '</div></div>';
+          }).join("")
+        + '</div>'
+        + (mine.length > 12 ? '<div class="hint">แสดง 12 ใบแรกจากทั้งหมด ' + mine.length + ' ใบ</div>' : '')
+      : '<div class="empty" style="padding:18px 8px"><b>ไม่มีใบในกลุ่มนี้</b>'
+        + 'กดแถบด้านบนเพื่อดูกลุ่มอื่น</div>')
+    /* ชีทมีช่องสถานะช่องเดียว บอกทั้ง "จ่ายหรือยัง" และ "ส่งหรือยัง" พร้อมกันไม่ได้
+       ระบบจึงนับเฉพาะ "ชำระแล้ว" ว่าเก็บเงินได้แล้ว อย่างอื่นถือว่ายังค้าง */
+    + '<div class="hint">นับเฉพาะใบที่สถานะยังไม่ใช่ “ชำระแล้ว” · '
+    + 'ใบเครดิตจะยังไม่ขึ้นแดงจนกว่าจะเกิน ' + CREDIT_DAYS + ' วันนับจากวันที่ขาย</div>'
+    + '</div>';
+
+  $$("#pay-tabs [data-payic]").forEach(function(im){
+    var ic = (typeof PAY_ICONS !== "undefined") && PAY_ICONS[im.dataset.payic];
+    if (ic) im.src = ic; else im.remove();
+  });
+  $("#pay-tabs").onclick = function(e){
+    var b = e.target.closest("button[data-pay]");
+    if(!b) return;
+    PAY_PICK = b.dataset.pay;
+    drawDue(all);
+  };
+
+  function find(no){ return (all||[]).filter(function(o){ return o.no === no })[0] }
+  $$("#due-list [data-due-sm]").forEach(function(b){
+    b.onclick = function(){ var o = find(b.getAttribute("data-due-sm")); if(o) openMsg(o) };
+  });
+  $$("#due-list [data-due-py]").forEach(function(b){
+    b.onclick = function(){ var o = find(b.getAttribute("data-due-py")); if(o) openPay(o) };
+  });
+  $$("#due-list [data-due-cu]").forEach(function(b){
+    b.onclick = function(){
+      openCustomer(b.getAttribute("data-due-cu"), b.getAttribute("data-no"));
+    };
+  });
+}
+
+/* --------------------------------------------- ประวัติคำสั่งซื้อของลูกค้ารายเดียว
+
+   เปิดจากปุ่มเขียวในหน้าค้างชำระ ตอนกำลังจะโทรทวง
+   บอกสามอย่างที่ต้องรู้ก่อนกดโทร: ซื้อมาแล้วกี่ใบ · รวมเท่าไร · ค้างอยู่กี่ใบ
+   แล้วปิดยอดใบที่กำลังดูอยู่ได้จากในนี้เลย ไม่ต้องย้อนออกไปหาใหม่           */
+
+function openCustomer(name, no){
+  var cust = String(name||"").trim();
+  if(!cust){ toast("ใบนี้ไม่ได้ระบุชื่อลูกค้า จึงไม่มีประวัติให้ดู"); return }
+
+  openModal("ประวัติคำสั่งซื้อ — " + cust,
+    '<div id="cu-body"><div class="load">กำลังโหลด…</div></div>');
+
+  call("getCustomerHistory", [cust, 60], function(r){
+    var box = $("#cu-body");
+    if(!box) return;
+    var list = (r && r.orders) || [];
+    box.innerHTML =
+        '<div class="kpis" style="margin-bottom:10px">'
+      + '<div class="kpi"><span>ซื้อไปแล้ว</span><b>' + (r.n||0) + ' ใบ</b></div>'
+      + '<div class="kpi"><span>ยอดรวม</span><b>' + baht(r.total||0) + '</b></div>'
+      /* กำไรคือเหตุผลที่ต้องรู้ว่าใครเป็นลูกค้าประจำ — ลูกค้าที่ซื้อเยอะแต่ต่อราคา
+         จนแทบไม่เหลือกำไร กับลูกค้าที่ซื้อน้อยกว่าแต่ได้กำไรเต็ม เป็นคนละเรื่องกัน */
+      + '<div class="kpi"><span>กำไรจากลูกค้ารายนี้</span><b>' + baht(r.profit||0) + '</b></div>'
+      + '<div class="kpi"><span>เฉลี่ยต่อใบ</span><b>'
+      +   baht((r.n||0) ? (r.total||0)/(r.n||1) : 0) + '</b></div>'
+      + '<div class="kpi"><span>ค้างชำระ</span><b'
+      +   ((r.dueN||0) ? ' style="color:var(--amber)"' : '') + '>' + (r.dueN||0) + ' ใบ</b></div>'
+      + '<div class="kpi"><span>ยอดที่ค้าง</span><b'
+      +   ((r.due||0) ? ' style="color:var(--amber)"' : '') + '>' + baht(r.due||0) + '</b></div>'
+      + '</div>'
+      + (no ? '<button class="btn" id="cu-paid">ทำเครื่องหมายว่า ' + esc(no) + ' ชำระแล้ว</button>' : '')
+      + '<div id="cu-msg" style="margin:8px 0"></div>'
+      + '<div class="subhd">ทุกใบของลูกค้ารายนี้ (' + list.length + ')</div>'
+      + (list.length
+        ? list.map(function(o){
+            var p = payState(o);
+            return '<div class="row"><div class="i">'
+              + '<b' + (isDead(o) ? ' style="text-decoration:line-through;color:var(--gray)"' : '')
+              + '>' + esc(o.no) + '</b>'
+              + '<span>' + esc(thaiDate(o.date))
+              + (o.channel ? ' · ' + chanTag(o.channel) : '') + '</span>'
+              + '<span style="color:var(--ink);font-weight:700">' + baht(o.net) + '</span>'
+              + '<span class="paybar ' + p.key + '">' + esc(p.label) + '</span>'
+              + '</div>'
+              /* ใบที่ยกเลิกไปแล้วยังคีย์ซ้ำได้ — ลูกค้าเคยสั่งของชุดนี้จริง
+                 สิ่งที่ยกเลิกคือใบ ไม่ใช่ความต้องการซื้อของลูกค้า */
+              + '<div class="acts"><button class="btn ghost mini-w" data-rp="' + esc(o.no)
+              + '">คีย์ออเดอร์ซ้ำ</button></div>'
+              + '</div>';
+          }).join("")
+        : '<div class="empty">ยังไม่มีใบอื่นของลูกค้ารายนี้</div>')
+      + '<div class="hint" style="margin-top:8px">ใบที่ยกเลิกหรือตีกลับขึ้นแบบขีดฆ่า '
+      + 'และไม่ถูกนับรวมในยอดด้านบน</div>';
+
+    /* ปุ่มคีย์ซ้ำผูกกับใบที่โหลดมาแล้ว ไม่ต้องยิงชีทอีกรอบตอนกด */
+    $$("#cu-body [data-rp]").forEach(function(b){
+      b.onclick = function(){
+        var pick = list.filter(function(x){ return String(x.no) === b.dataset.rp })[0];
+        repeatOrder(pick);
+      };
+    });
+
+    var pd = $("#cu-paid");
+    if(pd) pd.onclick = function(){
+      if(!confirm("ทำเครื่องหมายว่าออเดอร์ " + no + " ชำระแล้ว?")) return;
+      pd.disabled = true; pd.textContent = "กำลังบันทึก…";
+      api("setTracking", no, undefined, "ชำระแล้ว").then(function(){
+        $("#cu-msg").innerHTML = '<div class="msg ok" style="display:block">บันทึกว่า <b>'
+          + esc(no) + '</b> ชำระแล้ว</div>';
+        pd.textContent = "ปิดยอดแล้ว";
+        SUM_CACHE = null; ORDERS = [];
+        loadSummary();
+      }, function(e){
+        pd.disabled = false; pd.textContent = "ทำเครื่องหมายว่า " + no + " ชำระแล้ว";
+        $("#cu-msg").innerHTML = '<div class="msg err" style="display:block">'
+          + esc(e && e.message ? e.message : e) + '</div>';
+      });
+    };
+  }, function(m){
+    var box = $("#cu-body");
+    if(box) box.innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'
+      + esc(m) + '</div>';
+  });
+}
+
+/* ------------------------------------------------------------- หน้าลูกค้า
+
+   ลูกค้าประจำคือคนที่ทำเงินให้ร้านจริง ๆ แต่ระบบเดิมไม่มีที่ไหนตอบได้เลยว่า
+   ใครซื้อไปเท่าไร กำไรเท่าไร และค้างอยู่กี่ใบ — ต้องเปิดชีทแล้วไล่กรองเอง
+
+   ไม่ทำเป็นแท็บ เพราะแถบล่างเต็มแล้ว เข้าจากปุ่มบนหน้าออเดอร์ทั้งหมด
+   แบบเดียวกับหน้านำเข้า Shopee แท็บ "ออเดอร์" จึงยังติดไฟค้างไว้     */
+
+var CUST_SORT = "last";
+var CUST_SORTS = [
+  { key:"last",  label:"ซื้อล่าสุด"  },
+  { key:"total", label:"ยอดสูงสุด"   },
+  { key:"due",   label:"ค้างชำระ"    }
+];
+
+function custPageInit(){
+  var q = $("#cu-q");
+  if(q && !q.dataset.bound){
+    q.dataset.bound = "1";
+    q.oninput = drawCustPage;
+  }
+  var bk = $("#cu-back");
+  if(bk && !bk.dataset.bound){
+    bk.dataset.bound = "1";
+    bk.onclick = function(){ go("list") };
+  }
+  var box = $("#cu-list");
+  if(box) box.innerHTML = '<div class="load">กำลังโหลดรายชื่อลูกค้า…</div>';
+  /* custList เก็บรายชื่อไว้ในเครื่องแล้ว การค้นจึงไม่ยิงชีทซ้ำทุกตัวอักษร */
+  custList(function(){ drawCustPage() });
+}
+
+/* คัดตามคำค้น แล้วเรียงตามที่เลือก — เงียบ ๆ ในเครื่อง ไม่ยิงเซิร์ฟเวอร์ */
+function custPick(list, q, sort){
+  var want = String(q||"").trim().toLowerCase();
+  var qd = want.replace(/\D/g,"");
+  var out = (list||[]).filter(function(c){
+    if(!want) return true;
+    if(String(c.name||"").toLowerCase().indexOf(want) > -1) return true;
+    if(qd.length >= 3 && String(c.tel||"").replace(/\D/g,"").indexOf(qd) > -1) return true;
+    return false;
+  });
+  var num = function(v){ return Number(v) || 0 };
+  out.sort(function(a,b){
+    if(sort === "total") return num(b.total) - num(a.total) || (a.name < b.name ? -1 : 1);
+    if(sort === "due")   return num(b.due)   - num(a.due)   || (a.name < b.name ? -1 : 1);
+    /* ค่าตั้งต้นคือคนที่เพิ่งซื้อล่าสุด ซึ่งเป็นลำดับที่ชีทส่งมาอยู่แล้ว */
+    return String(b.last||"").localeCompare(String(a.last||"")) || (a.name < b.name ? -1 : 1);
+  });
+  return out;
+}
+
+function drawCustPage(){
+  var box = $("#cu-list");
+  if(!box) return;
+  var q = ($("#cu-q") && $("#cu-q").value) || "";
+  var all = CUSTS || [];
+  var list = custPick(all, q, CUST_SORT);
+
+  var chips = '<div class="sorts">' + CUST_SORTS.map(function(s){
+    return '<button type="button" data-cs="' + s.key + '"'
+         + (s.key === CUST_SORT ? ' class="on"' : '') + '>' + esc(s.label) + '</button>';
+  }).join("") + '</div>';
+
+  var head = '<div class="hint" style="padding:0 2px 8px">ลูกค้าทั้งหมด <b>' + all.length
+    + '</b> ราย' + (q ? ' · ตรงกับที่ค้น <b>' + list.length + '</b> ราย' : '') + '</div>';
+
+  box.innerHTML = chips + head + (list.length
+    ? list.slice(0, 200).map(function(c, i){
+        var due = Number(c.due) || 0;
+        return '<div class="row cu-row" data-cu="' + i + '"><div class="i">'
+          + '<b>' + esc(c.name || "ไม่ระบุชื่อ") + '</b>'
+          + '<span>' + (c.tel ? esc(c.tel) + ' · ' : '')
+          + 'ซื้อ ' + (Number(c.okN) || 0) + ' ใบ'
+          + (c.last ? ' · ล่าสุด ' + esc(thaiDate(c.last)) : '') + '</span>'
+          + '<span style="color:var(--ink);font-weight:700">' + baht(c.total || 0) + '</span>'
+          /* ค้างชำระเป็นเรื่องที่ต้องเห็นตั้งแต่ยังไม่กดเข้าไปดู
+             ไม่งั้นต้องเปิดทีละรายเพื่อรู้ว่าใครติดเงินอยู่ */
+          + (due ? '<span class="paybar due">ค้าง ' + (Number(c.dueN)||0) + ' ใบ · '
+                 + baht(due) + '</span>' : '')
+          + '</div></div>';
+      }).join("")
+    : '<div class="empty"><b>ไม่พบลูกค้าที่ค้นหา</b>พิมพ์ชื่อหรือเบอร์โทรบางส่วนก็ได้</div>');
+
+  $$("#cu-list .sorts button").forEach(function(b){
+    b.onclick = function(){ CUST_SORT = b.dataset.cs; drawCustPage() };
+  });
+  $$("#cu-list .cu-row").forEach(function(r){
+    r.onclick = function(){
+      var c = list[+r.dataset.cu];
+      if(c) openCustomer(c.name);
+    };
+  });
+}
+
+/* ------------------------------------------------------ คีย์ออเดอร์ซ้ำ
+
+   ลูกค้าประจำสั่งของชุดเดิมซ้ำทุกเดือน ทางเดียวที่เคยทำได้คือเปิดใบเก่าดู
+   แล้วพิมพ์ใหม่ทั้งใบ ทั้งที่อยู่สามบรรทัดและรายการสินค้าทุกบรรทัด
+
+   ใส่ให้เฉพาะของที่ยังมีอยู่ในฐานสินค้าจริง ตัวไหนหายไปแล้วบอกให้รู้
+   ไม่ใช่เงียบ ๆ แล้วปล่อยให้บันทึกใบที่ขาดของไป                        */
+
+function repeatOrder(o){
+  if(!o){ toast("ไม่มีข้อมูลใบนี้ให้คีย์ซ้ำ"); return }
+  closeModal();
+  go("new");
+
+  var set = function(id, v){
+    if(v !== undefined && v !== null && String(v) !== "") $("#"+id).value = v;
+  };
+  /* วันที่ต้องเป็นวันนี้เสมอ ไม่ใช่วันของใบเก่า ไม่งั้นยอดจะไปลงเดือนที่ปิดไปแล้ว */
+  $("#f-date").value = todayISO();
+  set("f-cust", o.cust);
+  set("f-tel",  o.tel);
+  set("f-addr", o.addr);
+  /* เลขพัสดุกับหมายเหตุของใบเก่าไม่เกี่ยวกับใบใหม่ ต้องไม่ติดมาด้วย */
+  $("#f-track").value = "";
+  $("#f-note").value  = "";
+  if(o.channel) pickOption("#f-channel", o.channel);
+  if(o.carrier) pickOption("#f-carrier", o.carrier);
+  if(o.vat)     pickOption("#f-vat", o.vat);
+  if(o.ship !== undefined && o.ship !== null && o.ship !== ""){
+    $("#f-ship").value = o.ship;
+    $("#f-ship").dataset.touched = "1";
+  }
+  $("#f-disc").value = Number(o.discount) || 0;
+
+  var raw  = (o.items || []).filter(function(it){ return Number(it.qty) > 0 });
+  var its  = raw.filter(function(it){ return it.sku && prodBySku(it.sku) });
+  if(its.length){
+    $("#items").innerHTML = "";
+    its.forEach(function(it){
+      addItem({ sku: it.sku, qty: it.qty, price: it.price, gift: Number(it.price) === 0 });
+    });
+  }
+  recalc();
+  window.scrollTo(0, 0);
+
+  var miss = raw.length - its.length;
+  toast(miss
+    ? ("คีย์ซ้ำจาก " + o.no + " แล้ว · มี " + miss + " รายการที่ไม่มีในฐานสินค้าแล้ว ต้องเลือกเอง")
+    : ("คีย์ซ้ำจาก " + o.no + " แล้ว ตรวจอีกครั้งก่อนบันทึก"));
+}
+
+/* ------------------------------------------- แฟ้มเอกสาร: แยกเป็นแฟ้มตามชนิดใบ
+
+   เดิมหน้านี้เรียก listDocs ซึ่งคืนเฉพาะใบที่ "ไม่มีเลขออเดอร์"
+   แต่ใบเสร็จ/ใบกำกับภาษี ใบแจ้งหนี้ และใบมัดจำ ออกจากออเดอร์เสมอ จึงมีเลขออเดอร์ทุกใบ
+   แปลว่าใบกำกับภาษีที่ออกไปแล้ว ไม่เคยโผล่ในหน้านี้เลยสักใบ ทั้งที่อยู่ในชีทครบ
+   และช่องค้นหายังเขียนว่าค้นด้วย "เลขออเดอร์" ได้ ทั้งที่ไม่มีทางเจอ
+
+   ของใหม่เข้าแฟ้มก่อน ใบคนละชนิดไม่ปนกัน — ใบเสนอราคาคือใบที่ยัง "อาจจะขาย"
+   ใบกำกับภาษีคือใบที่ "ขายไปแล้วและแจ้งสรรพากรแล้ว" คนละเรื่องกันคนละความสำคัญ */
+
+var FILE_KIND = "";
+var DOC_KINDS = [
+  { th: "ใบเสร็จรับเงิน", label: "ใบเสร็จ / ใบกำกับภาษี", ic: "🧾",
+    note: "ใบที่ขายจบแล้ว ใช้ยื่นภาษี" },
+  { th: "บิลเงินสด",     label: "บิลเงินสด",             ic: "💵",
+    note: "ขายแบบไม่ออกใบกำกับภาษี" },
+  { th: "ใบแจ้งหนี้",     label: "ใบแจ้งหนี้",            ic: "📃",
+    note: "วางบิลแล้วรอเก็บเงิน" },
+  { th: "ใบเสนอราคา",    label: "ใบเสนอราคา",           ic: "📝",
+    note: "ยังไม่ได้ขาย รอลูกค้าตอบ" },
+  { th: "ใบรับเงินมัดจำ", label: "ใบรับเงินมัดจำ",        ic: "💰",
+    note: "รับมัดจำไว้ก่อนส่งของ" },
+  { th: "ใบวางบิล",      label: "ใบวางบิล",             ic: "📑",
+    note: "รวมหลายบิลของลูกค้ารายเดียว" }
+];
+
+function docKind(th){
+  for(var i = 0; i < DOC_KINDS.length; i++) if(DOC_KINDS[i].th === th) return DOC_KINDS[i];
+  return { th: th, label: th, ic: "📄", note: "" };
+}
+
+/** จำนวนใบในแฟ้ม — ฝั่งชีทส่งมาเป็นก้อนแยกสามกอง
+    เผื่อไฟล์หลังบ้านเป็นรุ่นเก่าที่ส่งมาเป็นตัวเลขเดี่ยว ก็ยังอ่านได้ ไม่พังทั้งหน้า */
+function docCount(v){
+  if(v && typeof v === "object"){
+    return { n: Number(v.n)||0, live: Number(v.live)||0,
+             revised: Number(v.revised)||0, dead: Number(v.dead)||0 };
+  }
+  var n = Number(v) || 0;
+  return { n: n, live: n, revised: 0, dead: 0 };
+}
+
+function drawFileDocs(){
+  var box = $("#fl-docs");
+  if(!box) return;
+  var q = ($("#fl-q") && $("#fl-q").value.trim()) || "";
+  box.innerHTML = '<div class="load">กำลังเปิดแฟ้ม…</div>';
+  /* ค้นหาแล้วไม่ต้องเข้าแฟ้ม — คนที่พิมพ์เลขใบมาคือคนที่รู้อยู่แล้วว่าจะหาใบไหน
+     บังคับให้เดาก่อนว่าใบนั้นชนิดอะไรคือทำให้ช่องค้นหาไร้ประโยชน์ */
+  api("findDocs", { q: q, type: q ? "" : FILE_KIND, limit: 60 }).then(function(res){
+    var rows = (res && res.rows) || [], counts = (res && res.counts) || {};
+    if(q) drawDocHits(box, rows, q);
+    else if(!FILE_KIND) drawDocFolders(box, counts);
+    else drawDocOne(box, rows, counts, res.total || rows.length);
+  }, function(e){
+    box.innerHTML = '<div class="empty" style="color:var(--red)"><b>เปิดแฟ้มไม่ได้</b>'
+      + esc(e && e.message ? e.message : e) + '</div>';
+  });
+}
+
+/** หน้าแรกของแฟ้ม — สี่แฟ้มเรียงกัน พร้อมจำนวนใบข้างใน */
+/** รูปหน้าแฟ้ม — ถ้ารูปยังไม่มา (ไฟล์รูปเป็นรุ่นเก่า) ตกไปใช้ emoji แทน
+    ดีกว่าช่องว่างที่ทำให้ทั้งแถวเบี้ยวโดยไม่มีใครรู้ว่าหายไปไหน */
+function foldIc(k){
+  var src = (typeof DOC_ICONS !== "undefined" && DOC_ICONS) ? DOC_ICONS[k.th] : "";
+  return src
+    ? '<img class="fold-ic" src="' + src + '" alt="">'
+    : '<span class="fold-ic fold-em">' + k.ic + '</span>';
+}
+
+function drawDocFolders(box, counts){
+  box.innerHTML = '<div class="hint" style="padding:0 2px 8px">'
+      + 'กดที่แฟ้มเพื่อดูใบข้างใน · หรือพิมพ์ค้นหาข้างบนถ้ารู้เลขใบอยู่แล้ว</div>'
+    + DOC_KINDS.map(function(k){
+        var c = docCount(counts[k.th]);
+        /* จำนวนบนแฟ้มนับเฉพาะใบที่ใช้ได้ — ใบที่ยกเลิกแล้วคือใบที่ใช้ไม่ได้
+           นับรวมเข้าไปคือหลอกตัวเองว่ามีใบอยู่มากกว่าที่มีจริง
+           แต่ก็ไม่ซ่อน บอกต่อท้ายว่าข้างในมีใบแก้ไข/ใบยกเลิกอยู่กี่ใบ */
+        var side = [];
+        if(c.revised) side.push("แก้ไข " + c.revised);
+        if(c.dead) side.push("ยกเลิก " + c.dead);
+        return '<div class="fold' + (c.n ? '' : ' none') + '" data-fk="' + esc(k.th) + '">'
+          + foldIc(k)
+          + '<span class="fold-tx"><b>' + esc(k.label) + '</b>'
+          +   '<em>' + esc(side.length ? side.join(" · ") : k.note) + '</em></span>'
+          + '<span class="fold-n">'
+          +   (c.n ? (c.live + c.revised) + ' ใบ' : 'ยังไม่มี') + '</span>'
+          + '</div>';
+      }).join("");
+  box.querySelectorAll("[data-fk]").forEach(function(el){
+    el.onclick = function(){
+      if(el.classList.contains("none")) return;
+      FILE_KIND = el.getAttribute("data-fk");
+      drawFileDocs();
+    };
+  });
+}
+
+/** แบ่งใบในแฟ้มเป็นสามกอง — ใช้ได้ตามปกติ · เคยแก้ไข · ยกเลิกแล้ว
+
+    สามอย่างนี้หน้าตาเหมือนกันหมด ต่างกันแค่ตัวหนังสือเล็ก ๆ ท้ายบรรทัด
+    ปนกันอยู่ในรายการเดียวเมื่อไร วันหนึ่งจะมีคนหยิบใบที่ยกเลิกแล้วไปส่งลูกค้า
+    หรือส่งให้บัญชี แล้วรู้ตัวตอนที่แก้ยากไปแล้ว */
+var DOC_GROUPS = [
+  { key: "live", hd: "ใช้ได้ตามปกติ",
+    pick: function(d){ return !d.voidWhy && !Number(d.revised) } },
+  { key: "revised", hd: "เคยแก้ไข — ยอดในระบบไม่เท่ากับใบที่พิมพ์ครั้งแรก",
+    pick: function(d){ return !d.voidWhy && Number(d.revised) > 0 } },
+  { key: "dead", hd: "ยกเลิกแล้ว — ห้ามส่งลูกค้า ห้ามส่งบัญชี",
+    pick: function(d){ return !!d.voidWhy } }
+];
+
+/** ข้างในแฟ้มหนึ่งใบ */
+function drawDocOne(box, rows, counts, total){
+  var k = docKind(FILE_KIND);
+  var outId = "rp-out-fold";
+  if(!rows.length){
+    box.innerHTML = docBackBar()
+      + '<div class="empty"><b>ยังไม่มี' + esc(k.label) + '</b>'
+      + 'ใบที่ออกจากนี้ไปจะมาอยู่ในแฟ้มนี้</div>';
+  } else {
+    box.innerHTML = docBackBar()
+      + DOC_GROUPS.map(function(g){
+          var part = rows.filter(g.pick);
+          if(!part.length) return "";
+          return '<div class="subhd grp-' + g.key + '">' + esc(g.hd)
+            + ' · ' + part.length + ' ใบ</div>'
+            + part.map(docRowHtml).join("");
+        }).join("")
+      + '<div id="' + outId + '" style="margin-top:10px"></div>'
+      + (total > rows.length
+          ? '<div class="hint" style="margin-top:8px">แสดง ' + rows.length + ' ใบล่าสุด '
+            + 'จากทั้งหมด ' + total + ' ใบ · พิมพ์เลขใบหรือชื่อลูกค้าในช่องค้นหาข้างบน '
+            + 'เพื่อหาใบที่เก่ากว่านี้</div>'
+          : '');
+    bindDocRows(box, outId, drawFileDocs);
+  }
+  var b = box.querySelector(".fold-back");
+  if(b) b.onclick = function(){ FILE_KIND = ""; drawFileDocs() };
+}
+
+function docBackBar(){
+  return '<button class="mini fold-back" style="margin-bottom:10px">← ทุกแฟ้ม</button>';
+}
+
+/** ผลค้นหา — ยังแยกหัวข้อตามชนิดใบ ไม่เทรวมกันเป็นกองเดียว */
+function drawDocHits(box, rows, q){
+  if(!rows.length){
+    box.innerHTML = '<div class="empty"><b>ไม่พบเอกสารที่ค้นหา</b>'
+      + 'พิมพ์เลขที่เอกสาร ชื่อลูกค้า หรือเลขออเดอร์บางส่วนก็ได้</div>';
+    return;
+  }
+  var by = {};
+  rows.forEach(function(d){ (by[d.type] || (by[d.type] = [])).push(d) });
+  var order = DOC_KINDS.map(function(k){ return k.th });
+  for(var t in by) if(order.indexOf(t) < 0) order.push(t);
+
+  var outId = "rp-out-hits";
+  box.innerHTML = '<div class="hint" style="padding:0 2px 8px">ผลค้นหา “' + esc(q) + '” · '
+      + rows.length + ' ใบ</div>'
+    + order.filter(function(t){ return by[t] }).map(function(t){
+        var k = docKind(t);
+        return '<div class="subhd">' + k.ic + ' ' + esc(k.label)
+          + ' · ' + by[t].length + ' ใบ</div>'
+          + by[t].map(docRowHtml).join("");
+      }).join("")
+    + '<div id="' + outId + '" style="margin-top:10px"></div>';
+  bindDocRows(box, outId, drawFileDocs);
+}
+
+/* ------------------------------------------------------------- แฟ้มเอกสาร
+
+   สองเรื่องที่เคยตามหายาก มาอยู่หน้าเดียวกัน
+     เอกสารที่ออกไปแล้ว  เคยอยู่ต่อท้ายฟอร์มใบเสนอราคา ต้องเลื่อนผ่านใบ A4 ทั้งใบ
+     สรุปรายเดือน        เคยไม่มีที่ไหนเลย ต้องเปิดชีทแล้วไล่กรองเอง
+
+   ไม่ทำเป็นแท็บ แถบล่างเต็มแล้ว เข้าจากปุ่มในหน้าใบเสนอราคา แท็บนั้นจึงติดไฟค้างไว้ */
+
+var FILE_TAB = "doc";
+var MONTHS_TH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.",
+                 "ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+
+/** 2026-01 → "ม.ค. 2569" — ปีไทยเหมือนทุกที่ในแอป */
+function ymThai(ym){
+  var m = /^(\d{4})-(\d{2})$/.exec(String(ym||""));
+  if(!m) return String(ym||"");
+  return MONTHS_TH[Number(m[2])-1] + " " + (Number(m[1]) + 543);
+}
+
+function fileInit(){
+  var bk = $("#fl-back");
+  if(bk && !bk.dataset.bound){
+    bk.dataset.bound = "1";
+    bk.onclick = function(){ go("quote") };
+  }
+  $$("#fl-tabs button").forEach(function(b){
+    if(b.dataset.bound) return;
+    b.dataset.bound = "1";
+    b.onclick = function(){ FILE_TAB = b.dataset.fl; fileDraw() };
+  });
+  var q = $("#fl-q");
+  if(q && !q.dataset.bound){
+    q.dataset.bound = "1";
+    q.oninput = function(){ FILE_KIND = ""; drawFileDocs() };
+  }
+  var bl = $("#fl-bill");
+  if(bl && !bl.dataset.bound){ bl.dataset.bound = "1"; bl.onclick = openBill }
+  pasteInit();
+  fileDraw();
+}
+
+function fileDraw(){
+  $$("#fl-tabs button").forEach(function(b){
+    b.classList.toggle("on", b.dataset.fl === FILE_TAB);
+  });
+  $("#fl-doc-card").style.display   = FILE_TAB === "doc"   ? "" : "none";
+  $("#fl-month-card").style.display = FILE_TAB === "month" ? "" : "none";
+  if(FILE_TAB === "doc") drawFileDocs();
+  else loadMonths();
+}
+
+/* ------------------------------------------------------ สรุปรายเดือน */
+
+var MONTHS = null;
+
+function loadMonths(force){
+  var box = $("#fl-months");
+  if(!box) return;
+  if(MONTHS && !force){ drawMonths(); return }
+  box.innerHTML = '<div class="load">กำลังคิดยอดจากชีท…</div>';
+  /* ขอย้อนหลัง 12 เดือน เดือนที่ยังไม่มีอะไรเลยก็ต้องขึ้น จะได้เห็นว่ายังไม่ได้กรอกค่าแอด */
+  call("getMonthReport", [12], function(list){
+    MONTHS = list || [];
+    drawMonths();
+  }, function(m){
+    box.innerHTML = '<div class="empty" style="color:var(--red)">คิดยอดไม่สำเร็จ<br>'
+      + esc(m) + '</div>';
+  });
+}
+
+/* ยอดของเดือนหนึ่งไม่ใช่ตัวเลขตัวเดียว — ไฟล์รายเดือนที่เจ้าของร้านมีเป็นยอด Shopee
+   ล้วน ๆ ถ้าเอามากรอกรวมกับช่องทางอื่นจะอ่านผิดทันที ทั้งยอดขายและค่าแอด
+   จึงแยกทีละช่องทาง ยอดของเดือน = ผลรวมของช่องทางในเดือนนั้น ไม่เก็บซ้ำอีกที่ */
+function drawMonths(){
+  var box = $("#fl-months");
+  if(!box) return;
+  var list = MONTHS || [];
+  if(!list.length){
+    box.innerHTML = '<div class="empty"><b>ยังไม่มีข้อมูลสักเดือน</b>'
+      + 'พอคีย์ออเดอร์ใบแรก เดือนนั้นจะมาขึ้นตรงนี้เอง</div>';
+    return;
+  }
+
+  /* ยอดรวมทุกเดือนที่เห็นอยู่ — คำถามแรกที่เจ้าของร้านถามคือ "ทั้งปีเหลือเท่าไร" */
+  var t = { sales:0, cost:0, ads:0, net:0 };
+  list.forEach(function(r){
+    t.sales += Number(r.sales)||0; t.cost += Number(r.cost)||0;
+    t.ads   += Number(r.ads)||0;   t.net  += Number(r.net)||0;
+  });
+
+  box.innerHTML =
+      '<div class="kpis" style="margin-bottom:12px">'
+    + '<div class="kpi"><span>ยอดขายรวม ' + list.length + ' เดือน</span><b>' + baht(t.sales) + '</b></div>'
+    + '<div class="kpi"><span>ต้นทุนรวม</span><b>' + baht(t.cost) + '</b></div>'
+    + '<div class="kpi"><span>ค่าแอดรวม</span><b>' + baht(t.ads) + '</b></div>'
+    + '<div class="kpi"><span>กำไรสุทธิรวม</span><b style="color:'
+    +   (t.net < 0 ? 'var(--red)' : 'var(--green)') + '">' + baht(t.net) + '</b></div>'
+    + '</div>'
+    + list.map(function(r, i){ return monthCard(r, i) }).join("")
+    + '<div class="hint" style="margin-top:10px">กำไรสุทธิ = ยอดขาย − ต้นทุน − ค่าแอด · '
+    + 'ยอดของเดือนคือผลรวมของทุกช่องทาง · '
+    + 'ใบที่ยกเลิกหรือตีกลับไม่ถูกนับเป็นยอดขาย · '
+    + 'ช่องที่เว้นว่างไว้ระบบคิดให้จากออเดอร์จริง ที่กรอกเองชนะที่ระบบคิด '
+    + '(แก้ในชีท <b>สรุปเดือน</b> ได้)</div>';
+
+  bindMonths(list);
+}
+
+/** หนึ่งเดือน = หัวเดือนกับยอดรวม แล้วไล่ทีละช่องทางข้างใน */
+function monthCard(r, i){
+  var neg = Number(r.net) < 0;
+  var chans = r.chans || [];
+  return '<div class="mrow" data-mi="' + i + '">'
+    + '<div class="mhd"><b>' + esc(ymThai(r.ym)) + '</b>'
+    +   '<span>' + (chans.length ? chans.length + ' ช่องทาง' : 'ยังไม่มีช่องทาง')
+    +   (r.orders ? ' · ' + r.orders + ' ใบในระบบ' : '') + '</span></div>'
+    + '<div class="mgrid">'
+    +   '<div>ยอดขาย<b>' + baht(r.sales) + '</b></div>'
+    +   '<div>ต้นทุน<b>' + baht(r.cost) + '</b></div>'
+    +   '<div>ค่าแอด<b>' + baht(r.ads) + '</b></div>'
+    +   '<div class="' + (neg ? 'neg' : 'net') + '">กำไรสุทธิ<b>' + baht(r.net) + '</b></div>'
+    + '</div>'
+    + (chans.length
+        ? '<div class="mchans">' + chans.map(function(c, j){ return chanCard(c, j) }).join("") + '</div>'
+        : '<div class="hint" style="margin-top:8px">เดือนนี้ยังไม่มียอดของช่องทางไหนเลย '
+          + 'เลือกช่องทางข้างล่างแล้วกรอกยอดจากไฟล์ได้</div>')
+    + '<div class="madd">'
+    +   '<select class="m-newchan">' + chanOptions(chans) + '</select>'
+    +   '<button class="mini m-add">เพิ่มช่องทาง</button>'
+    + '</div>'
+    + '</div>';
+}
+
+/** ช่องทางที่ยังไม่มีในเดือนนี้เท่านั้น — เลือกตัวที่มีอยู่แล้วจะได้การ์ดซ้ำสองใบ */
+function chanOptions(chans){
+  var have = {};
+  (chans || []).forEach(function(c){ have[c.chan] = 1 });
+  var all = ((BOOT && BOOT.lists && BOOT.lists.channel) || []).slice();
+  if(all.indexOf("อื่น ๆ") < 0) all.push("อื่น ๆ");
+  var left = all.filter(function(v){ return !have[v] });
+  if(!left.length) return '<option value="">มีครบทุกช่องทางแล้ว</option>';
+  return left.map(function(v){
+    return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+  }).join("");
+}
+
+/** หนึ่งช่องทางในเดือนนั้น — ตัวเลขที่เห็น กับช่องกรอกที่ทับตัวเลขนั้นได้ */
+function chanCard(c, j){
+  var neg = Number(c.net) < 0;
+  return '<div class="mchan" data-ci="' + j + '">'
+    + '<div class="mchd"><b>' + esc(c.chan) + '</b>'
+    +   '<span>' + (c.orders ? c.orders + ' ใบในระบบ' : 'ไม่มีออเดอร์ในระบบ') + '</span></div>'
+    + '<div class="mgrid">'
+    +   '<div>ยอดขาย<b>' + baht(c.sales)
+    +     (c.typedSales ? '<span class="mtyped">กรอกเอง</span>' : '') + '</b></div>'
+    +   '<div>ต้นทุน<b>' + baht(c.cost)
+    +     (c.typedCost ? '<span class="mtyped">กรอกเอง</span>' : '') + '</b></div>'
+    +   '<div>ค่าแอด<b>' + baht(c.ads) + '</b></div>'
+    +   '<div class="' + (neg ? 'neg' : 'net') + '">กำไรสุทธิ<b>' + baht(c.net) + '</b></div>'
+    + '</div>'
+    + (c.note ? '<div class="hint" style="margin-top:6px">' + esc(c.note) + '</div>' : '')
+    + '<div class="medit">'
+    +   monthInput("m-sales", "ยอดขาย", c.sales, c.typedSales, c.orders)
+    +   monthInput("m-cost",  "ต้นทุน", c.cost,  c.typedCost,  c.orders)
+    +   monthInput("m-ads",   "ค่าแอด", c.ads,   Number(c.ads) > 0, 0)
+    +   '<button class="mini m-save">บันทึก</button>'
+    + '</div>'
+    + '<div class="m-msg"></div>'
+    + '</div>';
+}
+
+/* ช่องว่างไม่ได้แปลว่าศูนย์ แปลว่า "ใช้ที่ระบบคิดให้" — placeholder จึงต้องบอกแบบนั้น
+   ไม่ใส่ตัวเลขลงใน placeholder เพราะช่องแคบกว่าเลขยาว ๆ พอถูกตัดท้ายจะกลายเป็น
+   เลขคนละตัว (1,103.59 อ่านได้เป็น 11) ตัวเลขจริงอยู่ในตารางเหนือช่องกรอกอยู่แล้ว */
+function monthInput(cls, label, val, typed, orders){
+  var ph = typed ? label : (orders ? "ระบบคิดให้" : "ยังไม่ได้กรอก");
+  return '<label class="mfld"><span>' + esc(label) + '</span>'
+    + '<input type="number" inputmode="decimal" step="0.01" class="' + cls + '"'
+    + ' placeholder="' + esc(ph) + '"'
+    + ' value="' + (typed ? num_(val) : "") + '"></label>';
+}
+
+function bindMonths(list){
+  $$("#fl-months .mrow").forEach(function(el){
+    var r = list[+el.dataset.mi];
+
+    /* เดือนเก่าที่ไม่มีออเดอร์ในระบบเลย ต้องเปิดช่องทางขึ้นมากรอกเองได้
+       ทำฝั่งหน้าจอล้วน ยังไม่เขียนลงชีทจนกว่าจะกดบันทึก จะได้ไม่มีแถวเปล่าค้าง */
+    var add = el.querySelector(".m-add");
+    if(add) add.onclick = function(){
+      var v = el.querySelector(".m-newchan").value;
+      if(!v) return;
+      r.chans = (r.chans || []).concat([{
+        chan: v, orders: 0, sales: 0, cost: 0, ads: 0, gross: 0, net: 0,
+        typedSales: false, typedCost: false, note: "", isNew: true
+      }]);
+      drawMonths();
+      var fresh = $$("#fl-months .mrow")[+el.dataset.mi];
+      var cards = fresh ? fresh.querySelectorAll(".mchan") : [];
+      var last = cards[cards.length - 1];
+      if(last) last.querySelector(".m-sales").focus();
+    };
+
+    el.querySelectorAll(".mchan").forEach(function(ce){
+      var c = r.chans[+ce.dataset.ci];
+      ce.querySelector(".m-save").onclick = function(){
+        var b = this;
+        function val(sel){
+          var s = ce.querySelector(sel).value.trim();
+          return s === "" ? "" : Number(s);
+        }
+        b.disabled = true; b.textContent = "กำลังบันทึก…";
+        call("saveMonth", [{ ym: r.ym, chan: c.chan,
+                             sales: val(".m-sales"), cost: val(".m-cost"), ads: val(".m-ads"),
+                             by: byName(), clientKey: newKey() }],
+          function(){
+            ce.querySelector(".m-msg").innerHTML =
+              '<div class="msg ok" style="display:block">บันทึก ' + esc(c.chan) + ' ของ '
+              + esc(ymThai(r.ym)) + ' แล้ว</div>';
+            b.disabled = false; b.textContent = "บันทึก";
+            loadMonths(true);
+          },
+          function(m){
+            b.disabled = false; b.textContent = "บันทึก";
+            ce.querySelector(".m-msg").innerHTML =
+              '<div class="msg err" style="display:block">' + esc(m) + '</div>';
+          });
+      };
+    });
+  });
+}
+
+/* --------------------------------- วางตารางจาก Excel แล้วคิดยอดของทั้งปีให้
+
+   เดือนก่อนเริ่มใช้ระบบไม่มีออเดอร์ในชีทสักใบ ยอดอยู่ในไฟล์ที่โหลดจาก Shopee ล้วน ๆ
+   จะให้นั่งบวกเองทีละเดือนแล้วพิมพ์เข้ามาก็ได้ แต่ไฟล์เดือนละพันกว่าบรรทัด
+   บวกมือทีเดียวผิดคือกำไรทั้งเดือนผิด และไม่มีอะไรจับได้เลย
+
+   ใช้ตัวอ่านตารางชุดเดียวกับหน้านำเข้าออเดอร์ Shopee ต่างกันแค่ปลายทาง
+   อันนั้นลงเป็นออเดอร์รายใบเพื่อตัดสต๊อก อันนี้ลงเป็นยอดรวมของเดือน ไม่แตะสต๊อก */
+
+var PASTE_MONTHS = null;
+
+function pasteInit(){
+  var op = $("#fl-paste-open");
+  if(op && !op.dataset.bound){
+    op.dataset.bound = "1";
+    op.onclick = function(){
+      var box = $("#fl-paste");
+      var show = box.style.display === "none";
+      box.style.display = show ? "" : "none";
+      if(show) $("#fl-text").focus();
+    };
+  }
+  var cl = $("#fl-paste-close");
+  if(cl && !cl.dataset.bound){
+    cl.dataset.bound = "1";
+    cl.onclick = function(){ $("#fl-paste").style.display = "none" };
+  }
+  var rd = $("#fl-read");
+  if(rd && !rd.dataset.bound){
+    rd.dataset.bound = "1";
+    rd.onclick = pasteRead;
+  }
+}
+
+function pasteRead(){
+  var out = $("#fl-paste-out");
+  var txt = $("#fl-text").value;
+  if(!String(txt).trim()){
+    out.innerHTML = '<div class="msg err" style="display:block">ยังไม่ได้วางอะไรลงมา</div>';
+    return;
+  }
+  var chan = (typeof shopChannel === "function") ? shopChannel() : "";
+  if(!chan){
+    /* ไม่มีช่องทางชื่อ Shopee ในชีท ตั้งค่า = กรอกลงไปก็ไปอยู่ผิดช่องทาง
+       บอกตั้งแต่ก่อนคิดยอด ดีกว่าให้คิดเสร็จแล้วกดบันทึกไม่ได้ */
+    out.innerHTML = '<div class="msg err" style="display:block">'
+      + 'ยังไม่มีช่องทางขายชื่อ Shopee ในชีท <b>ตั้งค่า</b><br>'
+      + 'เติมคำว่า Shopee ลงในรายการช่องทางขายก่อน แล้วเปิดแอปใหม่</div>';
+    return;
+  }
+
+  var r = monthTotals(txt);
+  if(!r.ok){
+    /* บอกให้ตรงว่าขาดคอลัมน์ไหน คนจะได้กลับไปส่งออกไฟล์ใหม่ให้มีคอลัมน์นั้น
+       ไม่ใช่บอกลอย ๆ ว่า "อ่านไม่ได้" แล้วปล่อยให้เดาเอง */
+    out.innerHTML = '<div class="msg err" style="display:block">'
+      + '<b>อ่านตารางนี้ไม่ได้</b><br>ขาดคอลัมน์ ' + esc((r.missing || []).join(" · "))
+      + '<br><br>ในไฟล์ที่ส่งออกจาก Shopee ให้ติ๊กคอลัมน์นี้มาด้วย '
+      + 'แล้วค่อยคัดลอกมาวางใหม่ · ระบบไม่คิดยอดให้ทั้งที่ข้อมูลไม่ครบ '
+      + 'เพราะเลขที่ได้จะดูน่าเชื่อแต่ผิด'
+      + ((r.headers && r.headers.length)
+          ? '<br><br><span style="font-weight:400">คอลัมน์ที่เจอในตารางที่วางมา: '
+            + esc(r.headers.join(" · ")) + '</span>'
+          : '')
+      + '</div>';
+    return;
+  }
+  if(!r.months.length){
+    out.innerHTML = '<div class="msg err" style="display:block">'
+      + 'อ่านตารางได้ แต่ไม่มีแถวไหนมีวันที่ใช้ได้เลย — คลุมมาครบทั้งแผ่นหรือยัง</div>';
+    return;
+  }
+
+  PASTE_MONTHS = r.months;
+  pasteDraw(chan, r.noDate);
+}
+
+function pasteDraw(chan, noDate){
+  var list = PASTE_MONTHS || [];
+  var sum = list.reduce(function(a, m){ return a + m.sales }, 0);
+  var drop = list.reduce(function(a, m){ return a + m.dropSales }, 0);
+
+  $("#fl-paste-out").innerHTML =
+      '<div class="msg ok" style="display:block">อ่านได้ ' + list.length + ' เดือน '
+    + 'รวม ' + baht(sum) + ' — ยอดนี้จะลงที่ช่องทาง <b>' + esc(chan) + '</b></div>'
+    + (drop ? '<div class="hint" style="margin:8px 2px">ไม่นับใบที่ยกเลิกหรือคืนของ '
+        + baht(drop) + ' — ยอดรวมที่ Shopee โชว์ท้ายไฟล์มักบวกใบพวกนี้ด้วย '
+        + 'ตัวเลขจึงไม่เท่ากัน และตัวที่ถูกคือตัวที่ไม่บวก</div>' : '')
+    + (noDate ? '<div class="hint" style="margin:8px 2px">มี ' + noDate
+        + ' แถวที่ไม่มีวันที่ ไม่ได้นับ (มักเป็นแถวรวมยอดที่พิมพ์ไว้ท้ายแผ่น)</div>' : '')
+    + '<div class="mchans" style="margin-top:10px">'
+    + list.map(function(m, i){
+        return '<div class="mchan" data-pi="' + i + '">'
+          + '<div class="mchd"><b>' + esc(ymThai(m.ym)) + '</b>'
+          +   '<span>' + m.orders + ' ใบ · ' + m.lines + ' บรรทัด</span></div>'
+          + '<div class="mgrid">'
+          +   '<div>ยอดขาย<b>' + baht(m.sales) + '</b></div>'
+          +   '<div>ไม่นับ (ยกเลิก/คืน)<b>' + baht(m.dropSales) + '</b></div>'
+          + '</div>'
+          + '<div class="medit"><button class="mini p-one">กรอกลงเดือนนี้</button></div>'
+          + '<div class="m-msg"></div>'
+          + '</div>';
+      }).join("")
+    + '</div>'
+    + '<button class="btn" id="fl-all" style="margin-top:10px">กรอกทั้งหมด '
+    +   list.length + ' เดือน</button>'
+    + '<div class="hint" style="margin-top:8px">กรอกแล้วทับเฉพาะ <b>ยอดขาย</b> ของช่องทาง '
+    + esc(chan) + ' เท่านั้น · ต้นทุนกับค่าแอดที่เคยกรอกไว้ไม่ถูกแตะ</div>';
+
+  $$("#fl-paste-out .mchan").forEach(function(el){
+    var m = list[+el.dataset.pi];
+    el.querySelector(".p-one").onclick = function(){
+      pasteSave([m], chan, this, el.querySelector(".m-msg"));
+    };
+  });
+  $("#fl-all").onclick = function(){
+    pasteSave(list, chan, this, null);
+  };
+}
+
+/* บันทึกทีละเดือนเรียงกัน ไม่ยิงพร้อมกันทั้งกอง — ฝั่งชีทมี LockService อยู่
+   ยิงพร้อมกันสิบเดือนคือเก้าเดือนไปรอคิวจนหมดเวลา แล้วขึ้น "ระบบกำลังยุ่งอยู่" */
+function pasteSave(months, chan, btn, msgBox){
+  var was = btn.textContent, i = 0, done = 0, bad = [];
+  btn.disabled = true;
+
+  function step(){
+    if(i >= months.length){
+      btn.disabled = false; btn.textContent = was;
+      var t = bad.length
+        ? '<div class="msg err" style="display:block">กรอกได้ ' + done + ' เดือน · '
+          + 'ไม่ผ่าน ' + bad.length + ' เดือน<br>' + esc(bad.join(" · ")) + '</div>'
+        : '<div class="msg ok" style="display:block">กรอกยอด ' + chan + ' แล้ว '
+          + done + ' เดือน</div>';
+      if(msgBox) msgBox.innerHTML = t;
+      else $("#fl-paste-out").insertAdjacentHTML("afterbegin", t);
+      loadMonths(true);
+      return;
+    }
+    var m = months[i++];
+    btn.textContent = "กำลังกรอก " + ymThai(m.ym) + "…";
+    call("saveMonth", [{ ym: m.ym, chan: chan, sales: m.sales,
+                         by: byName(), clientKey: newKey() }],
+      function(){ done++; step() },
+      function(e){ bad.push(ymThai(m.ym) + " (" + e + ")"); step() });
+  }
+  step();
+}
+
+/* --------------------------------------------- ของใกล้หมด + ล็อตใกล้หมดอายุ
+
+   ทำระบบล็อตมาทั้งชุดเพื่อคุมวันหมดอายุของเคมี แต่ไม่มีอะไรเตือนเลย
+   ของที่หมดอายุคือของที่ขายไม่ได้ และรู้ตอนลูกค้าสั่งแล้วคือสายไป
+   คิดจากข้อมูลที่โหลดมาตอนเปิดแอปอยู่แล้ว ไม่ต้องยิงชีทเพิ่ม        */
+
+var EXP_SOON_DAYS = 60;
+
+function drawAlerts(){
+  var box = $("#sum-alert");
+  if(!box) return;
+
+  var lots = (BOOT && BOOT.lots) || {};
+  var def = Number(BOOT && BOOT.reorderDefault) || 0;
+  var low = [], exp = [];
+  var now = Date.now();
+
+  (CFG.products||[]).forEach(function(p){
+    var remain = p.remain;
+    var point = (p.reorder === null || p.reorder === undefined || p.reorder === "")
+      ? def : Number(p.reorder);
+    if(remain !== null && remain !== undefined && point > 0 && Number(remain) <= point){
+      low.push({ sku:p.sku, name:p.name, remain:Number(remain), point:point, unit:p.unit });
+    }
+    var l = lots[p.sku];
+    if(l && l.next && l.next.exp){
+      var days = Math.round((l.next.exp - now) / 86400000);
+      if(days <= EXP_SOON_DAYS){
+        exp.push({ sku:p.sku, name:p.name, lotNo:l.next.lotNo,
+                   remain:l.next.remain, days:days, unit:p.unit });
+      }
+    }
+  });
+
+  if(!low.length && !exp.length){
+    box.innerHTML = '<div class="card"><div class="sum big" style="border:0;margin:0;padding:2px 0">'
+      + '<span>สต๊อกและวันหมดอายุ</span><b style="color:var(--green)">ปกติ ✓</b></div></div>';
+    return;
+  }
+
+  /* เหลือน้อยที่สุดขึ้นก่อน และของที่หมดอายุแล้วขึ้นก่อนของที่ใกล้หมดอายุ */
+  low.sort(function(a,b){ return a.remain - b.remain });
+  exp.sort(function(a,b){ return a.days - b.days });
+
+  box.innerHTML = '<div class="card">'
+    + (exp.length ? '<div class="subhd" style="margin-top:0">ล็อตที่ต้องรีบระบาย ('
+        + exp.length + ')</div>'
+        + exp.slice(0,6).map(function(e){
+            var bad = e.days < 0;
+            return '<div class="lotline ' + (bad ? 'bad' : 'warn') + '">'
+              + (bad ? '⛔ หมดอายุแล้ว ' + (-e.days) + ' วัน' : '⚠️ อีก ' + e.days + ' วันหมดอายุ')
+              + ' — ' + esc(e.name) + ' · ล็อต ' + esc(e.lotNo)
+              + ' · เหลือ ' + esc(qtyUnit(e.remain, e.unit||"ชิ้น")) + '</div>';
+          }).join("")
+        + (exp.length > 6 ? '<div class="hint">และอีก ' + (exp.length-6) + ' ล็อต</div>' : '')
+      : '')
+    + (low.length ? '<div class="subhd">ถึงจุดสั่งซื้อแล้ว (' + low.length + ')</div>'
+        + low.slice(0,8).map(function(p){
+            return '<div class="lotline ' + (p.remain <= 0 ? 'bad' : 'warn') + '">'
+              + (p.remain <= 0 ? '⛔ หมดแล้ว' : '📦 เหลือ ' + esc(qtyUnit(p.remain, p.unit||"ชิ้น")))
+              + ' — ' + esc(p.name)
+              + ' <span style="color:var(--gray)">(จุดสั่งซื้อ ' + p.point + ')</span></div>';
+          }).join("")
+        + (low.length > 8 ? '<div class="hint">และอีก ' + (low.length-8) + ' รายการ</div>' : '')
+      : '')
+    + '</div>';
+}
+
 function drawSummary(all){
   var live = all.filter(function(o){
-    return o.status !== "ยกเลิก" && inRange_(o.date, SUM_RANGE);
+    return !isDead(o) && inRange_(o.date, SUM_RANGE);
   });
 
   if (!live.length){
@@ -1415,7 +4307,273 @@ function drawSummary(all){
   h += '<div class="hint" style="padding:0 2px">ตัวเลขทั้งหมดมาจากชีทโดยตรง '
     + 'ไม่ได้คิดซ้ำในแอป · ไม่รวมออเดอร์ที่ยกเลิก</div>';
 
+  /* บอกให้ชัดว่าตัวเลขพวกนี้มาจากไฟล์ไหน กดเปิดได้เลย
+     ในไดรฟ์มีไฟล์ชื่อคล้ายกันหลายอัน เคยหลงแก้อยู่คนละไฟล์กับที่แอปเขียนมาแล้ว */
+  var f = (BOOT && BOOT.file) || {};
+  if (f.name) {
+    h += '<div class="hint" style="padding:8px 2px 0">ข้อมูลทั้งหมดอยู่ในไฟล์ '
+      + (f.url ? '<a href="'+esc(f.url)+'" target="_blank" rel="noopener"><b>'+esc(f.name)+'</b></a>'
+               : '<b>'+esc(f.name)+'</b>')
+      + ' — ไฟล์อื่นที่ชื่อคล้ายกันในไดรฟ์ ไม่ใช่ตัวที่แอปเขียน</div>';
+  }
+
   $("#summary").innerHTML = h;
+}
+
+/* ------------------------------------------------------------------ ปิดยอดวัน
+
+   หน้าสรุปยอดตอบว่า "ช่วงนี้เป็นยังไง" — หน้านี้ตอบว่า "วันนั้นขายไปเท่าไร"
+   คนละงานกันจึงแยกหน้า ปิดยอดคือดูวันเดียวให้ครบทุกใบแล้วจบวัน
+
+   ตัวเลขไม่ได้คิดจากออเดอร์ที่โหลดค้างไว้ในจอ แต่ยิงถามชีทด้วยวันที่ตรง ๆ
+   ย้อนไปวันไหนก็ได้ครบทุกใบ ไม่ขาดหายเงียบ ๆ เมื่อออเดอร์สะสมมากขึ้น       */
+
+var DAY_ISO = "";
+var DAY_BACK = 7;
+
+function dayShift_(iso, n){
+  var p = String(iso||"").split("-");
+  var d = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]) + Number(n||0));
+  return isoOf(d.getTime());
+}
+
+function dayInit(){
+  if (!DAY_ISO) DAY_ISO = todayISO();
+  if (!$("#dy-quick").innerHTML){
+    $("#dy-quick").innerHTML =
+        '<button data-dq="0">วันนี้</button><button data-dq="-1">เมื่อวาน</button>';
+    $("#dy-quick").addEventListener("click", function(e){
+      var b = e.target.closest("button[data-dq]"); if(!b) return;
+      goDay(dayShift_(todayISO(), Number(b.dataset.dq)));
+    });
+    $("#dy-prev").onclick = function(){ goDay(dayShift_(DAY_ISO, -1)) };
+    $("#dy-next").onclick = function(){ goDay(dayShift_(DAY_ISO, +1)) };
+    $("#dy-date").onchange = function(){ if(this.value) goDay(this.value) };
+  }
+  goDay(DAY_ISO);
+}
+
+function goDay(iso){
+  DAY_ISO = iso;
+  $("#dy-date").value = iso;
+  $("#dy-date").max = todayISO();
+  $("#dy-when").textContent = thaiDate(iso)
+    + (iso === todayISO() ? " · วันนี้" : (iso === dayShift_(todayISO(),-1) ? " · เมื่อวาน" : ""));
+  /* ห้ามเดินไปวันข้างหน้า — ยังไม่มีของให้ปิดยอด กดแล้วได้หน้าว่างเปล่าเปล่า ๆ */
+  $("#dy-next").disabled = iso >= todayISO();
+  $$("#dy-quick button").forEach(function(b){
+    b.classList.toggle("on", dayShift_(todayISO(), Number(b.dataset.dq)) === iso);
+  });
+  $("#dy-body").innerHTML = '<div class="load">กำลังโหลด…</div>';
+  call("getDayReport", [iso, DAY_BACK], function(r){
+    /* กันคำตอบที่มาช้าของวันเก่ามาทับวันที่กำลังดูอยู่ตอนนี้ */
+    if (!r || r.date !== DAY_ISO) return;
+    drawDay(r);
+  }, function(m){
+    $("#dy-body").innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'
+      + esc(m) + '</div>';
+  });
+}
+
+/** ตัวเลขของวัน — คิดที่เดียวแล้วใช้ทั้งหน้าจอและข้อความที่คัดลอก จะได้ไม่มีทางไม่ตรงกัน */
+function dayTotals(rep){
+  var live = (rep.orders||[]).filter(function(o){ return !isDead(o) });
+  var t = { n:live.length, dead:(rep.orders||[]).length - live.length,
+            pieces:0, net:0, paid:0, due:0, profit:0, ship:0, cost:0 };
+  live.forEach(function(o){
+    var net = Number(o.net)||0;
+    t.net += net;
+    t.profit += Number(o.profit)||0;
+    t.ship += Number(o.ship)||0;
+    t.cost += Number(o.cost)||0;
+    /* ชีทมีช่องสถานะช่องเดียว บอกทั้ง "จ่ายหรือยัง" และ "ส่งหรือยัง" พร้อมกันไม่ได้
+       จึงนับเฉพาะ "ชำระแล้ว" ว่าเก็บเงินได้แล้ว เหมือนที่หน้าค้างชำระนับ ตัวเลขสองหน้าจะได้ตรงกัน */
+    if (String(o.status||"").trim() === "ชำระแล้ว") t.paid += net; else t.due += net;
+    (o.items||[]).forEach(function(it){ t.pieces += Number(it.qty)||0 });
+  });
+  return t;
+}
+
+function drawDay(rep){
+  var t = dayTotals(rep);
+  var live = (rep.orders||[]).filter(function(o){ return !isDead(o) });
+
+  var h = '<div class="kpis">'
+    + '<div class="kpi"><span>ออเดอร์</span><b>' + t.n + ' ใบ</b></div>'
+    + '<div class="kpi"><span>จำนวนชิ้น</span><b>' + t.pieces + '</b></div>'
+    + '<div class="kpi wide"><span>ยอดขายรวม</span><b>' + baht(t.net) + '</b></div>'
+    + '<div class="kpi good"><span>เก็บเงินแล้ว</span><b>' + baht(t.paid) + '</b></div>'
+    + '<div class="kpi"><span>ยังไม่เก็บ</span><b'
+    +   (t.due > 0 ? ' style="color:var(--amber)"' : '') + '>' + baht(t.due) + '</b></div>'
+    + '<div class="kpi good"><span>กำไรขั้นต้น</span><b>' + baht(t.profit) + '</b></div>'
+    + '<div class="kpi"><span>ค่าจัดส่ง</span><b>' + baht(t.ship) + '</b></div>'
+    + '</div>';
+
+  if (t.dead)
+    h += '<div class="hint" style="padding:0 2px 10px">มีใบที่ยกเลิกอีก ' + t.dead
+       + ' ใบ ไม่ได้นับรวมในยอดข้างบน</div>';
+
+  h += '<button class="btn ghost" id="dy-copy">คัดลอกสรุปวันนี้เป็นข้อความ</button>';
+
+  if (!t.n){
+    $("#dy-body").innerHTML = '<div class="empty"><b>วันนี้ยังไม่มีออเดอร์</b>'
+      + 'กดปุ่ม ◀ เพื่อย้อนไปดูวันก่อนหน้า</div>' + dayTrend(rep);
+    bindDayTrend();
+    return;
+  }
+
+  var byChan = group_(live, function(o){ return o.channel },
+    function(g,o){ g.v += Number(o.net)||0; g.extra += Number(o.profit)||0 });
+  var maxC = byChan.length ? byChan[0].v : 0;
+  h += section_("ตามช่องทางขาย", byChan.map(function(g){
+    return bar_(g.key, baht(g.v), g.n + " ใบ · กำไร " + baht(g.extra), maxC ? g.v/maxC : 0);
+  }).join(""));
+
+  /* ทุกใบของวันนั้น ไม่ตัดให้เหลือแค่บางส่วน — ปิดยอดคือต้องเห็นครบ ไม่งั้นปิดไม่ลง */
+  h += '<div class="card"><div class="subhd" style="margin-top:0">ออเดอร์ของวันนี้ '
+     + t.n + ' ใบ</div>'
+     + (rep.orders||[]).map(function(o){
+         var dead = isDead(o);
+         return '<div class="row"><div class="i">'
+           + '<b' + (dead ? ' style="text-decoration:line-through;color:var(--gray)"' : '') + '>'
+           + esc(o.cust||"ไม่ระบุชื่อ") + '</b>'
+           + '<span>' + esc(o.no) + (o.channel ? ' · ' + chanTag(o.channel) : '') + '</span>'
+           + '<span style="color:var(--ink);font-weight:700">' + baht(o.net) + '</span> '
+           + '<span class="tag ' + statusTag(o.status) + '">' + esc(o.status||"-") + '</span>'
+           + '</div></div>';
+       }).join("")
+     + '</div>';
+
+  h += dayTrend(rep);
+
+  $("#dy-body").innerHTML = h;
+  $("#dy-copy").onclick = function(){ copyText(dayText(rep), "คัดลอกสรุปวันแล้ว") };
+  bindDayTrend();
+}
+
+/** แท่ง 7 วันย้อนหลัง กดแท่งไหนก็เด้งไปปิดยอดวันนั้น */
+function dayTrend(rep){
+  var tr = rep.trend || [];
+  if (!tr.length) return "";
+  var max = 0;
+  tr.forEach(function(d){ var v = Number(d.net)||0; if (v > max) max = v });
+  return section_(tr.length + " วันย้อนหลัง", tr.slice().reverse().map(function(d){
+    return '<button class="tapbar' + (d.date===rep.date ? ' on' : '') + '" data-dy="'
+      + esc(d.date) + '">'
+      + bar_(thaiDate(d.date), baht(d.net),
+             d.n + " ใบ · กำไร " + baht(d.profit), max ? (Number(d.net)||0)/max : 0)
+      + '</button>';
+  }).join(""));
+}
+
+function bindDayTrend(){
+  $$("#dy-body [data-dy]").forEach(function(b){
+    b.onclick = function(){ goDay(b.getAttribute("data-dy")) };
+  });
+}
+
+/** ข้อความสรุปวันสำหรับส่งเข้าไลน์กลุ่ม — ตัวเลขชุดเดียวกับที่เห็นบนจอ */
+function dayText(rep){
+  var t = dayTotals(rep);
+  var L = ["สรุปยอดวัน " + thaiDate(rep.date),
+           "ออเดอร์ " + t.n + " ใบ · " + t.pieces + " ชิ้น",
+           "ยอดขายรวม " + baht(t.net),
+           "เก็บเงินแล้ว " + baht(t.paid),
+           "ยังไม่เก็บ " + baht(t.due),
+           "กำไรขั้นต้น " + baht(t.profit),
+           "ค่าจัดส่ง " + baht(t.ship)];
+  if (t.dead) L.push("ยกเลิก " + t.dead + " ใบ (ไม่นับรวม)");
+  var live = (rep.orders||[]).filter(function(o){ return !isDead(o) });
+  var byChan = group_(live, function(o){ return o.channel },
+    function(g,o){ g.v += Number(o.net)||0 });
+  if (byChan.length){
+    L.push("— ช่องทางขาย —");
+    byChan.forEach(function(g){ L.push(g.key + " " + g.n + " ใบ " + baht(g.v)) });
+  }
+  return L.join("\n");
+}
+
+/* ------------------------------------------------------------ ตั้งลายเซ็นร้าน */
+
+var SIG_KINDS = [
+  { key: "auth",    title: "ผู้มีอำนาจลงนาม",       note: "ช่องขวาสุดของใบ" },
+  { key: "cashier", title: "ผู้รับเงิน/พนักงานขาย", note: "ช่องกลางของใบ" }
+];
+
+function drawSigSettings(){
+  var box = $("#sig-box");
+  if (!box) return;
+  var have = (CFG.doc && CFG.doc.sign) || {};
+  box.innerHTML = SIG_KINDS.map(function(k){
+    var on = !!signParse(have[k.key]);
+    return '<div class="fld" data-sig="'+k.key+'">'
+      + '<label>'+esc(k.title)+' <span class="hint" style="font-weight:400">· '+esc(k.note)+'</span></label>'
+      + '<div class="signprev"><canvas data-prev="'+k.key+'" width="600" height="150"></canvas></div>'
+      + '<button class="btn ghost" data-signbtn="'+k.key+'" style="margin-top:8px">'
+      + (on ? 'เซ็นใหม่ / ลบลายเซ็นนี้' : 'เซ็นลายเซ็น')+'</button>'
+      /* คนที่มีลายเซ็นสแกนไว้อยู่แล้วไม่ต้องเซ็นใหม่บนจอ ซึ่งมักออกมาไม่เหมือนของจริง
+         แอปตัดขอบขาว ทำพื้นโปร่ง และย่อให้พอดีช่องในชีทให้เอง */
+      + '<button class="btn ghost" data-sigimg="'+k.key+'" style="margin-top:7px">'
+      + 'ใช้รูปลายเซ็นที่มีอยู่แล้ว</button>'
+      + '<input type="file" accept="image/*" data-sigfile="'+k.key+'" style="display:none">'
+      + '</div>';
+  }).join("");
+
+  SIG_KINDS.forEach(function(k){
+    var cv = box.querySelector('canvas[data-prev="'+k.key+'"]');
+    if (cv) {
+      var g = cv.getContext("2d");
+      g.clearRect(0,0,cv.width,cv.height);
+      if (!signDraw(g, have[k.key], 20, 12, cv.width-40, cv.height-24)) {
+        g.fillStyle = "#9aa0a6"; g.font = "26px sans-serif"; g.textAlign = "center";
+        g.fillText("ยังไม่ได้เซ็น", cv.width/2, cv.height/2+9);
+        g.textAlign = "left";
+      }
+    }
+    var b = box.querySelector('button[data-signbtn="'+k.key+'"]');
+    if (b) b.onclick = function(){ askSign(k); };
+
+    var pick = box.querySelector('button[data-sigimg="'+k.key+'"]');
+    var file = box.querySelector('input[data-sigfile="'+k.key+'"]');
+    if (pick && file) {
+      pick.onclick = function(){ file.value = ""; file.click(); };
+      file.onchange = function(){
+        var f = file.files && file.files[0];
+        if (!f) return;
+        pick.disabled = true; pick.textContent = "กำลังจัดรูป…";
+        signFromImage(f).then(function(url){
+          pick.textContent = "กำลังบันทึก…";
+          return api("saveSignature", k.key, url).then(function(){
+            CFG.doc.sign = CFG.doc.sign || {};
+            CFG.doc.sign[k.key] = url;
+            drawSigSettings();
+            toast("ใช้รูปลายเซ็นนี้แล้ว");
+          });
+        }).catch(function(e){
+          pick.disabled = false; pick.textContent = "ใช้รูปลายเซ็นที่มีอยู่แล้ว";
+          toast("ใช้รูปนี้ไม่ได้: " + (e && e.message ? e.message : e));
+        });
+      };
+    }
+  });
+}
+
+function askSign(k){
+  signPad("ลายเซ็น" + k.title,
+    "เซ็นในกรอบด้วยนิ้วหรือปากกาสไตลัส · กด “ล้าง” แล้วกด “ใช้ลายเซ็นนี้” ทั้งที่ว่าง = ลบลายเซ็นเดิมทิ้ง")
+  .then(function(sig){
+    var btn = $('button[data-signbtn="'+k.key+'"]');
+    if (btn) { btn.disabled = true; btn.textContent = "กำลังบันทึก…"; }
+    api("saveSignature", k.key, sig ? JSON.stringify(sig) : "").then(function(){
+      CFG.doc.sign = CFG.doc.sign || {};
+      CFG.doc.sign[k.key] = sig ? JSON.stringify(sig) : "";
+      drawSigSettings();
+      toast(sig ? "เก็บลายเซ็นแล้ว ใบที่ออกหลังจากนี้จะมีลายเซ็นเอง" : "ลบลายเซ็นแล้ว");
+    }, function(e){
+      drawSigSettings();
+      toast("บันทึกไม่สำเร็จ: " + (e && e.message ? e.message : e));
+    });
+  });
 }
 
 /* -------------------------------------------------------------------- modal */
@@ -1430,26 +4588,191 @@ $("#modal").addEventListener("click", function(e){ if(e.target===this) closeModa
 $("#m-close").onclick = closeModal;
 document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModal() });
 
+/* ------------------------------------------------------------ รับของเข้าสต๊อก
+
+   หน้านี้มีอยู่เพราะการรับของต้องลงสองชีทเสมอ (รับเข้า + ล็อตสินค้า)
+   ตอนที่ยังต้องเปิดชีทลงเอง ลืมอันใดอันหนึ่งเมื่อไรคือพังแบบเงียบ ๆ:
+   ลงแต่ล็อต ยอดคงเหลือเป็นศูนย์ · ลงแต่รับเข้า ขายไม่ได้เพราะไม่มีล็อตให้ตัด   */
+
+var RECV_KEY = "";     /* คีย์กันบันทึกซ้ำของครั้งนี้ ออกใหม่ทุกครั้งที่บันทึกสำเร็จ */
+var RECV_READY = false;
+
+function recvInit(){
+  if(RECV_READY) return;
+  RECV_READY = true;
+
+  $("#r-sku").innerHTML = prodOptions("");
+  fillSelect("#r-type", (BOOT && BOOT.lists && BOOT.lists.recvType) || ["ซื้อเข้า"]);
+  $("#r-date").value = todayISO();
+
+  /* ผู้บันทึกใช้รายชื่อชุดเดียวกับหน้าคีย์ออเดอร์ และจำคนล่าสุดไว้เหมือนกัน */
+  var by = $("#f-by");
+  $("#r-by").innerHTML = by ? by.innerHTML : "";
+  if(by && by.value) $("#r-by").value = by.value;
+
+  $("#r-sku").onchange = recvSkuChanged;
+  $("#btn-recv").onclick = recvSave;
+  recvSkuChanged();
+}
+
+/** ของตัวนี้คุมล็อตไหม เหลือเท่าไร — ตอบจากข้อมูลที่โหลดมาตอนเปิดแอป */
+function recvLotInfo(sku){
+  var lot = (BOOT && BOOT.lots) ? BOOT.lots[sku] : null;
+  return lot || null;
+}
+
+function recvSkuChanged(){
+  var sku = $("#r-sku").value;
+  var card = $("#r-lot-card");
+  if(!sku){
+    $("#r-now").textContent = "เลือกสินค้าก่อน";
+    card.style.display = "none";
+    return;
+  }
+  var p = null;
+  for(var i=0;i<CFG.products.length;i++) if(CFG.products[i].sku===sku){ p=CFG.products[i]; break }
+  var lot = recvLotInfo(sku);
+  var now = "ตอนนี้สต๊อกเหลือ " + qtyUnit(
+    (p && p.remain!==null && p.remain!==undefined) ? p.remain : "—", (p&&p.unit)||"ชิ้น");
+  if(lot) now += " · ในล็อตเหลือ " + lot.total + " (" + lot.count + " ล็อต)";
+  $("#r-now").textContent = now;
+
+  /* คุมล็อตอยู่แล้ว = บังคับใส่เลขล็อต · ยังไม่เคยมีล็อต = ใส่ก็ได้ไม่ใส่ก็ได้ */
+  card.style.display = "";
+  $("#r-lot-why").innerHTML = lot
+    ? "<b>สินค้าตัวนี้คุมล็อต ต้องใส่เลขล็อต</b> ไม่งั้นของเข้าสต๊อกแต่ขายไม่ได้ เพราะระบบไม่มีล็อตให้ตัด"
+    : "สินค้าตัวนี้ยังไม่เคยลงล็อตไว้ ใส่หรือไม่ใส่ก็ได้ — ถ้าเป็นของที่มีวันหมดอายุ แนะนำให้ใส่";
+}
+
+function recvSave(){
+  clearMsg();
+  var sku = $("#r-sku").value;
+  var qty = Number($("#r-qty").value);
+  if(!sku){ showErr("ยังไม่ได้เลือกสินค้า"); return }
+  if(!(qty > 0)){ showErr("จำนวนที่รับเข้าต้องมากกว่า 0"); return }
+
+  var lot = recvLotInfo(sku);
+  var lotNo = $("#r-lot").value.trim();
+  if(lot && !lotNo){
+    showErr("สินค้าตัวนี้คุมล็อต ต้องใส่เลขล็อตด้วย — ถ้าลงแต่จำนวน ของจะเข้าสต๊อกแต่ขายไม่ได้");
+    return;
+  }
+
+  /* คีย์เดิมตลอดจนกว่าจะบันทึกสำเร็จ กดซ้ำหรือเน็ตหลุดแล้วยิงใหม่จึงไม่ได้ของสองก้อน */
+  if(!RECV_KEY) RECV_KEY = "rs-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+
+  var btn = $("#btn-recv");
+  btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+  call("receiveStock", [{
+    clientKey: RECV_KEY, sku: sku, qty: qty,
+    cost: $("#r-cost").value.trim(), date: $("#r-date").value,
+    type: $("#r-type").value, doc: $("#r-doc").value.trim(),
+    ref: $("#r-ref").value.trim(), note: $("#r-note").value.trim(),
+    staff: $("#r-by").value, lotNo: lotNo, exp: $("#r-exp").value
+  }], function(res){
+    btn.disabled = false; btn.textContent = "บันทึกรับของเข้า";
+    if(!res){ showErr("ชีทตอบกลับมาไม่ได้ — ลองกดใหม่อีกครั้ง"); return }
+    RECV_KEY = "";
+    recvDone(res);
+  }, function(m){
+    btn.disabled = false; btn.textContent = "บันทึกรับของเข้า";
+    showErr(m);
+  });
+}
+
+function recvDone(res){
+  /* ยอดที่โชว์เป็นตัวที่อ่านกลับจากชีทหลังคำนวณเสร็จ ไม่ใช่บวกเอาเองในแอป */
+  var lines = [
+    "รับ " + esc(res.name || res.sku) + " เข้า " + res.qty + " ชิ้นแล้ว",
+    res.lotNo ? "ลงล็อต " + esc(res.lotNo) + " ให้ด้วย" : "สินค้าตัวนี้ไม่ได้คุมล็อต ลงเฉพาะชีทรับเข้า"
+  ];
+  if(res.remain !== null && res.remain !== undefined) lines.push("สต๊อกคงเหลือตอนนี้ " + res.remain);
+  if(res.lotRemain !== null && res.lotRemain !== undefined) lines.push("ในล็อตรวม " + res.lotRemain);
+  showOk(lines.join("<br>"));
+  toast("บันทึกรับของเข้าแล้ว");
+
+  /* ยอดคงเหลือในหน้าคีย์ออเดอร์ต้องตรงกับของจริงทันที ไม่ใช่รอเปิดแอปใหม่ */
+  call("getBootstrap", [], function(b){
+    if(!b) return;
+    BOOT = b;
+    CFG.products = (b.products||[]).map(function(p){
+      return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
+               unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
+               reorder:p.reorder };
+    });
+    /* ยอดคงเหลือที่ติดมากับชื่อสินค้าเปลี่ยนไปแล้ว ทุกช่องที่เปิดค้างอยู่ต้องเห็นเลขใหม่ */
+    refreshProdOptions();
+    recvSkuChanged();
+  }, function(){ /* โหลดยอดใหม่ไม่ได้ไม่ใช่เรื่องใหญ่ ของลงชีทไปแล้ว */ });
+
+  ["r-qty","r-cost","r-lot","r-exp","r-doc","r-ref","r-note"].forEach(function(id){
+    $("#"+id).value = "";
+  });
+}
+
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
 
+var HELP_FROM = "new";
+
+/** หน้าที่กำลังเปิดอยู่ — ใช้ตอนกดกลับจากคู่มือ */
+function curPage(){
+  var on = $$(".tabs button").filter(function(b){ return b.classList.contains("on") })[0];
+  return on ? on.dataset.go : "new";
+}
+
 function go(page){
-  ["new","list","quote","sum"].forEach(function(p){
+  ["new","list","recv","quote","day","sum","shop","cust","file","help"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
-  $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===page) });
+  /* หน้านำเข้า Shopee ไม่มีปุ่มของตัวเองบนแถบล่าง เข้ามาจากหน้าออเดอร์
+     จึงให้แท็บ "ออเดอร์" ยังติดไฟค้างไว้ ไม่ใช่ดับหมดทั้งแถบจนไม่รู้ว่าอยู่ตรงไหน */
+  var tab = (page==="shop" || page==="cust") ? "list"
+          : (page==="file" ? "quote" : page);
+  $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===tab) });
   if(page==="list") loadOrders();
+  if(page==="day")  dayInit();
   if(page==="sum")  loadSummary();
   if(page==="quote") quoteInit();
+  if(page==="recv") recvInit();
+  if(page==="shop") shopInit();
+  if(page==="cust") custPageInit();
+  if(page==="file") fileInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){
   /* ตั้งขนาดตัวอักษรก่อนอย่างอื่น จะได้ไม่เห็นหน้าจอกระตุกตอนเปลี่ยนขนาด */
   fsInit();
   $$(".tabs button").forEach(function(b){ b.onclick=function(){ go(b.dataset.go) } });
+  bindAddrFind("#f-addr-find", "#f-addr-hit", "#f-addr");
+  ordSearchInit();
+  bindCustFind("#f-cust", "#f-cust-hit", function(c){
+    $("#f-cust").value = c.name;
+    custToast(custFill([["#f-tel", c.tel, "เบอร์โทร"], ["#f-addr", c.addr || c.taxAddr, "ที่อยู่"]]));
+  });
   $("#btn-add").onclick   = function(){ addItem(); recalc() };
   $("#btn-parse").onclick = doParse;
   $("#btn-save").onclick  = save;
-  docBarInit();
+  $("#btn-shop").onclick = function(){ go("shop") };
+  $("#btn-cust").onclick = function(){ go("cust") };
+  $("#btn-file").onclick = function(){ go("file") };
+  /* ไอคอนอยู่ใน Assets ซึ่งเป็นตัวแปรใน JS ไม่ใช่ไฟล์รูป จึงใส่ตอนเปิดแอป
+     ไม่ใช่เขียนไว้ใน HTML — และถ้าวันไหนไอคอนหาย ปุ่มก็ยังอ่านออกเหมือนเดิม */
+  ["#btn-shop-ic", "#sp-ic"].forEach(function(sel){
+    var el = $(sel);
+    if (el && typeof SHOPEE_ICON !== "undefined") el.src = SHOPEE_ICON;
+    else if (el) el.remove();
+  });
+  /* ไอคอนแถบล่างก็มาจาก Assets เหมือนกัน ใส่ให้ตอนเปิดแอปทีเดียว
+     ไอคอนไหนหาย ปุ่มนั้นเหลือแต่ชื่อ ซึ่งยังกดได้และอ่านออกเหมือนเดิม */
+  $$(".tabs button").forEach(function(b){
+    var im = b.querySelector("img");
+    if (!im) return;
+    var ic = (typeof TAB_ICONS !== "undefined") && TAB_ICONS[b.dataset.go];
+    if (ic) im.src = ic; else im.remove();
+  });
+  /* คู่มืออยู่ปุ่ม ? บนหัวจอ เห็นได้จากทุกหน้า — กลับแล้วไปหน้าที่ยืนอยู่ก่อนเปิด */
+  $("#fs-help").onclick = function(){ HELP_FROM = curPage(); go("help") };
+  $("#hp-back").onclick = function(){ go(HELP_FROM || "new") };
   ["f-disc","f-ship"].forEach(function(id){ $("#"+id).oninput = recalc });
   ["f-vat","f-status"].forEach(function(id){ $("#"+id).onchange = recalc });
   $("#f-disc").addEventListener("change", recalc);
@@ -1459,12 +4782,17 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#f-ship").addEventListener("input", function(){ this.dataset.touched="1" });
 
   $("#list").addEventListener("click", function(e){
-    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-dc]");
+    var b=e.target.closest("[data-lb],[data-tk],[data-sm],[data-py],[data-dc],[data-ac],[data-ed],[data-rt],[data-cx]");
     if(!b) return;
     if(b.dataset.lb!==undefined) openLabel(ORDERS[+b.dataset.lb]);
     else if(b.dataset.tk!==undefined) openTracking(ORDERS[+b.dataset.tk]);
     else if(b.dataset.sm!==undefined) openMsg(ORDERS[+b.dataset.sm]);
+    else if(b.dataset.py!==undefined) openPay(ORDERS[+b.dataset.py]);
     else if(b.dataset.dc!==undefined) openDoc(ORDERS[+b.dataset.dc]);
+    else if(b.dataset.ac!==undefined) openAcct(ORDERS[+b.dataset.ac]);
+    else if(b.dataset.ed!==undefined) openEditItems(ORDERS[+b.dataset.ed]);
+    else if(b.dataset.rt!==undefined) openReturn(ORDERS[+b.dataset.rt]);
+    else if(b.dataset.cx!==undefined) openCancel(ORDERS[+b.dataset.cx]);
   });
 
   boot();
