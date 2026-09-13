@@ -264,6 +264,10 @@ function whoAmI() {
   var act = '', eff = '';
   try { act = Session.getActiveUser().getEmail() || ''; } catch (e) { act = ''; }
   try { eff = Session.getEffectiveUser().getEmail() || ''; } catch (e) { eff = ''; }
+  /* ไม่มีใครล็อกอิน = คนนอกที่เปิดลิงก์ของลูกค้าเข้ามา ห้ามบอกอะไรเลย
+     ตัวนี้มีไว้ช่วยพนักงานที่เข้าไม่ได้ ซึ่งล็อกอินอยู่แล้วเสมอ
+     ที่อยู่ของไฟล์ชีทไม่ใช่ของที่ควรแจกให้คนที่เราไม่รู้ว่าเป็นใคร */
+  if (!act) return 'ระบบไม่ทราบว่าคุณเป็นใคร — ให้ล็อกอินบัญชี Google ของบริษัทก่อน';
 
   var out = [];
   out.push('บัญชีที่รันสคริปต์นี้: ' + (eff || '(อ่านไม่ออก)'));
@@ -334,6 +338,8 @@ function driveDo_(what, fn) {
  * ถ้าไม่ลองเขียนจริง จะไปรู้ตอนลูกค้าโอนเงินมาแล้ว
  */
 function authDrive() {
+  /* เหตุผลเดียวกับ whoAmI — และตัวนี้แตะไดรฟ์จริง ห้ามให้คนนอกสั่งได้ */
+  requireStaff_();
   var out = [];
   try {
     var root = slipRootFolder_();

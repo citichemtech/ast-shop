@@ -387,8 +387,8 @@ function qrPenalty_(m) {
   }
   for (i = 0; i < size; i++) {
     for (j = 0; j + 10 < size; j++) {
-      score += 40 * run11(rowGet(m, i), j);
-      score += 40 * run11(colGet(m, i), j);
+      score += 40 * run11(rowGet_(m, i), j);
+      score += 40 * run11(colGet_(m, i), j);
     }
   }
 
@@ -397,8 +397,8 @@ function qrPenalty_(m) {
   return score;
 }
 
-function rowGet(m, r) { return function (x) { return m[r][x]; }; }
-function colGet(m, c) { return function (x) { return m[x][c]; }; }
+function rowGet_(m, r) { return function (x) { return m[r][x]; }; }
+function colGet_(m, c) { return function (x) { return m[x][c]; }; }
 
 /**
  * ข้อความ -> ตารางจุด คืนเป็นแถวของ "0"/"1" (ส่งข้ามไปหน้าจอได้เบา ๆ)

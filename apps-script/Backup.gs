@@ -117,6 +117,17 @@ function backupFolder_() {
  * ล้มแล้วต้องรู้ ไม่ใช่เงียบ ๆ แล้วเข้าใจว่ามีของสำรองอยู่ทั้งที่ไม่มีมาสามเดือน
  * จึงจำผลล่าสุดไว้ที่คุณสมบัติสคริปต์ ให้ backupStatus() อ่านมาบอกได้
  */
+/**
+ * ด่านของไฟล์นี้ — ไฟล์3 ยืนอยู่ลำพังโดยตั้งใจ (ทำงานด้วยทริกเกอร์รายวัน)
+ * จึงไม่ผูกตายกับ requireStaff_ ที่อยู่คนละไฟล์ ถ้ามีก็ใช้ ถ้าไม่มีก็ยังสำรองได้อยู่
+ *
+ * backupNow ไม่ใส่ด่าน เพราะทริกเกอร์รายวันเรียกมันเองในเวลาที่ไม่มีใครล็อกอิน
+ * ใส่ด่านแล้วของสำรองจะหยุดเงียบ ๆ ซึ่งอันตรายกว่าการที่มีคนสั่งสำรองเกินโควตา
+ */
+function backupStaff_() {
+  if (typeof requireStaff_ === 'function') requireStaff_();
+}
+
 function backupNow() {
   var now = new Date();
   var props = PropertiesService.getScriptProperties();
@@ -163,6 +174,7 @@ function backupNow() {
 
 /** ตั้งให้สำรองเองทุกวัน — กดครั้งเดียวพอ กดซ้ำก็ไม่เกิดทริกเกอร์ซ้ำ */
 function setupBackup() {
+  backupStaff_();
   stopBackup();
   ScriptApp.newTrigger('backupNow').timeBased().atHour(BACKUP_HOUR).everyDays(1).create();
   /* สำรองให้เลยหนึ่งรอบ จะได้เห็นกับตาว่าใช้ได้จริง ไม่ต้องรอถึงพรุ่งนี้ */
@@ -174,6 +186,7 @@ function setupBackup() {
 
 /** เลิกสำรองอัตโนมัติ — ไฟล์ที่สำรองไว้แล้วไม่ถูกลบ */
 function stopBackup() {
+  backupStaff_();
   var all = ScriptApp.getProjectTriggers(), n = 0;
   for (var i = 0; i < all.length; i++) {
     if (all[i].getHandlerFunction() === 'backupNow') { ScriptApp.deleteTrigger(all[i]); n++; }
@@ -183,6 +196,7 @@ function stopBackup() {
 
 /** สำรองล่าสุดเมื่อไร มีกี่ไฟล์ ล้มครั้งสุดท้ายเพราะอะไร */
 function backupStatus() {
+  backupStaff_();
   var props = PropertiesService.getScriptProperties();
   var out = [];
   out.push('ไฟล์ที่สำรอง: https://docs.google.com/spreadsheets/d/' + BACKUP_SHEET_ID + '/edit');

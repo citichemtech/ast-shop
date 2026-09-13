@@ -23,6 +23,7 @@
  * ล้างเฉพาะช่องกรอก ไม่แตะช่องสูตร — แถวว่างยังพร้อมรับข้อมูลจริงต่อได้ทันที
  */
 function clearDemoRows() {
+  requireStaff_();
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
   try {
@@ -63,6 +64,7 @@ function clearBy_(key, col, isDemo) {
 /* ------------------------------------------------------------- นำเข้าของจริง */
 
 function importAll() {
+  requireStaff_();
   if (typeof IMPORT === 'undefined') {
     throw new Error('ไม่พบไฟล์ ImportData.gs — ต้องวางไฟล์ข้อมูลลงในโปรเจกต์ก่อน');
   }

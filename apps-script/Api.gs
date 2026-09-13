@@ -247,6 +247,7 @@ function readLotSummary_() {
  * ที่ร้านคีย์วันละ 8-10 ใบ แปลว่าอีกไม่กี่วันก็ชนแล้ว
  */
 function getOrders(limit) {
+  requireStaff_();
   return readOrders_({ limit: limit });
 }
 
@@ -268,6 +269,7 @@ function getOrders(limit) {
  * มักมีช่องว่างเกินมาโดยไม่รู้ตัว แล้วประวัติจะขาดเป็นสองก้อนทั้งที่เป็นรายเดียวกัน
  */
 function getCustomerHistory(name, limit) {
+  requireStaff_();
   var want = String(name || '').trim().toLowerCase();
   if (!want) return { cust: '', orders: [], n: 0, total: 0, profit: 0, due: 0, dueN: 0 };
 
@@ -292,6 +294,7 @@ function getCustomerHistory(name, limit) {
 }
 
 function searchOrders(q, limit) {
+  requireStaff_();
   var want = String(q || '').trim().toLowerCase();
   if (want.length < 2) return [];
   var digits = want.replace(/\D/g, '');
@@ -495,6 +498,7 @@ function isoShiftDays_(iso, n) {
  * ใบที่ยกเลิกไม่นับเข้ายอด แต่ยังส่งกลับไปให้หน้าจอเห็นว่าวันนั้นมีกี่ใบที่ยกเลิก
  */
 function getDayReport(iso, days) {
+  requireStaff_();
   var day = String(iso || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('วันที่ไม่ถูกต้อง: ' + day);
   var back = Math.max(1, Math.min(31, Number(days) || 7));

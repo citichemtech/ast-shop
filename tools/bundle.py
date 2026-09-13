@@ -41,6 +41,20 @@ def main():
     code = "".join(parts)
     (out / "Code.gs").write_text(code, encoding="utf-8")
 
+    # ---- Backup.gs (ไฟล์3) ----
+    # ไม่รวมเข้า Code.gs โดยตั้งใจ — ตัวสำรองต้องยืนอยู่ได้ลำพัง
+    # แต่ต้องก๊อปมาไว้ที่เดียวกัน ไม่งั้นของที่ส่งให้เจ้าของร้านจะมีไฟล์เก่าปนมา
+    (out / "Backup.gs").write_text(
+        (GS / "Backup.gs").read_text(encoding="utf-8"), encoding="utf-8")
+
+    # ชื่อไฟล์รุ่นเก่าที่เลิกใช้แล้ว ถ้าปล่อยค้างไว้จะถูกหยิบส่งให้เจ้าของร้านผิดตัว
+    # (โฟลเดอร์ out/ เป็นของที่สร้างใหม่ได้เสมอ ไม่ได้อยู่ใน git)
+    for stale in ("ไฟล์1-Code-gs.txt", "ไฟล์2-Index-html.txt", "ไฟล์3-Backup-gs.txt"):
+        old = out / stale
+        if old.exists():
+            old.unlink()
+            print("  ลบไฟล์ชื่อเก่าที่ค้างอยู่: %s" % stale)
+
     # ---- Index.html ----
     index = (GS / "Index.html").read_text(encoding="utf-8")
 

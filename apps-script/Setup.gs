@@ -30,6 +30,7 @@ var C_IN_FG = '#0000ff';
 var C_SUB_FG = '#555555';
 
 function setup() {
+  requireStaff_();
   var ss = ss_();
   var made = [];
   /* ตัดล็อต ต้องมีและต้องสูงครบก่อน เพราะสูตรคอลัมน์ "ตัดออกแล้ว" ของ ล็อตสินค้า
@@ -65,6 +66,7 @@ var ERR_RE = /^#(REF!|N\/A|VALUE!|DIV\/0!|NAME\?|NUM!|ERROR!)/;
  * สั่งฟังก์ชันนี้แล้วดูใน Log จะได้รู้ทันทีว่าพังตรงไหนและสูตรในช่องนั้นเขียนว่าอะไร
  */
 function checkSheets() {
+  requireStaff_();
   var ss = ss_();
   var names = [SH.lot.name, SH.cut.name, SH.stock.name, SH.prod.name,
                SH.head.name, SH.item.name, SH.recv.name];
@@ -117,6 +119,7 @@ function checkSheets() {
  * ในการรันครั้งเดียว — ถ้ายังไม่หาย ภาพหน้าจอของ Log จะบอกได้เองว่าติดตรงไหน
  */
 function fixLotSheet() {
+  requireStaff_();
   var ss = ss_();
   var out = [];
   var COLS = 'ABCDEFGHIJKLMNOP';
@@ -206,10 +209,10 @@ function fixLotSheet() {
    ค่าเดิมทุกช่องถูกเขียนลง Log ก่อนเสมอ ไม่มีอะไรหายไปเงียบ ๆ            */
 
 /** อ่านอย่างเดียว — บอกว่ามีช่องสูตรไหนถูกพิมพ์ทับบ้าง ไม่แตะอะไรทั้งนั้น */
-function checkStaticCells() { return staticCells_(false); }
+function checkStaticCells() { requireStaff_(); return staticCells_(false); }
 
 /** ซ่อมจริง — เอาสูตรกลับมา หรือล้างเศษที่ค้างไว้ พร้อมลง Log ทุกช่อง */
-function fixStaticCells() { return staticCells_(true); }
+function fixStaticCells() { requireStaff_(); return staticCells_(true); }
 
 function staticCells_(doFix) {
   var ss = ss_();
@@ -685,6 +688,7 @@ var ARM_KEY = 'arm_clear';
 var ARM_MINUTES = 5;
 
 function armClear() {
+  requireStaff_();
   [OLD_KEY_, ALL_KEY_].forEach(function (k) {
     PropertiesService.getScriptProperties().setProperty(k, String(Date.now()));
   });
@@ -727,6 +731,7 @@ function again_(what) {
 
 /** ล้างออเดอร์เก่า เก็บของวันนี้ไว้ — กด Run สองครั้ง */
 function clearOldOrdersNow() {
+  requireStaff_();
   if (!armed_(OLD_KEY_)) {
     var msg = runClearOld_(false) + '\n\n' + again_('clearOldOrdersNow');
     Logger.log(msg);
@@ -775,6 +780,7 @@ function countOrders_() {
  * ลบไม่ได้ตามกฎหมาย แต่รายงานจะบอกว่ามีกี่ใบที่อ้างออเดอร์ที่กำลังจะหายไป
  */
 function clearOldOrders(confirm) {
+  requireStaff_();
   var WORD = 'ล้างออเดอร์เก่า';
   if (String(confirm || '').trim() !== WORD) {
     throw new Error('เพื่อกันกดพลาด ต้องสั่งแบบนี้:  clearOldOrders(\'' + WORD + '\')' +
@@ -785,6 +791,7 @@ function clearOldOrders(confirm) {
 
 /** ดูก่อนว่าจะหายใบไหนบ้าง โดยยังไม่ลบอะไรเลย */
 function previewClearOldOrders() {
+  requireStaff_();
   return runClearOld_(false);
 }
 
@@ -1424,6 +1431,7 @@ var STOCK_ROW6 = {
 };
 
 function repairStockSheet() {
+  requireStaff_();
   var s = sheet_('stock');
   var cols = s.getLastColumn();
   var tmpl = s.getRange(DATA_ROW, 1, 1, cols);
