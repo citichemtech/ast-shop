@@ -22,8 +22,12 @@ var DOC_TYPE_NAMES = [
   { key: "inv",   th: "ใบแจ้งหนี้",     en: "DEBIT NOTE",      form: [3] },
   { key: "rec",   th: "ใบเสร็จรับเงิน", en: "RECEIPT",         form: [0, 1] },
   { key: "dep",   th: "ใบรับเงินมัดจำ", en: "DEPOSIT RECEIPT", form: [] },
-  { key: "cash",  th: "บิลเงินสด",     en: "CASH BILL",       form: [] }
+  { key: "cash",  th: "บิลเงินสด",     en: "CASH BILL",       form: [] },
+  { key: "bill",  th: "ใบวางบิล",      en: "BILLING NOTE",    form: [] }
 ];
+
+/* ใบวางบิลหนึ่งแผ่นพิมพ์ได้กี่บรรทัด — ต้องตรงกับ BILL_MAX_LINES ฝั่งชีท */
+var BILL_ROWS = 14;
 
 var DOC_W = 1240, DOC_H = 1754;         /* A4 แนวตั้งที่ 150 dpi */
 
@@ -259,10 +263,19 @@ async function buildDocPage(d, m, cfg, copy) {
   pair("เลขที่เอกสาร:", m.no, rx, rvx, ry, rvw, true); ry += 38;
   pair("DATE:", docDate(m.date), rx, rvx, ry, rvw); ry += 38;
   if (d.type === "quote") pair("ยืนราคาถึง:", docDate(m.validTo), rx, rvx, ry, rvw);
+  /* ใบวางบิลไม่มีเลข PO ของตัวเอง — PO อยู่ทีละใบในตารางข้างล่าง
+     ช่องนี้จึงใช้บอกว่ารวมมากี่ฉบับ ซึ่งเป็นตัวเลขที่ลูกค้าใช้ตรวจก่อนอย่างอื่น */
+  else if (d.type === "bill") pair("รวมเอกสาร:", (d.count || (d.lines || []).length) + " ฉบับ",
+                                   rx, rvx, ry, rvw, true);
   else pair("หมายเลขคำสั่งซื้อ:", m.po, rx, rvx, ry, rvw);
   ry += 38;
-  pair("ผู้เสนอ/ พนักงานขาย :", m.seller, rx, rvx, ry, rvw); ry += 38;
-  pair("E-mail :", m.sellerEmail, rx, rvx, ry, rvw); ry += 38;
+  if (d.type === "bill") {
+    pair("ผู้ติดต่อ:", m.contact, rx, rvx, ry, rvw); ry += 38;
+    pair("โทรศัพท์:", m.contactTel, rx, rvx, ry, rvw); ry += 38;
+  } else {
+    pair("ผู้เสนอ/ พนักงานขาย :", m.seller, rx, rvx, ry, rvw); ry += 38;
+    pair("E-mail :", m.sellerEmail, rx, rvx, ry, rvw); ry += 38;
+  }
   pair("เงื่อนไขในการชำระเงิน:", m.terms, rx, rvx, ry, rvw);
 
   /* ================= เลขบัญชี + คำขอบคุณ ================= */
@@ -274,7 +287,19 @@ async function buildDocPage(d, m, cfg, copy) {
   /* ================= ตารางรายการ =================
      ใบจริงไม่มีเส้นคั่นระหว่างรายการ มีแต่กรอบนอกกับเส้นแบ่งคอลัมน์
      รายการจึงหายใจได้ และชื่อสินค้ายาว ๆ ตัดสองบรรทัดได้โดยไม่ชนเส้น */
-  var COLS = [
+  /* ใบวางบิลใช้ตารางคนละชุด เพราะเนื้อในใบเป็น "รายการเอกสาร" ไม่ใช่รายการสินค้า
+     คอลัมน์ยกมาจากใบจริงของร้าน (BL260822-001) ทุกช่อง */
+  var isBill = d.type === "bill";
+  var COLS = isBill ? [
+    { th: "ลำดับ", en: "", w: 70, al: "c" },
+    { th: "เลขที่เอกสาร", en: "(Document No.)", w: 225, al: "l" },
+    { th: "วันที่", en: "(Date)", w: 130, al: "c" },
+    { th: "เลขที่ PO", en: "(PO No.)", w: 195, al: "l" },
+    { th: "ครบกำหนด", en: "(Due date)", w: 138, al: "c" },
+    { th: "ก่อน VAT", en: "(Subtotal)", w: 140, al: "r" },
+    { th: "VAT", en: "", w: 105, al: "r" },
+    { th: "รวม", en: "(Total)", w: 145, al: "r" }
+  ] : [
     { th: "ลำดับ", en: "", w: 86, al: "c" },
     { th: "รายการ. (Description )", en: "", w: 452, al: "l" },
     { th: "Customer", en: "/PO", w: 168, al: "l" },
@@ -282,7 +307,8 @@ async function buildDocPage(d, m, cfg, copy) {
     { th: "ราคา/หน่วย", en: "(Unit price)", w: 150, al: "r" },
     { th: "จำนวนเงิน", en: "(Amount)", w: 152, al: "r" }
   ];
-  var ty = by + 6, hh = 72, rowH = 62, ROWS = 10, bodyH = rowH * ROWS;
+  var ty = by + 6, hh = 72;
+  var rowH = isBill ? 44 : 62, ROWS = isBill ? BILL_ROWS : 10, bodyH = rowH * ROWS;
   var xs = [pad]; COLS.forEach(function (cc) { xs.push(xs[xs.length - 1] + cc.w); });
 
   x.fillStyle = C_TBL_HEAD; x.fillRect(pad, ty, IN, hh);
@@ -302,6 +328,20 @@ async function buildDocPage(d, m, cfg, copy) {
   x.lineWidth = 1.3;
 
   var shown = d.lines.slice(0, ROWS), over = d.lines.length - shown.length;
+  if (isBill) {
+    shown.forEach(function (ln, i) {
+      var ry3 = ty + hh + i * rowH + 10;
+      x.fillStyle = "#000";
+      fitCenter(x, String(i + 1), xs[0] + COLS[0].w / 2, ry3, COLS[0].w - 8, F_BODY);
+      fitLeft(x, ln.no, xs[1] + 12, ry3, COLS[1].w - 20, F_BODY, 700);
+      fitCenter(x, docDate(ln.date), xs[2] + COLS[2].w / 2, ry3, COLS[2].w - 8, F_BODY);
+      fitLeft(x, ln.po || "", xs[3] + 10, ry3, COLS[3].w - 18, pt(9.5));
+      fitCenter(x, docDate(ln.due), xs[4] + COLS[4].w / 2, ry3, COLS[4].w - 8, F_BODY);
+      fitRight(x, money(ln.base), xs[5] + COLS[5].w - 12, ry3, COLS[5].w - 20, F_BODY);
+      fitRight(x, money(ln.vat), xs[6] + COLS[6].w - 12, ry3, COLS[6].w - 20, F_BODY);
+      fitRight(x, money(ln.total), xs[7] + COLS[7].w - 12, ry3, COLS[7].w - 20, F_BODY, 700);
+    });
+  } else
   shown.forEach(function (ln, i) {
     var ry2 = ty + hh + i * rowH + 12;
     x.fillStyle = "#000";
@@ -332,7 +372,10 @@ async function buildDocPage(d, m, cfg, copy) {
   x.font = docFont(pt(9.5), 400);
   var ny = fy + 30, noteNo = 0;
   /* ใส่เลขข้อเฉพาะบรรทัดที่มีข้อความจริง ไม่งั้นได้เลข 1 ลอยอยู่บรรทัดเปล่า */
-  [m.note, cfg.terms].forEach(function (txt) {
+  /* ข้อความในช่องหมายเหตุที่ตั้งไว้ในชีทเป็นของใบส่งของ ("ผู้ซื้อได้รับสินค้าตามรายการ
+     ข้างบนไว้ถูกต้องแล้ว...") ซึ่งไม่จริงสำหรับใบวางบิล — ใบวางบิลไม่ได้ส่งของ
+     พิมพ์ประโยคนี้ลงไปคือเขียนคำรับรองที่ลูกค้าไม่ได้ทำลงบนกระดาษ */
+  [m.note, isBill ? "" : cfg.terms].forEach(function (txt) {
     if (!String(txt || "").trim()) return;
     noteNo++;
     wrapText(x, txt, sumX - pad - 40).slice(0, 2).forEach(function (ln, k) {
@@ -345,9 +388,13 @@ async function buildDocPage(d, m, cfg, copy) {
      คือบอกเป็นนัยว่าใบนี้เกี่ยวกับภาษี ทั้งที่ไม่เกี่ยว และชวนให้ลูกค้าเอาไปขอเครดิตภาษีซื้อ
      ตัดสินจากชนิดเอกสาร ไม่ใช่จากอัตราที่เป็นศูนย์ ใบเก่าที่เคยออกไปแล้วจะได้พิมพ์ซ้ำ
      ได้กระดาษหน้าตาเดิมเป๊ะ */
-  var SUMS = [["มูลค่าสินค้า Total", money(d.base), ""]];
+  var SUMS = [[isBill ? "รวมมูลค่าก่อนภาษี Subtotal" : "มูลค่าสินค้า Total", money(d.base), ""]];
   if (t.key !== "cash") {
-    SUMS.push(["ภาษีมูลค่าเพิ่ม Vat " + Math.round(d.vatRate * 100) + "%", money(d.vat), ""]);
+    /* ใบวางบิลรวมหลายใบที่อาจคิดภาษีคนละอัตรา จึงไม่พิมพ์ตัวเลขเปอร์เซ็นต์กำกับ
+       เขียน 7% ทั้งที่ในใบมีใบยกเว้นภาษีปนอยู่ = ตัวเลขบนกระดาษที่คำนวณย้อนไม่ได้ */
+    SUMS.push([isBill ? "ภาษีมูลค่าเพิ่ม Vat"
+                      : "ภาษีมูลค่าเพิ่ม Vat " + Math.round(d.vatRate * 100) + "%",
+               money(d.vat), ""]);
   }
   SUMS.push(["รวมจำนวนเงินทั้งสิ้น", money(d.total), "(Grand Total)"]);
   /* ป้ายจบที่ labEnd ตัวเลขจบที่ขอบขวา สองเขตไม่ทับกันแน่นอน
@@ -385,7 +432,14 @@ async function buildDocPage(d, m, cfg, copy) {
   var sgH = 210, sgGap = 22;
   var gy = Math.max(sy + 20, H - pad - sgH);
   var sgW = (IN - sgGap * 2) / 3;
-  var SIGN = [
+  /* ใบวางบิลเซ็นกันคนละคู่กับใบกำกับภาษี — ฝั่งร้านเป็นคนออกเอกสาร
+     ฝั่งลูกค้าเป็นคนรับวางบิล ไม่มีใครรับของและไม่มีใครรับเงินในขั้นตอนนี้
+     (ตามใบจริง BL260822-001 ที่เจ้าของร้านส่งมา) */
+  var SIGN = isBill ? [
+    ["ผู้ออกเอกสาร", "(Issued by)"],
+    ["ผู้รับวางบิล", "(Received by)"],
+    ["ผู้มีอำนาจลงนาม", co.shortName || co.name || ""]
+  ] : [
     ["ลายเซ็นของผู้รับของ", "(Authorized Signature )"],
     ["ผู้รับเงิน/พนักงานขาย", "(Authorized Signature)"],
     ["ลายเซ็นของผู้มีอำนาจลงนาม", co.shortName || co.name || ""]

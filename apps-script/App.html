@@ -2679,6 +2679,146 @@ function copyText(text, okMsg){
   else toast(done?okMsg:"กดค้างที่ข้อความเพื่อคัดลอก");
 }
 
+
+/* ------------------------------------------------------------- ใบวางบิล
+
+   ใบเดียวรวมหลายบิลของลูกค้ารายเดียว ต่างจากเอกสารอีกห้าชนิดที่เป็น 1 ใบ = 1 ออเดอร์
+   จึงมีหน้าจอของตัวเอง ไม่ได้อยู่ในปุ่ม 📄 ของแถวออเดอร์
+
+   สิ่งที่หน้าจอนี้ต้องทำให้ไม่พลาดคือ "ใบไหนวางบิลไปแล้ว" — ใบตัวอย่างที่เจ้าของร้าน
+   ส่งมามีหมายเหตุเขียนมือว่าใบไหนเคยวางแล้ว แปลว่าตอนนี้ใช้ความจำคนล้วน
+   ระบบจึงต้องโชว์ให้เห็น ไม่ใช่แค่ซ่อนใบพวกนั้นออกไปเงียบ ๆ                    */
+
+var BILL_ALL = null;      /* รายการใบทั้งหมดที่ดึงมารอบนี้ */
+var BILL_KEY = "";
+
+function openBill(){
+  BILL_KEY = newKey();
+  openModal("ออกใบวางบิล", '<div class="hint">กำลังอ่านทะเบียนเอกสาร…</div>');
+  call("billCandidates", [""], function(res){
+    BILL_ALL = res || { rows: [], custs: [] };
+    drawBillPick();
+  }, function(m){
+    if($("#m-body")) $("#m-body").innerHTML =
+      '<div class="stop">อ่านทะเบียนเอกสารไม่ได้<br>' + esc(m) + '</div>';
+  });
+}
+
+function drawBillPick(){
+  if(!$("#m-body")) return;
+  var custs = BILL_ALL.custs || [];
+  if(!custs.length){
+    $("#m-body").innerHTML = '<div class="empty" style="padding:18px 8px">'
+      + '<b>ยังไม่มีใบให้วางบิล</b>ใบวางบิลรวมได้เฉพาะ <b>ใบเสร็จ/ใบกำกับภาษี</b> '
+      + 'กับ <b>ใบแจ้งหนี้</b> ที่ออกไปแล้วและยังไม่ถูกยกเลิก</div>';
+    return;
+  }
+  $("#m-body").innerHTML =
+      '<div class="fld"><label>ลูกค้า</label><select id="bl-cust">'
+    + '<option value="">— เลือกลูกค้า —</option>'
+    + custs.map(function(c){ return '<option>' + esc(c) + '</option>' }).join("")
+    + '</select></div>'
+    + '<div id="bl-rows"><div class="hint">เลือกลูกค้าก่อน แล้วจะขึ้นรายการใบให้ติ๊ก</div></div>';
+  $("#bl-cust").onchange = drawBillRows;
+}
+
+function billPicked(){
+  return $$("#bl-rows input[data-no]:checked").map(function(b){ return b.getAttribute("data-no") });
+}
+
+function billSum(){
+  var box = $("#bl-sum");
+  if(!box) return;
+  var want = {}; billPicked().forEach(function(n){ want[n] = 1 });
+  var base = 0, vat = 0, total = 0, n = 0;
+  (BILL_ALL.rows || []).forEach(function(r){
+    if(!want[r.no]) return;
+    base += Number(r.base) || 0; vat += Number(r.vat) || 0; total += Number(r.total) || 0; n++;
+  });
+  box.innerHTML = n
+    ? '<div class="kpi"><span>เลือกไว้ ' + n + ' ฉบับ</span><b>' + baht(total) + '</b></div>'
+      + '<div class="hint">ก่อน VAT ' + baht(base) + ' · VAT ' + baht(vat) + '</div>'
+    : '<div class="hint">ยังไม่ได้ติ๊กใบไหนเลย</div>';
+}
+
+function drawBillRows(){
+  var cust = $("#bl-cust").value;
+  var box = $("#bl-rows");
+  if(!cust){ box.innerHTML = '<div class="hint">เลือกลูกค้าก่อน</div>'; return }
+
+  var mine = (BILL_ALL.rows || []).filter(function(r){ return r.custName === cust });
+  var open = mine.filter(function(r){ return !r.billedOn });
+  var done = mine.filter(function(r){ return r.billedOn });
+
+  var h = '';
+  if(!open.length){
+    h += '<div class="warn">ใบของลูกค้ารายนี้ถูกวางบิลไปหมดแล้ว '
+       + 'ถ้าใบวางบิลเดิมใช้ไม่ได้ ให้ยกเลิกใบเดิมก่อน แล้วใบข้างในจะกลับมาเลือกได้</div>';
+  }else{
+    h += '<div class="subhd">เลือกใบที่จะวางบิล</div>'
+       + '<button class="btn ghost" id="bl-all">ติ๊กทั้งหมด</button>'
+       + open.map(function(r){
+           return '<label class="mrow" style="display:block">'
+             + '<input type="checkbox" data-no="' + esc(r.no) + '"> <b>' + esc(r.no) + '</b>'
+             + '<br><span class="hint" style="display:inline">' + esc(thaiDate(r.date))
+             + (r.po ? ' · PO ' + esc(r.po) : '') + ' · ' + baht(r.total) + '</span></label>';
+         }).join("");
+  }
+  if(done.length){
+    /* โชว์ให้เห็น ไม่ซ่อน — ใบที่หายไปจากรายการโดยไม่บอกเหตุผล คนจะนึกว่าระบบลืม */
+    h += '<div class="subhd">วางบิลไปแล้ว — เลือกซ้ำไม่ได้</div>'
+       + done.map(function(r){
+           return '<div class="mrow"><b>' + esc(r.no) + '</b> ' + baht(r.total)
+             + '<br><span class="hint" style="display:inline">อยู่ในใบ ' + esc(r.billedOn)
+             + '</span></div>';
+         }).join("");
+  }
+
+  h += '<div id="bl-sum"></div>'
+     + '<div class="fld"><label>วันที่วางบิล</label>'
+     + '<input type="date" id="bl-date" value="' + esc(todayISO()) + '"></div>'
+     + '<div class="fld"><label>เงื่อนไขชำระเงิน</label>'
+     + '<input id="bl-terms" value="เครดิต 30 วัน"></div>'
+     + '<div class="hint">ใช้คิดช่อง “ครบกำหนด” ของแต่ละบรรทัด — '
+     + 'พิมพ์ “เครดิต 60 วัน” ก็คิดให้ 60 วัน</div>'
+     + '<div class="fld"><label>ผู้ติดต่อฝั่งลูกค้า</label><input id="bl-contact"></div>'
+     + '<div class="fld"><label>โทรศัพท์ผู้ติดต่อ</label><input id="bl-tel"></div>'
+     + '<div class="fld"><label>หมายเหตุ</label><input id="bl-note"></div>'
+     + (open.length ? '<button class="btn" id="bl-go">ออกใบวางบิล</button>' : '')
+     + '<div id="bl-say"></div>';
+  box.innerHTML = h;
+
+  $$("#bl-rows input[data-no]").forEach(function(b){ b.onchange = billSum });
+  if($("#bl-all")) $("#bl-all").onclick = function(){
+    var on = billPicked().length < open.length;
+    $$("#bl-rows input[data-no]").forEach(function(b){ b.checked = on });
+    billSum();
+  };
+  billSum();
+  if($("#bl-go")) $("#bl-go").onclick = billIssue;
+}
+
+function billIssue(){
+  var picked = billPicked();
+  if(!picked.length){ toast("ยังไม่ได้ติ๊กใบไหนเลย"); return }
+  var b = $("#bl-go");
+  b.disabled = true; b.textContent = "กำลังออกใบ…";
+  call("issueBill", [{
+    docs: picked, cust: $("#bl-cust").value, date: $("#bl-date").value,
+    terms: $("#bl-terms").value.trim(), contact: $("#bl-contact").value.trim(),
+    contactTel: $("#bl-tel").value.trim(), note: $("#bl-note").value.trim(),
+    by: byName(), clientKey: BILL_KEY
+  }], function(res){
+    BILL_KEY = newKey();          /* ออกสำเร็จแล้ว กุญแจต้องเปลี่ยน ไม่งั้นใบต่อไปจะเงียบหาย */
+    openModal("ใบวางบิล " + res.no, '<div id="rp-out"></div>');
+    reprint(res.no, null, "#rp-out");
+    toast("ออกใบวางบิล " + res.no + " แล้ว");
+  }, function(m){
+    b.disabled = false; b.textContent = "ออกใบวางบิล";
+    $("#bl-say").innerHTML = '<div class="stop">' + esc(m) + '</div>';
+  });
+}
+
 /* ------------------------------------------------------------------ รับเงิน
 
    สองงานคนละเวลา แต่อยู่หน้าเดียวกันเพราะเป็นเงินก้อนเดียวกัน
@@ -3495,7 +3635,9 @@ var DOC_KINDS = [
   { th: "ใบเสนอราคา",    label: "ใบเสนอราคา",           ic: "📝",
     note: "ยังไม่ได้ขาย รอลูกค้าตอบ" },
   { th: "ใบรับเงินมัดจำ", label: "ใบรับเงินมัดจำ",        ic: "💰",
-    note: "รับมัดจำไว้ก่อนส่งของ" }
+    note: "รับมัดจำไว้ก่อนส่งของ" },
+  { th: "ใบวางบิล",      label: "ใบวางบิล",             ic: "📑",
+    note: "รวมหลายบิลของลูกค้ารายเดียว" }
 ];
 
 function docKind(th){
@@ -3677,6 +3819,8 @@ function fileInit(){
     q.dataset.bound = "1";
     q.oninput = function(){ FILE_KIND = ""; drawFileDocs() };
   }
+  var bl = $("#fl-bill");
+  if(bl && !bl.dataset.bound){ bl.dataset.bound = "1"; bl.onclick = openBill }
   pasteInit();
   fileDraw();
 }

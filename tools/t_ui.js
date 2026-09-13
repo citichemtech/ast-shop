@@ -2962,21 +2962,22 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       rows: $$('#fl-docs .row').length
     };
   });
-  eq('มีห้าแฟ้ม ชนิดละแฟ้ม', fd45.folders.length, 5);
+  eq('มีหกแฟ้ม ชนิดละแฟ้ม', fd45.folders.length, 6);
   truthy('บิลเงินสดมีแฟ้มของตัวเอง ไม่ไปพ่วงกับใบแจ้งหนี้',
     fd45.folders.indexOf('บิลเงินสด') > -1);
   /* emoji ของเอกสารมีอยู่ไม่กี่ตัวและหน้าตาใกล้กันหมด 📃 กับ 📄 กับ 📝 แยกไม่ออกบนมือถือ
      ซึ่งพังตรงจุดที่ตั้งใจให้แยก จึงใช้รูปที่เจ้าของร้านทำมาเอง */
-  eq('ทุกแฟ้มมีรูปของตัวเอง', fd45.icons.length, 5);
-  eq('ทุกแฟ้มมีไอคอนของตัวเอง ไม่มีแฟ้มไหนว่างเปล่า', fd45.ics, 5);
+  eq('ทุกแฟ้มมีรูปของตัวเอง', fd45.icons.length, 6);
+  eq('ทุกแฟ้มมีไอคอนของตัวเอง ไม่มีแฟ้มไหนว่างเปล่า', fd45.ics, 6);
   truthy('เป็นรูปจริง ไม่ใช่ช่องว่าง', fd45.icons.every(function (s) {
     return /^data:image\//.test(s);
   }));
   eq('ทุกแฟ้มใช้คนละรูป ไม่ซ้ำกัน',
-    fd45.icons.filter(function (s, i) { return fd45.icons.indexOf(s) === i }).length, 5);
+    fd45.icons.filter(function (s, i) { return fd45.icons.indexOf(s) === i }).length, 6);
   truthy('แฟ้มใบเสร็จ/ใบกำกับภาษีมาก่อน เพราะเป็นใบที่ต้องใช้ยื่นภาษี',
     fd45.folders[0].indexOf('ใบกำกับภาษี') > -1);
   truthy('แฟ้มใบเสนอราคาแยกออกไปต่างหาก', fd45.folders.indexOf('ใบเสนอราคา') > -1);
+  truthy('ใบวางบิลมีแฟ้มของตัวเอง', fd45.folders.indexOf('ใบวางบิล') > -1);
   eq('หน้าแรกของแฟ้มยังไม่โชว์ใบสักใบ ต้องกดเข้าไปก่อน', fd45.rows, 0);
   truthy('แฟ้มใบกำกับภาษีมีใบอยู่จริง (ใบที่ออกไปตอนต้นข้อสอบ)',
     /\d+ ใบ/.test(fd45.counts[0]));
@@ -3010,7 +3011,7 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     await new Promise(function (r) { setTimeout(r, 600) });
     return { folders: $$('#fl-docs .fold').length, rows: $$('#fl-docs .row').length };
   });
-  eq('กดกลับแล้วได้หน้าแฟ้มเหมือนเดิม', back45.folders, 5);
+  eq('กดกลับแล้วได้หน้าแฟ้มเหมือนเดิม', back45.folders, 6);
   eq('และไม่เหลือใบค้างอยู่', back45.rows, 0);
 
   console.log('\n   ค้นหาต้องเจอใบกำกับภาษี ทั้งที่ใบพวกนี้ผูกกับออเดอร์');
@@ -3641,6 +3642,79 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   });
   truthy('ขึ้นป้ายบอกว่ามีสลิปรออยู่', pv6.badge);
   truthy('และมีปุ่มเก็บเงินทุกแถว', pv6.btn);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
+  /* ---------- 48. ใบวางบิล — ใบเดียวรวมหลายบิล ---------- */
+  console.log('\n48. ใบวางบิล');
+
+  var CUST48 = 'บริษัท ทดสอบวางบิล จำกัด';
+  var bl1 = await page.evaluate(async function (cust) {
+    MOCK_DOCS.length = 0;
+    var C = { name: cust, taxId: '0105531009304', branch: 'สาขา 00001',
+              addr: '13/2 หมู่ 2 ถ.ทดสอบ จ.ฉะเชิงเทรา 24130', tel: '030 538881-8', email: '' };
+    var D = { name: 'บริษัท อีกราย จำกัด', taxId: '', branch: '', addr: '', tel: '', email: '' };
+    [['ONIV26-0045', '2026-03-26', 'PO-93', 2250, 157.5, 2407.5, C],
+     ['ONIV26-0046', '2026-04-03', 'PO-94', 4500, 315, 4815, C],
+     ['ONIV26-00133', '2026-07-30', 'PO-78', 20000, 1400, 21400, C],
+     ['ONIV26-00140', '2026-08-01', 'PO-80', 1000, 70, 1070, D]].forEach(function (x) {
+      MOCK_DOCS.push({ no: x[0], type: 'ใบเสร็จรับเงิน', date: x[1], orderNo: '', cust: x[6],
+        po: x[2], terms: 'เครดิต 30 วัน', note: '', voidWhy: '',
+        doc: { type: 'rec', lines: [], base: x[3], vat: x[4], vatRate: 0.07,
+               total: x[5], totalText: '' } });
+    });
+    openBill();
+    await new Promise(function (r) { setTimeout(r, 600) });
+    return { custs: $('#bl-cust') ? $('#bl-cust').options.length : 0 };
+  }, CUST48);
+  eq('มีลูกค้าให้เลือกสองราย (+บรรทัดหัว)', bl1.custs, 3);
+
+  var bl2 = await page.evaluate(async function (cust) {
+    $('#bl-cust').value = cust;
+    $('#bl-cust').dispatchEvent(new Event('change'));
+    await new Promise(function (r) { setTimeout(r, 400) });
+    return { rows: $$('#bl-rows input[data-no]').length,
+             sum: ($('#bl-sum') || {}).innerText || '' };
+  }, CUST48);
+  eq('เห็นเฉพาะใบของลูกค้ารายที่เลือก', bl2.rows, 3);
+  truthy('ยังไม่ติ๊กอะไร ยอดยังไม่ขึ้น', bl2.sum.indexOf('ยังไม่ได้ติ๊ก') > -1);
+
+  var bl3 = await page.evaluate(async function () {
+    $('#bl-all').click();
+    await new Promise(function (r) { setTimeout(r, 200) });
+    return { sum: $('#bl-sum').innerText };
+  });
+  truthy('ติ๊กทั้งหมดแล้วยอดรวมขึ้น 28,622.50', bl3.sum.indexOf('28,622.50') > -1);
+  truthy('บอกจำนวนฉบับด้วย', bl3.sum.indexOf('3 ฉบับ') > -1);
+
+  var bl4 = await page.evaluate(async function () {
+    $('#bl-date').value = '2026-08-22';
+    $('#bl-contact').value = 'K. ทดสอบ';
+    $('#bl-go').click();
+    await new Promise(function (r) { setTimeout(r, 2500) });
+    var img = document.querySelector('#rp-out img');
+    return { title: $('#m-title').textContent, hasPaper: !!img,
+             wide: img ? img.naturalWidth : 0,
+             sent: (window.SENT || []).filter(function (x) { return x && x.docs }).length };
+  });
+  truthy('เลขใบวางบิลตรงรูปแบบ BLyymmdd-nnn', /BL\d{6}-\d{3}/.test(bl4.title));
+  truthy('วาดกระดาษออกมาให้ดูเลย', bl4.hasPaper && bl4.wide > 1000);
+  eq('ส่งขึ้นชีทครั้งเดียว', bl4.sent, 1);
+
+  console.log('\n   ใบที่วางไปแล้วต้องติ๊กซ้ำไม่ได้ และต้องบอกว่าอยู่ในใบไหน');
+  var bl5 = await page.evaluate(async function (cust) {
+    closeModal();
+    openBill();
+    await new Promise(function (r) { setTimeout(r, 600) });
+    $('#bl-cust').value = cust;
+    $('#bl-cust').dispatchEvent(new Event('change'));
+    await new Promise(function (r) { setTimeout(r, 400) });
+    return { pick: $$('#bl-rows input[data-no]').length,
+             txt: $('#bl-rows').innerText };
+  }, CUST48);
+  eq('ไม่เหลือใบให้ติ๊กแล้ว', bl5.pick, 0);
+  truthy('บอกว่าวางบิลไปแล้ว', bl5.txt.indexOf('วางบิลไปแล้ว') > -1);
+  truthy('และบอกว่าอยู่ในใบไหน', /อยู่ในใบ BL\d{6}-\d{3}/.test(bl5.txt));
   await page.evaluate(function () { closeModal() });
   await page.waitForTimeout(200);
 

@@ -592,7 +592,11 @@ function appCfg_() {
        เก็บในชีทไม่ใช่ในโค้ด เจ้าของร้านจะได้แก้เองโดยไม่ต้องรอคนแก้โปรแกรม */
     co: { name: '', nameEn: '', shortName: '', addr: '', taxId: '', branch: '', tel: '', email: '' },
     bank: '', thanks: '', docTerms: '', website: '', docSeller: '', docSellerEmail: '', vatMode: 'excl',
-    docPrefix: { rec: 'ONIV26-', inv: 'IV26-', quote: 'QO26-', dep: 'DR26-', cash: 'CS26-' },
+    docPrefix: { rec: 'ONIV26-', inv: 'IV26-', quote: 'QO26-', dep: 'DR26-', cash: 'CS26-',
+      /* ใบวางบิลเป็นแค่คำนำหน้า ส่วนที่เหลือ (ปีเดือนวัน + ลำดับในวัน) ระบบต่อให้เอง */
+      bill: 'BL' },
+    /* ใช้คิดวันครบกำหนดในใบวางบิล เมื่ออ่านจากข้อความเงื่อนไขชำระเงินไม่ออก */
+    creditDays: 30,
     /* ลายเซ็นฝั่งร้านที่เซ็นครั้งเดียวแล้วประทับให้ทุกใบ เก็บเป็นพิกัดเส้น (ดู Sign.html)
        ไม่ใช่รูป เพราะช่องในชีทรับได้ 50,000 ตัวอักษร และต้องคมตอนพิมพ์ 300 dpi */
     sign: { cashier: '', auth: '' },
@@ -657,6 +661,8 @@ function appCfg_() {
     else if (k === 'คำนำหน้าเลขใบเสนอราคา') out.docPrefix.quote = String(val || out.docPrefix.quote);
     else if (k === 'คำนำหน้าเลขใบรับเงินมัดจำ') out.docPrefix.dep = String(val || out.docPrefix.dep);
     else if (k === 'คำนำหน้าเลขบิลเงินสด') out.docPrefix.cash = String(val || out.docPrefix.cash);
+    else if (k === 'คำนำหน้าเลขใบวางบิล') out.docPrefix.bill = String(val || out.docPrefix.bill);
+    else if (k === 'เครดิตกี่วัน (ใบวางบิล)') out.creditDays = Number(val || 30) || 30;
     else if (k === 'ยกยอดเลขใบเสร็จ/ใบกำกับภาษีมาจาก') out.docStart.rec = Number(val || 0) || 0;
     else if (k === 'ยกยอดเลขใบแจ้งหนี้มาจาก') out.docStart.inv = Number(val || 0) || 0;
     else if (k === 'ยกยอดเลขใบเสนอราคามาจาก') out.docStart.quote = Number(val || 0) || 0;

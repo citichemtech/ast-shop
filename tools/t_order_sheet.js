@@ -3266,7 +3266,8 @@ eq('บัญชีรับเงินอยู่ท้ายรายกา�
    ['ธนาคารที่รับเงิน บิลมี VAT', 'ชื่อบัญชี บิลมี VAT', 'เลขบัญชี บิลมี VAT',
     'พร้อมเพย์ บิลมี VAT', 'ธนาคารที่รับเงิน บิลไม่มี VAT', 'ชื่อบัญชี บิลไม่มี VAT',
     'เลขบัญชี บิลไม่มี VAT', 'พร้อมเพย์ บิลไม่มี VAT',
-    'ลิงก์แอพธนาคาร บิลมี VAT', 'ลิงก์แอพธนาคาร บิลไม่มี VAT']);
+    'ลิงก์แอพธนาคาร บิลมี VAT', 'ลิงก์แอพธนาคาร บิลไม่มี VAT',
+    'คำนำหน้าเลขใบวางบิล', 'เครดิตกี่วัน (ใบวางบิล)']);
 
 /* บัญชีชื่อบุคคลต้องไม่หลุดขึ้นโค้ดที่เปิดดูได้จากข้างนอก
    ค่าตั้งต้นของชุด "ไม่มี VAT" จึงต้องว่างทั้งสี่ช่อง ให้ไปกรอกในชีทเอา */
@@ -3391,6 +3392,99 @@ console.log('\n   ไม่มีช่องสูตรถูกเขีย�
 var over57 = [];
 for (var nm57 in fx57.sheets) over57 = over57.concat(fx57.sheets[nm57].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over57, []);
+
+/* ====== 58. ใบวางบิล — ใบเดียวรวมหลายบิลของลูกค้ารายเดียว ====== */
+console.log('\n58. ใบวางบิล');
+
+var fx58 = FS.build();
+var api58 = FS.load(fx58, {});
+api58.setup();
+
+function bill58(cust, price, key) {
+  var o = api58.createOrder(order({ cust: cust, ship: 0, discount: 0, vat: true,
+    items: [{ sku: 'SKU-141', qty: 1, price: price }] }));
+  return api58.issueDoc({ type: 'rec', orderNo: o.no, cust: { name: cust },
+    po: 'PO-' + key, terms: 'เครดิต 30 วัน', by: 'AEY', clientKey: 'dk-58-' + key }).no;
+}
+var A58 = bill58('บริษัท ก จำกัด', 1000, 'a');
+var B58 = bill58('บริษัท ก จำกัด', 2000, 'b');
+var C58 = bill58('บริษัท ข จำกัด', 3000, 'c');
+
+var cand58 = api58.billCandidates('บริษัท ก จำกัด');
+eq('เห็นเฉพาะใบของลูกค้ารายที่เลือก', cand58.rows.map(function (r) { return r.no }).sort(),
+   [A58, B58].sort());
+truthy2('มีรายชื่อลูกค้าให้เลือกครบทุกราย', cand58.custs.length >= 2);
+eq('ยังไม่มีใบไหนถูกวางบิล',
+   cand58.rows.filter(function (r) { return r.billedOn }).length, 0);
+truthy2('เลข PO ติดมาด้วย ใบวางบิลต้องใช้', !!cand58.rows[0].po);
+
+/* เช็คก่อนออกใบแรก ตอนที่ยังไม่มีใบไหนถูกวางบิล ไม่งั้นจะไปติดด่านกันวางซ้ำก่อน
+   แล้วข้อสอบจะผ่านด้วยเหตุผลผิด ๆ โดยที่ด่านกันลูกค้าปนกันไม่เคยถูกทดสอบเลย */
+console.log('\n   ใบวางบิลใบเดียวต้องเป็นของลูกค้ารายเดียว');
+throws('เลือกข้ามลูกค้าไม่ได้', function () {
+  api58.issueBill({ docs: [C58, A58], by: 'AEY', clientKey: 'bl-58-3' });
+}, 'ลูกค้าหลายราย');
+
+console.log('\n   ออกใบวางบิล');
+var made58 = api58.issueBill({ docs: [A58, B58], cust: 'บริษัท ก จำกัด',
+  contact: 'K. ทดสอบ', contactTel: '02-000-0000', by: 'AEY', clientKey: 'bl-58-1' });
+truthy2('เลขใบวางบิลรูปแบบ BLyymmdd-nnn', /^BL\d{6}-\d{3}$/.test(made58.no));
+eq('รวมสองใบ', made58.doc.count, 2);
+eq('ยอดรวมเท่าผลบวกของสองใบ', made58.doc.total,
+   Math.round((cand58.rows[0].total + cand58.rows[1].total) * 100) / 100);
+
+var docSheet58 = fx58.sheets['เอกสาร'];
+var billRow58 = 0;
+for (var r58 = DATA_ROW; r58 <= docSheet58.getMaxRows(); r58++) {
+  if (String(docSheet58.cell(r58, 2).v || '') === made58.no) { billRow58 = r58; break; }
+}
+truthy2('ใบวางบิลถูกจดในทะเบียนเอกสารด้วย', billRow58 > 0);
+eq('ชนิดเอกสารเขียนว่าใบวางบิล', docSheet58.cell(billRow58, 3).v, 'ใบวางบิล');
+eq('ไม่ผูกกับออเดอร์ใบใดใบหนึ่ง', String(docSheet58.cell(billRow58, 5).v || ''), '');
+
+console.log('\n   ห้ามวางบิลใบเดิมซ้ำ — ลูกค้าจ่ายซ้ำคือความเสียหายจริง');
+var cand58b = api58.billCandidates('บริษัท ก จำกัด');
+eq('ใบที่วางไปแล้วถูกติดธงว่าอยู่ในใบไหน',
+   cand58b.rows.filter(function (r) { return r.billedOn === made58.no }).length, 2);
+throws('วางซ้ำไม่ได้', function () {
+  api58.issueBill({ docs: [A58], cust: 'บริษัท ก จำกัด', by: 'AEY', clientKey: 'bl-58-2' });
+}, 'ถูกวางบิลไปแล้ว');
+
+console.log('\n   ยกเลิกใบวางบิลแล้ว ใบข้างในต้องกลับมาวางใหม่ได้');
+api58.voidDoc(made58.no, 'ลูกค้าขอให้แยกใบใหม่', 'AEY');
+var cand58c = api58.billCandidates('บริษัท ก จำกัด');
+eq('ธงหลุดออกหมด', cand58c.rows.filter(function (r) { return r.billedOn }).length, 0);
+var made58d = api58.issueBill({ docs: [A58, B58], cust: 'บริษัท ก จำกัด',
+  by: 'AEY', clientKey: 'bl-58-4' });
+truthy2('วางใหม่ได้', !!made58d.no);
+
+console.log('\n   เลือกใบที่ไม่มีจริง ต้องล้ม ไม่ใช่ข้ามเงียบ ๆ');
+throws('ใบที่ไม่มีในทะเบียน', function () {
+  api58.issueBill({ docs: ['ONIV26-99999'], by: 'AEY', clientKey: 'bl-58-5' });
+}, 'ไม่พบใบพวกนี้');
+throws('ไม่เลือกอะไรเลย', function () {
+  api58.issueBill({ docs: [], by: 'AEY', clientKey: 'bl-58-6' });
+}, 'ยังไม่ได้เลือก');
+
+console.log('\n   กดสองครั้งด้วยกุญแจเดิม ต้องได้ใบเดิม ไม่ใช่ใบใหม่');
+var again58 = api58.issueBill({ docs: [A58, B58], cust: 'บริษัท ก จำกัด',
+  by: 'AEY', clientKey: 'bl-58-4' });
+eq('ได้เลขเดิม', again58.no, made58d.no);
+eq('และบอกว่าเป็นการกดซ้ำ', again58.repeat, true);
+
+console.log('\n   พิมพ์ซ้ำใบวางบิลได้จากภาพถ่าย ไม่ต้องพึ่งออเดอร์');
+/* ใบวางบิลไม่ผูกกับออเดอร์ใบใดใบหนึ่ง ถ้าพิมพ์ซ้ำต้องไปหาออเดอร์ จะพิมพ์ไม่ได้ตลอดกาล */
+var rp58 = api58.getDoc(made58d.no);
+eq('ได้ใบเดิมเป๊ะจากภาพถ่าย', rp58.exact, true);
+eq('เนื้อในเป็นรายการเอกสารสองบรรทัด', rp58.doc.lines.length, 2);
+eq('ชนิดยังเป็นใบวางบิล', rp58.doc.type, 'bill');
+eq('ยอดรวมเท่าตอนออกใบ', rp58.doc.total, made58d.doc.total);
+truthy2('บรรทัดมีวันครบกำหนดติดมาด้วย', !!rp58.doc.lines[0].due);
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับ');
+var over58 = [];
+for (var nm58 in fx58.sheets) over58 = over58.concat(fx58.sheets[nm58].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over58, []);
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

@@ -675,6 +675,214 @@ function issueDoc(payload) {
   }
 }
 
+
+/* ============================================================= ใบวางบิล
+
+   ต่างจากเอกสารอีกห้าชนิดตรงที่ใบเดียวรวมหลายบิล จึงมีเส้นทางของตัวเอง
+   ไม่ผ่าน issueDoc เพราะ issueDoc ผูกกับออเดอร์ใบเดียวตั้งแต่ต้นทาง
+
+   เรื่องที่พังได้แพงที่สุดของงานนี้คือ "วางบิลใบเดิมซ้ำสองรอบ" — ลูกค้าจ่ายซ้ำ
+   หรือไม่ก็เสียเวลาทั้งสองฝ่ายมานั่งกระทบยอดกัน ระบบจึงต้องรู้เองว่าใบไหนวางไปแล้ว
+   ไม่ใช่ให้คนจำ (ใบตัวอย่างที่เจ้าของร้านส่งมามีหมายเหตุเขียนมือว่าใบไหนเคยวางแล้ว
+   ซึ่งแปลว่าตอนนี้ใช้ความจำคนล้วน)                                              */
+
+/** ชนิดเอกสารที่เอาไปวางบิลได้ — ใบที่เป็นการเรียกเก็บเงินจริง */
+var BILL_ABLE = ['inv', 'rec'];
+
+/**
+ * เลขเอกสารที่อยู่ในใบวางบิลที่ยังใช้ได้ -> เลขใบวางบิลที่รวมมันไว้
+ * ใบวางบิลที่ถูกยกเลิกไม่นับ ใบในนั้นกลับมาวางบิลใหม่ได้
+ */
+function billedMap_() {
+  var s = sheet_('doc');
+  var last = formulaLimit_('doc');
+  var out = {};
+  if (last < DATA_ROW) return out;
+  var C = SH.doc.IN;
+  var v = s.getRange(DATA_ROW, C.no, last - DATA_ROW + 1, C.sentAt - C.no + 1).getValues();
+  var at = function (col) { return col - C.no; };
+  for (var i = 0; i < v.length; i++) {
+    var no = String(v[i][0] || '').trim();
+    if (!no) continue;
+    if (String(v[i][at(C.type)] || '').trim() !== 'ใบวางบิล') continue;
+    if (String(v[i][at(C.voidWhy)] || '').trim()) continue;
+    var snap = null;
+    try { snap = JSON.parse(String(v[i][at(C.snap)] || '')); } catch (e) { snap = null; }
+    var docs = (snap && snap.docs) || [];
+    for (var j = 0; j < docs.length; j++) {
+      var dn = String(docs[j].no || '').trim();
+      if (dn && !out[dn]) out[dn] = no;
+    }
+  }
+  return out;
+}
+
+/**
+ * ใบที่เอาไปวางบิลได้ของลูกค้ารายหนึ่ง
+ *
+ * ส่งใบที่วางบิลไปแล้วกลับไปด้วย แต่ติดธงไว้ ไม่ได้ซ่อนทิ้ง — คนออกใบต้องเห็นว่า
+ * ใบที่หายไปจากรายการหายไปเพราะอะไร ไม่ใช่หายไปเฉย ๆ แล้วสงสัยว่าระบบลืม
+ */
+function billCandidates(custName) {
+  requireStaff_();
+  var want = String(custName || '').trim();
+  var s = sheet_('doc');
+  var last = formulaLimit_('doc');
+  if (last < DATA_ROW) return jsonSafe_({ rows: [], custs: [] });
+
+  var C = SH.doc.IN;
+  var v = s.getRange(DATA_ROW, C.no, last - DATA_ROW + 1, C.sentAt - C.no + 1).getValues();
+  var at = function (col) { return col - C.no; };
+  var billed = billedMap_();
+  var okTh = {};
+  BILL_ABLE.forEach(function (k) { var t = docType_(k); if (t) okTh[t.th] = 1; });
+
+  var rows = [], seen = {}, custs = [];
+  for (var i = v.length - 1; i >= 0; i--) {
+    var no = String(v[i][0] || '').trim();
+    if (!no) continue;
+    if (!okTh[String(v[i][at(C.type)] || '').trim()]) continue;
+    if (String(v[i][at(C.voidWhy)] || '').trim()) continue;
+
+    var cust = String(v[i][at(C.custName)] || '').trim();
+    if (cust && !seen[cust]) { seen[cust] = 1; custs.push(cust); }
+    if (want && cust !== want) continue;
+
+    rows.push({
+      no: no, type: String(v[i][at(C.type)] || ''),
+      date: isoDate_(v[i][at(C.date)]),
+      orderNo: String(v[i][at(C.orderNo)] || '').trim(),
+      custName: cust,
+      custTaxId: String(v[i][at(C.custTaxId)] || ''),
+      custBranch: String(v[i][at(C.custBranch)] || ''),
+      custAddr: String(v[i][at(C.custAddr)] || ''),
+      custTel: String(v[i][at(C.custTel)] || ''),
+      po: String(v[i][at(C.po)] || ''),
+      terms: String(v[i][at(C.terms)] || ''),
+      base: Number(v[i][at(C.base)] || 0),
+      vat: Number(v[i][at(C.vat)] || 0),
+      total: Number(v[i][at(C.total)] || 0),
+      billedOn: billed[no] || ''
+    });
+  }
+  custs.sort();
+  return jsonSafe_({ rows: rows, custs: custs });
+}
+
+/**
+ * ออกใบวางบิล
+ *
+ * ยอดทุกช่องอ่านจากชีทเอง ไม่รับยอดที่หน้าจอส่งมา — หน้าจออาจค้างข้อมูลเก่า
+ * แล้วใบวางบิลจะเขียนยอดที่ไม่ตรงกับใบที่ลูกค้าถืออยู่ ซึ่งเป็นเรื่องที่แก้ทีหลังยาก
+ */
+function issueBill(payload) {
+  var email = requireStaff_();
+  var p = payload || {};
+  var t = docType_('bill');
+
+  var clientKey = String(p.clientKey || '').trim();
+  if (!clientKey) throw new Error('คำขอไม่มี clientKey — ระบบกันออกใบซ้ำไม่ได้ ไม่ออกให้');
+  var props = PropertiesService.getScriptProperties();
+  var done = props.getProperty('dk_' + clientKey);
+  if (done) return { ok: true, no: done, repeat: true };
+
+  var pick = (p.docs || []).map(function (x) { return String(x || '').trim(); })
+    .filter(function (x) { return x; });
+  if (!pick.length) throw new Error('ยังไม่ได้เลือกว่าจะวางบิลใบไหนบ้าง');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    done = props.getProperty('dk_' + clientKey);
+    if (done) return { ok: true, no: done, repeat: true };
+
+    /* อ่านสด ๆ ใต้ lock — ระหว่างที่คนกำลังติ๊กเลือกอยู่ อีกคนอาจวางบิลใบเดียวกันไปแล้ว */
+    var pool = billCandidates('');
+    var byNo = {};
+    pool.rows.forEach(function (r) { byNo[r.no] = r; });
+
+    var chosen = [], missing = [], dup = [], custs = {};
+    pick.forEach(function (no) {
+      var r = byNo[no];
+      if (!r) { missing.push(no); return; }
+      if (r.billedOn) { dup.push(no + ' (อยู่ในใบ ' + r.billedOn + ' แล้ว)'); return; }
+      chosen.push(r);
+      custs[r.custName] = 1;
+    });
+    if (missing.length) {
+      throw new Error('ไม่พบใบพวกนี้ในทะเบียนเอกสาร หรือถูกยกเลิกไปแล้ว: ' + missing.join(' · '));
+    }
+    if (dup.length) {
+      throw new Error('ใบพวกนี้ถูกวางบิลไปแล้ว วางซ้ำไม่ได้: ' + dup.join(' · ') +
+        ' — ถ้าใบวางบิลเดิมใช้ไม่ได้ ให้ยกเลิกใบเดิมก่อน แล้วค่อยวางใหม่');
+    }
+    /* ใบวางบิลใบเดียวต้องเป็นของลูกค้ารายเดียว ไม่งั้นลูกค้าคนหนึ่งจะเห็นยอดของอีกคน */
+    var names = Object.keys(custs);
+    if (names.length > 1) {
+      throw new Error('เลือกใบของลูกค้าหลายรายมาปนกัน (' + names.join(' · ') +
+        ') — ใบวางบิลหนึ่งใบเป็นของลูกค้ารายเดียวเท่านั้น');
+    }
+
+    if (chosen.length > BILL_MAX_LINES) {
+      throw new Error('เลือกมา ' + chosen.length + ' ใบ แต่ใบวางบิลหนึ่งแผ่นพิมพ์ได้ ' +
+        BILL_MAX_LINES + ' บรรทัด — ให้แยกเป็นสองใบ ' +
+        'ระบบไม่ออกใบที่พิมพ์รายการไม่ครบ เพราะลูกค้าจะตรวจยอดไม่ได้');
+    }
+
+    /* เรียงตามวันที่ของใบ เก่าอยู่บน เหมือนใบจริงที่ร้านใช้ */
+    chosen.sort(function (a, b) { return String(a.date) < String(b.date) ? -1 : 1; });
+
+    var cfg = appCfg_();
+    var when = parseDate_(p.date) || new Date();
+    var terms = String(p.terms || chosen[0].terms || 'เครดิต 30 วัน');
+    var d = buildBill_(chosen, { terms: terms, creditDays: cfg.creditDays });
+
+    var used = readDocNos_();
+    var no = billNo_(cfg.docPrefix.bill || 'BL', when, used.nos);
+
+    var row = nextRow_('doc', SH.doc.IN.no);
+    if (!row) throw new Error('ชีท เอกสาร เต็มแล้ว — สั่ง setup() อีกครั้งเพื่อขยายแถว');
+
+    var head = chosen[0];
+    var snap = '';
+    try {
+      snap = JSON.stringify({
+        v: 1, no: no, type: 'bill', date: isoDate_(when), terms: terms,
+        creditDays: d.creditDays, contact: String(p.contact || ''),
+        contactTel: String(p.contactTel || ''), note: String(p.note || ''),
+        base: d.base, vat: d.vat, total: d.total, totalText: d.totalText,
+        cust: {
+          name: head.custName, taxId: head.custTaxId, branch: head.custBranch,
+          addr: head.custAddr, tel: head.custTel
+        },
+        docs: d.lines.map(function (l) {
+          return { no: l.no, date: isoDate_(l.date), po: l.po,
+                   due: isoDate_(l.due), base: l.base, vat: l.vat, total: l.total };
+        })
+      });
+    } catch (e) {
+      Logger.log('เก็บภาพถ่ายใบวางบิลไม่ได้: ' + e.message);
+    }
+
+    writeRow_('doc', row, {
+      no: no, type: t.th, date: when, orderNo: '',
+      custName: head.custName, custTaxId: head.custTaxId, custBranch: head.custBranch,
+      custAddr: head.custAddr, custTel: head.custTel,
+      terms: terms, base: d.base, vat: d.vat, total: d.total,
+      staff: String(p.by || '').trim().slice(0, 40) || email,
+      note: String(p.note || ''), snap: snap
+    });
+    SpreadsheetApp.flush();
+    props.setProperty('dk_' + clientKey, no);
+    writeLog_(email, 'ออกใบวางบิล', SH.doc.name, no, t.th, '', d.total,
+      'รวม ' + d.count + ' ใบ: ' + chosen.map(function (r) { return r.no; }).join(' '));
+
+    return jsonSafe_({ ok: true, no: no, doc: d, row: row, cust: head.custName });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /** แถวของเอกสารในทะเบียน — 0 ถ้าไม่มี */
 function docRow_(no) {
   var s = sheet_('doc');
@@ -1191,6 +1399,24 @@ function getDoc(no) {
     if (raw) {
       var snap = null;
       try { snap = JSON.parse(raw) } catch (e) { snap = null }
+      /* ใบวางบิลเก็บ "รายการเอกสาร" ไม่ใช่ "รายการสินค้า" จึงต้องแปลงคนละทาง
+         ถ้าปล่อยให้ตกไปทางเดิม ระบบจะไปหาออเดอร์ที่ใบวางบิลไม่เคยผูกไว้ แล้วบอกว่าพิมพ์ซ้ำไม่ได้ */
+      if (snap && snap.type === 'bill' && snap.docs) {
+        m.contact = String(snap.contact || '');
+        m.contactTel = String(snap.contactTel || '');
+        m.terms = m.terms || String(snap.terms || '');
+        var bl = snap.docs.map(function (x, i) {
+          return { i: i + 1, no: String(x.no || ''), date: x.date, po: String(x.po || ''),
+                   due: x.due, base: Number(x.base || 0), vat: Number(x.vat || 0),
+                   total: Number(x.total || 0) };
+        });
+        return jsonSafe_({ ok: true, exact: true, meta: m, saved: saved, doc: {
+          type: 'bill', lines: bl, count: bl.length,
+          base: Number(snap.base || 0), vat: Number(snap.vat || 0),
+          vatRate: 0, total: Number(snap.total || 0),
+          totalText: String(snap.totalText || '')
+        } });
+      }
       if (snap && snap.lines) {
         if (snap.validTo) m.validTo = snap.validTo;
         if (snap.form) m.form = snap.form;

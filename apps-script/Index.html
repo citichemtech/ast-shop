@@ -768,14 +768,42 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
         </ul>
       </div></details>
 
-      <details><summary>5. ส่งบัญชี (ปุ่ม 🧾 ที่แถวออเดอร์)</summary><div class="bd">
+      <details><summary>5. ใบวางบิล — รวมหลายบิลของลูกค้ารายเดียว</summary><div class="bd">
+        <b>ใบวางบิลไม่เหมือนเอกสารชนิดอื่น</b> — ชนิดอื่นคือ 1 ใบต่อ 1 ออเดอร์
+        แต่ใบวางบิลคือ 1 ใบรวมหลายบิล จึงไม่ได้อยู่ในปุ่ม 📄 ของแถวออเดอร์
+        <ol>
+          <li>ไปแท็บ <b>ใบเสนอราคา</b> → แถบ <b>แฟ้มเอกสาร</b></li>
+          <li>กด <b>＋ ออกใบวางบิล</b></li>
+          <li>เลือกลูกค้า → ติ๊กใบที่จะวางบิล (หรือกด <b>ติ๊กทั้งหมด</b>) → ยอดรวมขึ้นให้ดูทันที</li>
+          <li>ใส่วันที่วางบิล · ผู้ติดต่อ · เงื่อนไขชำระเงิน แล้วกด <b>ออกใบวางบิล</b></li>
+          <li>ระบบวาดกระดาษให้เลย พิมพ์หรือบันทึกรูปส่งลูกค้าได้ทันที</li>
+        </ol>
+        <ul>
+          <li>รวมได้เฉพาะ <b>ใบเสร็จ/ใบกำกับภาษี</b> กับ <b>ใบแจ้งหนี้</b>
+              ที่ยังไม่ถูกยกเลิก — ใบเสนอราคากับบิลเงินสดไม่ใช่การเรียกเก็บเงิน</li>
+          <li><b>เลขใบเป็นคนละแบบกับ ONIV</b> — เป็น <b>BL260822-001</b>
+              (วันที่ + ลำดับในวันนั้น) ตามที่ร้านใช้อยู่ ใบวางบิลไม่ใช่เอกสารภาษี
+              เลขจึงไม่ต้องเรียงต่อกันไม่ขาด</li>
+          <li>ช่อง <b>ครบกำหนด</b> ของแต่ละบรรทัดคิดจากวันที่ในใบนั้นบวกเครดิต —
+              พิมพ์ "เครดิต 60 วัน" ก็คิดให้ 60 วัน</li>
+          <li>หนึ่งใบพิมพ์ได้ <b>14 บรรทัด</b> เกินกว่านั้นระบบไม่ยอมออกใบ ให้แยกเป็นสองใบ
+              — ใบที่โชว์ไม่ครบแต่ยอดรวมเป็นของทั้งหมด คือใบที่ลูกค้าตรวจไม่ได้</li>
+        </ul>
+        <div class="stop"><b>ใบเดิมวางบิลซ้ำไม่ได้</b> ระบบจำเองว่าใบไหนอยู่ในใบวางบิลใบไหนแล้ว
+          และโชว์ให้เห็นในรายการ (ไม่ได้ซ่อนทิ้ง) — ถ้าใบวางบิลเดิมใช้ไม่ได้
+          ให้ <b>ยกเลิกใบวางบิลใบนั้นก่อน</b> แล้วใบข้างในจะกลับมาเลือกได้เอง</div>
+        <div class="warn">ใบวางบิลหนึ่งใบเป็นของ<b>ลูกค้ารายเดียว</b>เท่านั้น
+          เลือกใบของหลายรายมาปนกันระบบจะไม่ยอมออกให้ — ไม่งั้นลูกค้าคนหนึ่งจะเห็นยอดของอีกคน</div>
+      </div></details>
+
+      <details><summary>6. ส่งบัญชี (ปุ่ม 🧾 ที่แถวออเดอร์)</summary><div class="bd">
         ติ๊กว่าจะส่งใบไหน แล้วกด <b>ส่งบัญชี</b> — ไฟล์จะไปอยู่ในโฟลเดอร์ไดรฟ์
         <b>AST_ส่งบัญชี</b> แยกตามเดือน บัญชีเปิดดูเองได้ตลอด ไม่ต้องรออีเมล<br>
         สถานะบัญชีแยกจากสถานะออเดอร์ ของส่งถึงลูกค้าแล้วแต่ยังไม่ส่งบัญชีก็เห็นได้<br>
         ยังไม่มีเอกสารจะส่ง ให้ตั้งสถานะเป็น <b>รอเอกสาร</b> ไว้ก่อน
       </div></details>
 
-      <details><summary>6. นำเข้าออเดอร์ Shopee</summary><div class="bd">
+      <details><summary>7. นำเข้าออเดอร์ Shopee</summary><div class="bd">
         <ol>
           <li>Seller Centre → คำสั่งซื้อของฉัน → <b>ส่งออก</b> แล้วเปิดไฟล์ด้วย Excel</li>
           <li><b>Ctrl+A</b> แล้ว <b>Ctrl+C</b> (ต้องคลุมแถวหัวตารางมาด้วย)</li>
@@ -790,7 +818,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
         “เลขอ้างอิง SKU” ของสินค้านั้นใน Shopee ทำครั้งเดียว ใช้ได้ตลอดไป
       </div></details>
 
-      <details><summary>7. ลูกค้าคืนของ / ของตีกลับ (ปุ่ม ↩️ ที่แถวออเดอร์)</summary><div class="bd">
+      <details><summary>8. ลูกค้าคืนของ / ของตีกลับ (ปุ่ม ↩️ ที่แถวออเดอร์)</summary><div class="bd">
         <div class="warn"><b>ยกเลิก กับ ตีกลับ ไม่เหมือนกัน</b><br>
           <b>✖ ยกเลิก</b> = ยังไม่ได้ส่ง ลูกค้าเปลี่ยนใจก่อนแพ็ค<br>
           <b>↩️ ตีกลับ</b> = ส่งไปแล้วแต่ของเดินทางกลับมา (ที่อยู่ผิด · ไม่รับสาย ·
@@ -816,7 +844,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
           แล้วเอาไปขายให้ลูกค้าคนต่อไปทั้งที่ของยังอยู่บนรถ</div>
       </div></details>
 
-      <details><summary>8. ใบเสนอราคา → ลูกค้าตกลงสั่ง</summary><div class="bd">
+      <details><summary>9. ใบเสนอราคา → ลูกค้าตกลงสั่ง</summary><div class="bd">
         <ol>
           <li>แท็บ <b>ใบเสนอราคา</b> → กรอกลูกค้ากับรายการ → <b>ออกใบเสนอราคา</b>
             (ขั้นนี้ <b>สต๊อกยังไม่ถูกตัด</b> เพราะยังไม่ใช่ออเดอร์)</li>
@@ -833,7 +861,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
           ถ้าต้องเก็บเท่าที่เสนอไป ให้ปรับค่าจัดส่งหรือส่วนลดก่อนกดบันทึก</div>
       </div></details>
 
-      <details><summary>9. ปิดยอดวัน (แท็บ ปิดยอดวัน)</summary><div class="bd">
+      <details><summary>10. ปิดยอดวัน (แท็บ ปิดยอดวัน)</summary><div class="bd">
         ตอบคำถามเดียวคือ <b>วันนั้นขายไปเท่าไร</b> — กด ◀ ▶ เดินทีละวัน
         หรือแตะช่องวันที่เพื่อเลือกวันย้อนหลังก็ได้
         <ul>
@@ -847,7 +875,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
         ต่างจากแท็บ <b>สรุปยอด</b> ที่ดูภาพรวมเป็นช่วง (7 วัน / เดือนนี้) จากใบล่าสุดที่โหลดมา
       </div></details>
 
-      <details><summary>10. เวลาเจอปัญหา</summary><div class="bd">
+      <details><summary>11. เวลาเจอปัญหา</summary><div class="bd">
         <ul>
           <li><b>“ล็อตมีของไม่พอ”</b> — ไปแท็บ รับเข้าสินค้า ลงล็อตที่เพิ่งซื้อเข้ามาก่อน</li>
           <li><b>“ช่องสูตรเสียในชีท”</b> ขึ้นแดงที่แถวออเดอร์ — เปิด Apps Script
@@ -862,7 +890,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
         </ul>
       </div></details>
 
-      <details><summary>11. ลูกค้าประจำ และการคีย์ออเดอร์ซ้ำ</summary><div class="bd">
+      <details><summary>12. ลูกค้าประจำ และการคีย์ออเดอร์ซ้ำ</summary><div class="bd">
         <ol>
           <li>แท็บ <b>ออเดอร์ทั้งหมด</b> → ปุ่ม <b>👥 ลูกค้าทั้งหมด</b></li>
           <li>เรียงได้สามแบบ — <b>ซื้อล่าสุด</b> · <b>ยอดสูงสุด</b> · <b>ค้างชำระ</b>
@@ -883,7 +911,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
         </ul>
       </div></details>
 
-      <details><summary>12. แฟ้มเอกสาร &amp; สรุปรายเดือน</summary><div class="bd">
+      <details><summary>13. แฟ้มเอกสาร &amp; สรุปรายเดือน</summary><div class="bd">
         <ol>
           <li>แท็บ <b>ใบเสนอราคา</b> → ปุ่ม <b>📂 แฟ้มเอกสาร &amp; สรุปรายเดือน</b></li>
           <li>แท็บ <b>เอกสารที่ออกแล้ว</b> — แยกเป็น <b>สี่แฟ้มตามชนิดใบ</b>
@@ -940,7 +968,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
         </ul>
       </div></details>
 
-      <details><summary>13. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
+      <details><summary>14. กฎที่ห้ามลืม เวลาแก้ในชีทเอง</summary><div class="bd">
         <div class="stop"><b>ลบสินค้าออกจากฐานสินค้า ให้ลบ “ค่าในช่อง” ไม่ใช่ “ลบทั้งแถว”</b><br>
           ลบทั้งแถวทีไร สูตรของชีทอื่นที่ชี้มาจะพังเป็น #REF! ทั้งคอลัมน์ทุกที
           (เคยพังไป 38 แถว)</div>
@@ -976,6 +1004,8 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
     <div class="card" id="fl-doc-card">
       <input id="fl-q" placeholder="ค้นหา — เลขที่เอกสาร · ชื่อลูกค้า · เลขออเดอร์" autocomplete="off">
       <div class="hint">พิมพ์ค้นหา = หาทุกแฟ้มพร้อมกัน (ยังแยกหัวข้อตามชนิดใบให้)</div>
+      <button class="btn ghost" id="fl-bill" style="margin-top:10px">＋ ออกใบวางบิล
+        (รวมหลายบิลของลูกค้ารายเดียว)</button>
       <div id="fl-docs" style="margin-top:10px"><div class="load">กำลังโหลด…</div></div>
     </div>
 

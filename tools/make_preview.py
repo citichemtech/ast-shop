@@ -742,6 +742,87 @@ window.google = { script: { run: (function(){
         return { ok:true, no:f.no, type:f.type, orderNo:f.orderNo, voidWhy:f.voidWhy };
       });
     },
+    /* ---------------- ใบวางบิล ----------------
+       รวมได้เฉพาะใบเสร็จ/ใบกำกับภาษี กับใบแจ้งหนี้ ที่ยังไม่ถูกยกเลิกและยังไม่ถูกวางบิล
+       ล้อกติกาฝั่งชีทตัวจริง (billCandidates / issueBill ใน Api.gs) */
+    billCandidates: function(cust){
+      reply(function(){
+        var want = String(cust || "");
+        var billed = {};
+        MOCK_DOCS.forEach(function(d){
+          if(d.type !== "ใบวางบิล" || d.voidWhy) return;
+          (d.bill || []).forEach(function(x){ if(!billed[x.no]) billed[x.no] = d.no });
+        });
+        var rows = [], seen = {}, custs = [];
+        MOCK_DOCS.slice().reverse().forEach(function(d){
+          if(d.type !== "ใบเสร็จรับเงิน" && d.type !== "ใบแจ้งหนี้") return;
+          if(d.voidWhy) return;
+          var cn = String((d.cust && d.cust.name) || "");
+          if(cn && !seen[cn]){ seen[cn] = 1; custs.push(cn) }
+          if(want && cn !== want) return;
+          rows.push({ no:d.no, type:d.type, date:d.date, orderNo:d.orderNo||"", custName:cn,
+                      custTaxId:(d.cust&&d.cust.taxId)||"", custBranch:(d.cust&&d.cust.branch)||"",
+                      custAddr:(d.cust&&d.cust.addr)||"", custTel:(d.cust&&d.cust.tel)||"",
+                      po:d.po||"", terms:d.terms||"",
+                      base:d.doc.base, vat:d.doc.vat, total:d.doc.total,
+                      billedOn: billed[d.no] || "" });
+        });
+        custs.sort();
+        return { rows:rows, custs:custs };
+      });
+    },
+    issueBill: function(p){
+      window.SENT.push(p);
+      reply(function(){
+        p = p || {};
+        var pick = p.docs || [];
+        if(!pick.length) throw new Error("ยังไม่ได้เลือกว่าจะวางบิลใบไหนบ้าง");
+        var billed = {};
+        MOCK_DOCS.forEach(function(d){
+          if(d.type !== "ใบวางบิล" || d.voidWhy) return;
+          (d.bill || []).forEach(function(x){ if(!billed[x.no]) billed[x.no] = d.no });
+        });
+        var chosen = [], custs = {};
+        pick.forEach(function(no){
+          var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+          if(!f) throw new Error("ไม่พบใบพวกนี้ในทะเบียนเอกสาร หรือถูกยกเลิกไปแล้ว: " + no);
+          if(billed[no]) throw new Error("ใบพวกนี้ถูกวางบิลไปแล้ว วางซ้ำไม่ได้: " + no);
+          chosen.push(f); custs[String((f.cust && f.cust.name) || "")] = 1;
+        });
+        if(Object.keys(custs).length > 1){
+          throw new Error("เลือกใบของลูกค้าหลายรายมาปนกัน — ใบวางบิลหนึ่งใบเป็นของลูกค้ารายเดียวเท่านั้น");
+        }
+        /* เรียงเก่าอยู่บนเหมือนฝั่งชีทตัวจริง ไม่งั้นพรีวิวจะสอนเราว่าใบเรียงกลับด้าน */
+        chosen.sort(function(a, b){ return String(a.date) < String(b.date) ? -1 : 1 });
+        var days = (/(\\d{1,3})\\s*วัน/.exec(String(p.terms || "")) || [0, 30])[1];
+        var base = 0, vat = 0, total = 0;
+        var lines = chosen.map(function(f, i){
+          base += f.doc.base; vat += f.doc.vat; total += f.doc.total;
+          var dt = new Date(f.date);
+          var due = new Date(dt.getTime()); due.setDate(due.getDate() + Number(days));
+          function iso(x){ return x.getFullYear() + "-" + ("0"+(x.getMonth()+1)).slice(-2)
+                                  + "-" + ("0"+x.getDate()).slice(-2) }
+          return { i:i+1, no:f.no, date:f.date, po:f.po||"", due:iso(due),
+                   base:f.doc.base, vat:f.doc.vat, total:f.doc.total };
+        });
+        base = Math.round(base*100)/100; vat = Math.round(vat*100)/100;
+        total = Math.round(total*100)/100;
+        var d0 = p.date ? new Date(p.date) : new Date();
+        function p2(n){ return n<10 ? "0"+n : ""+n }
+        var stem = "BL" + String(d0.getFullYear()).slice(-2) + p2(d0.getMonth()+1) + p2(d0.getDate()) + "-";
+        var seq = MOCK_DOCS.filter(function(d){ return String(d.no).indexOf(stem) === 0 }).length + 1;
+        var no = stem + ("00" + seq).slice(-3);
+        var head = chosen[0];
+        MOCK_DOCS.push({ no:no, type:"ใบวางบิล", date:p.date || "", orderNo:"",
+          cust:head.cust, po:"", terms:p.terms||"", note:p.note||"", voidWhy:"",
+          contact:p.contact||"", contactTel:p.contactTel||"", bill:lines,
+          doc:{ type:"bill", lines:lines, count:lines.length, base:base, vat:vat,
+                vatRate:0, total:total, totalText:"(จำนวนเงินตัวอักษร)" } });
+        return { ok:true, no:no, cust:head.cust.name,
+                 doc:{ type:"bill", lines:lines, count:lines.length, base:base, vat:vat,
+                       vatRate:0, total:total, totalText:"(จำนวนเงินตัวอักษร)" } };
+      });
+    },
     getDoc: function(no){
       reply(function(){
         var f = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
@@ -749,6 +830,7 @@ window.google = { script: { run: (function(){
         return { ok:true, exact:true,
                  meta:{ no:f.no, date:f.date, orderNo:f.orderNo, po:f.po||"", terms:f.terms||"",
                         note:f.note||"", voidWhy:f.voidWhy||"", cust:f.cust, form:f.form||[],
+                        contact:f.contact||"", contactTel:f.contactTel||"",
                         vatMode:f.vatMode||"", novat:!!f.novat },
                  saved:{ base:f.doc.base, vat:f.doc.vat, total:f.doc.total },
                  doc: JSON.parse(JSON.stringify(f.doc)) };
