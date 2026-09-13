@@ -2086,6 +2086,9 @@ function setupItemLotColumn_(ss) {
 
 /** ใส่สูตรเดียวกันทั้งคอลัมน์ ตั้งแต่แถว 6 ลงไป n แถว (อ้างอิงสัมพัทธ์ขยับตามแถวเอง) */
 function fillFormula_(s, col, n, formula) {
+  /* เขียนสูตรเพิ่ม = คำตอบเก่าของ "สูตรมีถึงแถวไหน" ใช้ไม่ได้แล้ว
+     ล้างทิ้งตรงนี้ที่เดียว เพราะนี่คือที่เดียวในระบบที่เขียนสูตรลงชีท */
+  LIMIT_CACHE_ = {};
   s.getRange(DATA_ROW, col).setFormula(formula);
   if (n > 1) {
     s.getRange(DATA_ROW, col).copyTo(s.getRange(DATA_ROW + 1, col, n - 1, 1));

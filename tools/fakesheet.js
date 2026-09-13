@@ -67,7 +67,13 @@ Sheet.prototype.insertColumnsAfter = function (after, n) { this.cols += n; retur
 function Range(sheet, r, c, nr, nc) {
   this.s = sheet; this.r = r; this.c = c; this.nr = nr; this.nc = nc;
 }
+/* นับช่องที่ถูกอ่านออกจากชีท — ของจริงคิดค่าตรงนี้เป็นเวลารอของคนกดปุ่ม
+   ทุกช่องต้องเดินทางข้ามเน็ตจาก Google กลับมา ข้อสอบเรื่องความเร็วจึงวัดตัวนี้
+   ไม่ใช่จับเวลา ซึ่งบนเครื่องทดสอบเร็วจนไม่เห็นความต่าง */
+var CELLS_READ = { n: 0 };
+
 Range.prototype.getValues = function () {
+  CELLS_READ.n += this.nr * this.nc;
   var out = [];
   for (var i = 0; i < this.nr; i++) {
     var row = [];
@@ -91,6 +97,7 @@ Range.prototype.getA1Notation = function () {
 Range.prototype.getFormula = function () { return this.getFormulas()[0][0]; };
 Range.prototype.getDisplayValue = function () { return this.getDisplayValues()[0][0]; };
 Range.prototype.getFormulas = function () {
+  CELLS_READ.n += this.nr * this.nc;
   var out = [];
   for (var i = 0; i < this.nr; i++) {
     var row = [];
@@ -595,4 +602,5 @@ function load(fixture, opts) {
   return ctx;
 }
 
-module.exports = { build: build, load: load, DATA_ROW: DATA_ROW, HEAD_ROW: HEAD_ROW };
+module.exports = { build: build, load: load, DATA_ROW: DATA_ROW, HEAD_ROW: HEAD_ROW,
+  CELLS_READ: CELLS_READ };

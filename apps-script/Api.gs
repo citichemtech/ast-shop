@@ -348,7 +348,9 @@ function readOrders_(opts) {
   var match = typeof opts.match === 'function' ? opts.match : null;
 
   var hs = sheet_('head');
-  var hLast = formulaLimit_('head');
+  /* อ่านถึงแถวที่มีออเดอร์จริง ไม่ใช่ถึงแถวสุดท้ายที่มีสูตร (สามพันแถวเสมอ)
+     นี่คือการอ่านที่หนักที่สุดในระบบ และเกิดทุกครั้งที่เปิดหน้ารายการออเดอร์ */
+  var hLast = dataLast_('head');
   var heads = [];
   if (hLast >= DATA_ROW) {
     /* อ่านให้ถึงคอลัมน์ X (สถานะบัญชี) แต่ไม่เกินขอบชีทจริง —
@@ -421,7 +423,7 @@ function readOrders_(opts) {
   for (var h = 0; h < heads.length; h++) want[heads[h].no] = heads[h];
 
   var is = sheet_('item');
-  var iLast = formulaLimit_('item');
+  var iLast = dataLast_('item');
   if (iLast >= DATA_ROW) {
     var iv = is.getRange(DATA_ROW, 1, iLast - DATA_ROW + 1, SH.item.lot).getValues();
     for (var j = 0; j < iv.length; j++) {

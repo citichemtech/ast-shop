@@ -508,7 +508,18 @@ function sheetIfAny_(key) {
  * เขียนเกินแถวนี้ไปแล้วออเดอร์จะไม่มียอดรวม ไม่มีต้นทุน ไม่มีกำไร — และไม่มีอะไรฟ้อง
  * จึงต้องรู้ขอบเขตไว้ก่อนเสมอ แล้วปฏิเสธตรง ๆ ตอนชีทเต็ม ดีกว่าปล่อยให้ข้อมูลเงียบ ๆ ผิด
  */
+/* จำคำตอบไว้ตลอดการรันหนึ่งครั้ง — ไม่ใช่แคชข้ามคน ข้ามครั้ง
+
+   การถามว่า "สูตรมีถึงแถวไหน" ต้องอ่านทั้งคอลัมน์สามพันแถวจาก Google ทุกครั้ง
+   และคำถามนี้ถูกถามซ้ำหลายรอบในการกดปุ่มครั้งเดียว (อ่านสลิป อ่านลิงก์ อ่านเอกสาร
+   หาแถวว่าง) รอบละหนึ่งวินาทีกว่า ๆ รวมกันคือหน้าจอค้างหลายวินาทีต่อการกดหนึ่งครั้ง
+
+   ภายในการรันครั้งเดียว จำนวนแถวที่มีสูตรเปลี่ยนได้ทางเดียวคือมีคนเขียนสูตรเพิ่ม
+   ซึ่งเกิดที่ fillFormula_ ที่เดียว — ตรงนั้นจึงล้างของที่จำไว้ทิ้ง */
+var LIMIT_CACHE_ = {};
+
 function formulaLimit_(key) {
+  if (Object.prototype.hasOwnProperty.call(LIMIT_CACHE_, key)) return LIMIT_CACHE_[key];
   var cfg = SH[key];
   var s = sheet_(key);
   var col = cfg.probe;
@@ -517,6 +528,7 @@ function formulaLimit_(key) {
   var f = s.getRange(DATA_ROW, col, n, 1).getFormulas();
   var last = DATA_ROW - 1;
   for (var i = 0; i < f.length; i++) if (f[i][0]) last = DATA_ROW + i;
+  LIMIT_CACHE_[key] = last;
   return last;
 }
 
@@ -627,11 +639,47 @@ function clearRow_(key, row) {
 }
 
 /** อ่านทั้งช่วงข้อมูลของชีทเป็น array 2 มิติ (แถว 6 ถึงแถวสุดท้ายที่มีสูตร) */
-function readAll_(key) {
+/**
+ * อ่านทุกแถวที่มีข้อมูลจริงของชีทหนึ่ง
+ *
+ * ของเดิมอ่านถึงแถวสุดท้ายที่มีสูตร ซึ่งคือสามพันแถวเสมอ ต่อให้มีของจริงสิบแถว
+ * ชีทสลิปสามพันแถวคูณสิบสี่คอลัมน์ = สี่หมื่นช่องที่ต้องส่งข้ามเน็ตทุกครั้งที่กด
+ * ยิ่งเพิ่มชีทใหม่ยิ่งช้าเป็นเท่าตัว เพราะทุกชีทจ่ายค่านี้เท่ากันหมด
+ *
+ * เปลี่ยนเป็นอ่านคอลัมน์กุญแจก่อน (คอลัมน์เดียว) เพื่อดูว่าของจริงมีถึงแถวไหน
+ * แล้วค่อยอ่านเต็มแค่ช่วงนั้น ทุกที่ที่วนอ่านผลลัพธ์ข้ามแถวที่กุญแจว่างอยู่แล้ว
+ * ผลลัพธ์จึงเท่าเดิมทุกประการ ต่างแค่ไม่ต้องขนแถวเปล่ามาด้วย
+ */
+/**
+ * แถวสุดท้ายที่มี "ของจริง" อยู่ — ไม่ใช่แถวสุดท้ายที่มีสูตร
+ *
+ * อ่านคอลัมน์กุญแจคอลัมน์เดียว ซึ่งถูกกว่าการลากทั้งตารางสิบกว่าเท่า
+ * แล้วผู้เรียกค่อยอ่านเต็มเฉพาะช่วงที่มีของ
+ */
+function dataLast_(key, keyCol) {
   var s = sheet_(key);
   var limit = formulaLimit_(key);
-  if (limit < DATA_ROW) return [];
-  return s.getRange(DATA_ROW, 1, limit - DATA_ROW + 1, s.getLastColumn()).getValues();
+  if (limit < DATA_ROW) return DATA_ROW - 1;
+  /* คอลัมน์ที่ถือว่าเป็น "กุญแจ" ของแต่ละชีท — เลขออเดอร์ หรือรหัสสินค้า
+     เขียนออกมาให้เห็นชัด ไม่ปล่อยให้ตกไปที่คอลัมน์ 2 โดยบังเอิญ
+     (ชีทหัวบิลใช้คอลัมน์ 1 ไม่ใช่ 2 — เดาผิดคือได้แถวสุดท้ายผิด แล้วออเดอร์หาย) */
+  var IN = SH[key].IN || {};
+  var col = keyCol || IN.no || IN.sku || 2;
+  var keys = s.getRange(DATA_ROW, col, limit - DATA_ROW + 1, 1).getValues();
+  var last = DATA_ROW - 1;
+  for (var i = 0; i < keys.length; i++) {
+    if (String(keys[i][0] === null || keys[i][0] === undefined ? '' : keys[i][0]).trim()) {
+      last = DATA_ROW + i;
+    }
+  }
+  return last;
+}
+
+function readAll_(key) {
+  var last = dataLast_(key);
+  if (last < DATA_ROW) return [];
+  return sheet_(key).getRange(DATA_ROW, 1, last - DATA_ROW + 1, sheet_(key).getLastColumn())
+    .getValues();
 }
 
 /** ค่าตั้งต้นจากชีท ตั้งค่า */

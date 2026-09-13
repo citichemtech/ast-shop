@@ -87,7 +87,7 @@ function maskName_(s) {
 function pubRead_(orderNo) {
   var no = String(orderNo || '').trim();
   var hs = sheet_('head'), IN = SH.head.IN;
-  var hLast = formulaLimit_('head');
+  var hLast = dataLast_('head');
   var hit = null;
   if (hLast >= DATA_ROW) {
     var wide = Math.min(SH.head.width, hs.getMaxColumns());
@@ -116,7 +116,7 @@ function pubRead_(orderNo) {
     items: []
   };
 
-  var is = sheet_('item'), iLast = formulaLimit_('item');
+  var is = sheet_('item'), iLast = dataLast_('item');
   if (iLast >= DATA_ROW) {
     var iv = is.getRange(DATA_ROW, 1, iLast - DATA_ROW + 1, SH.item.lot).getValues();
     for (var j = 0; j < iv.length; j++) {

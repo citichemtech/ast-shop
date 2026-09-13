@@ -3113,8 +3113,17 @@ function payBind(p){
       }], function(res){
         add.disabled = false; add.textContent = "แนบสลิปเข้าออเดอร์นี้";
         $("#py-file").value = "";
-        p.slips = res.slips;
-        $("#py-slips").innerHTML = res.slips.map(slipRowHtml).join("");
+        /* ฝั่งชีทตอบกลับมาว่างเปล่าได้จริง (หมดเวลา / ตอบกลับส่งไม่ครบ)
+           ห้ามอ่าน res.slips ดื้อ ๆ เพราะจะได้ error ภาษาอังกฤษเต็มหน้าจอ
+           ทั้งที่ไฟล์อาจขึ้นชีทไปแล้ว — ต้องบอกให้เปิดใหม่ดู ไม่ใช่ให้แนบซ้ำ */
+        if(!res){
+          $("#py-say").innerHTML = '<div class="warn">ส่งไฟล์ไปแล้วแต่ระบบไม่ได้ตอบกลับ '
+            + 'อาจขึ้นชีทเรียบร้อยแล้วก็ได้<br>ปิดหน้านี้แล้วเปิดใหม่เพื่อดูว่าสลิปขึ้นหรือยัง '
+            + '<b>อย่าเพิ่งแนบซ้ำ</b> จะได้ไม่ได้สลิปสองใบ</div>';
+          return;
+        }
+        p.slips = res.slips || [];
+        $("#py-slips").innerHTML = p.slips.map(slipRowHtml).join("");
         payBind(p);
         $("#py-say").innerHTML = res.warn
           ? '<div class="warn">แนบแล้ว แต่ ' + esc(res.warn) + '</div>'
@@ -3142,10 +3151,11 @@ function paySetSlip(p, fileId, status, btn){
       : "ทำเครื่องหมายว่าไม่ใช่สลิปของใบนี้");
     slipWaitLoad();
     if(paid) loadOrders(true);
-    p.slips = res.slips;
+    /* เหตุผลเดียวกับตอนแนบสลิป — ตอบกลับว่างต้องไม่กลายเป็น error เต็มหน้าจอ */
+    p.slips = (res && res.slips) || [];
     var box = $("#py-slips");
     if(!box) return;                        /* ปิดหน้าต่างไปแล้วระหว่างรอ */
-    box.innerHTML = res.slips.map(slipRowHtml).join("");
+    box.innerHTML = p.slips.map(slipRowHtml).join("");
     payBind(p);                             /* ปุ่มชุดใหม่ต้องผูกใหม่ ไม่งั้นกดไม่ติด */
   }, function(m){
     btn.disabled = false;
