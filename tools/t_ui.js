@@ -3645,6 +3645,31 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal() });
   await page.waitForTimeout(200);
 
+  console.log('\n   ชีทตอบกลับมาว่างเปล่า ต้องบอกเป็นภาษาคน ไม่ใช่ error อังกฤษพาดหัวจอ');
+  /* เจอกับของจริง 13 ก.ย. 69: หน้าจอขึ้น Cannot read properties of null (reading 'net')
+     ซึ่งไม่บอกอะไรเลยว่าต้องทำอะไรต่อ และทำให้คนกดคิดว่าออเดอร์พัง ทั้งที่แค่
+     ยังไม่ได้คำตอบกลับมา ยังไม่มีอะไรถูกเขียนลงชีทจากหน้านั้นด้วยซ้ำ */
+  var nul = await page.evaluate(async function () {
+    /* ล้างกล่อง error ที่ค้างจากข้อสอบข้อก่อน ๆ ก่อน แล้วค่อยยิง null เข้าไป
+       จะได้วัดได้จริงว่า "หน้านี้เอง" ทำให้เกิด error หรือเปล่า */
+    $('#err').classList.remove('on');
+    $('#err').innerHTML = '';
+    openModal('รับเงิน — ทดสอบ', '<div class="hint">กำลังอ่าน…</div>');
+    await new Promise(function (r) { setTimeout(r, 100) });
+    drawPay(null);
+    return ($('#m-body') || {}).innerText || '';
+  });
+  truthy('บอกว่ายังไม่ได้คำตอบจากชีท', nul.indexOf('ยังไม่ได้คำตอบจากชีท') > -1);
+  truthy('บอกว่าให้กดใหม่', nul.indexOf('กดใหม่') > -1);
+  /* คนที่เห็นจอแดงตอนกำลังเก็บเงินลูกค้า อยากรู้ก่อนเลยว่าออเดอร์เสียหายไหม */
+  truthy('และยืนยันว่าออเดอร์ไม่ได้เสียหาย', nul.indexOf('ออเดอร์ไม่ได้เสียหาย') > -1);
+  /* กล่อง error ของแอปโชว์ด้วยคลาส .on ไม่ใช่ style.display — เช็คผิดที่คือผ่านฟรี */
+  eq('ไม่มีกล่อง error โผล่ขึ้นมา', await page.evaluate(function () {
+    return $('#err').classList.contains('on');
+  }), false);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
   /* ---------- 47.5 ลิงก์ให้ลูกค้าจ่ายเอง ---------- */
   console.log('\n47.5 ลิงก์ให้ลูกค้าจ่ายเอง');
   await page.evaluate(function () { openPay((window.ORDERS || [])[0]) });
