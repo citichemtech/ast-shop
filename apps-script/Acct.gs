@@ -159,7 +159,9 @@ function acctRootFolder_() {
     if (it.hasNext()) parent = it.next();
   } catch (e3) { parent = null; }
 
-  var f = parent ? parent.createFolder(ACCT_FOLDER_NAME) : DriveApp.createFolder(ACCT_FOLDER_NAME);
+  var f = driveDo_('สร้างโฟลเดอร์ส่งบัญชี', function () {
+    return parent ? parent.createFolder(ACCT_FOLDER_NAME) : DriveApp.createFolder(ACCT_FOLDER_NAME);
+  });
   props.setProperty(ACCT_FOLDER_PROP, f.getId());
   return f;
 }

@@ -2700,7 +2700,7 @@ function openBill(){
     drawBillPick();
   }, function(m){
     if($("#m-body")) $("#m-body").innerHTML =
-      '<div class="stop">อ่านทะเบียนเอกสารไม่ได้<br>' + esc(m) + '</div>';
+      '<div class="stop">อ่านทะเบียนเอกสารไม่ได้<br>' + escLines(m) + '</div>';
   });
 }
 
@@ -2815,7 +2815,7 @@ function billIssue(){
     toast("ออกใบวางบิล " + res.no + " แล้ว");
   }, function(m){
     b.disabled = false; b.textContent = "ออกใบวางบิล";
-    $("#bl-say").innerHTML = '<div class="stop">' + esc(m) + '</div>';
+    $("#bl-say").innerHTML = '<div class="stop">' + escLines(m) + '</div>';
   });
 }
 
@@ -2896,7 +2896,7 @@ function openPay(o){
   openModal("รับเงิน — " + o.no, '<div class="hint">กำลังอ่านบัญชีและยอด…</div>');
   call("payAsk", [o.no], drawPay, function(m){
     if(!$("#m-body")) return;
-    $("#m-body").innerHTML = '<div class="stop">เปิดหน้ารับเงินไม่ได้<br>' + esc(m) + '</div>';
+    $("#m-body").innerHTML = '<div class="stop">เปิดหน้ารับเงินไม่ได้<br>' + escLines(m) + '</div>';
   });
 }
 
@@ -3046,7 +3046,7 @@ function payBind(p){
         slipWaitLoad();
       }, function(m){
         add.disabled = false; add.textContent = "แนบสลิปเข้าออเดอร์นี้";
-        $("#py-say").innerHTML = '<div class="stop">แนบไม่สำเร็จ<br>' + esc(m) + '</div>';
+        $("#py-say").innerHTML = '<div class="stop">แนบไม่สำเร็จ<br>' + escLines(m) + '</div>';
       });
     };
     r.readAsDataURL(f);
@@ -3188,11 +3188,11 @@ function drawSlipXl(){
         }
       }, function(m){
         b.disabled = false; b.textContent = "โหลดไฟล์ Excel";
-        $("#sx-say").innerHTML = '<div class="stop">' + esc(m) + '</div>';
+        $("#sx-say").innerHTML = '<div class="stop">' + escLines(m) + '</div>';
       });
     };
   }, function(m){
-    if($("#slip-xl")) box.innerHTML = '<div class="stop">อ่านรายการสลิปไม่ได้<br>' + esc(m) + '</div>';
+    if($("#slip-xl")) box.innerHTML = '<div class="stop">อ่านรายการสลิปไม่ได้<br>' + escLines(m) + '</div>';
   });
 }
 

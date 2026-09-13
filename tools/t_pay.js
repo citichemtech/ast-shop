@@ -425,6 +425,51 @@ var s9b = start(FILL);
 throws('ยังไม่มีสลิปเลยสักใบในระบบ', function () { s9b.ctx.exportSlips(''); }, 'ยังไม่มีสลิป');
 eq('และรายการเดือนต้องว่าง ไม่ใช่เดาเดือนนี้ให้', s9b.ctx.slipMonths().months, []);
 
+/* ==================================== 10. ยังไม่ได้ขออนุญาตใช้ไดรฟ์ */
+console.log('\n10. ยังไม่ได้ขออนุญาตใช้ไดรฟ์ ต้องบอกวิธีแก้ ไม่ใช่โยน Exception ดิบ');
+/* เจอกับของจริง 13 ก.ย. 69: เจ้าของร้านกดแนบสลิปแล้วได้ข้อความอังกฤษของ Google
+   ซึ่งบอกแค่ว่าสิทธิ์ไม่พอ ไม่ได้บอกเลยว่าต้องไปกดอะไรที่ไหนถึงจะใช้ได้
+   คนที่อ่านข้อความนี้คือคนขายของ ไม่ใช่คนเขียนโปรแกรม */
+var s10 = (function () {
+  var fx = FS.build();
+  var ctx = FS.load(fx, {});
+  ctx.setup();
+  var app = fx.sheets['ตั้งค่าแอป'];
+  for (var r = DATA_ROW; r <= app.getMaxRows(); r++) {
+    var k = String(app.cell(r, 1).v || '').trim();
+    if (Object.prototype.hasOwnProperty.call(FILL, k)) app.cell(r, 2).v = FILL[k];
+  }
+  var no = ctx.createOrder({
+    clientKey: 'deny-1', date: '2026-09-12', channel: 'เพจ Facebook',
+    cust: 'คุณทดสอบ ชำระเงิน', tel: '0812345678', addr: '1/2 ถ.ทดสอบ',
+    carrier: 'Flash Express', vat: true, discount: 0, ship: 50, status: 'รอชำระ',
+    items: [{ sku: 'SKU-141', qty: 2, price: 129 }]
+  }).no;
+  /* ปิดสิทธิ์ไดรฟ์ทีหลัง เพื่อให้ตอนคีย์ออเดอร์ยังทำงานได้ตามปกติ
+     ตรงกับของจริงที่พังเฉพาะตอนแตะไฟล์ ไม่ได้พังทั้งระบบ */
+  fx.__denyDrive();
+  return { fx: fx, ctx: ctx, no: no };
+})();
+var deny10 = throws('แนบสลิปตอนยังไม่ได้อนุญาต',
+  function () { s10.ctx.addSlip(s10.no, { data: PNG1 }); }, 'ไดรฟ์');
+truthy('บอกชื่อฟังก์ชันที่ต้องกด Run', deny10.indexOf('authDrive') > -1);
+truthy('บอกด้วยว่าต้อง Deploy ใหม่หลังอนุญาต', deny10.indexOf('Deploy') > -1);
+truthy('แนบข้อความดิบของ Google ไว้ท้ายสุด ไม่ได้กลืนทิ้ง',
+  deny10.indexOf('googleapis.com/auth/drive') > -1);
+truthy('เป็นขั้นตอนหลายบรรทัด ไม่ใช่ประโยคเดียวยาวพืด', deny10.split('\n').length >= 6);
+/* ไฟล์เขียนไม่ได้ = ห้ามมีแถวสลิปในชีท ไม่งั้นทะเบียนจะบอกว่ามีสลิปใบหนึ่ง
+   ที่เปิดดูไม่ได้ตลอดกาล ซึ่งแย่กว่าไม่มีแถวเลย */
+eq('ไม่มีแถวสลิปค้างในชีท', s10.ctx.listSlips(s10.no).length, 0);
+
+console.log('\n   ฟังก์ชัน authDrive ที่ให้เจ้าของร้านกด ต้องตอบเป็นภาษาคน');
+truthy('ตอนสิทธิ์ยังไม่พอ บอกวิธีแก้', s10.ctx.authDrive().indexOf('authDrive') > -1);
+var okDrive = (function () {
+  var fx = FS.build(); var ctx = FS.load(fx, {}); ctx.setup();
+  return ctx.authDrive();
+})();
+truthy('ตอนสิทธิ์ครบ บอกว่าเขียนไฟล์ได้จริง', okDrive.indexOf('เขียนไฟล์ลงไดรฟ์ได้จริง') > -1);
+truthy('และบอกขั้นต่อไปว่าต้อง Deploy', okDrive.indexOf('Deploy') > -1);
+
 /* ============================================ 8. ไม่แตะช่องสูตร */
 console.log('\n8. ไม่มีช่องสูตรถูกเขียนทับแม้แต่ช่องเดียว');
 function hurt(fx) {

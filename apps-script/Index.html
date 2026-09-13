@@ -751,6 +751,11 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
           <li>ออเดอร์ที่มีสลิปรออยู่จะขึ้นป้าย <b>สลิปรอตรวจ</b> ทั้งในรายการออเดอร์
               และในหน้าค้างชำระ</li>
         </ul>
+        <div class="stop"><b>แนบแล้วขึ้นว่า “ระบบยังไม่ได้รับอนุญาตให้ใช้ Google ไดรฟ์”</b><br>
+          สลิปเก็บเป็นไฟล์จริงในไดรฟ์ ซึ่ง Google ถือเป็นสิทธิ์คนละใบกับสิทธิ์อ่านเขียนชีท
+          วางโค้ดใหม่ทับได้ แต่ใบอนุญาตไม่ได้ตามมาด้วย แก้ครั้งเดียวจบที่เครื่องคอมพิวเตอร์:
+          เปิด Apps Script → เลือกฟังก์ชัน <b>authDrive</b> → กด <b>Run</b> → อนุญาตให้ครบ
+          → แล้ว <b>Deploy ใหม่</b> อีกครั้ง (หน้าจอจะบอกขั้นตอนนี้ให้อยู่แล้วตอนที่แนบไม่ผ่าน)</div>
 
         <b>ส่งให้บัญชีสิ้นเดือน</b>
         <ol>
@@ -1296,6 +1301,9 @@ function $(s){ return document.querySelector(s) }
 function $$(s){ return [].slice.call(document.querySelectorAll(s)) }
 var baht=function(n){return "฿"+Number(n||0).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2})};
 var esc=function(s){return String(s||"").replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+/* ข้อความจากฝั่งชีทบางอันเป็นขั้นตอนหลายบรรทัด (เช่น วิธีขออนุญาตไดรฟ์)
+   ถ้า esc เฉย ๆ บรรทัดจะติดกันเป็นพืดจนอ่านไม่ออกว่าต้องทำอะไรเป็นข้อ ๆ */
+var escLines=function(s){return esc(s).replace(/\n/g,"<br>")};
 function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("on")},2400)}
 
 /* ฟอนต์เอกสารถูกตั้งเป็น media="print" ไว้ตอนโหลด เพื่อไม่ให้หน้าจอต้องรอไฟล์

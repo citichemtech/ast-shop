@@ -353,6 +353,11 @@ function blob_(data, type, name, opts) {
   return b;
 }
 
+/* ข้อความจริงที่ Google ตอบมาเมื่อโปรเจกต์ยังไม่ได้รับอนุญาตให้ใช้ไดรฟ์
+   คัดมาจากหน้าจอของเจ้าของร้านตอนกดแนบสลิปแล้วไม่ผ่าน */
+var DRIVE_DENIED = 'สิทธิ์ที่ระบุไว้ไม่เพียงพอที่จะเรียกใช้ DriveApp.Folder.createFolder ' +
+  'สิทธิ์ที่จำเป็นคือ https://www.googleapis.com/auth/drive';
+
 function fakeDrive(opts) {
   var files = [], folders = {}, seq = { n: 0 };
 
@@ -363,13 +368,17 @@ function fakeDrive(opts) {
       getId: function () { return id; },
       getName: function () { return name; },
       getUrl: function () { return 'https://drive.google.com/drive/folders/' + id; },
-      createFolder: function (n) { var k = mkFolder(n, f); f._kids.push(k); return k; },
+      createFolder: function (n) {
+        if (opts && opts.driveDenied) throw new Error(DRIVE_DENIED);
+        var k = mkFolder(n, f); f._kids.push(k); return k;
+      },
       getFoldersByName: function (n) {
         var hit = f._kids.filter(function (k) { return k._name === n; });
         var i = 0;
         return { hasNext: function () { return i < hit.length; }, next: function () { return hit[i++]; } };
       },
       createFile: function (b) {
+        if (opts && opts.driveDenied) throw new Error(DRIVE_DENIED);
         if (opts && opts.driveFail && files.length >= opts.driveFail) {
           throw new Error('ไดรฟ์เต็ม (จำลอง)');
         }
@@ -575,6 +584,9 @@ function load(fixture, opts) {
   });
   ctx.__props = props;
   ctx.__drive = drive;
+  /* ปิดสิทธิ์ไดรฟ์กลางคัน — ของจริงก็เป็นแบบนี้ คือคีย์ออเดอร์ได้ตามปกติ
+     แล้วมาพังตอนแตะไฟล์ ไม่ได้พังตั้งแต่เปิดแอป */
+  fixture.__denyDrive = function () { opts.driveDenied = true; };
   return ctx;
 }
 

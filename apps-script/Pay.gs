@@ -613,7 +613,9 @@ function slipRootFolder_() {
     var it = DriveApp.getFileById(SHEET_ID).getParents();
     if (it.hasNext()) parent = it.next();
   } catch (e2) { parent = null; }
-  var f = parent ? parent.createFolder(SLIP_FOLDER_NAME) : DriveApp.createFolder(SLIP_FOLDER_NAME);
+  var f = driveDo_('สร้างโฟลเดอร์เก็บสลิป', function () {
+    return parent ? parent.createFolder(SLIP_FOLDER_NAME) : DriveApp.createFolder(SLIP_FOLDER_NAME);
+  });
   props.setProperty(SLIP_FOLDER_PROP, f.getId());
   return f;
 }
@@ -623,7 +625,8 @@ function slipMonthFolder_(when) {
   var root = slipRootFolder_();
   var name = Utilities.formatDate(when || new Date(), tz_(), 'yyyy-MM');
   var it = root.getFoldersByName(name);
-  return it.hasNext() ? it.next() : root.createFolder(name);
+  if (it.hasNext()) return it.next();
+  return driveDo_('สร้างโฟลเดอร์ของเดือน ' + name, function () { return root.createFolder(name); });
 }
 
 /** สลิปทั้งหมดของออเดอร์ใบหนึ่ง ใหม่อยู่บน */
@@ -700,7 +703,9 @@ function addSlip(orderNo, p) {
   var stamp = Utilities.formatDate(new Date(), tz_(), 'yyyyMMdd-HHmmss');
   var fname = 'สลิป ' + ord.no + ' ' + stamp + '.' + ext;
 
-  var file = slipMonthFolder_(paidAt || new Date()).createFile(Utilities.newBlob(bytes, mime, fname));
+  var file = driveDo_('เก็บไฟล์สลิป', function () {
+    return slipMonthFolder_(paidAt || new Date()).createFile(Utilities.newBlob(bytes, mime, fname));
+  });
 
   var row = nextRow_('slip', SH.slip.IN.no);
   if (!row) {

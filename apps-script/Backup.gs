@@ -97,7 +97,18 @@ function backupFolder_() {
     var f = it.next();
     if (f.getName() === BACKUP_FOLDER) return f;
   }
-  return DriveApp.createFolder(BACKUP_FOLDER);
+  /* ไฟล์นี้ยืนอยู่ลำพังโดยตั้งใจ (ไฟล์3 ทำงานด้วยทริกเกอร์รายวัน ไม่ได้ผ่านหน้าจอ)
+     จึงไม่เรียก driveDo_ ที่อยู่ใน Sheets.gs แต่เขียนคำอธิบายเดียวกันไว้ตรงนี้เอง
+     ถ้าดึงของข้ามไฟล์มา ตัวสำรองจะพังทันทีที่ใครลบไฟล์อื่นออกจากโปรเจกต์ */
+  try {
+    return DriveApp.createFolder(BACKUP_FOLDER);
+  } catch (e) {
+    var raw = String((e && e.message) || e);
+    if (!/permission|scope|authoriz|สิทธิ|อนุญาต/i.test(raw)) throw e;
+    throw new Error('ระบบยังไม่ได้รับอนุญาตให้ใช้ Google ไดรฟ์ จึงสำรองไฟล์ไม่ได้ — ' +
+      'เปิด Apps Script เลือกฟังก์ชัน setupBackup กด Run แล้วอนุญาตให้ครบ\n' +
+      'ข้อความจาก Google: ' + raw);
+  }
 }
 
 /**
