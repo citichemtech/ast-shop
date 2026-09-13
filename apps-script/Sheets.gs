@@ -379,9 +379,9 @@ function authDrive() {
     out.push('การกดอนุญาต แต่อยู่ที่ไฟล์ appsscript.json ของโปรเจกต์ล็อกสิทธิ์ไว้แคบเกิน');
     out.push('');
     out.push('แก้ที่ตัวแก้ไขโค้ด Apps Script');
-    out.push('1. เมนูซ้าย กด ⚙ การตั้งค่าโปรเจกต์ (Project Settings)');
-    out.push('2. ติ๊ก "แสดงไฟล์ appsscript.json ในตัวแก้ไข"');
-    out.push('3. กลับไปแท็บตัวแก้ไข จะเห็นไฟล์ appsscript.json โผล่มาในรายการไฟล์');
+    out.push('1. เมนูซ้าย กด ⚙ การตั้งค่าโครงการ (อันล่างสุด ใต้ การเรียกใช้)');
+    out.push('2. ติ๊กช่อง "แสดงไฟล์ Manifest appsscript.json ในเครื่องมือแก้ไข"');
+    out.push('3. กลับไปที่ ตัวแก้ไข จะเห็นไฟล์ appsscript.json โผล่มาในรายการไฟล์ทางซ้าย');
     out.push('4. ในวงเล็บ oauthScopes ต้องมีบรรทัดนี้อยู่ด้วย');
     out.push('     "https://www.googleapis.com/auth/drive"');
     out.push('   ถ้าไม่มี ให้เพิ่มเข้าไป (อย่าลืมจุลภาคคั่นบรรทัดก่อนหน้า) แล้วกดบันทึก');

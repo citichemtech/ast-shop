@@ -472,8 +472,10 @@ truthy('ไม่ไล่ให้กลับไปกดสิ่งที่
 truthy('พาไปแก้ที่ไฟล์ appsscript.json', deny10b.indexOf('appsscript.json') > -1);
 truthy('บอกชื่อสิทธิ์ที่ต้องเพิ่มแบบก๊อปวางได้เลย',
   deny10b.indexOf('"https://www.googleapis.com/auth/drive"') > -1);
+/* ต้องใช้คำเดียวกับที่ขึ้นบนหน้าจอจริงของ Apps Script ภาษาไทย
+   ("การตั้งค่าโครงการ" ไม่ใช่ "โปรเจกต์") ไม่งั้นคนอ่านหาเมนูนั้นไม่เจอ */
 truthy('บอกด้วยว่าติ๊กตรงไหนถึงจะเห็นไฟล์นั้น',
-  deny10b.indexOf('การตั้งค่าโปรเจกต์') > -1);
+  deny10b.indexOf('การตั้งค่าโครงการ') > -1);
 var okDrive = (function () {
   var fx = FS.build(); var ctx = FS.load(fx, {}); ctx.setup();
   return ctx.authDrive();
