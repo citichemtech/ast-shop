@@ -1571,6 +1571,45 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('เปิดหน้ารับของได้',
     await page.evaluate(function () { return $('#pg-recv').style.display !== 'none' }));
 
+  console.log('\n   เลือก "พิมพ์ชื่อเอง" แล้วต้องพิมพ์ได้จริง');
+  /* เจอกับของจริง 14 ก.ย. 69: หน้านี้ก๊อปรายการผู้บันทึกมาจากหน้าคีย์ออเดอร์
+     ได้ตัวเลือก "พิมพ์ชื่อเอง" ติดมาด้วย แต่ไม่มีช่องให้พิมพ์และไม่มีตัวรับการเลือก
+     คนกดจึงค้างอยู่ตรงนั้น และถ้ากดบันทึกต่อ ชื่อผู้บันทึกในชีทจะกลายเป็น
+     คำว่า "✎ พิมพ์ชื่อเอง…" ซึ่งไม่ใช่ชื่อใครเลย */
+  var byOpts = await page.evaluate(function () {
+    return $$('#r-by option').map(function (o) { return o.value });
+  });
+  truthy('เมนูผู้บันทึกมีตัวเลือกพิมพ์ชื่อเอง', byOpts.some(function (x) {
+    return x.indexOf('พิมพ์ชื่อเอง') > -1;
+  }));
+  eq('ตอนแรกช่องพิมพ์ยังซ่อนอยู่', await page.evaluate(function () {
+    return $('#r-by-new').style.display;
+  }), 'none');
+
+  await page.selectOption('#r-by', byOpts.filter(function (x) {
+    return x.indexOf('พิมพ์ชื่อเอง') > -1;
+  })[0]);
+  await page.waitForTimeout(200);
+  eq('เลือกแล้วช่องพิมพ์โผล่มา', await page.evaluate(function () {
+    return $('#r-by-new').style.display !== 'none';
+  }), true);
+
+  await page.fill('#r-by-new', 'น้องใหม่ ฝึกงาน');
+  await page.evaluate(function () { $('#r-by-new').blur() });
+  await page.waitForTimeout(200);
+  var byAfter = await page.evaluate(function () {
+    return {
+      val: $('#r-by').value,
+      hidden: $('#r-by-new').style.display === 'none',
+      inOrderMenu: $$('#f-by option').map(function (o) { return o.value })
+        .indexOf('น้องใหม่ ฝึกงาน') > -1
+    };
+  });
+  eq('ชื่อที่พิมพ์กลายเป็นตัวเลือกที่เลือกอยู่', byAfter.val, 'น้องใหม่ ฝึกงาน');
+  eq('ช่องพิมพ์ซ่อนกลับไป', byAfter.hidden, true);
+  /* คนคนเดียวกันคีย์ออเดอร์แล้วไปรับของเข้าต่อ ไม่ควรต้องพิมพ์ชื่อสองรอบ */
+  eq('ชื่อใหม่ไปโผล่ในเมนูของหน้าคีย์ออเดอร์ด้วย', byAfter.inOrderMenu, true);
+
   /* ของที่คุมล็อต ต้องบอกให้ชัดว่าเลขล็อตเป็นของบังคับ */
   var chemSku = await page.evaluate(function () {
     for (var k in MOCK_BOOT.lots) return k;
@@ -1606,6 +1645,9 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     [sent29.sku, sent29.qty, sent29.lotNo, sent29.exp],
     [chemSku, 12, 'L-ทดสอบ29', '2027-12-31']);
   truthy('มี clientKey กันบันทึกซ้ำติดไปด้วย', /^rs-/.test(String(sent29.clientKey || '')));
+  /* ชื่อผู้บันทึกที่ลงชีทต้องเป็นชื่อคน ไม่ใช่คำว่า "พิมพ์ชื่อเอง" ที่เป็นแค่ตัวเลือกในเมนู
+     ตรงนี้คือจุดที่ของเดิมพลาดเงียบ ๆ — หน้าจอดูปกติ แต่ชีทได้ชื่อผิด */
+  eq('ชื่อผู้บันทึกที่ส่งขึ้นชีทคือชื่อที่พิมพ์เอง', sent29.staff, 'น้องใหม่ ฝึกงาน');
   truthy('ขึ้นข้อความว่ารับของแล้ว พร้อมยอดคงเหลือ',
     /รับ .* เข้า 12 ชิ้นแล้ว/.test(await page.textContent('#ok')));
   eq('ยอดคงเหลือของสินค้าเพิ่มขึ้นจริง',

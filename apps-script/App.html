@@ -125,34 +125,7 @@ function boot(){
     var remembered = "";
     try { remembered = localStorage.getItem("ast-by") || "" } catch(e){}
     if (remembered && staffList.indexOf(remembered) > -1) $("#f-by").value = remembered;
-    $("#f-by").onchange = function(){
-      var typing = this.value === BY_NEW;
-      $("#f-by-new").style.display = typing ? "" : "none";
-      if (typing) { $("#f-by-new").value = ""; $("#f-by-new").focus(); return }
-      try { localStorage.setItem("ast-by", this.value) } catch(e){}
-    };
-    /* พอพิมพ์ชื่อเสร็จแล้วละมือ เก็บชื่อลงเครื่องและใส่กลับเข้ารายการทันที
-       ไม่ต้องกดปุ่มเพิ่ม ไม่ต้องรีเฟรช */
-    $("#f-by-new").onblur = function(){
-      var v = this.value.trim();
-      if (!v) return;
-      var mine = myStaff();
-      if (mine.indexOf(v) < 0) {
-        mine.push(v);
-        try { localStorage.setItem("ast-by-list", JSON.stringify(mine)) } catch(e){}
-      }
-      var sel = $("#f-by");
-      var has = false;
-      for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === v) has = true;
-      if (!has) {
-        var op = document.createElement("option");
-        op.value = v; op.textContent = v;
-        sel.insertBefore(op, sel.options[sel.options.length - 1]);
-      }
-      sel.value = v;
-      this.style.display = "none";
-      try { localStorage.setItem("ast-by", v) } catch(e){}
-    };
+    bindByPicker("#f-by", "#f-by-new");
 
     fillSelect("#f-channel", b.lists.channel);
     fillSelect("#f-carrier", b.lists.carrier);
@@ -1666,12 +1639,64 @@ function myStaff(){
 }
 
 /* ชื่อที่จะบันทึกลงชีทจริง — ถ้ากำลังพิมพ์ชื่อใหม่อยู่ ให้ใช้ชื่อที่พิมพ์
-   ไม่ใช่คำว่า "พิมพ์ชื่อเอง" ที่เป็นแค่ตัวเลือกในเมนู */
-function byName(){
-  var sel = $("#f-by");
+   ไม่ใช่คำว่า "พิมพ์ชื่อเอง" ที่เป็นแค่ตัวเลือกในเมนู
+
+   รับ id ของเมนูมาได้ เพราะหน้ารับเข้าสินค้าก็มีเมนูผู้บันทึกของตัวเอง
+   ของเดิมตัวนี้ดูแต่เมนูของหน้าคีย์ออเดอร์ หน้ารับเข้าจึงบันทึกคำว่า
+   "✎ พิมพ์ชื่อเอง…" ลงชีทเป็นชื่อคน */
+function byName(selId, inputId){
+  var sel = $(selId || "#f-by");
   if (!sel) return "";
-  if (sel.value === BY_NEW) return ($("#f-by-new").value || "").trim();
+  if (sel.value === BY_NEW) return ($(inputId || "#f-by-new").value || "").trim();
   return sel.value;
+}
+
+/**
+ * ผูกเมนู "ผู้คีย์/ผู้บันทึก" กับช่องพิมพ์ชื่อเองของมัน
+ *
+ * เลือก "พิมพ์ชื่อเอง" แล้วช่องพิมพ์ต้องโผล่มาให้พิมพ์จริง ๆ
+ * ถ้ามีแต่ตัวเลือกแต่ไม่มีช่อง คนกดจะค้างอยู่ตรงนั้นโดยไม่รู้ว่าต้องทำอะไรต่อ
+ * และชื่อที่ลงชีทจะกลายเป็นคำว่า "พิมพ์ชื่อเอง" ซึ่งไม่ใช่ชื่อใคร
+ *
+ * ใช้ร่วมกันทั้งหน้าคีย์ออเดอร์และหน้ารับเข้าสินค้า — ที่ไหนมีเมนูนี้
+ * ต้องพิมพ์ชื่อเองได้เหมือนกันหมด ไม่ใช่ได้บางหน้า
+ */
+function bindByPicker(selId, inputId){
+  var sel = $(selId), box = $(inputId);
+  if (!sel || !box) return;
+  sel.onchange = function(){
+    var typing = this.value === BY_NEW;
+    box.style.display = typing ? "" : "none";
+    if (typing) { box.value = ""; box.focus(); return }
+    try { localStorage.setItem("ast-by", this.value) } catch(e){}
+  };
+  /* พอพิมพ์ชื่อเสร็จแล้วละมือ เก็บชื่อลงเครื่องและใส่กลับเข้ารายการทันที
+     ไม่ต้องกดปุ่มเพิ่ม ไม่ต้องรีเฟรช */
+  box.onblur = function(){
+    var v = this.value.trim();
+    if (!v) return;
+    var mine = myStaff();
+    if (mine.indexOf(v) < 0) {
+      mine.push(v);
+      try { localStorage.setItem("ast-by-list", JSON.stringify(mine)) } catch(e){}
+    }
+    /* ชื่อใหม่ต้องไปโผล่ในเมนูของทุกหน้า ไม่ใช่เฉพาะหน้าที่พิมพ์
+       คนคนเดียวกันคีย์ออเดอร์แล้วไปรับของเข้าต่อ ไม่ควรต้องพิมพ์ชื่อสองรอบ */
+    ["#f-by", "#r-by"].forEach(function(id){
+      var s2 = $(id);
+      if (!s2 || !s2.options.length) return;
+      var has = false;
+      for (var i = 0; i < s2.options.length; i++) if (s2.options[i].value === v) has = true;
+      if (!has) {
+        var op = document.createElement("option");
+        op.value = v; op.textContent = v;
+        s2.insertBefore(op, s2.options[s2.options.length - 1]);
+      }
+    });
+    sel.value = v;
+    this.style.display = "none";
+    try { localStorage.setItem("ast-by", v) } catch(e){}
+  };
 }
 
 /* ------------------------------------------------------------------ เอกสารขาย */
@@ -4704,7 +4729,10 @@ function recvInit(){
   /* ผู้บันทึกใช้รายชื่อชุดเดียวกับหน้าคีย์ออเดอร์ และจำคนล่าสุดไว้เหมือนกัน */
   var by = $("#f-by");
   $("#r-by").innerHTML = by ? by.innerHTML : "";
-  if(by && by.value) $("#r-by").value = by.value;
+  if(by && by.value && by.value !== BY_NEW) $("#r-by").value = by.value;
+  /* ต้องผูกทุกครั้งที่เปิดหน้านี้ เพราะรายการเพิ่งถูกเขียนใหม่เมื่อบรรทัดบน */
+  bindByPicker("#r-by", "#r-by-new");
+  $("#r-by-new").style.display = "none";
 
   $("#r-sku").onchange = recvSkuChanged;
   $("#btn-recv").onclick = recvSave;
@@ -4764,7 +4792,7 @@ function recvSave(){
     cost: $("#r-cost").value.trim(), date: $("#r-date").value,
     type: $("#r-type").value, doc: $("#r-doc").value.trim(),
     ref: $("#r-ref").value.trim(), note: $("#r-note").value.trim(),
-    staff: $("#r-by").value, lotNo: lotNo, exp: $("#r-exp").value
+    staff: byName("#r-by", "#r-by-new"), lotNo: lotNo, exp: $("#r-exp").value
   }], function(res){
     btn.disabled = false; btn.textContent = "บันทึกรับของเข้า";
     if(!res){ showErr("ชีทตอบกลับมาไม่ได้ — ลองกดใหม่อีกครั้ง"); return }
