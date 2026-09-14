@@ -165,6 +165,9 @@ function pubOrder(key) {
   /* ใบที่ยกเลิกไปแล้วต้องไม่มีหน้าให้จ่ายเงิน เงินที่โอนเข้ามาหลังจากนั้น
      คือเงินที่ร้านต้องตามคืน ซึ่งแพงกว่าการที่ลูกค้าเห็นว่าใบถูกยกเลิก */
   var dead = isDeadStatus_(ord.status);
+  /* ใบปลายทางต้องไม่โชว์เลขบัญชีและต้องไม่มีช่องแนบสลิป ลูกค้าที่โอนตามลิงก์
+     แล้วยังจ่ายพนักงานส่งของอีกรอบ คือเงินที่ร้านต้องตามคืน */
+  var cod = isCodStatus_(ord.status);
 
   var wantVat = String(ord.vat || '').indexOf('ไม่') < 0 &&
     String(ord.vat || '').indexOf('รับ') > -1;
@@ -181,10 +184,10 @@ function pubOrder(key) {
   }
 
   return jsonSafe_({
-    ok: true, dead: dead, ord: ord,
+    ok: true, dead: dead, cod: cod, ord: ord,
     /* ยังไม่ได้กรอกเลขบัญชีในชีท = ห้ามเดา ห้ามโชว์บัญชีอีกฝั่งแทน
        ลูกค้าเห็นคำว่า "ทักร้าน" ดีกว่าโอนเข้าบัญชีที่ไม่ใช่ของใบนี้ */
-    acct: acct.miss.length ? null : {
+    acct: (cod || acct.miss.length) ? null : {
       bank: acct.bank, name: acct.name, acct: acct.acct, link: acct.link
     },
     told: hit.vals[IN.told - 1] instanceof Date ? ymd_(hit.vals[IN.told - 1], true) : '',
@@ -199,6 +202,10 @@ function pubSlip(key, p) {
   var ord = pubRead_(hit.no);
   if (isDeadStatus_(ord.status)) {
     throw new Error('ออเดอร์ใบนี้ถูกยกเลิกแล้ว รบกวนทักร้านก่อนโอนนะคะ');
+  }
+  if (isCodStatus_(ord.status)) {
+    throw new Error('ออเดอร์ใบนี้เป็นแบบเก็บเงินปลายทาง ' +
+      'ชำระกับพนักงานส่งของตอนรับพัสดุได้เลย ไม่ต้องโอนนะคะ');
   }
 
   /* ลิงก์ที่หลุดออกไปต้องทำอะไรได้จำกัด — 5 ใบพอสำหรับคนที่โอนหลายรอบ
@@ -293,6 +300,14 @@ function payLink(orderNo) {
   if (isDeadStatus_(ord.status)) {
     throw new Error('ออเดอร์ ' + ord.no + ' สถานะ "' + ord.status + '" แล้ว ' +
       'ไม่ควรส่งลิงก์ให้ลูกค้าจ่ายเงิน');
+  }
+  /* ปลายทางแล้วยังส่งลิงก์โอนไปอีก = ลูกค้าจ่ายสองรอบ แล้วร้านต้องตามคืนเงิน
+     ปฏิเสธไปตรง ๆ พร้อมบอกทางออก ถ้าลูกค้าเปลี่ยนใจขอโอนแทนจริง ๆ
+     ก็แก้สถานะใบให้ตรงกับความจริงก่อน แล้วค่อยกดใหม่ */
+  if (isCodStatus_(ord.status)) {
+    throw new Error('ออเดอร์ ' + ord.no + ' เป็นใบเก็บเงินปลายทาง ' +
+      'ลูกค้าจ่ายกับพนักงานส่งของอยู่แล้ว ส่งลิงก์โอนไปด้วยจะกลายเป็นจ่ายสองรอบ — ' +
+      'ถ้าลูกค้าขอโอนแทน ให้แก้สถานะออเดอร์เป็น “รอชำระ” ก่อน แล้วกดสร้างลิงก์ใหม่');
   }
 
   var base = appCfg_().payLink;

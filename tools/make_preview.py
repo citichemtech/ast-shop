@@ -254,6 +254,7 @@ window.google = { script: { run: (function(){
       reply(function(){
         var o = MOCK_ORDERS.filter(function(x){ return x.no === String(orderNo) })[0];
         if(!o) throw new Error("ไม่พบออเดอร์ " + orderNo + " ในชีท");
+        var cod = String(o.status||"").trim() === "เก็บเงินปลายทาง";
         var wantVat = String(o.vat||"").indexOf("ไม่") < 0 && String(o.vat||"").indexOf("รับ") > -1;
         var acct = wantVat
           ? { bank:"ไทยพาณิชย์ (SCB)", acct:"431-039435-5",
@@ -265,7 +266,10 @@ window.google = { script: { run: (function(){
           : { bank:"กรุงศรีอยุธยา", acct:"000-000000-0", name:"ชื่อบัญชีสมมติ",
               pp:"", which:"บิลไม่มี VAT", miss:[], link:"" };
         var qr = null, qrWhy = "", qrOff = false;
-        if(!acct.pp){
+        if(cod){
+          qrOff = true;
+          qrWhy = "ใบนี้เก็บเงินปลายทาง พนักงานส่งของเก็บเงินให้ จึงไม่ต้องมี QR";
+        }else if(!acct.pp){
           qrOff = true;
           qrWhy = "รับเงินด้วยการโอนเข้าบัญชี ไม่ได้ใช้ QR (เปิดใช้ได้ที่ช่องพร้อมเพย์ ในชีท ตั้งค่าแอป)";
         }else if(Number(o.net) > 0){
@@ -302,7 +306,8 @@ window.google = { script: { run: (function(){
         }
         return { no:o.no, cust:o.cust, date:o.date, net:Number(o.net),
                  status:o.status, vat:o.vat, wantVat:wantVat, acct:acct,
-                 qr:qr, qrWhy:qrWhy, qrOff:qrOff, msg:L.join("\\n"), miss:[],
+                 cod:cod, carrier:String(o.carrier||""),
+                 qr:qr, qrWhy:qrWhy, qrOff:qrOff, msg:cod ? "" : L.join("\\n"), miss:[],
                  link: MOCK_LINKS[o.no] || null,
                  slips: MOCK_SLIPS.filter(function(x){ return x.no === o.no }).slice().reverse() };
       });
@@ -313,6 +318,11 @@ window.google = { script: { run: (function(){
       reply(function(){
         var o = MOCK_ORDERS.filter(function(x){ return x.no === String(orderNo) })[0];
         if(!o) throw new Error("ไม่พบออเดอร์ " + orderNo + " ในชีท");
+        if(String(o.status||"").trim() === "เก็บเงินปลายทาง"){
+          throw new Error("ออเดอร์ " + o.no + " เป็นใบเก็บเงินปลายทาง "
+            + "ลูกค้าจ่ายกับพนักงานส่งของอยู่แล้ว ส่งลิงก์โอนไปด้วยจะกลายเป็นจ่ายสองรอบ — "
+            + "ถ้าลูกค้าขอโอนแทน ให้แก้สถานะออเดอร์เป็น “รอชำระ” ก่อน แล้วกดสร้างลิงก์ใหม่");
+        }
         if(MOCK_LINKS[o.no]) return MOCK_LINKS[o.no];
         var k = "";
         while(k.length < 32) k += Math.floor(Math.random() * 16).toString(16);

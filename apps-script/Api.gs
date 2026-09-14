@@ -2220,6 +2220,17 @@ function isDeadStatus_(s) {
   return DEAD_STATUS.indexOf(String(s || '').trim()) > -1;
 }
 
+/* เก็บเงินปลายทาง — ของนับเป็นยอดขายปกติ แต่ "ยังไม่ได้เงิน" คนละความหมายกับใบอื่น
+   ใบทั่วไปที่ยังไม่จ่าย = ต้องทวงลูกค้า
+   ใบปลายทาง          = ลูกค้าจ่ายให้พนักงานส่งของ แล้วขนส่งโอนกลับมา ไม่ต้องทวงลูกค้า
+   ที่สำคัญกว่านั้น: ใบปลายทางห้ามส่งเลขบัญชีหรือ QR ให้ลูกค้าเด็ดขาด
+   ลูกค้าที่โอนมาแล้วยังจ่ายพนักงานส่งของอีกรอบ คือเงินที่ร้านต้องตามคืน */
+var COD_STATUS_ = 'เก็บเงินปลายทาง';
+
+function isCodStatus_(s) {
+  return String(s || '').trim() === COD_STATUS_;
+}
+
 function cancelOrder(no, why, by, clientKey, kind) {
   var email = requireStaff_();
   var want = String(no || '').trim();

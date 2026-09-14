@@ -296,6 +296,27 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ได้รูปใหม่ที่ต่างจากเดิม (ขึ้นยอดเก็บปลายทาง)', img2 !== img.len);
   await page.click('#m-close');
 
+  console.log('\n   ใบที่สถานะเป็นเก็บเงินปลายทาง ต้องติ๊กมาให้เลย');
+  /* ถ้าปล่อยว่างไว้ ใบปะหน้าจะพิมพ์ว่า "ไม่ต้องเก็บเงิน" แล้วพนักงานส่งของ
+     จะส่งของโดยไม่เก็บเงิน — ของออกจากร้านไปแล้วและเงินไม่กลับมา
+     คนแพ็คของสิบใบรวดไม่มีทางจำได้ว่าใบไหนปลายทาง ระบบรู้อยู่แล้วจึงต้องติ๊กให้ */
+  await page.evaluate(function () { ORDERS[0].status = 'เก็บเงินปลายทาง' });
+  await page.click('#list .row .sq[data-lb="0"]');
+  await page.waitForSelector('#lb-make', { timeout: 3000 });
+  var lbcod = await page.evaluate(function () {
+    return { on: $('#lb-cod').checked, hint: $('#m-body').innerText };
+  });
+  truthy('ช่องเก็บเงินปลายทางถูกติ๊กมาให้แล้ว', lbcod.on);
+  truthy('และบอกด้วยว่าติ๊กให้เพราะสถานะออเดอร์',
+    lbcod.hint.indexOf('ติ๊กให้แล้วเพราะสถานะออเดอร์') > -1);
+  await page.click('#m-close');
+  await page.evaluate(function () { ORDERS[0].status = 'ส่งแล้ว' });
+  await page.click('#list .row .sq[data-lb="0"]');
+  await page.waitForSelector('#lb-make', { timeout: 3000 });
+  eq('ใบธรรมดายังไม่ติ๊กเหมือนเดิม',
+    await page.evaluate(function () { return $('#lb-cod').checked }), false);
+  await page.click('#m-close');
+
   /* ---------- 11. ข้อความส่งลูกค้า ---------- */
   console.log('\n11. ข้อความส่งลูกค้า');
   await page.click('#list .row .sq[data-sm="0"]');
@@ -2045,7 +2066,10 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       crEdge:    payState({ status: 'รอชำระเครดิต 30วัน', date: back(30) }),
       crOver:    payState({ status: 'รอชำระเครดิต 30วัน', date: back(51) }),
       paid:      payState({ status: 'ชำระแล้ว', date: back(99) }),
-      dead:      payState({ status: 'ตีกลับ', date: back(9) })
+      dead:      payState({ status: 'ตีกลับ', date: back(9) }),
+      codFresh:  payState({ status: 'เก็บเงินปลายทาง', date: back(2) }),
+      codEdge:   payState({ status: 'เก็บเงินปลายทาง', date: back(7) }),
+      codLate:   payState({ status: 'เก็บเงินปลายทาง', date: back(12) })
     };
   });
   eq('เงินสดวันนี้ ยังไม่สาย', pay39.cashFresh.key, 'due');
@@ -2056,6 +2080,17 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('เครดิต 30 วัน ผ่านไป 51 วัน = เกินมา 21 วัน', pay39.crOver.label, 'เกินกำหนดชำระ 21 วัน');
   eq('ใบที่จ่ายแล้ว', pay39.paid.key, 'paid');
   eq('ใบที่ตีกลับไม่ใช่ลูกหนี้', pay39.dead.key, 'dead');
+  /* ใบเก็บเงินปลายทางที่เพิ่งส่ง ห้ามขึ้นแดงว่าเกินกำหนด — ของยังเดินทางอยู่
+     ลูกค้ายังไม่ได้รับด้วยซ้ำ ถ้าขึ้นแดงตั้งแต่วันแรก คนจะเลิกเชื่อสีแดงทั้งหน้า
+     แล้ววันที่มีใบแดงของจริง มันจะถูกมองข้ามไปด้วย */
+  eq('ปลายทางเพิ่งส่งไป 2 วัน ยังไม่สาย', pay39.codFresh.key, 'cod');
+  eq('และเขียนตรง ๆ ว่าเป็นใบปลายทาง', pay39.codFresh.label, 'เก็บเงินปลายทาง');
+  eq('ครบ 7 วันพอดี ยังไม่ถือว่าเกิน', pay39.codEdge.key, 'cod');
+  eq('เลย 7 วันไปแล้ว ถึงจะนับว่าผิดปกติ', pay39.codLate.key, 'over');
+  /* คนที่ต้องตามคือขนส่ง ไม่ใช่ลูกค้า — ลูกค้าจ่ายไปแล้วตั้งแต่รับของ
+     ถ้าป้ายเขียนเหมือนใบอื่น คนจะไปโทรทวงคนที่จ่ายเงินไปแล้ว */
+  truthy('และป้ายต้องบอกว่าไปตามกับขนส่ง ไม่ใช่ทวงลูกค้า',
+    pay39.codLate.label.indexOf('ขนส่ง') > -1);
 
   console.log('\n   แถบบอกสถานะเงินต้องขึ้นสีจริง ไม่ใช่โดนสีเทาของบรรทัดทับ');
   /* ".row .i span" ทาสีเทาไว้ทั้งบรรทัด และเจาะจงกว่า ".paybar.over" อยู่หนึ่งขั้น
@@ -2110,7 +2145,11 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       { no:'AST-26-0204', date:back(51), channel:'หน้าร้าน', cust:'คุณเครดิต เกินแล้ว',
         tel:'0800000004', addr:'-', carrier:'', track:'', vat:'ไม่รับ VAT', discount:0, ship:0,
         status:'รอชำระเครดิต 30วัน', staff:'x', note:'', subtotal:400, vatAmt:0, net:400,
-        cost:150, profit:250, check:'OK', items:[] }
+        cost:150, profit:250, check:'OK', items:[] },
+      { no:'AST-26-0205', date:back(3), channel:'หน้าร้าน', cust:'คุณปลายทาง เพิ่งส่ง',
+        tel:'0800000005', addr:'-', carrier:'Flash Express', track:'TH1', vat:'ไม่รับ VAT',
+        discount:0, ship:0, status:'เก็บเงินปลายทาง', staff:'x', note:'', subtotal:200,
+        vatAmt:0, net:200, cost:80, profit:120, check:'OK', items:[] }
     );
     PAY_PICK = 'due'; SUM_CACHE = null; ORDERS = [];
   });
@@ -2128,13 +2167,19 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     chips39.map(function (c) { return c.key }), ['paid', 'due', 'cr30', 'over']);
   truthy('ทุกกลุ่มมีไอคอนรูปจริง', chips39.every(function (c) { return c.ic }));
   eq('ชำระเรียบร้อยหนึ่งใบ', chips39[0].n, '1');
-  eq('ค้างชำระนับทุกใบที่ยังไม่ได้เงิน (เงินสด + เครดิต + เกินกำหนด)', chips39[1].n, '3');
+  eq('ค้างชำระนับทุกใบที่ยังไม่ได้เงิน (เงินสด + เครดิต + เกินกำหนด + ปลายทาง)',
+    chips39[1].n, '4');
   eq('เครดิตที่ยังไม่ถึงกำหนดหนึ่งใบ', chips39[2].n, '1');
   eq('เกินกำหนดสองใบ (เงินสดค้าง 5 วัน + เครดิตเกิน 21 วัน)', chips39[3].n, '2');
   truthy('เปิดมาที่กลุ่มค้างชำระก่อน เพราะเป็นเงินที่ยังไม่ได้', chips39[1].on);
 
   var due39 = await page.textContent('#sum-due');
-  truthy('หัวการ์ดบอกยอดรวมของกลุ่มที่เลือก (200+300+400)', /฿900\.00/.test(due39));
+  truthy('หัวการ์ดบอกยอดรวมของกลุ่มที่เลือก (200+300+400+200)', /฿1,100\.00/.test(due39));
+  /* ยอดค้างก้อนใหญ่ที่ไม่บอกว่ามีใบปลายทางปนอยู่ จะพาคนไปโทรทวงลูกค้า
+     ที่จ่ายเงินให้พนักงานส่งของไปเรียบร้อยแล้ว */
+  truthy('บอกด้วยว่าในยอดนี้มีใบปลายทางกี่ใบ',
+    /เก็บเงินปลายทาง\s*1\s*ใบ/.test(due39.replace(/\s+/g, ' ')));
+  truthy('และบอกว่าใบพวกนั้นตามกับขนส่ง ไม่ใช่ทวงลูกค้า', /ตามกับขนส่ง/.test(due39));
   var bars39 = await page.evaluate(function () {
     return $$('#due-list .paybar').map(function (b) {
       return { cls: b.className.replace('paybar ', ''), txt: b.textContent };
@@ -2144,6 +2189,10 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     bars39.filter(function (b) { return b.cls === 'cr30' }).length, 1);
   eq('ใบที่เกินกำหนดสองใบขึ้นแถบแดงเข้ม',
     bars39.filter(function (b) { return b.cls === 'over' }).length, 2);
+  eq('ใบปลายทางใช้แถบของตัวเอง ไม่ปนกับใบที่ต้องทวงลูกค้า',
+    bars39.filter(function (b) { return b.cls === 'cod' }).length, 1);
+  eq('และเขียนว่าเก็บเงินปลายทาง ไม่ใช่ "รอชำระ"',
+    bars39.filter(function (b) { return b.cls === 'cod' })[0].txt, 'เก็บเงินปลายทาง');
 
   console.log('\n   กดแถบอื่นแล้วลิสต์ต้องเปลี่ยนตาม');
   await page.click('#pay-tabs button[data-pay="cr30"]');
@@ -3775,6 +3824,99 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   });
   eq('ลิงก์เดิมยังอยู่', lk4.url, lk2.url);
   eq('ไม่มีปุ่มสร้างซ้ำให้กดพลาด', lk4.mk, false);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+
+  /* ---------- 47.6 เก็บเงินปลายทาง ---------- */
+  console.log('\n47.6 ใบเก็บเงินปลายทาง — หน้าเก็บเงินต้องไม่ชวนให้ลูกค้าโอนซ้ำ');
+  /* เจ้าของร้านสั่งเมื่อ 14 ก.ย. 69 และยืนยันว่า "ถ้าลูกค้าเลือกปลายทางก็ 50
+     ไม่ต้องเพิ่มจัดส่ง" — ค่าส่งเท่าเดิม ไม่มีค่าบริการปลายทาง
+
+     ความเสียหายจริงของใบปลายทางไม่ใช่ตัวเลขในบิล แต่คือลูกค้าจ่ายสองรอบ
+     พนักงานที่เห็นปุ่ม "คัดลอกวิธีโอน" กับ QR อยู่ตรงหน้าจะกดส่งไปตามความเคยชิน
+     แล้วลูกค้าโอนมาก่อน จากนั้นยังจ่ายพนักงานส่งของอีกครั้งตอนรับของ
+     เงินก้อนที่สองนั้นร้านต้องโอนคืน ทางเดียวที่กันได้คือไม่มีปุ่มให้กดตั้งแต่แรก */
+  await page.evaluate(function () {
+    MOCK_ORDERS.forEach(function (o) {
+      if (o.no === 'AST-26-9102') o.status = 'เก็บเงินปลายทาง';
+    });
+    ORDERS.forEach(function (o) {
+      if (o.no === 'AST-26-9102') o.status = 'เก็บเงินปลายทาง';
+    });
+  });
+  await page.evaluate(function () {
+    openPay((window.ORDERS || []).filter(function (o) { return o.no === 'AST-26-9102' })[0]);
+  });
+  await page.waitForTimeout(700);
+  var cd1 = await page.evaluate(function () {
+    var b = $('#m-body');
+    return {
+      txt: b.innerText,
+      qr: b.querySelectorAll('img.qr').length,
+      msg: !!$('#py-msg'),
+      copy: !!$('#py-copy'), copy2: !!$('#py-copy2'),
+      mklink: !!$('#py-mklink'), url: !!$('#py-url'),
+      bank: b.innerText.indexOf('431-039435-5') > -1 || b.innerText.indexOf('000-000000-0') > -1,
+      file: !!$('#py-file'), add: !!$('#py-add'),
+      bankVal: ($('#py-bank') || {}).value || ''
+    };
+  });
+  truthy('บอกชัดว่าใบนี้เก็บเงินปลายทาง', cd1.txt.indexOf('เก็บเงินปลายทาง') > -1);
+  eq('ไม่มี QR ให้สแกน', cd1.qr, 0);
+  eq('ไม่มีเลขบัญชีโผล่ในหน้านี้เลย', cd1.bank, false);
+  eq('ไม่มีข้อความชวนโอนให้ก๊อป', cd1.msg, false);
+  eq('ไม่มีปุ่มคัดลอกวิธีโอน', cd1.copy, false);
+  eq('ไม่มีปุ่มคัดลอกสรุป + วิธีโอน', cd1.copy2, false);
+  eq('และไม่มีปุ่มสร้างลิงก์ให้ลูกค้าจ่ายเอง', cd1.mklink, false);
+  eq('ไม่มีลิงก์โผล่มาเองด้วย', cd1.url, false);
+  /* ช่องแนบสลิปต้องอยู่ต่อ — ขนส่งโอนยอดปลายทางกลับมาแล้วต้องเก็บหลักฐาน
+     ถ้าตัดทิ้งไปด้วย ใบปลายทางจะไม่มีทางปิดยอดได้เลย */
+  truthy('แต่ยังแนบหลักฐานได้ เพราะขนส่งจะโอนยอดกลับมา', cd1.file && cd1.add);
+  eq('ช่องที่มาของเงินเติมชื่อขนส่งให้ ไม่ใช่ชื่อธนาคารที่ลูกค้าไม่เคยโอนเข้า',
+    cd1.bankVal, 'Flash Express');
+  truthy('บอกด้วยว่าค่าส่งไม่ได้บวกเพิ่ม', cd1.txt.indexOf('ไม่ได้บวกค่าบริการ') > -1);
+  truthy('และบอกทางกลับ ถ้าลูกค้าเปลี่ยนใจขอโอนแทน',
+    cd1.txt.indexOf('รอชำระ') > -1 && cd1.txt.indexOf('เลขพัสดุ') > -1);
+
+  console.log('\n   ข้อความสรุปที่ส่งให้ลูกค้าต้องเขียนว่าเป็นปลายทาง');
+  /* ลูกค้าที่เห็นแต่บรรทัด "ยอดชำระทั้งหมด" จะโอนมาให้ ทั้งที่เดี๋ยวยังต้อง
+     จ่ายพนักงานส่งของอีกรอบ บรรทัดนี้คือสิ่งเดียวที่กันเรื่องนั้นในแชท */
+  var cd2 = await page.evaluate(function () {
+    var o = (window.ORDERS || []).filter(function (x) { return x.no === 'AST-26-9102' })[0];
+    var plain = JSON.parse(JSON.stringify(o));
+    plain.status = 'รอชำระ';
+    return { cod: orderMsg(o), plain: orderMsg(plain) };
+  });
+  truthy('มีบรรทัดบอกว่าเก็บเงินปลายทาง', cd2.cod.indexOf('เก็บเงินปลายทาง') > -1);
+  truthy('และบอกว่าจ่ายกับใคร', cd2.cod.indexOf('พนักงานส่งของ') > -1);
+  truthy('ยอดชำระทั้งหมดยังอยู่เหมือนเดิม', cd2.cod.indexOf('ยอดชำระทั้งหมด') > -1);
+  truthy('ใบธรรมดาต้องไม่มีบรรทัดนี้งอกมา', cd2.plain.indexOf('ปลายทาง') < 0);
+  /* ข้อความนี้ต้องวางกลับเข้าช่อง "วางข้อความจากแชท" แล้วอ่านออกเหมือนเดิม
+     ไม่งั้นบรรทัดที่เพิ่มมาจะกลายเป็นสินค้าผีหนึ่งรายการ */
+  var cd3 = await page.evaluate(function (t) {
+    var r = parseOrderText(t);
+    return { pay: r.pay, items: (r.items || []).length, total: r.total };
+  }, cd2.cod);
+  eq('วางกลับเข้าไปแล้วตัวแยกข้อความรู้ว่าเป็นปลายทาง', cd3.pay, 'cod');
+  eq('และไม่เกิดสินค้าผีจากบรรทัดที่เพิ่มมา', cd3.items, 0);
+  eq('ยอดสุทธิยังอ่านได้เท่าเดิม', cd3.total, 850);
+
+  console.log('\n   เปลี่ยนกลับเป็นรอชำระ ปุ่มโอนต้องกลับมาครบ');
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () {
+    MOCK_ORDERS.forEach(function (o) { if (o.no === 'AST-26-9102') o.status = 'รอชำระ' });
+    ORDERS.forEach(function (o) { if (o.no === 'AST-26-9102') o.status = 'รอชำระ' });
+    openPay((window.ORDERS || []).filter(function (o) { return o.no === 'AST-26-9102' })[0]);
+  });
+  await page.waitForTimeout(700);
+  var cd4 = await page.evaluate(function () {
+    return { msg: !!$('#py-msg'), mklink: !!$('#py-mklink'),
+             bank: $('#m-body').innerText.indexOf('000-000000-0') > -1 };
+  });
+  truthy('ข้อความวิธีโอนกลับมา', cd4.msg);
+  truthy('ปุ่มสร้างลิงก์กลับมา', cd4.mklink);
+  truthy('เลขบัญชีกลับมา', cd4.bank);
   await page.evaluate(function () { closeModal() });
   await page.waitForTimeout(200);
 

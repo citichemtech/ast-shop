@@ -138,6 +138,30 @@ var PUB = <?!= boot ?>;
   h += '<div class="sum big"><span>รวมยอดชำระ</span>' +
     '<span class="v">' + money(o.net) + ' บาท</span></div></div>';
 
+  /* เก็บเงินปลายทาง — หน้านี้ต้องไม่มีเลขบัญชี ไม่มีปุ่มโอน และไม่มีช่องแนบสลิป
+     ลูกค้าที่โอนตามหน้านี้แล้วยังจ่ายพนักงานส่งของอีกรอบ คือเงินที่ร้านต้องตามคืน
+     เหลือไว้อย่างเดียวคือยอดที่ต้องเตรียม เพราะปลายทางต้องเตรียมเงินให้พอดี */
+  if (d.cod) {
+    h += '<div class="card"><h1>เก็บเงินปลายทาง</h1>' +
+      '<div class="say ok" style="margin-top:0">ใบนี้ชำระกับพนักงานส่งของตอนรับพัสดุ ' +
+      '<b>ไม่ต้องโอนเงินล่วงหน้า</b></div>' +
+      '<div class="no" style="margin-top:10px">เตรียมเงิน ' + money(o.net) + ' บาท' +
+      (o.carrier ? ' ให้พนักงาน ' + esc(o.carrier) : '') + ' ตอนรับของนะคะ</div></div>';
+
+    h += '<div class="card"><h1>สถานะออเดอร์</h1>' +
+      '<div class="step"><span class="dot on">✓</span><div><b>สั่งซื้อแล้ว</b>' +
+      '<span>' + esc(o.date) + '</span></div></div>' +
+      '<div class="step"><span class="dot' + (o.track ? ' on' : '') + '">' +
+      (o.track ? '✓' : '') + '</span><div><b>จัดส่งแล้ว</b><span>' +
+      esc(o.track ? (o.carrier ? o.carrier + ' · ' : '') + o.track : 'กำลังเตรียมของ') +
+      '</span></div></div>' +
+      '<div class="step"><span class="dot"></span><div><b>ชำระกับพนักงานส่งของ</b>' +
+      '<span>ตอนรับพัสดุ</span></div></div></div>';
+
+    wrap.innerHTML = h;
+    return;
+  }
+
   h += '<div class="card">';
   if (d.acct) {
     h += '<div class="bank"><div style="font-size:0.85rem;color:var(--sub)">โอนเข้าบัญชี</div>' +

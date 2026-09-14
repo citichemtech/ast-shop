@@ -70,7 +70,7 @@ async function open(browser, tweak) {
       acct: t('#acct-no'),
       hasSend: !!document.getElementById('send'),
       steps: document.querySelectorAll('.step').length,
-      body: document.body.textContent
+      body: document.getElementById('wrap').textContent
     };
   });
   eq('ชื่อร้านขึ้นหัวหน้า', v1.shop, 'บริษัท ทดสอบ เคมีคอล จำกัด');
@@ -177,7 +177,7 @@ async function open(browser, tweak) {
   var p4 = await open(b, "d.err='ลิงก์นี้ถูกปิดไปแล้ว — รบกวนทักร้านขอลิงก์ใหม่นะคะ'; d.data=null;");
   var v4 = await p4.evaluate(function () {
     return {
-      body: document.body.textContent,
+      body: document.getElementById('wrap').textContent,
       shop: !!document.querySelector('.shop b'),
       send: !!document.getElementById('send'),
       acct: !!document.getElementById('acct-no')
@@ -194,7 +194,7 @@ async function open(browser, tweak) {
   var p5 = await open(b, 'd.data.dead=true;');
   var v5 = await p5.evaluate(function () {
     return {
-      body: document.body.textContent,
+      body: document.getElementById('wrap').textContent,
       send: !!document.getElementById('send'),
       acct: !!document.getElementById('acct-no')
     };
@@ -205,11 +205,56 @@ async function open(browser, tweak) {
   eq('ไม่มีเลขบัญชี', v5.acct, false);
 
   /* ------------------------------------------------------------------ */
+  console.log('\n5.5 ใบเก็บเงินปลายทาง — ห้ามมีทางให้โอนซ้ำ');
+  /* ลูกค้าที่โอนตามหน้านี้แล้วยังจ่ายพนักงานส่งของอีกรอบตอนรับของ
+     คือเงินที่ร้านต้องตามคืน หน้านี้จึงต้องไม่มีเลขบัญชีและไม่มีปุ่มแจ้งชำระ
+     ที่สำคัญคือใบที่ "เคยเป็นใบโอน" แล้วเปลี่ยนเป็นปลายทางทีหลัง —
+     ลิงก์เดิมยังอยู่ในแชทลูกค้า และยังกดได้จริง */
+  var p55 = await open(b, 'd.data.cod=true; d.data.acct=null;');
+  var v55 = await p55.evaluate(function () {
+    return {
+      /* อ่านจาก #wrap ไม่ใช่ document.body — body.textContent รวมโค้ดใน <script>
+         มาด้วย ข้อสอบที่ค้นคำจากตรงนั้นจึงผ่านได้ทั้งที่หน้าจอไม่ได้แสดงอะไรเลย */
+      body: document.getElementById('wrap').textContent,
+      send: !!document.getElementById('send'),
+      acct: !!document.getElementById('acct-no'),
+      copy: !!document.getElementById('copy'),
+      file: !!document.getElementById('f'),
+      net: (document.querySelector('.sum.big .v') || {}).textContent || '',
+      items: document.querySelectorAll('.it').length,
+      steps: document.querySelectorAll('.step').length
+    };
+  });
+  truthy('บอกว่าเก็บเงินปลายทาง', v55.body.indexOf('เก็บเงินปลายทาง') > -1);
+  truthy('และบอกตรง ๆ ว่าไม่ต้องโอนล่วงหน้า', v55.body.indexOf('ไม่ต้องโอนเงินล่วงหน้า') > -1);
+  eq('ไม่มีเลขบัญชี', v55.acct, false);
+  eq('ไม่มีปุ่มคัดลอกเลขบัญชี', v55.copy, false);
+  eq('ไม่มีปุ่มแจ้งชำระเงิน', v55.send, false);
+  eq('ไม่มีช่องแนบสลิป', v55.file, false);
+  /* ตัดของที่ไม่ควรมีออกได้ แต่ต้องไม่ตัดสิ่งที่ลูกค้ามาหา —
+     ลูกค้ากดลิงก์มาเพื่อรู้ว่าต้องเตรียมเงินเท่าไร */
+  eq('ยังเห็นยอดที่ต้องเตรียม', v55.net, '1,970.65 บาท');
+  eq('ยังเห็นรายการสินค้าครบ', v55.items, 6);
+  truthy('บอกให้เตรียมเงินสดไว้ตอนรับของ', v55.body.indexOf('เตรียมเงิน') > -1);
+  truthy('และบอกว่าจ่ายกับขนส่งเจ้าไหน', v55.body.indexOf('Flash Express') > -1);
+  eq('ยังมีแถบสถานะออเดอร์ให้ดูว่าถึงไหนแล้ว', v55.steps, 3);
+  eq('ไม่มี javascript error', p55.__errs, []);
+
+  console.log('\n   ใบปลายทางที่ยกเลิกไปแล้ว ต้องขึ้นว่ายกเลิกก่อนเสมอ');
+  /* ยกเลิกแล้วสำคัญกว่าปลายทาง ถ้าขึ้นหน้าปลายทางลูกค้าจะรอของที่ไม่มีวันมาถึง */
+  var p56 = await open(b, 'd.data.cod=true; d.data.dead=true;');
+  var v56 = await p56.evaluate(function () {
+    return document.getElementById('wrap').textContent;
+  });
+  truthy('ขึ้นว่าถูกยกเลิก ไม่ใช่หน้าปลายทาง', v56.indexOf('ถูกยกเลิกแล้ว') > -1);
+  truthy('และไม่บอกให้เตรียมเงินไปรอ', v56.indexOf('เตรียมเงิน') < 0);
+
+  /* ------------------------------------------------------------------ */
   console.log('\n6. ยังไม่ได้กรอกบัญชีในชีท — บอกให้ทักร้าน ไม่ใช่โชว์ช่องว่าง');
   var p6 = await open(b, 'd.data.acct=null;');
   var v6 = await p6.evaluate(function () {
     return {
-      body: document.body.textContent,
+      body: document.getElementById('wrap').textContent,
       acct: !!document.getElementById('acct-no'),
       net: document.querySelector('.sum.big .v').textContent
     };

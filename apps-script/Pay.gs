@@ -562,6 +562,11 @@ function payAsk(orderNo) {
     throw new Error('ออเดอร์ ' + ord.no + ' สถานะ "' + ord.status + '" แล้ว ' +
       'จึงเรียกเก็บเงินไม่ได้ — ถ้าลูกค้ากลับมาสั่งใหม่ ให้คีย์เป็นออเดอร์ใบใหม่');
   }
+  /* เก็บเงินปลายทาง = เงินมากับพนักงานส่งของ ไม่ใช่มาจากการโอน
+     หน้านี้จึงต้องไม่มี QR ไม่มีข้อความชวนโอน และไม่มีปุ่มสร้างลิงก์ให้ลูกค้าจ่ายเอง
+     ถ้าปล่อยให้มี พนักงานกดส่งไปหนึ่งครั้ง ลูกค้าก็จ่ายสองรอบ แล้วร้านต้องตามคืนเงิน
+     ยังแนบสลิปได้อยู่ เพราะขนส่งโอนยอดปลายทางกลับมาแล้วต้องมีหลักฐานเก็บไว้ */
+  var cod = isCodStatus_(ord.status);
   var wantVat = payWantVat_(ord);
   var acct = payAcct_(wantVat);
 
@@ -570,7 +575,10 @@ function payAsk(orderNo) {
      ทุกใบไปตลอดกาล คำเตือนที่ขึ้นทุกวันโดยไม่มีอะไรให้ทำ คือคำเตือนที่คนเลิกอ่าน
      แล้ววันที่มีคำเตือนของจริงขึ้นมา มันจะถูกมองข้ามไปด้วย */
   var qr = null, qrWhy = '', qrOff = false;
-  if (acct.miss.length) {
+  if (cod) {
+    qrOff = true;
+    qrWhy = 'ใบนี้เก็บเงินปลายทาง พนักงานส่งของเก็บเงินให้ จึงไม่ต้องมี QR';
+  } else if (acct.miss.length) {
     qrWhy = 'ยังไม่ได้กรอก ' + acct.miss.join(' · ') + ' ในชีท ' + SH.app.name;
   } else if (!acct.pp) {
     qrOff = true;
@@ -590,12 +598,17 @@ function payAsk(orderNo) {
 
   return jsonSafe_({
     no: ord.no, cust: ord.cust, date: ord.date, net: Number(ord.net),
-    status: ord.status, vat: ord.vat, wantVat: wantVat,
+    status: ord.status, vat: ord.vat, wantVat: wantVat, cod: cod,
+    /* ใบปลายทาง: เงินมาจากขนส่ง ไม่ใช่จากธนาคาร ช่อง "โอนเข้าบัญชี" ตอนแนบสลิป
+       จึงต้องเติมชื่อขนส่งไว้ให้ ไม่ใช่ชื่อธนาคารที่ลูกค้าไม่เคยโอนเข้า */
+    carrier: String(ord.carrier || ''),
     acct: acct, qr: qr, qrWhy: qrWhy, qrOff: qrOff,
-    msg: acct.miss.length ? '' : payMsg_(ord, acct, wantVat),
+    msg: (cod || acct.miss.length) ? '' : payMsg_(ord, acct, wantVat),
     miss: acct.miss,
     /* ลิงก์ที่เคยสร้างไว้แล้ว (ถ้ามี) — เปิดหน้านี้ครั้งไหนก็เห็นสถานะล่าสุด
        ว่าลูกค้าเปิดหรือยัง โดยไม่ต้องกดอะไรก่อน */
+    /* ใบปลายทางก็ยังต้องรู้ว่าเคยสร้างลิงก์ไว้หรือเปล่า — ถ้าเคยส่งไปแล้ว
+       ลิงก์นั้นยังเปิดได้อยู่ หน้าจอต้องเตือนให้ไปปิด ไม่ใช่ซ่อนแล้วเงียบ */
     link: (typeof linkInfo_ === 'function') ? linkInfo_(ord.no) : null,
     slips: slipRows_(ord.no)
   });
