@@ -918,14 +918,26 @@ function docTypeByTh_(th) {
 }
 
 /** ค่าทุกช่องกรอกของแถวเอกสารหนึ่งแถว — อ่านรวดเดียว */
+/**
+ * ความกว้างของแถวในชีทเอกสาร นับจากช่องที่มีอยู่จริง ไม่ใช่เลขที่พิมพ์ไว้ตายตัว
+ *
+ * เคยพลาดมาแล้วครั้งหนึ่ง: โค้ดอ่านถึงคอลัมน์สุดท้ายด้วยเลขที่เขียนไว้ตรง ๆ
+ * พอเพิ่มคอลัมน์ใหม่ต่อท้าย ช่องท้ายสุดก็อ่านได้เป็นว่างทุกครั้ง
+ * แล้วด่านที่ห้ามแก้ใบที่ส่งไปแล้วก็เลิกทำงานเงียบ ๆ โดยไม่มีอะไรฟ้อง
+ * คิดจาก SH.doc.IN เอาเองแบบนี้ เพิ่มคอลัมน์อีกกี่ครั้งก็ไม่พังซ้ำรอยเดิม
+ */
+function docSpan_() {
+  var C = SH.doc.IN, hi = C.no;
+  for (var f in C) if (C[f] > hi) hi = C[f];
+  return { lo: C.no, hi: hi, len: hi - C.no + 1 };
+}
+
 function docRowValues_(row) {
   var sh = sheet_('doc'), C = SH.doc.IN;
-  /* ต้องอ่านให้ถึงคอลัมน์สุดท้ายจริง ๆ ไม่งั้นช่อง "ส่งให้ลูกค้าแล้วเมื่อ" จะอ่านได้เป็นว่าง
-     แล้วด่านที่ห้ามแก้ใบที่ส่งไปแล้วจะไม่ทำงานเลย โดยไม่มีอะไรฟ้อง */
-  var lo = C.no, hi = C.sentAt;
-  var v = sh.getRange(row, lo, 1, hi - lo + 1).getValues()[0];
+  var sp = docSpan_();
+  var v = sh.getRange(row, sp.lo, 1, sp.len).getValues()[0];
   var out = {};
-  for (var f in C) out[f] = v[C[f] - lo];
+  for (var f in C) out[f] = v[C[f] - sp.lo];
   return out;
 }
 
@@ -1001,18 +1013,42 @@ function reviseRow_(row, why, p, email) {
   var form = has('form') ? p.form : ((oldSnap && oldSnap.form) || []);
   var date = (cur.date instanceof Date) ? isoDate_(cur.date) : String(cur.date || '');
 
-  /* นับว่าแก้เป็นครั้งที่เท่าไร จากร่องรอยที่เคยเขียนไว้ในหมายเหตุ */
-  var times = (oldNote.match(/\[แก้ไขครั้งที่ /g) || []).length + 1;
+  /* นับว่าแก้เป็นครั้งที่เท่าไร จากร่องรอยที่จดไว้ในช่องประวัติการแก้ใบ
+     ใบเก่าที่จดไว้ในหมายเหตุตั้งแต่ก่อนแยกคอลัมน์ ก็ยังนับต่อจากของเดิมได้ถูก
+     (fixDocNotes ย้ายให้แล้ว แต่ถ้ายังไม่ได้สั่ง ก็ต้องไม่นับผิดเป็นครั้งที่ 1 ใหม่) */
+  var oldTrail = String(cur.revise || '');
+  var seen = String(oldTrail || oldNote);
+  /* นับจาก "เลขครั้งที่สูงสุดที่เคยจดไว้" ไม่ใช่จาก "จำนวนก้อนที่นับได้"
+     สองอย่างนี้เท่ากันตอนทุกอย่างปกติ แต่ต่างกันตอนมีก้อนหายไปสักก้อน
+     (คนเผลอลบข้อความบางส่วนในชีท ซึ่งเกิดขึ้นจริง) ถ้านับจากจำนวนก้อน
+     เลขครั้งที่จะย้อนกลับไปซ้ำของเดิม แล้วประวัติจะมี "ครั้งที่ 3" สองอัน
+     ที่อ่านย้อนไม่ออกว่าอันไหนก่อนอันไหนหลัง */
+  var nums = seen.match(/\[แก้ไขครั้งที่ (\d+)/g) || [];
+  var top = (seen.match(/\[แก้ไขครั้งที่ /g) || []).length;
+  for (var q = 0; q < nums.length; q++) {
+    var nq = Number(String(nums[q]).replace(/\D/g, '')) || 0;
+    if (nq > top) top = nq;
+  }
+  var times = top + 1;
   var who = String(p.by || '').trim() || email;
   var stamp = '[แก้ไขครั้งที่ ' + times + ': ' + why + ' · ยอดเดิม ' + oldTotal +
     ' โดย ' + who + ' ' + stampTime_() + ']';
+
+  /* หมายเหตุเป็นของลูกค้า ไม่ใช่ของระบบ — ช่องนี้ถูกพิมพ์ลงกระดาษที่ส่งออกไปจริง
+     ร่องรอยการแก้จึงห้ามมาปนตรงนี้ ไปอยู่ช่องประวัติการแก้ใบซึ่งไม่มีใครเอาไปพิมพ์ */
   var note = String(has('note') ? p.note : oldNote).trim();
-  /* ร่องรอยการแก้ต้องไม่หาย แม้หน้าจอจะส่งหมายเหตุใหม่มาทั้งก้อน */
-  if (note.indexOf('[แก้ไขครั้งที่ ') < 0) {
-    var keep = oldNote.match(/\[แก้ไขครั้งที่ [^\]]*\]/g);
-    if (keep) note = (note ? note + ' ' : '') + keep.join(' ');
+  /* ใบเก่าที่ร่องรอยยังค้างอยู่ในหมายเหตุ ย้ายออกให้เลยตอนแก้รอบนี้
+     ไม่ต้องรอ fixDocNotes และไม่ต้องให้คนไปนั่งลบเองทีละใบ */
+  var stuck = note.match(/\[แก้ไขครั้งที่ [^\]]*\]/g) || [];
+  if (stuck.length) {
+    note = note.replace(/\s*\[แก้ไขครั้งที่ [^\]]*\]/g, '').trim();
+    oldTrail = (oldTrail ? oldTrail + ' ' : '') + stuck.join(' ');
   }
-  note = ((note ? note + ' ' : '') + stamp).slice(0, 900);
+  note = note.slice(0, 900);
+  /* เก่าสุดอยู่หน้า ใหม่สุดต่อท้าย อ่านไล่ลงมาได้ตามลำดับเวลา
+     ยาวเกินช่องก็ตัด "หัว" ทิ้ง ไม่ใช่ตัดท้าย — ครั้งล่าสุดคือครั้งที่คนอยากรู้ */
+  var trail = (oldTrail ? oldTrail + ' ' : '') + stamp;
+  if (trail.length > 2000) trail = trail.slice(trail.length - 2000);
 
   writeRow_('doc', row, {
     custName: String(cu.name || ''), custTaxId: String(cu.taxId || ''),
@@ -1022,7 +1058,7 @@ function reviseRow_(row, why, p, email) {
     po: String(po || ''), terms: String(terms || ''),
     base: d.base, vat: d.vat, total: d.total,
     staff: who.slice(0, 40),
-    note: note,
+    note: note, revise: trail,
     snap: docSnap_(d, {
       cust: cu, po: po, terms: terms, date: date, note: note, form: form,
       validTo: (oldSnap && oldSnap.validTo) || '', vatMode: vatMode, novat: novat
@@ -1211,7 +1247,7 @@ function listDocs(orderNo) {
   if (last < DATA_ROW) return [];
   var n = last - DATA_ROW + 1;
   var C = SH.doc.IN;
-  var v = s.getRange(DATA_ROW, C.no, n, C.sentAt - C.no + 1).getValues();
+  var v = s.getRange(DATA_ROW, C.no, n, docSpan_().len).getValues();
   var at = function (col) { return col - C.no; };
   var out = [];
   for (var i = 0; i < v.length; i++) {
@@ -1220,7 +1256,7 @@ function listDocs(orderNo) {
     var ord = String(v[i][at(C.orderNo)] || '').trim();
     if (want) { if (ord !== want) continue; }
     else if (ord) continue;
-    var rvl = reviseInfo_(v[i][at(C.note)]);
+    var rvl = reviseInfo_(v[i][at(C.revise)], v[i][at(C.note)]);
     out.push({
       no: no, type: String(v[i][at(C.type)] || ''),
       date: isoDate_(v[i][at(C.date)]), orderNo: ord,
@@ -1250,15 +1286,81 @@ function listDocs(orderNo) {
  * จะได้ไม่เกิดกรณี "ชนิดนี้ 0 ใบ" ทั้งที่มีอยู่จริงแต่ตกหน้า
  */
 /**
- * ร่องรอยการแก้ใบ — reviseRow_ จดไว้ในช่องหมายเหตุเป็น [แก้ไขครั้งที่ N: เหตุผล · ยอดเดิม …]
+ * ร่องรอยการแก้ใบ — reviseRow_ จดไว้ในช่อง "ประวัติการแก้ใบ" เป็น
+ * [แก้ไขครั้งที่ N: เหตุผล · ยอดเดิม …]
  *
  * ใบที่เคยถูกแก้กับใบที่ออกมาแล้วไม่เคยแตะ ไม่ควรอยู่ปนกันเวลาไล่ดูย้อนหลัง
- * แต่ร่องรอยนี้ฝังอยู่ในข้อความยาว ๆ ที่หน้าจอไม่เคยได้รับ จึงไม่มีทางแยกได้เลย
+ *
+ * รับทั้งช่องใหม่และช่องหมายเหตุเดิม เพราะใบที่ออกก่อนแยกคอลัมน์ยังมีร่องรอย
+ * ค้างอยู่ในหมายเหตุ ถ้าอ่านแค่ช่องใหม่ ใบพวกนั้นจะกลายเป็น "ไม่เคยถูกแก้"
+ * ทั้งที่เคยถูกแก้จริง ซึ่งแย่กว่าไม่มีตัวเลขเสียอีก
  */
-function reviseInfo_(note) {
-  var hits = String(note || '').match(/\[แก้ไขครั้งที่ [^\]]*\]/g);
+function reviseInfo_(trail, note) {
+  var src = String(trail || '').trim() || String(note || '');
+  var hits = String(src || '').match(/\[แก้ไขครั้งที่ [^\]]*\]/g);
   if (!hits || !hits.length) return { n: 0, last: '' };
   return { n: hits.length, last: hits[hits.length - 1].replace(/^\[|\]$/g, '') };
+}
+
+/**
+ * ย้ายร่องรอยการแก้ใบออกจากช่องหมายเหตุ ไปไว้ช่องประวัติการแก้ใบ
+ *
+ * ของเดิมจด [แก้ไขครั้งที่ N: …] ต่อท้ายช่องหมายเหตุ ซึ่งเป็นช่องที่ถูกพิมพ์
+ * ลงกระดาษที่ส่งให้ลูกค้าจริง ใบไหนเคยถูกแก้ พอพิมพ์ซ้ำจะมีบรรทัดนี้ติดไปด้วย
+ *   หมายเหตุ:
+ *   1  [แก้ไขครั้งที่ 1: แก้รายการสินค้า · ยอดเดิม 471 โดย CITI001 15/09/2026 05:47]
+ *   2  ผู้ซื้อได้รับสินค้าตามรายการข้างบนไว้ถูกต้องแล้ว …
+ * เป็นเรื่องหลังบ้านล้วน ๆ ที่ลูกค้าไม่ควรเห็น และที่ผ่านมาเจ้าของร้านต้องไล่ลบเอง
+ * ทีละใบในชีท ซึ่งไม่ควรต้องทำ
+ *
+ * ตัวนี้ย้ายให้ทุกใบในครั้งเดียว — ตัดเฉพาะก้อน [แก้ไขครั้งที่ …] ออกจากหมายเหตุ
+ * ข้อความอื่นที่คนพิมพ์เองไว้ในช่องนั้นไม่แตะ และไม่ทิ้งร่องรอยไปไหน
+ * แค่ย้ายไปช่องที่ไม่มีใครเอาไปพิมพ์
+ *
+ * สั่งซ้ำได้ ใบที่ย้ายไปแล้วจะถูกข้าม
+ */
+function fixDocNotes() {
+  var email = requireStaff_();
+  var s = sheet_('doc'), C = SH.doc.IN;
+  var last = formulaLimit_('doc');
+  var n = Math.max(0, last - DATA_ROW + 1);
+  if (!n) return 'ชีท ' + SH.doc.name + ' ยังไม่มีใบสักใบ';
+
+  var sp = docSpan_();
+  var v = s.getRange(DATA_ROW, sp.lo, n, sp.len).getValues();
+  var at = function (col) { return col - sp.lo; };
+  var moved = [], already = 0;
+
+  for (var i = 0; i < v.length; i++) {
+    var no = String(v[i][0] || '').trim();
+    if (!no) continue;
+    var note = String(v[i][at(C.note)] || '');
+    var hits = note.match(/\[แก้ไขครั้งที่ [^\]]*\]/g);
+    if (!hits || !hits.length) {
+      if (String(v[i][at(C.revise)] || '').trim()) already++;
+      continue;
+    }
+    var clean = note.replace(/\s*\[แก้ไขครั้งที่ [^\]]*\]/g, '').trim();
+    var had = String(v[i][at(C.revise)] || '').trim();
+    /* ก้อนที่อยู่ในช่องใหม่แล้ว ไม่เอามาซ้ำ */
+    var add = hits.filter(function (h) { return had.indexOf(h) < 0; });
+    var trail = (had ? had + ' ' : '') + add.join(' ');
+    writeRow_('doc', DATA_ROW + i, { note: clean, revise: trail.slice(0, 2000) });
+    moved.push(no);
+  }
+
+  if (!moved.length) {
+    return 'ไม่มีใบไหนมีร่องรอยการแก้ค้างอยู่ในช่องหมายเหตุแล้ว' +
+      (already ? ' (มี ' + already + ' ใบที่ย้ายไปช่องใหม่เรียบร้อยแล้ว)' : '');
+  }
+  SpreadsheetApp.flush();
+  writeLog_(email, 'ย้ายร่องรอยการแก้ใบ', SH.doc.name, moved.join(' '), '',
+    'อยู่ในช่องหมายเหตุ', 'อยู่ในช่องประวัติการแก้ใบ',
+    'ย้าย ' + moved.length + ' ใบ เพื่อไม่ให้ข้อความหลังบ้านถูกพิมพ์ลงใบที่ส่งลูกค้า');
+
+  return 'ย้ายร่องรอยการแก้ใบออกจากช่องหมายเหตุแล้ว ' + moved.length + ' ใบ\n' +
+    moved.join(' · ') + '\n\n' +
+    'ใบพวกนี้พิมพ์ซ้ำได้เลย หมายเหตุจะเหลือแค่ข้อความที่ควรอยู่บนกระดาษจริง ๆ';
 }
 
 function findDocs(p) {
@@ -1273,14 +1375,14 @@ function findDocs(p) {
   if (last < DATA_ROW) return { rows: [], total: 0, counts: {} };
   var n = last - DATA_ROW + 1;
   var C = SH.doc.IN;
-  var v = s.getRange(DATA_ROW, C.no, n, C.sentAt - C.no + 1).getValues();
+  var v = s.getRange(DATA_ROW, C.no, n, docSpan_().len).getValues();
   var at = function (col) { return col - C.no; };
 
   var hit = [], counts = {};
   for (var i = v.length - 1; i >= 0; i--) {   /* ใบล่าสุดอยู่บนสุด */
     var no = String(v[i][0] || '').trim();
     if (!no) continue;
-    var rv = reviseInfo_(v[i][at(C.note)]);
+    var rv = reviseInfo_(v[i][at(C.revise)], v[i][at(C.note)]);
     var d = {
       no: no, type: String(v[i][at(C.type)] || ''),
       date: isoDate_(v[i][at(C.date)]),

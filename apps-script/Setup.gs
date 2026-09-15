@@ -558,13 +558,14 @@ function setupDocSheet_(ss) {
   if (fresh) s = ss.insertSheet(name);
 
   if (s.getMaxRows() < DOC_LAST) s.insertRowsAfter(s.getMaxRows(), DOC_LAST - s.getMaxRows());
-  if (s.getMaxColumns() < 23) s.insertColumnsAfter(s.getMaxColumns(), 23 - s.getMaxColumns());
+  if (s.getMaxColumns() < 24) s.insertColumnsAfter(s.getMaxColumns(), 24 - s.getMaxColumns());
 
   s.getRange('A2').setValue('ทะเบียนเอกสารขาย — ระบบเขียนให้เอง')
     .setFontWeight('bold').setFontSize(12);
   s.getRange('A3').setValue(
     'ออกใบจากหน้าออเดอร์ในแอป แล้วใบจะมาโผล่ที่นี่  |  ห้ามแก้เลขที่เอกสารด้วยมือ ' +
-    'เลขต้องเรียงไม่ซ้ำไม่ข้าม  |  ยกเลิกใบให้กรอกเหตุผลช่อง "เหตุผลที่ยกเลิก" ไม่ใช่ลบแถวทิ้ง'
+    'เลขต้องเรียงไม่ซ้ำไม่ข้าม  |  ยกเลิกใบให้กรอกเหตุผลช่อง "เหตุผลที่ยกเลิก" ไม่ใช่ลบแถวทิ้ง' +
+    '  |  ช่อง "หมายเหตุ" ถูกพิมพ์ลงใบที่ส่งลูกค้า อย่าใช้จดเรื่องภายในร้าน'
   ).setFontColor(C_SUB_FG);
 
   var head = ['ลำดับ', 'เลขที่เอกสาร', 'ชนิดเอกสาร', 'วันที่', 'เลขที่ออเดอร์',
@@ -573,7 +574,8 @@ function setupDocSheet_(ss) {
     'มูลค่าสินค้า\n(ก่อน VAT)', 'ภาษีมูลค่าเพิ่ม', 'รวมทั้งสิ้น', 'ผู้ออกเอกสาร',
     'หมายเหตุ', 'เหตุผลที่ยกเลิก', 'รายการในใบ\n(ระบบใช้พิมพ์ซ้ำ ห้ามแก้)',
     'ลายเซ็นผู้รับของ\n(ลูกค้าเซ็นในแอป ห้ามแก้)',
-    'ส่งให้ลูกค้าแล้วเมื่อ\n(ว่าง = ยังแก้ใบได้)'];
+    'ส่งให้ลูกค้าแล้วเมื่อ\n(ว่าง = ยังแก้ใบได้)',
+    'ประวัติการแก้ใบ\n(ระบบจดเอง ไม่พิมพ์ลงใบ)'];
   s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
     .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
     .setVerticalAlignment('middle').setWrap(true);
@@ -582,7 +584,7 @@ function setupDocSheet_(ss) {
   fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
 
   var inCols = [];
-  for (var c = 2; c <= 23; c++) inCols.push(c);
+  for (var c = 2; c <= 24; c++) inCols.push(c);
   paintCols_(s, n, inCols, [1]);
 
   s.getRange(DATA_ROW, SH.doc.IN.date, n, 1).setNumberFormat('dd/mm/yyyy');
@@ -604,6 +606,11 @@ function setupDocSheet_(ss) {
   s.getRange(DATA_ROW, SH.doc.IN.snap, n, 1).setFontColor('#9aa0a6').setNumberFormat('@');
   s.setColumnWidth(SH.doc.IN.sign, 60);
   s.getRange(DATA_ROW, SH.doc.IN.sign, n, 1).setFontColor('#9aa0a6').setNumberFormat('@');
+  /* ประวัติการแก้ใบเป็นของให้คนย้อนมาอ่านตอนสงสัย ไม่ใช่ของที่ต้องเห็นทุกวัน
+     ทำให้จางและแคบเหมือนช่องระบบอื่น ๆ จะได้ไม่มีใครเผลอไปพิมพ์ทับ
+     แต่ไม่ซ่อน เพราะวันที่ต้องใช้คือวันที่ต้องหาให้เจอโดยไม่ต้องถามใคร */
+  s.setColumnWidth(SH.doc.IN.revise, 90);
+  s.getRange(DATA_ROW, SH.doc.IN.revise, n, 1).setFontColor('#9aa0a6').setNumberFormat('@');
 
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' ใบ ราวปีครึ่งที่ 20 ใบ/วัน)';
 }
