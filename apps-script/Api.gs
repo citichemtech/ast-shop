@@ -1350,17 +1350,21 @@ function fixDocNotes() {
   }
 
   if (!moved.length) {
-    return 'ไม่มีใบไหนมีร่องรอยการแก้ค้างอยู่ในช่องหมายเหตุแล้ว' +
+    var none = 'ไม่มีใบไหนมีร่องรอยการแก้ค้างอยู่ในช่องหมายเหตุแล้ว' +
       (already ? ' (มี ' + already + ' ใบที่ย้ายไปช่องใหม่เรียบร้อยแล้ว)' : '');
+    Logger.log(none);
+    return none;
   }
   SpreadsheetApp.flush();
   writeLog_(email, 'ย้ายร่องรอยการแก้ใบ', SH.doc.name, moved.join(' '), '',
     'อยู่ในช่องหมายเหตุ', 'อยู่ในช่องประวัติการแก้ใบ',
     'ย้าย ' + moved.length + ' ใบ เพื่อไม่ให้ข้อความหลังบ้านถูกพิมพ์ลงใบที่ส่งลูกค้า');
 
-  return 'ย้ายร่องรอยการแก้ใบออกจากช่องหมายเหตุแล้ว ' + moved.length + ' ใบ\n' +
+  var msg = 'ย้ายร่องรอยการแก้ใบออกจากช่องหมายเหตุแล้ว ' + moved.length + ' ใบ\n' +
     moved.join(' · ') + '\n\n' +
     'ใบพวกนี้พิมพ์ซ้ำได้เลย หมายเหตุจะเหลือแค่ข้อความที่ควรอยู่บนกระดาษจริง ๆ';
+  Logger.log(msg);
+  return msg;
 }
 
 function findDocs(p) {
@@ -1701,11 +1705,14 @@ function peekDocNos() {
   requireStaff_();
   var cfg = appCfg_();
   var used = readDocNos_();
-  var out = {};
+  var out = {}, lines = [];
   for (var i = 0; i < DOC_TYPES.length; i++) {
     var t = DOC_TYPES[i];
     out[t.key] = nextDocNo_(cfg.docPrefix[t.key] || (t.code + '26-'), used.nos, 5, cfg.docStart[t.key]);
+    lines.push(t.th + ': ' + out[t.key]);
   }
+  /* สั่งจากหน้า Apps Script แล้วค่าที่ return ไม่ขึ้นให้เห็น ต้องเขียนลง Log เอง */
+  Logger.log('เลขใบถัดไปของแต่ละชนิด\n' + lines.join('\n'));
   return out;
 }
 

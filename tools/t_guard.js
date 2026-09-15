@@ -177,5 +177,55 @@ truthy('ไม่มีลิงก์ไฟล์ชีทอยู่ในค
 truthy('พนักงานที่ล็อกอินอยู่ยังได้คำตอบเต็ม',
   ctx.whoAmI().indexOf('spreadsheets/d/') > -1);
 
+/* ---------------------------------------------------------------------------
+   ฟังก์ชันที่สั่งได้จากหน้า Apps Script ต้องเขียนผลลง Log
+
+   หน้า Apps Script มีปุ่ม "เรียกใช้" ที่สั่งฟังก์ชันซึ่งไม่รับค่าอะไรเลยได้
+   แต่ **ค่าที่ฟังก์ชัน return ไม่ถูกแสดงให้เห็นเลย** บันทึกการดำเนินการจะขึ้น
+   แค่ "เริ่มการดำเนินการแล้ว" กับ "ดำเนินการเสร็จแล้ว" สองบรรทัดเท่านั้น
+
+   ของจริง 15 ก.ย. 69: เจ้าของร้านสั่ง fixDocNotes แล้วเห็นแค่สองบรรทัดนั้น
+   ไม่มีทางรู้เลยว่ามันย้ายให้กี่ใบ ใบไหนบ้าง หรือไม่เจออะไรให้ย้ายเลย
+   ฟังก์ชันที่ทำงานเสร็จแล้วเงียบสนิท กับฟังก์ชันที่ไม่ได้ทำอะไร หน้าตาเหมือนกันเป๊ะ
+   แล้วคนใช้ต้องไปเดาเอาเองจากการเปิดชีทดูทีละช่อง
+
+   นับ Logger.log ของฟังก์ชันส่วนตัวที่มันเรียกด้วย เพราะหลายตัวเป็นแค่เปลือกบาง ๆ
+   ที่ส่งต่อให้ตัวจริงทำ (checkStaticCells -> staticCells_) ซึ่งไม่ใช่ความผิด   */
+console.log('\n3. ฟังก์ชันที่สั่งจากหน้า Apps Script ได้ ต้องไม่ทำงานเสร็จแบบเงียบ ๆ');
+
+/* สามตัวนี้หน้าเว็บเป็นคนเรียก ไม่ใช่คนกดจากหน้า Apps Script
+   บังคับให้เขียน Log จะกลายเป็นขยะที่เขียนทุกครั้งที่มีคนเปิดแอป */
+var WEB_ONLY = {
+  getBootstrap: 'หน้าเว็บเรียกตอนเปิดแอป',
+  slipsWaiting: 'หน้าเว็บเรียกเพื่อนับสลิปที่รอตรวจ',
+  slipMonths: 'หน้าเว็บเรียกตอนเลือกเดือนที่จะส่งออก'
+};
+
+var byName = {};
+all.forEach(function (fn) { byName[fn.name] = fn.body; });
+
+function logsSomewhere(fn) {
+  if (fn.body.indexOf('Logger.log') > -1) return true;
+  /* ตามไปอีกชั้นเดียว พอสำหรับเปลือกบาง ๆ และยังอ่านออกว่าตรวจอะไรอยู่ */
+  var calls = fn.body.match(/\b[A-Za-z][A-Za-z0-9_]*_\s*\(/g) || [];
+  for (var i = 0; i < calls.length; i++) {
+    var nm = calls[i].replace(/\s*\($/, '');
+    if (byName[nm] && byName[nm].indexOf('Logger.log') > -1) return true;
+  }
+  return false;
+}
+
+var runnable = all.filter(function (fn) {
+  return fn.name.slice(-1) !== '_' && !fn.args.trim() && !WEB_ONLY[fn.name];
+});
+truthy('เจอฟังก์ชันที่สั่งจากหน้า Apps Script ได้จริง', runnable.length > 15);
+eq('ทุกตัวเขียนผลลง Log ไม่มีตัวไหนเสร็จแล้วเงียบ',
+  runnable.filter(function (fn) { return !logsSomewhere(fn); })
+    .map(function (fn) { return fn.file + ':' + fn.name; }), []);
+
+/* รายการยกเว้นต้องเป็นของจริง ไม่ใช่ชื่อค้างจากโค้ดที่ลบไปแล้ว */
+eq('ชื่อในรายการยกเว้นยังมีอยู่จริงทุกตัว',
+  Object.keys(WEB_ONLY).filter(function (n) { return !byName[n]; }), []);
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

@@ -191,7 +191,10 @@ function stopBackup() {
   for (var i = 0; i < all.length; i++) {
     if (all[i].getHandlerFunction() === 'backupNow') { ScriptApp.deleteTrigger(all[i]); n++; }
   }
-  return n ? 'ปิดการสำรองอัตโนมัติแล้ว (' + n + ' ทริกเกอร์)' : 'ไม่ได้ตั้งสำรองอัตโนมัติไว้อยู่แล้ว';
+  var msg = n ? 'ปิดการสำรองอัตโนมัติแล้ว (' + n + ' ทริกเกอร์)'
+              : 'ไม่ได้ตั้งสำรองอัตโนมัติไว้อยู่แล้ว';
+  Logger.log(msg);
+  return msg;
 }
 
 /** สำรองล่าสุดเมื่อไร มีกี่ไฟล์ ล้มครั้งสุดท้ายเพราะอะไร */
