@@ -97,6 +97,10 @@ function parseSummaryText(t){
     if(/(วิธีชำระ|ชำระเงิน|การชำระ)\s*[:：]/.test(b)){ inAddr=false; o.pay=/ปลายทาง|COD/i.test(b)?"cod":(/โอน/.test(b)?"transfer":""); continue; }
     if(/(ขนส่ง|จัดส่งโดย)\s*[:：]/.test(b)){ inAddr=false; o.carrier=b.split(/[:：]/).slice(1).join(":").trim(); continue; }
     if(/หมายเหตุ\s*[:：]/.test(b)){ inAddr=false; o.memo=b.split(/[:：]/).slice(1).join(":").trim(); continue; }
+    /* 📦 เป็นได้ทั้งหัวข้อสินค้าและหัวเรื่องของข้อความสรุปที่แอปสร้างเอง
+       ("📦 สรุปออเดอร์ลูกค้า") ถ้าไม่กันไว้ การวางข้อความของแอปเองกลับเข้ามา
+       จะได้สินค้าผีเพิ่มมาหนึ่งบรรทัดชื่อ "สรุปออเดอร์ลูกค้า" จำนวน 0 */
+    if(head(ln,"📦") && /^สรุปออเดอร์/.test(b)){ inAddr=false; continue; }
     if(head(ln,"⚙")||head(ln,"🛠")||head(ln,"📦")||head(ln,"🔧")){ inAddr=false; cur={name:b,variant:"",qty:0,price:"",total:"",piece:0,pack:0}; o.items.push(cur); continue; }
     if(head(ln,"🔹")||head(ln,"🔸")||head(ln,"▫")||head(ln,"◾")){ inAddr=false; if(cur) cur.variant=b; continue; }
     if(head(ln,"💰")){ inAddr=false; if(cur){ var qf=qtyFromLine(b); cur.piece=qf.piece; cur.pack=qf.pack; cur.qty=qf.piece||qf.pack||0; cur.total=money(b); } continue; }
@@ -129,6 +133,64 @@ function parseSummaryText(t){
   o.vat=0; o.taxinfo="";
   return o;
 }
+/**
+ * ที่อยู่เปล่า ๆ ที่ลูกค้าพิมพ์มาในแชท — ไม่มีหัวข้อ ไม่มีอิโมจิ ไม่มีรายการสินค้า
+ *
+ *   ร้านแต่งรถตู้
+ *   22/8 ถ.สุขุมวิท ต.เนินพระ
+ *   อ.เมือง จ.ระยอง 21000
+ *   083-4988949
+ *
+ * นี่คือรูปแบบที่ลูกค้าส่งมาจริงบ่อยที่สุด และเป็นสิ่งที่ช่องนี้โฆษณาไว้ว่ารับได้
+ * ("วางที่อยู่ลูกค้าจากแชท Shopee / Lazada / Line ได้ที่นี่") แต่ของเดิมอ่านได้
+ * เฉพาะข้อความสรุปที่แอปสร้างเอง พอวางที่อยู่ดิบจึงขึ้นว่าอ่านไม่ออก
+ * ทั้งที่ข้อความนั้นไม่มีอะไรผิดเลย — คนใช้จึงต้องพิมพ์ที่อยู่เองอยู่ดี
+ * ซึ่งลบเหตุผลทั้งหมดของการมีช่องนี้
+ *
+ * เดาให้น้อยที่สุด: เอาเบอร์ที่เป็นเบอร์ไทยจริง บรรทัดแรกที่ไม่ใช่ที่อยู่เป็นชื่อ
+ * ที่เหลือส่งเข้าตัวแยกที่อยู่ตัวเดิม แล้วให้คนตรวจบนหน้าพรีวิวก่อนใช้เสมอ
+ */
+function looksLikeAddr(ln){
+  return /^\s*\d/.test(ln) ||
+    /(ถนน|ถ\.|ซอย|ซ\.|หมู่|ม\.\s*\d|ตำบล|ต\.|แขวง|อำเภอ|อ\.|เขต|จังหวัด|จ\.|บ้านเลขที่|เลขที่)/.test(ln);
+}
+
+function parseAddressBlock(txt){
+  var o = { items: [], cust: "", tel: "", addr: "" };
+  var L = String(txt || "").replace(/\r/g, "").split("\n")
+    .map(function (x) { return x.trim() })
+    .filter(function (x) { return x });
+  if (!L.length) return o;
+
+  var addrLines = [];
+  for (var i = 0; i < L.length; i++) {
+    var ln = L[i];
+    /* บางคนติดป้ายกำกับมาให้ด้วย ("ชื่อ:" "เบอร์:") ตัดป้ายออกก่อนอ่านค่า */
+    var lbl = ln.match(/^(?:ชื่อ(?:ลูกค้า|ผู้รับ|ผู้สั่ง)?|เบอร์(?:โทร)?|โทร|ที่อยู่)\s*[:：]\s*(.*)$/);
+    if (lbl) ln = lbl[1].trim();
+    if (!ln) continue;
+
+    /* เบอร์โทร — เอาเฉพาะที่เป็นเบอร์ไทยจริง 9-10 หลักขึ้นต้นศูนย์
+       ไม่งั้นเลขที่บ้านกับรหัสไปรษณีย์จะกลายเป็นเบอร์โทรได้ */
+    var ph = ln.match(/0\d[\d\-\s]{7,12}\d/);
+    if (ph && isThaiPhone(ph[0])) {
+      if (!o.tel) o.tel = digitsOnly(ph[0]);
+      var left = ln.replace(ph[0], "").replace(/[()\-–,]/g, " ").trim();
+      if (!left) continue;
+      ln = left;
+    }
+
+    if (!o.cust && !looksLikeAddr(ln)) { o.cust = ln; continue; }
+    addrLines.push(ln);
+  }
+
+  var a = splitThaiAddr(addrLines);
+  o.addr = a.addr; o.tambon = a.tambon; o.amphoe = a.amphoe;
+  o.province = a.province; o.zip = a.zip;
+  o.qty = 0; o.pay = ""; o.vat = 0; o.taxinfo = "";
+  return o;
+}
+
 function parseOrderText(txt){
   var t=String(txt||"").replace(/\r/g,""), L=t.split("\n"), o={};
   /* ข้อความที่แอปสร้างเองใช้ทางเดิม · ข้อความสรุปแบบอิโมจิใช้ทางใหม่ */
@@ -180,6 +242,12 @@ function parseOrderText(txt){
   if(tm){ o.taxinfo=tm[0].replace(/^.*ขอใบกำกับภาษี\s*/,"").trim(); o.vat=1; }
   else { o.taxinfo=""; o.vat=0; }
   o.pname=o.items.length?o.items[0].name:"";
+
+  /* อ่านตามรูปแบบที่รู้จักแล้วไม่ได้อะไรเลย = ข้อความนี้ไม่ใช่ใบสรุปออเดอร์
+     แต่แทบทุกครั้งมันคือที่อยู่เปล่า ๆ ที่ลูกค้าพิมพ์มาในแชท ซึ่งอ่านได้อยู่ดี
+     ลองทางนั้นก่อนจะบอกคนใช้ว่า "อ่านไม่ออก" — เพราะคำว่าอ่านไม่ออกแปลว่า
+     ต้องพิมพ์ที่อยู่เองทั้งก้อน ซึ่งคือสิ่งที่ช่องนี้มีไว้เพื่อไม่ต้องทำ */
+  if(!o.cust && !o.tel && !o.addr && !(o.items||[]).length) return parseAddressBlock(txt);
   return o;
 }
 /* เลือกขนส่งใน <select> จากชื่อที่อ่านได้ — ตรงตัวก่อน แล้วค่อยเทียบคำแรก */

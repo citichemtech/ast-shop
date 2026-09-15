@@ -20,7 +20,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 GS = ROOT / "apps-script"
 
 # เรียงตามลำดับที่อ่านแล้วเข้าใจง่าย — Apps Script ไม่สนลำดับ ฟังก์ชันถูก hoist หมด
-SERVER = ["Sheets.gs", "Fefo.gs", "Doc.gs", "Setup.gs", "Api.gs", "Import.gs"]
+SERVER = ["Sheets.gs", "Fefo.gs", "Doc.gs", "Setup.gs", "Api.gs", "Acct.gs", "Pay.gs",
+          "Pub.gs", "Import.gs"]
 
 
 def main():
@@ -40,6 +41,26 @@ def main():
         parts.append("\n\n/* ==================== %s ==================== */\n\n%s\n" % (name, body))
     code = "".join(parts)
     (out / "Code.gs").write_text(code, encoding="utf-8")
+
+    # ---- Pub.html (ไฟล์4) ----
+    # หน้าลูกค้าเป็นไฟล์แยกโดยตั้งใจ ไม่รวมเข้า Index.html
+    # เพราะ Index.html คือหลังร้านทั้งก้อน ส่งไปถึงเครื่องลูกค้าไม่ได้
+    (out / "Pub.html").write_text(
+        (GS / "Pub.html").read_text(encoding="utf-8"), encoding="utf-8")
+
+    # ---- Backup.gs (ไฟล์3) ----
+    # ไม่รวมเข้า Code.gs โดยตั้งใจ — ตัวสำรองต้องยืนอยู่ได้ลำพัง
+    # แต่ต้องก๊อปมาไว้ที่เดียวกัน ไม่งั้นของที่ส่งให้เจ้าของร้านจะมีไฟล์เก่าปนมา
+    (out / "Backup.gs").write_text(
+        (GS / "Backup.gs").read_text(encoding="utf-8"), encoding="utf-8")
+
+    # ชื่อไฟล์รุ่นเก่าที่เลิกใช้แล้ว ถ้าปล่อยค้างไว้จะถูกหยิบส่งให้เจ้าของร้านผิดตัว
+    # (โฟลเดอร์ out/ เป็นของที่สร้างใหม่ได้เสมอ ไม่ได้อยู่ใน git)
+    for stale in ("ไฟล์1-Code-gs.txt", "ไฟล์2-Index-html.txt", "ไฟล์3-Backup-gs.txt"):
+        old = out / stale
+        if old.exists():
+            old.unlink()
+            print("  ลบไฟล์ชื่อเก่าที่ค้างอยู่: %s" % stale)
 
     # ---- Index.html ----
     index = (GS / "Index.html").read_text(encoding="utf-8")
@@ -65,6 +86,23 @@ def main():
     (out / "appsscript.json").write_text(
         (GS / "appsscript.json").read_text(encoding="utf-8"), encoding="utf-8")
 
+    # ---- ไฟล์ที่ส่งให้เจ้าของร้านก๊อปไปวาง ----
+    # เจ้าของร้านวางทีละไฟล์ตามหมายเลข ก่อนหน้านี้ผมก๊อปด้วยมือทุกครั้ง
+    # ซึ่งลืมได้ และลืมไปแล้วจริง (4-Pub.txt เคยค้างอยู่รุ่นเก่าหนึ่งวันเต็ม)
+    # ไฟล์ที่ค้างรุ่นเก่าคือไฟล์ที่วางไปแล้วไม่มีอะไรเปลี่ยน แล้วไม่มีใครรู้ว่าทำไม
+    HAND = [("1-Code.txt", "Code.gs"), ("2-Index.txt", "Index.html"),
+            ("3-appsscript.txt", "appsscript.json"), ("4-Pub.txt", "Pub.html"),
+            ("5-Backup.txt", "Backup.gs")]
+    for txt, src in HAND:
+        (out.parent / txt).write_text((out / src).read_text(encoding="utf-8"),
+                                      encoding="utf-8")
+    # เลขเดิมของไฟล์สำรอง ตอนนี้เลข 3 เป็น appsscript.json แล้ว
+    # ถ้าปล่อยค้างไว้ เจ้าของร้านจะวางไฟล์ผิดตัวลงช่องผิด
+    old3 = out.parent / "3-Backup.txt"
+    if old3.exists():
+        old3.unlink()
+        print("  ลบไฟล์เลขเก่าที่ค้างอยู่: 3-Backup.txt")
+
     def kb(p):
         return len(p.read_text(encoding="utf-8").encode("utf-8")) / 1024
 
@@ -72,6 +110,9 @@ def main():
     print("  Code.gs          %7.0f KB  (รวม %d ไฟล์: %s)" % (kb(out / "Code.gs"), len(SERVER), ", ".join(SERVER)))
     print("  Index.html       %7.0f KB  (รวมหน้าจอ %d ส่วน)" % (kb(out / "Index.html"), n))
     print("  appsscript.json  %7.1f KB" % kb(out / "appsscript.json"))
+    print("  ไฟล์สำหรับก๊อปไปวาง → %s" % out.parent)
+    for txt, src in HAND:
+        print("    %-18s %7.0f KB  (= %s)" % (txt, kb(out.parent / txt), src))
 
 
 if __name__ == "__main__":
