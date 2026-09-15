@@ -910,10 +910,17 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
           var x = Math.round(c.width * 0.70), y = Math.round(c.height * 0.855);
           var w = Math.round(c.width * 0.25), h = Math.round(c.height * 0.05);
           var p = g.getImageData(x, y, w, h).data, n = 0;
-          for (var i = 0; i < p.length; i += 4) if (p[i] < 200 || p[i + 2] < 200) n++;
-          res(n);
+          /* เก็บสีของหมึกไว้ด้วย ไม่ใช่นับแต่จำนวนจุด — ลายเซ็นที่ลงกระดาษถูกที่
+             แต่เป็นสีดำ กับที่เป็นสีน้ำเงิน นับจุดได้เท่ากันเป๊ะ */
+          var sr = 0, sg = 0, sb = 0, ink = 0;
+          for (var i = 0; i < p.length; i += 4) {
+            if (p[i] < 200 || p[i + 2] < 200) n++;
+            if (p[i] < 150) { sr += p[i]; sg += p[i + 1]; sb += p[i + 2]; ink++; }
+          }
+          res({ n: n, r: ink ? sr / ink : 0, g: ink ? sg / ink : 0,
+                b: ink ? sb / ink : 0, ink: ink });
         };
-        im.onerror = function () { res(-1); };
+        im.onerror = function () { res({ n: -1, r: 0, g: 0, b: 0, ink: 0 }); };
         im.src = url;
       });
     }
@@ -921,8 +928,17 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     var on  = await ink(await buildDocPage(d, m, { co: {}, sign: { auth: sig } }, 'ต้นฉบับ'));
     return { off: off, on: on };
   });
-  truthy('ใบที่ยังไม่ได้เซ็น ช่องนั้นแทบไม่มีหมึก', stamped.off >= 0);
-  truthy('เซ็นแล้วหมึกในช่องนั้นเพิ่มขึ้นจริง', stamped.on > stamped.off + 100);
+  truthy('ใบที่ยังไม่ได้เซ็น ช่องนั้นแทบไม่มีหมึก', stamped.off.n >= 0);
+  truthy('เซ็นแล้วหมึกในช่องนั้นเพิ่มขึ้นจริง', stamped.on.n > stamped.off.n + 100);
+
+  /* เจ้าของร้านสั่ง 15 ก.ย. 69: "แก้ไขลายเซ็นเป็นสีน้ำเงิน ปากกาน้ำเงิน"
+     ของเดิม #12233d เป็นน้ำเงินจนเกือบดำ พิมพ์ออกมาแยกไม่ออกจากหมึกดำของเครื่องพิมพ์
+     แล้วลายเซ็นจะดูเหมือนเป็นส่วนหนึ่งของแบบฟอร์มที่พิมพ์มาสำเร็จ ไม่ใช่คนเซ็นจริง
+     วัดจากสีของหมึกบนกระดาษที่วาดออกมาจริง ไม่ใช่เช็คว่าโค้ดเขียนค่าสีไว้ว่าอะไร */
+  truthy('มีหมึกให้วัดสีได้จริง', stamped.on.ink > 50);
+  truthy('หมึกลายเซ็นเป็นสีน้ำเงิน ไม่ใช่เกือบดำ (ได้ rgb ' +
+    Math.round(stamped.on.r) + ',' + Math.round(stamped.on.g) + ',' +
+    Math.round(stamped.on.b) + ')', stamped.on.b > stamped.on.r + 40);
 
   console.log('\n   ที่ตั้งลายเซ็นต้องหาเจอเสมอ แม้ช่วงที่เลือกไม่มีออเดอร์');
   await page.click('.tabs button[data-go="sum"]');
