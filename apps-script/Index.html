@@ -624,6 +624,34 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
         <div class="sum" id="s-vat-row" style="display:none"><span>VAT</span><b id="s-vat">฿0.00</b></div>
         <div class="sum big"><span>ยอดชำระสุทธิ</span><b id="s-net">฿0.00</b></div>
 
+        <!-- ช่องราคาขายจริงเป็นราคาต่อชิ้น แต่ตัวเลขที่เจ้าของร้านรู้คือยอดที่ลูกค้าจ่าย
+             ทั้งใบ (เช่นยอดช้อปปี้) ซึ่งรวมหลายตัวและรวมค่าส่งไว้แล้ว
+             ถ้าไม่มีช่องนี้ ต้องเอายอดรวมมาหารจำนวนเองก่อนพิมพ์ ซึ่งเป็นจุดที่คิดผิดได้ทุกใบ
+             และพอมีหลายตัวในใบเดียวก็เกลี่ยด้วยมือให้ถูกไม่ได้เลย -->
+        <div class="card" id="back-card" style="margin-top:12px">
+          <div class="sec-hd"><h2>คิดราคาย้อนกลับจากยอดที่ลูกค้าจ่าย</h2></div>
+          <div class="hint" style="padding:0 2px 8px">
+            รู้แค่ยอดที่ลูกค้าจ่ายทั้งใบ (เช่นยอดจากช้อปปี้ ซึ่งรวมค่าส่งไว้แล้ว)
+            ใส่ตรงนี้แล้วกดปุ่ม ระบบจะเกลี่ยลงราคาต่อชิ้นของทุกแถวให้เอง ไม่ต้องหารเอง
+            <br><b>ถ้าไม่ได้แยกค่าส่งออกมา ให้เว้นช่องค่าส่งว่างไว้</b> —
+            ระบบจะถือว่าทั้งยอดเป็นค่าสินค้า ใบที่ออกจะไม่มีบรรทัดค่าส่งแยก
+          </div>
+          <div class="two">
+            <div class="fld">
+              <label>ยอดที่ลูกค้าจ่ายจริงทั้งใบ (บาท)</label>
+              <input id="f-paid" type="number" inputmode="decimal" min="0" step="any"
+                     placeholder="เช่น 571">
+            </div>
+            <div class="fld">
+              <label>ค่าส่งที่รวมอยู่ในยอดนั้น (บาท)</label>
+              <input id="f-paid-ship" type="number" inputmode="decimal" min="0" step="any"
+                     placeholder="ไม่มีก็เว้นว่าง">
+            </div>
+          </div>
+          <button class="btn" id="btn-back" style="margin-top:4px">เกลี่ยราคาให้ยอดตรง</button>
+          <div class="lotline" id="back-say" style="margin-top:8px"></div>
+        </div>
+
         <button class="btn" id="btn-save" style="margin-top:12px">บันทึกออเดอร์ลงชีท</button>
         <div class="hint" id="save-hint">เลขที่ออเดอร์ถัดไป: <b id="next-no">—</b></div>
       </div>

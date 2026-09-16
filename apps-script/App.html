@@ -320,6 +320,107 @@ function setVatFromText(txt){
   el.value = /^รับ/.test(String(txt || "")) ? "excl" : "none";
 }
 
+/* ---------------------------------- คิดราคาย้อนกลับจากยอดที่ลูกค้าจ่ายจริง */
+
+/* ช่อง "ราคาขายจริง" เป็นราคาต่อชิ้น แต่ตัวเลขที่เจ้าของร้านรู้คือยอดที่ลูกค้าจ่ายทั้งใบ
+   เช่นยอด 571 จากช้อปปี้ ซึ่งเป็น IPA 5 ขวด (96×5=480) บวกค่าส่ง 91 รวมอยู่แล้ว
+   ยอดนั้นเอาไปใส่ช่องราคาต่อชิ้นไม่ได้เลยสักทาง — ใส่ตรง ๆ กลายเป็นขวดละ 571
+   จะให้ถูกต้องหารเองก่อน ซึ่งเป็นจุดที่คิดเลขผิดได้ทุกใบ และพอมีหลายตัวในใบเดียว
+   ก็เกลี่ยด้วยมือให้ถูกไม่ได้เลย (เจ้าของร้านชี้จุดนี้เอง 16 ก.ย. 69)
+
+   ตัวนี้จึงคิดย้อนกลับให้: ยอดที่จ่าย → ฐานภาษี → เกลี่ยลงราคาต่อชิ้นของทุกแถว
+   แล้วเขียนลงช่องราคาขายจริงจริง ๆ ให้เห็นกับตา ไม่ได้ซ่อนไว้ในโค้ด
+   ตรวจได้ แก้ต่อได้ และของที่ลงชีทก็คือเลขที่เห็นบนจอเป๊ะ ๆ */
+
+function backSolve(){
+  var say = $("#back-say");
+  say.className = "lotline"; say.textContent = "";
+
+  var paid = Number($("#f-paid").value);
+  if(!(paid > 0)){ say.className = "lotline bad";
+    say.textContent = "ใส่ยอดที่ลูกค้าจ่ายก่อน"; return }
+
+  /* แถมฟรีไม่คิดเงิน จึงไม่ต้องรับส่วนแบ่งของยอดที่ลูกค้าจ่าย
+     ถ้าเกลี่ยลงไปด้วย ของแถมจะกลายเป็นของที่ลูกค้าจ่ายเงิน แล้วกำไรในชีทก็ผิดตาม */
+  var rows = itemRows().filter(function(r){
+    var g = r.querySelector(".i-gift");
+    return (Number(r.querySelector(".i-qty").value)||0) > 0 && !(g && g.checked);
+  });
+  if(!rows.length){ say.className = "lotline bad";
+    say.textContent = "ยังไม่มีรายการสินค้าที่มีจำนวน"; return }
+
+  var rate = Number(BOOT ? BOOT.vatRate : 0) || 0;
+  var isVat = vatOn();
+  var shipIn = Number($("#f-paid-ship").value) || 0;
+  if(shipIn > paid){ say.className = "lotline bad";
+    say.textContent = "ค่าส่งมากกว่ายอดที่ลูกค้าจ่าย — ตรวจตัวเลขอีกที"; return }
+
+  /* ฐานภาษีที่ทำให้ยอดสุทธิออกมาเท่ากับที่ลูกค้าจ่าย
+     ลอง 3 ค่ารอบ ๆ แล้วเลือกตัวที่ใกล้ที่สุด เพราะ VAT ถูกปัดสองตำแหน่ง
+     ยอดบางค่าจึงไม่มีฐานไหนทำให้ตรงเป๊ะได้เลย ต้องบอกตามจริง ไม่ใช่แกล้งให้ลงตัว */
+  var want = round2(isVat ? paid / (1 + rate) : paid);
+  var best = want, bestGap = Infinity;
+  [-0.01, 0, 0.01].forEach(function(d){
+    var b = round2(want + d);
+    var net = round2(b + (isVat ? round2(b * rate) : 0));
+    var gap = Math.abs(net - paid);
+    if(gap < bestGap - 1e-9){ bestGap = gap; best = b }
+  });
+
+  var shipBase = isVat ? round2(shipIn / (1 + rate)) : round2(shipIn);
+  var goods = round2(best - shipBase);
+  if(goods <= 0){ say.className = "lotline bad";
+    say.textContent = "หักค่าส่งแล้วไม่เหลือค่าสินค้า — ตรวจตัวเลขอีกที"; return }
+
+  /* เกลี่ยตามสัดส่วนราคาที่ตั้งไว้ตอนนี้ ของแพงได้ส่วนแบ่งมากกว่า ซึ่งตรงกับความจริง
+     แถวสุดท้ายรับเศษที่เหลือ จะได้บวกกลับมาได้ยอดเดิมเป๊ะ ไม่หายไปกับการปัด */
+  var w = rows.map(function(r){
+    var q = Number(r.querySelector(".i-qty").value) || 0;
+    var ov = r.querySelector(".i-price").value;
+    var unit;
+    if(isFree(r)) unit = Number(ov) || 0;
+    else {
+      var pp = prodBySku(r.querySelector(".i-sku").value);
+      unit = (ov === "") ? ((pp && Number(pp.price)) || 0) : (Number(ov) || 0);
+    }
+    return { r: r, q: q, base: round2(q * unit) };
+  });
+  var tot = 0; w.forEach(function(x){ tot += x.base });
+  if(!(tot > 0)){ w.forEach(function(x){ x.base = x.q }); tot = 0;
+    w.forEach(function(x){ tot += x.base }) }
+
+  var used = 0;
+  w.forEach(function(x, i){
+    var share = (i === w.length - 1) ? round2(goods - used) : round2(goods * x.base / tot);
+    used = round2(used + share);
+    x.r.querySelector(".i-price").value = round2(share / x.q);
+  });
+
+  /* ราคาที่เขียนลงช่องเป็นราคาก่อน VAT แล้ว โหมดจึงต้องเป็น "บวก VAT 7%"
+     ถ้าปล่อยเป็นโหมดถอด ระบบจะถอดซ้ำอีกชั้น ยอดจะต่ำกว่าที่ลูกค้าจ่าย 7% */
+  if(isVat) $("#f-vat").value = "excl";
+  $("#f-ship").value = shipBase;
+  $("#f-ship").dataset.touched = "1";
+  recalc();
+
+  /* บอกผลจริงที่ได้ ไม่ใช่บอกว่าสำเร็จแล้วจบ — ปัดเศษ 2 ตำแหน่งทำให้บางยอด
+     ไม่มีทางตรงเป๊ะได้เลย เช่น 571 ที่มี VAT 7% ยอดสุทธิกระโดดจาก 570.99 ไป 571.01 */
+  var got = Number(String($("#s-net").textContent).replace(/[^0-9.]/g, ""));
+  var diff = round2(got - paid);
+  if(Math.abs(diff) < 0.005){
+    say.className = "lotline ok";
+    say.textContent = "เกลี่ยแล้ว ยอดสุทธิ " + baht(got) + " ตรงกับที่ลูกค้าจ่ายพอดี";
+  } else {
+    say.className = "lotline warn";
+    say.textContent = "เกลี่ยแล้วได้ยอดสุทธิ " + baht(got) + " ต่างจากที่ลูกค้าจ่าย " +
+      (diff > 0 ? "+" : "") + diff.toFixed(2) + " บาท — " +
+      "VAT 7% ปัดสองตำแหน่ง ยอดบางค่าจึงไม่มีฐานไหนทำให้ตรงเป๊ะได้ " +
+      "ถ้ารับไม่ได้ ให้แก้ยอดที่ลูกค้าจ่ายขึ้นหรือลงหนึ่งสตางค์";
+  }
+}
+
+function round2(v){ return Math.round((Number(v) || 0) * 100) / 100 }
+
 function recalc(){
   var sub = 0, need = {};
   itemRows().forEach(function(r){
@@ -479,6 +580,15 @@ function lotLine(r, p, sku){
   if(qty>lot.total){
     el.className="lotline bad";
     el.textContent="ล็อตเหลือรวม "+lot.total+" ชิ้น ไม่พอกับที่สั่ง";
+    return;
+  }
+  /* มีกลุ่มล็อตแต่ไม่มีล็อตไหนตัดได้ — ของหมดทุกล็อต หรือหมดอายุไปหมดแล้ว
+     ของเดิมอ่าน lot.next.lotNo ตรง ๆ เจอค่าว่างเมื่อไรคือทั้งหน้าจอค้างทันที
+     ยอดไม่อัปเดต ปุ่มไม่ทำงาน โดยไม่มีอะไรบอกว่าเกิดอะไรขึ้น */
+  if(!lot.next){
+    el.className = "lotline warn";
+    el.textContent = "สินค้าตัวนี้คุมล็อต แต่ไม่มีล็อตไหนตัดได้เลย "
+      + "(ของหมดทุกล็อต หรือหมดอายุไปหมดแล้ว) — ต้องรับของเข้าล็อตใหม่ก่อนถึงจะขายได้";
     return;
   }
   el.className="lotline ok";
@@ -5353,6 +5463,7 @@ document.addEventListener("DOMContentLoaded", function(){
     custToast(custFill([["#f-tel", c.tel, "เบอร์โทร"], ["#f-addr", c.addr || c.taxAddr, "ที่อยู่"]]));
   });
   $("#btn-add").onclick   = function(){ addItem(); recalc() };
+  $("#btn-back").onclick  = backSolve;
   $("#btn-parse").onclick = doParse;
   $("#btn-save").onclick  = save;
   $("#btn-shop").onclick = function(){ go("shop") };

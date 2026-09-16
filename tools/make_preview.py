@@ -918,6 +918,10 @@ window.google = { script: { run: (function(){
           lot.total += q;
           if(!lot.months) lot.months = {};
           if(!lot.months[lotNo]){ lot.months[lotNo] = true; lot.count += 1 }
+          /* ของจริงคืนล็อตที่จะถูกตัดก่อนมาด้วยเสมอเมื่อยังมีของเหลือ
+             ชีทจำลองไม่คืนก็จะไม่มีวันเจอบั๊กหน้าจอที่อ่านค่านี้ */
+          if(!lot.next) lot.next = { lotNo:lotNo, exp:null, remain:lot.total };
+          else lot.next.remain = lot.total;
           out.push({ sku:sku, name:pr.name, unit:pr.unit||"ชิ้น", qty:q,
                      remain:(pr.remain===undefined?null:pr.remain), lotRemain:lot.total });
         });

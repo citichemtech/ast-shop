@@ -4251,6 +4251,88 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('และไม่ยิงขึ้นชีทเลย',
     await page.evaluate(function () { return window.SENT.length }), nCnt);
 
+  /* ---------- 62. คิดราคาย้อนกลับจากยอดที่ลูกค้าจ่าย ---------- */
+  console.log('\n62. คิดราคาย้อนกลับจากยอดที่ลูกค้าจ่ายทั้งใบ');
+  /* ช่องราคาขายจริงเป็นราคาต่อชิ้น แต่ตัวเลขที่เจ้าของร้านรู้คือยอดที่ลูกค้าจ่ายทั้งใบ
+     เช่น 571 จากช้อปปี้ = IPA 5 ขวด บวกค่าส่ง รวมอยู่แล้ว
+     เอาไปใส่ช่องราคาต่อชิ้นตรง ๆ กลายเป็นขวดละ 571 × 5 = 2,855 — ผิดไปห้าเท่า
+     (เจ้าของร้านเกือบกดบันทึกใบนี้จริง 16 ก.ย. 69) */
+  await page.click('.tabs button[data-go="new"]');
+  await page.waitForTimeout(250);
+  await page.click('#btn-add');
+  var nBack = await page.locator('#items .it').count();
+  await page.selectOption('#items .it:nth-child(' + nBack + ') .i-sku', 'CHEM-002');
+  await page.fill('#items .it:nth-child(' + nBack + ') .i-qty', '5');
+  await page.waitForTimeout(150);
+
+  /* ให้เหลือแถวเดียวเหมือนใบช้อปปี้จริง ๆ */
+  for (var rmB = nBack - 1; rmB >= 1; rmB--) {
+    await page.click('#items .it:nth-child(1) .rm');
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(150);
+  eq('เหลือรายการเดียว', await page.locator('#items .it').count(), 1);
+  await page.selectOption('#f-vat', 'excl');
+  await page.fill('#f-disc', '0');
+  await page.waitForTimeout(150);
+
+  await page.fill('#f-paid', '571');
+  await page.fill('#f-paid-ship', '');
+  await page.click('#btn-back');
+  await page.waitForTimeout(300);
+
+  var unitB = await page.inputValue('#items .it:first-child .i-price');
+  truthy('เขียนราคาต่อชิ้นลงช่องให้เห็นกับตา ไม่ได้ซ่อนไว้',
+    Number(unitB) > 0 && Number(unitB) < 571);
+  eq('ราคาต่อชิ้นคือยอดที่เกลี่ยแล้ว ไม่ใช่ยอดทั้งใบ', unitB, '106.73');
+  eq('ไม่แยกค่าส่ง ช่องค่าส่งจึงเป็น 0', await page.inputValue('#f-ship'), '0');
+  /* ราคาที่เขียนลงช่องเป็นราคาก่อน VAT แล้ว โหมดต้องเป็นบวก VAT ไม่ใช่ถอดซ้ำ */
+  eq('โหมดภาษีเปลี่ยนเป็นบวก VAT เพราะราคาในช่องถอดมาแล้ว',
+    await page.inputValue('#f-vat'), 'excl');
+
+  /* VAT 7% ปัดสองตำแหน่ง ยอด 571 ไม่มีฐานไหนทำให้ตรงเป๊ะได้เลย
+     (533.64 → 570.99 · 533.65 → 571.01) ต้องบอกตามจริง ห้ามแกล้งให้ลงตัว */
+  var netB = await page.textContent('#s-net');
+  var sayB = await page.textContent('#back-say');
+  truthy('ยอดสุทธิเข้าใกล้ยอดที่ลูกค้าจ่ายมาก',
+    Math.abs(Number(netB.replace(/[^0-9.]/g, '')) - 571) <= 0.05);
+  truthy('บอกตรง ๆ ว่าต่างกันเท่าไร ไม่แกล้งบอกว่าตรงพอดี', /ต่างจากที่ลูกค้าจ่าย/.test(sayB));
+  truthy('และอธิบายว่าทำไมถึงตรงเป๊ะไม่ได้', /ปัดสองตำแหน่ง/.test(sayB));
+  eq('ใช้สีเตือน ไม่ใช่สีเขียวว่าสำเร็จ',
+    await page.getAttribute('#back-say', 'class'), 'lotline warn');
+
+  console.log('\n   ยอดที่ลงตัวได้ ต้องบอกว่าตรงพอดี');
+  await page.fill('#f-paid', '535');
+  await page.click('#btn-back');
+  await page.waitForTimeout(300);
+  var say2B = await page.textContent('#back-say');
+  truthy('บอกว่าตรงพอดี', /ตรงกับที่ลูกค้าจ่ายพอดี/.test(say2B));
+  eq('ใช้สีเขียว', await page.getAttribute('#back-say', 'class'), 'lotline ok');
+
+  console.log('\n   ใส่ค่าส่งที่รวมอยู่ในยอด ต้องแยกออกมาให้');
+  await page.fill('#f-paid', '571');
+  await page.fill('#f-paid-ship', '91');
+  await page.click('#btn-back');
+  await page.waitForTimeout(300);
+  truthy('ค่าส่งถูกถอด VAT แล้วใส่ลงช่องค่าจัดส่ง',
+    Math.abs(Number(await page.inputValue('#f-ship')) - 85.05) <= 0.02);
+  truthy('ราคาสินค้าต่อชิ้นลดลงเพราะยอดถูกแบ่งไปเป็นค่าส่ง',
+    Number(await page.inputValue('#items .it:first-child .i-price')) < 106.73);
+
+  console.log('\n   ไม่ใส่ยอด หรือไม่มีรายการ ต้องเตือน');
+  await page.fill('#f-paid', '');
+  await page.click('#btn-back');
+  await page.waitForTimeout(200);
+  truthy('เตือนว่ายังไม่ได้ใส่ยอด', /ใส่ยอดที่ลูกค้าจ่ายก่อน/.test(await page.textContent('#back-say')));
+  await page.fill('#f-paid', '100');
+  await page.fill('#f-paid-ship', '200');
+  await page.click('#btn-back');
+  await page.waitForTimeout(200);
+  truthy('ค่าส่งมากกว่ายอดที่จ่าย ต้องเตือน ไม่ใช่คิดต่อจนได้ราคาติดลบ',
+    /ค่าส่งมากกว่ายอดที่ลูกค้าจ่าย/.test(await page.textContent('#back-say')));
+  await page.fill('#f-paid', '');
+  await page.fill('#f-paid-ship', '');
+
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
