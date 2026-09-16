@@ -403,20 +403,59 @@ function backSolve(){
   $("#f-ship").dataset.touched = "1";
   recalc();
 
-  /* บอกผลจริงที่ได้ ไม่ใช่บอกว่าสำเร็จแล้วจบ — ปัดเศษ 2 ตำแหน่งทำให้บางยอด
-     ไม่มีทางตรงเป๊ะได้เลย เช่น 571 ที่มี VAT 7% ยอดสุทธิกระโดดจาก 570.99 ไป 571.01 */
+  /* เกลี่ยตามสัดส่วนแล้วยังไม่ใช่คำตอบสุดท้าย — ลองขยับราคาแถวสุดท้ายทีละสตางค์
+     แล้วดูยอดสุทธิจริงที่จอคำนวณออกมา บางทีมีค่าที่ลงตัวพอดีอยู่ใกล้ ๆ ที่การเกลี่ย
+     ตามสัดส่วนมองข้ามไป ใช้ยอดจากจอตรง ๆ จะได้ไม่มีทางคิดคนละแบบกับที่เห็น */
+  var lastIn = w[w.length - 1].r.querySelector(".i-price");
+  var from = Number(lastIn.value) || 0;
+  var tries = [], seen = {};
+  for(var d = -5; d <= 5; d++){
+    var cand = round2(from + d / 100);
+    if(cand <= 0) continue;
+    lastIn.value = cand;
+    recalc();
+    var n = Number(String($("#s-net").textContent).replace(/[^0-9.]/g, ""));
+    if(seen[n] === undefined){ seen[n] = cand; tries.push(n) }
+  }
+  tries.sort(function(a2, b2){ return a2 - b2 });
+
+  var hit = null;
+  for(var t = 0; t < tries.length; t++){
+    if(Math.abs(tries[t] - paid) < 0.005){ hit = tries[t]; break }
+  }
+  var pick = hit;
+  if(pick === null){
+    var near = tries[0];
+    for(var u = 1; u < tries.length; u++){
+      if(Math.abs(tries[u] - paid) < Math.abs(near - paid)) near = tries[u];
+    }
+    pick = near;
+  }
+  lastIn.value = seen[pick];
+  recalc();
+
   var got = Number(String($("#s-net").textContent).replace(/[^0-9.]/g, ""));
-  var diff = round2(got - paid);
-  if(Math.abs(diff) < 0.005){
+  if(hit !== null){
     say.className = "lotline ok";
     say.textContent = "เกลี่ยแล้ว ยอดสุทธิ " + baht(got) + " ตรงกับที่ลูกค้าจ่ายพอดี";
-  } else {
-    say.className = "lotline warn";
-    say.textContent = "เกลี่ยแล้วได้ยอดสุทธิ " + baht(got) + " ต่างจากที่ลูกค้าจ่าย " +
-      (diff > 0 ? "+" : "") + diff.toFixed(2) + " บาท — " +
-      "VAT 7% ปัดสองตำแหน่ง ยอดบางค่าจึงไม่มีฐานไหนทำให้ตรงเป๊ะได้ " +
-      "ถ้ารับไม่ได้ ให้แก้ยอดที่ลูกค้าจ่ายขึ้นหรือลงหนึ่งสตางค์";
+    return;
   }
+
+  /* ลงตัวไม่ได้จริง ๆ — บอกให้ครบว่าทำได้แค่ไหน จะได้เลือกเองว่าจะเอาค่าไหน
+     ไม่ใช่บอกแค่ "ไม่ตรง" แล้วปล่อยให้ไปนั่งลองเอง */
+  var lo = null, hi = null;
+  for(var v = 0; v < tries.length; v++){
+    if(tries[v] < paid) lo = tries[v];
+    if(tries[v] > paid && hi === null) hi = tries[v];
+  }
+  var opts = [];
+  if(lo !== null) opts.push(baht(lo));
+  if(hi !== null) opts.push(baht(hi));
+  say.className = "lotline warn";
+  say.textContent = "ยอด " + baht(paid) + " ทำให้ลงตัวไม่ได้ — VAT 7% ปัดสองตำแหน่ง " +
+    "ยอดสุทธิจึงกระโดดข้ามค่านี้ไป" +
+    (opts.length ? " · ค่าที่ทำได้ใกล้ที่สุดคือ " + opts.join(" กับ ") : "") +
+    " · ตอนนี้ตั้งไว้ที่ " + baht(got) + " — ถ้าต้องการอีกค่า ให้แก้ยอดที่ลูกค้าจ่ายเป็นค่านั้น";
 }
 
 function round2(v){ return Math.round((Number(v) || 0) * 100) / 100 }
