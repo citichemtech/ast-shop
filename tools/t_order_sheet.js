@@ -2111,6 +2111,56 @@ eq('ยอดสินค้าไม่รวมค่าส่ง', vg41.subto
 eq('VAT คิดจาก (สินค้า − ส่วนลด + ค่าส่ง) = 1050 × 7%', vg41.vatAmt, 73.5);
 eq('ยอดสุทธิ = 1000 + 50 + 73.50', vg41.net, 1123.5);
 
+/* ราคาที่พิมพ์รวม VAT มาแล้ว ต้องถอดก่อนลงชีท ไม่งั้นชีทบวก 7% ทับเข้าไปอีกชั้น
+   เจ้าของร้านตกลงกับลูกค้าเป็นยอดรวม VAT ตลอด (เช่น 471 บาท) ของเดิมต้อง
+   หารเจ็ดเองก่อนพิมพ์ ซึ่งเป็นจุดที่คิดเลขผิดได้ทุกใบ */
+var inclOrd = api41.createOrder(order({
+  cust: 'ใบที่พิมพ์ราคารวม VAT', vat: true, vatMode: 'incl', discount: 0, ship: 50,
+  items: [{ sku: 'SKU-141', qty: 5, price: 94.20 }]     /* 5 × 94.20 = 471 รวม VAT */
+}));
+var ig = api41.getOrders(0).filter(function (o) { return o.no === inclOrd.no })[0];
+eq('ราคาถูกถอด VAT ก่อนลงชีท (94.20 → 88.04 × 5)', ig.subtotal, 440.2);
+eq('ค่าส่งก็ถูกถอดด้วย เพราะอยู่ในฐานภาษีเหมือนกัน (50 → 46.73)',
+  api41.getOrders(0).filter(function (o) { return o.no === inclOrd.no })[0].ship, 46.73);
+/* พิมพ์เข้ามา 471 + 50 = 521 รวม VAT แล้ว ยอดสุทธิจึงต้องกลับมาที่ 521
+   คลาดได้ระดับสตางค์เพราะชีทเก็บราคาต่อหน่วยแล้วคูณจำนวนเอง
+   จึงต้องปัดทีละบรรทัดก่อน ไม่ใช่หารยอดรวมทีเดียว */
+truthy2('ยอดสุทธิกลับมาเท่ากับที่พิมพ์เข้าไป (521 ± 5 สตางค์) ได้ ' + ig.net,
+  Math.abs(ig.net - 521) <= 0.05);
+
+/* ยอดจากมาร์เก็ตเพลสไม่มีค่าส่ง ร้านไม่ได้เก็บ แพลตฟอร์มคิดกับลูกค้าของเขาเอง
+   ไม่มีค่าส่งก็ไม่มีการปัดเศษรอบสอง ยอดสุทธิจึงต้องกลับมาตรงกับที่ลูกค้าจ่ายเป๊ะ
+   471 ÷ 1.07 = 440.19 · VAT = 30.81 · รวม 471.00 พอดี ไม่ขาดไม่เกินสตางค์ */
+var inclNoShip = api41.createOrder(order({
+  cust: 'ใบช้อปปี้ ไม่มีค่าส่ง', vat: true, vatMode: 'incl', discount: 0, ship: 0,
+  items: [{ sku: 'SKU-141', qty: 1, price: 471 }]
+}));
+var ns = api41.getOrders(0).filter(function (o) { return o.no === inclNoShip.no })[0];
+eq('ถอด VAT จากยอด 471', ns.subtotal, 440.19);
+eq('ไม่มีค่าส่งก็ไม่งอกค่าส่งขึ้นมา', ns.ship, 0);
+eq('VAT ที่ถอดได้', ns.vatAmt, 30.81);
+eq('ยอดสุทธิเท่ากับยอดที่ลูกค้าจ่ายพอดี', ns.net, 471);
+
+/* ใบเดียวกันแต่ไม่บอกว่ารวม VAT ต้องถูกบวก 7% ทับตามปกติ — สองโหมดต้องต่างกันจริง */
+var exclOrd = api41.createOrder(order({
+  cust: 'ใบเดียวกันแบบบวก VAT', vat: true, vatMode: 'excl', discount: 0, ship: 50,
+  items: [{ sku: 'SKU-141', qty: 5, price: 94.20 }]
+}));
+var eg = api41.getOrders(0).filter(function (o) { return o.no === exclOrd.no })[0];
+eq('แบบบวก VAT ราคาไม่ถูกแตะ', eg.subtotal, 471);
+truthy2('และยอดสุทธิสูงกว่าแบบถอด VAT จริง', eg.net > ig.net);
+
+/* ไม่รับ VAT ต้องไม่ถอดอะไรเลย แม้จะส่ง vatMode: incl มาด้วย
+   เพราะไม่มี VAT ให้ถอดตั้งแต่แรก ถ้าเผลอถอดจะกลายเป็นขายถูกลง 7% เงียบ ๆ */
+var noVat = api41.createOrder(order({
+  cust: 'ใบไม่มี VAT', vat: false, vatMode: 'incl', discount: 0, ship: 50,
+  items: [{ sku: 'SKU-141', qty: 5, price: 94.20 }]
+}));
+var ng = api41.getOrders(0).filter(function (o) { return o.no === noVat.no })[0];
+eq('ใบไม่มี VAT ราคาไม่ถูกถอด', ng.subtotal, 471);
+eq('และไม่มี VAT', ng.vatAmt, 0);
+eq('ค่าส่งไม่ถูกถอดด้วย', ng.ship, 50);
+
 /* อาการที่ 1 — ยังเป็นสูตร แต่ข้างในมี #REF! (ตัวที่หลุดมาของจริง) */
 H41.cell(DATA_ROW + 1, VAT_COL).f = "=IF($I7=\"รับ VAT\",ROUND($J7*#REF!,2),0)";
 /* อาการที่ 2 — ถูกวางทับด้วยเลขนิ่ง 542.50 เท่ากันทุกแถว */

@@ -129,7 +129,12 @@ function boot(){
 
     fillSelect("#f-channel", b.lists.channel);
     fillSelect("#f-carrier", b.lists.carrier);
-    fillSelect("#f-vat",     b.lists.vat);
+    /* สามทางเลือกเดียวกับหน้าออกเอกสาร ไม่ใช่ รับ/ไม่รับ VAT สองทางแบบเดิม
+       เพราะ "ราคาที่พิมพ์รวม VAT แล้วหรือยัง" เป็นคนละคำถามกับ "ใบนี้มี VAT ไหม"
+       ของเดิมถามได้แค่คำถามหลัง คนที่ตกลงกับลูกค้าเป็นยอดรวม VAT แล้ว
+       จึงต้องหารเจ็ดเอง ก่อนพิมพ์เข้ามา ซึ่งเป็นจุดที่คิดเลขผิดได้ทุกใบ
+       ค่าที่เก็บลงชีทยังเป็น "รับ VAT"/"ไม่รับ VAT" เหมือนเดิม ไม่กระทบของเก่า */
+    fillVatModes();
     fillSelect("#f-status",  b.lists.status);
     $("#f-date").value = todayISO();
     $("#next-no").textContent = b.nextNo;
@@ -269,9 +274,50 @@ function prodBySku(sku){
 /* ---------------------------------------------------------------- คิดยอดรวม */
 
 /* ค่าจัดส่งที่แนะนำ — สูตรเดียวกับแอปเดิม (โอน >= ยอดส่งฟรี = ฟรี) */
+/* ออเดอร์จากมาร์เก็ตเพลส ร้านไม่ได้เก็บค่าส่ง แพลตฟอร์มคิดกับลูกค้าของเขาเอง
+   ยอดที่ร้านได้จึงเป็นค่าสินค้าล้วน ๆ ชื่อช่องทางในชีทเขียนได้ทั้งไทยและอังกฤษ
+   จับแบบหลวม ๆ ไว้ เผื่อเจ้าของร้านพิมพ์ "ช้อปปี้" หรือ "Shopee Mall" */
+function isMarketCh(name){
+  var t = String(name||"").toLowerCase();
+  return /shopee|ช้อปปี้|ช็อปปี้|lazada|ลาซาด้า|tiktok|ติ๊กต็อก|ติกต็อก/.test(t);
+}
+/* ค่าจัดส่งแนะนำ — ของมาร์เก็ตเพลสต้องเป็น 0 ไม่ใช่ค่าส่งมาตรฐานของร้าน
+   ถ้าแนะนำ 50 ไปแล้วคนคีย์ไม่ทันลบ ใบนั้นจะมีค่าส่งงอกขึ้นมาทั้งที่ไม่มีใครจ่าย
+   ยอดสุทธิในชีทเกินจริง 50 บาท และถ้าเป็นใบถอด VAT ยอดที่ตกลงไว้ก็เพี้ยนตาม */
 function suggestShip(sub){
+  if(isMarketCh($("#f-channel") && $("#f-channel").value)) return 0;
   var base = Number(APP.shipFee||0);
   return (APP.freeOver && sub >= Number(APP.freeOver)) ? 0 : base;
+}
+
+/* ค่าใน <select> เป็นรหัส ส่วนค่าที่ลงชีทเป็นข้อความไทยเหมือนเดิม
+   แยกกันชัด ๆ จะได้ไม่มีใครเผลอเอารหัสไปเขียนลงชีท */
+var VAT_MODES = [
+  { v: "excl", th: "บวก VAT 7% จากราคา",        vat: true  },
+  { v: "incl", th: "ราคารวม VAT แล้ว (ถอดออก)", vat: true  },
+  { v: "none", th: "ไม่คิด VAT (= บิลเงินสด)",   vat: false }
+];
+/* ค่าตั้งต้นต้องเป็นแบบเดิมของร้าน ไม่ใช่ตัวเลือกแรกในรายการของผม
+   ชีทเป็นคนบอกว่าปกติร้านขายแบบไหน (ตัวแรกของ ตั้งค่า!VAT)
+   ถ้าตั้งตัวแรกของรายการเป็นค่าตั้งต้นดื้อ ๆ ทุกใบใหม่จะโดนบวก 7% เงียบ ๆ
+   ทั้งที่ร้านนี้ปกติขายแบบไม่มี VAT — ราคาขึ้นทั้งร้านโดยไม่มีใครสั่ง */
+function fillVatModes(){
+  var el = $("#f-vat");
+  if(!el) return;
+  el.innerHTML = VAT_MODES.map(function(m){
+    return '<option value="' + m.v + '">' + esc(m.th) + '</option>';
+  }).join("");
+  var first = ((BOOT && BOOT.lists && BOOT.lists.vat) || [])[0];
+  el.value = /^รับ/.test(String(first || "")) ? "excl" : "none";
+}
+function vatMode(){ return ($("#f-vat") && $("#f-vat").value) || "excl" }
+function vatOn(){ return vatMode() !== "none" }
+/* ใบเก่าเก็บไว้แค่ว่า "รับ VAT" หรือไม่ ไม่ได้เก็บว่าราคาที่พิมพ์รวม VAT ไว้ไหม
+   ดึงใบเก่ามาคีย์ซ้ำจึงตั้งได้แค่สองทางที่รู้จริง ไม่เดาว่าเคยเป็นแบบถอด */
+function setVatFromText(txt){
+  var el = $("#f-vat");
+  if(!el) return;
+  el.value = /^รับ/.test(String(txt || "")) ? "excl" : "none";
 }
 
 function recalc(){
@@ -324,7 +370,7 @@ function recalc(){
 
   var disc = Number($("#f-disc").value)||0;
   var ship = Number(shipBox.value)||0;
-  var isVat = /^รับ/.test($("#f-vat").value||"");
+  var isVat = vatOn();
   /* ฐานภาษีต้องรวมค่าจัดส่งด้วย ให้ตรงกับสูตรในชีทเป๊ะ
        ชีท:  VAT = (ยอดสินค้า − ส่วนลด + ค่าจัดส่ง) × อัตรา
      ของเดิมตรงนี้คิดจาก (ยอดสินค้า − ส่วนลด) เฉย ๆ ไม่รวมค่าส่ง
@@ -333,6 +379,35 @@ function recalc(){
      คนคีย์อ่านตัวเลขบนจอแล้วไปบอกลูกค้า ซึ่งเป็นตัวเลขที่ผิด
      (ใบเสนอราคากับตอนออกเอกสารคิดรวมค่าส่งถูกอยู่แล้ว มีแต่หน้านี้ที่หลุด) */
   var rate = Number(BOOT ? BOOT.vatRate : 0) || 0;
+
+  /* "ราคารวม VAT แล้ว" — ถอดแบบเดียวกับที่ฝั่งชีททำเป๊ะ คือหารทีละบรรทัด
+     แล้วปัดสองตำแหน่งก่อน ไม่ใช่หารยอดรวมทีเดียว เพราะชีทเก็บราคาต่อหน่วย
+     แล้วคูณจำนวนเอง ยอดที่ได้จึงต่างจากการหารยอดรวมได้ระดับสตางค์
+     จอต้องโชว์เลขเดียวกับที่จะลงชีทจริง ไม่ใช่เลขที่สวยกว่าแต่ไม่ตรง */
+  if (isVat && vatMode() === "incl" && rate > 0) {
+    var d = 1 + rate;
+    var cut = function (v) { return Math.round(Number(v) / d * 100) / 100 };
+    sub = 0;
+    itemRows().forEach(function (r) {
+      var q = Number(r.querySelector(".i-qty").value) || 0;
+      if (!(q > 0)) return;
+      var ov = r.querySelector(".i-price").value;
+      var unit;
+      if (isFree(r)) {
+        unit = cut(Number(ov) || 0);
+      } else {
+        var pp = prodBySku(r.querySelector(".i-sku").value);
+        if (!pp) return;
+        /* เว้นราคาว่าง = ใช้ราคามาตรฐานจากฐานสินค้า ซึ่งเป็นราคาก่อน VAT อยู่แล้ว
+           ถอดซ้ำจะกลายเป็นขายถูกกว่าราคาที่ตั้งไว้ — ฝั่งชีทก็ไม่ถอดเหมือนกัน */
+        unit = (ov === "") ? Number(pp.price) || 0 : cut(Number(ov) || 0);
+      }
+      sub += Math.round(q * unit * 100) / 100;
+    });
+    sub  = Math.round(sub * 100) / 100;
+    disc = cut(disc);
+    ship = cut(ship);
+  }
   var vat = isVat ? Math.round((sub - disc + ship) * rate * 100) / 100 : 0;
 
   $("#s-sub").textContent  = baht(sub);
@@ -433,7 +508,7 @@ function save(){
     cust: $("#f-cust").value.trim(), tel: $("#f-tel").value.trim(),
     addr: $("#f-addr").value.trim(),
     carrier: $("#f-carrier").value, track: $("#f-track").value.trim(),
-    vat: /^รับ/.test($("#f-vat").value||""),
+    vat: vatOn(), vatMode: vatMode(),
     discount: Number($("#f-disc").value)||0,
     ship: Number($("#f-ship").value)||0,
     status: $("#f-status").value, by: byName(),
@@ -2243,7 +2318,10 @@ function quoteToOrder(no, btn){
     if($("#f-disc")) $("#f-disc").value = un(disc) || 0;
     if($("#f-ship")){ $("#f-ship").value = un(ship) || 0; $("#f-ship").dataset.touched = "1" }
     /* ใบที่เสนอไปว่าไม่คิด VAT ออเดอร์ก็ต้องไม่คิด ไม่งั้นยอดที่เก็บจริงจะไม่ตรงกับที่เสนอ */
-    if($("#f-vat")) $("#f-vat").value = m.novat ? "ไม่รับ VAT" : "รับ VAT";
+    /* ใบเสนอราคาที่เสนอเป็นราคารวม VAT ถูกถอดให้เรียบร้อยแล้วตอนดึงรายการมา
+       (ตัวแปร incl ข้างบน) ราคาที่ใส่ในฟอร์มจึงเป็นราคาก่อน VAT แล้ว
+       ต้องตั้งเป็น "บวก VAT" ไม่ใช่ "ถอดออก" ไม่งั้นจะถูกถอดซ้ำรอบสอง */
+    if($("#f-vat")) $("#f-vat").value = m.novat ? "none" : "excl";
     /* จดเลขใบเสนอราคาไว้ เวลาลูกค้าทักมาถามจะได้ตามกลับไปถึงใบที่เสนอจริง */
     if($("#f-note")) $("#f-note").value = "จากใบเสนอราคา " + no;
 
@@ -2270,16 +2348,21 @@ function quoteToOrder(no, btn){
     toast(msg);
 
     /* ยอดที่ออเดอร์คิดได้ต้องเท่ากับยอดที่เสนอลูกค้าไป ถ้าไม่เท่าต้องบอกตรงนี้
-       ไม่ใช่ปล่อยให้รู้ตอนลูกค้าโอนมาไม่ตรงบิล — ที่ต่างกันได้จริงคือ VAT ค่าส่ง
-       ใบเสนอราคาคิด VAT รวมค่าจัดส่งด้วย แต่สูตรในชีทคิด VAT เฉพาะค่าสินค้า */
+       ไม่ใช่ปล่อยให้รู้ตอนลูกค้าโอนมาไม่ตรงบิล
+
+       เคยเขียนไว้ว่าที่ต่างกันได้จริงคือ VAT ของค่าส่ง เพราะ "ชีทคิด VAT
+       เฉพาะค่าสินค้า" — ซึ่งไม่จริง สูตรของชีทรวมค่าส่งอยู่ในฐานภาษีด้วย
+       ตัวที่ลืมค่าส่งคือ recalc ของหน้านี้เอง แก้แล้วสองยอดจึงตรงกันพอดี
+       ด่านนี้ยังมีประโยชน์อยู่ แต่ถ้ามันร้องขึ้นมาตอนนี้ แปลว่ามีอะไรต่างกัน
+       จริง ๆ (เช่นมีคนแก้ราคาหลังดึงใบมา) ไม่ใช่เรื่องวิธีคิดภาษีอีกต่อไป */
     var net = Number(String($("#s-net").textContent).replace(/[^\d.]/g, "")) || 0;
     var quoted = Math.round(Number(d.total || 0) * 100) / 100;
     var gap = Math.round((net - quoted) * 100) / 100;
     if(Math.abs(gap) >= 0.01){
       showErr("ดึงใบ " + no + " มาแล้ว แต่ยอดไม่เท่ากัน — ออเดอร์คิดได้ " + baht(net)
         + " ส่วนใบที่เสนอไปคือ " + baht(quoted) + " ต่างกัน " + baht(Math.abs(gap))
-        + " (ใบเสนอราคาคิด VAT รวมค่าจัดส่งด้วย แต่สูตรในชีทคิด VAT เฉพาะค่าสินค้า) — "
-        + "ถ้าต้องเก็บเท่าที่เสนอไป ให้ปรับค่าจัดส่งหรือส่วนลดก่อนกดบันทึก");
+        + " — ตรวจราคาแต่ละบรรทัด ค่าจัดส่ง และส่วนลด ให้ตรงกับใบที่เสนอไป"
+        + "ก่อนกดบันทึก ถ้าตั้งใจเก็บไม่เท่าที่เสนอ ให้บันทึกได้เลย");
     } else {
       showOk(msg);
     }
@@ -3784,7 +3867,7 @@ function repeatOrder(o){
   $("#f-note").value  = "";
   if(o.channel) pickOption("#f-channel", o.channel);
   if(o.carrier) pickOption("#f-carrier", o.carrier);
-  if(o.vat)     pickOption("#f-vat", o.vat);
+  if(o.vat)     setVatFromText(o.vat);
   if(o.ship !== undefined && o.ship !== null && o.ship !== ""){
     $("#f-ship").value = o.ship;
     $("#f-ship").dataset.touched = "1";
@@ -4976,7 +5059,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#fs-help").onclick = function(){ HELP_FROM = curPage(); go("help") };
   $("#hp-back").onclick = function(){ go(HELP_FROM || "new") };
   ["f-disc","f-ship"].forEach(function(id){ $("#"+id).oninput = recalc });
-  ["f-vat","f-status"].forEach(function(id){ $("#"+id).onchange = recalc });
+  ["f-vat","f-status","f-channel"].forEach(function(id){ $("#"+id).onchange = recalc });
   $("#f-disc").addEventListener("change", recalc);
 
   /* ค่าจัดส่งแนะนำอัตโนมัติ เฉพาะตอนที่ยังไม่ได้พิมพ์เอง */
