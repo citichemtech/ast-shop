@@ -167,10 +167,16 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(120);
 
   console.log('\n   เปิด VAT');
+  /* ฐานภาษีต้องรวมค่าจัดส่ง ให้ตรงกับสูตรในชีทเป๊ะ
+       ชีท (HEAD_VAT_FORMULA):  VAT = (ยอดสินค้า − ส่วนลด + ค่าจัดส่ง) × อัตรา
+     ของเดิมหน้านี้คิดจาก (ยอดสินค้า − ส่วนลด) เฉย ๆ ข้อสอบข้อนี้ก็เคยเขียนตามนั้น
+     จึงล็อกพฤติกรรมที่ผิดเอาไว้แทนที่จะจับได้ — ยอดบนจอน้อยกว่าที่ชีทบันทึกจริง
+     ทุกใบที่มีค่าส่ง แล้วคนคีย์เอาตัวเลขบนจอไปบอกลูกค้า
+     สินค้า 2,950 + ค่าส่ง 50 → ฐาน 3,000 × 7% = 210 ไม่ใช่ 206.50 */
   await page.selectOption('#f-vat', 'รับ VAT');
   await page.waitForTimeout(120);
-  eq('VAT 7% ของยอดสินค้า', await page.textContent('#s-vat'), '฿206.50');
-  eq('ยอดสุทธิรวม VAT และค่าส่ง', await page.textContent('#s-net'), '฿3,206.50');
+  eq('ค่าส่งอยู่ในฐานภาษีด้วย', await page.textContent('#s-vat'), '฿210.00');
+  eq('ยอดสุทธิรวม VAT และค่าส่ง', await page.textContent('#s-net'), '฿3,210.00');
   await page.selectOption('#f-vat', 'ไม่รับ VAT');
   await page.waitForTimeout(120);
 

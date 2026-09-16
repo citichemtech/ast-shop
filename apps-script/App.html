@@ -325,7 +325,15 @@ function recalc(){
   var disc = Number($("#f-disc").value)||0;
   var ship = Number(shipBox.value)||0;
   var isVat = /^รับ/.test($("#f-vat").value||"");
-  var vat = isVat ? Math.round((sub-disc)*Number(BOOT?BOOT.vatRate:0)*100)/100 : 0;
+  /* ฐานภาษีต้องรวมค่าจัดส่งด้วย ให้ตรงกับสูตรในชีทเป๊ะ
+       ชีท:  VAT = (ยอดสินค้า − ส่วนลด + ค่าจัดส่ง) × อัตรา
+     ของเดิมตรงนี้คิดจาก (ยอดสินค้า − ส่วนลด) เฉย ๆ ไม่รวมค่าส่ง
+     ยอดที่โชว์บนจอตอนคีย์จึงน้อยกว่ายอดที่ชีทบันทึกจริงทุกใบที่มีค่าส่ง
+     ของจริง: สินค้า 1,000 + ค่าส่ง 50 → จอบอก 1,120 แต่ชีทลง 1,123.50
+     คนคีย์อ่านตัวเลขบนจอแล้วไปบอกลูกค้า ซึ่งเป็นตัวเลขที่ผิด
+     (ใบเสนอราคากับตอนออกเอกสารคิดรวมค่าส่งถูกอยู่แล้ว มีแต่หน้านี้ที่หลุด) */
+  var rate = Number(BOOT ? BOOT.vatRate : 0) || 0;
+  var vat = isVat ? Math.round((sub - disc + ship) * rate * 100) / 100 : 0;
 
   $("#s-sub").textContent  = baht(sub);
   $("#s-disc").textContent = baht(disc);
