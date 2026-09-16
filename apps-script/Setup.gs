@@ -2164,6 +2164,18 @@ var ACCT_FIRST = ACCT_LIST[0];
  * ไม่ยุ่งกับคอลัมน์เดิมสักช่อง เขียนเฉพาะ V W X ที่ยังว่างอยู่
  * และไม่เขียนทับหัวคอลัมน์ที่มีของอื่นอยู่ก่อน — เจอแล้วหยุด ไม่ทับ
  */
+/** เลขคอลัมน์ → ตัวอักษรแบบที่คนอ่านชีทเห็น (1 = A · 26 = Z · 27 = AA) */
+function colLetter_(n) {
+  var out = '';
+  n = Number(n) || 0;
+  while (n > 0) {
+    var r = (n - 1) % 26;
+    out = String.fromCharCode(65 + r) + out;
+    n = (n - 1 - r) / 26;
+  }
+  return out || '?';
+}
+
 function setupAccounting_(ss) {
   var s = findSheet_(ss, SH.head.name);
   if (!s) throw new Error('ไม่พบชีท ' + SH.head.name);
@@ -2227,7 +2239,13 @@ function setupAccounting_(ss) {
     s.getRange(DATA_ROW, C.shipCost, n, 1).setFontColor(C_IN_FG).setNumberFormat('#,##0.00');
   }
 
-  return 'เพิ่มคอลัมน์ V W X (สถานะบัญชี) ที่ชีท ' + SH.head.name +
+  /* ข้อความสรุปต้องมาจากของที่ทำจริง ไม่ใช่พิมพ์ชื่อคอลัมน์ทิ้งไว้ตายตัว
+     ของเดิมเขียน "V W X" ไว้เฉย ๆ พอเพิ่มคอลัมน์ใหม่เข้ามา รายงานก็ยังบอกว่า V W X
+     เจ้าของร้านอ่านแล้วนึกว่าคอลัมน์ใหม่ไม่ได้ถูกสร้าง ทั้งที่สร้างไปแล้ว
+     รายงานที่ไม่ตรงกับของจริง อ่านแล้วตัดสินใจผิดได้พอ ๆ กับไม่มีรายงาน */
+  var letters = cols.map(function (c) { return colLetter_(c.col); }).join(' ');
+  return 'เพิ่มคอลัมน์ ' + letters + ' ที่ชีท ' + SH.head.name +
+    ' (' + cols.map(function (c) { return c.head.replace(/\n/g, ''); }).join(' · ') + ')' +
     (wrote ? ' และเติมตัวเลือกสถานะบัญชี ' + wrote + ' ค่าในชีท ' + SH.cfg.name : '');
 }
 
