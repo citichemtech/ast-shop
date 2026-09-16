@@ -3929,5 +3929,38 @@ for (var nm61 in fx61.sheets) over61 = over61.concat(fx61.sheets[nm61].overwritt
 for (var nb61 in fx61b.sheets) over61 = over61.concat(fx61b.sheets[nb61].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over61, []);
 
+/* ------------------------------- 62. ค่าธรรมเนียมแพลตฟอร์มลงชีท */
+console.log('\n62. ค่าธรรมเนียมที่แพลตฟอร์มหัก ต้องลงชีทแยกจากยอดขาย');
+/* ของจริงจากไฟล์ช้อปปี้วันเดียว: ขาย 13,182 โดนหักค่าธรรมเนียม 2,591
+   บวกค่าส่งที่ร้านออกเองอีก 300 = 21.9% ของยอดขาย
+   ถ้าเอาไปลดยอดขาย ใบกำกับภาษีกับภาษีขายจะต่ำกว่าความจริงทันที
+   ถ้าไม่เก็บเลย กำไรก็สูงกว่าความจริงหนึ่งในห้า — ต้องอยู่คนละช่องกันคนละเรื่อง */
+var fx62 = FS.build();
+var api62 = FS.load(fx62);
+var head62 = fx62.sheets['ออเดอร์_หัวบิล'];
+var o62 = api62.createOrder(order({
+  cust: 'ใบขายผ่านช้อปปี้', discount: 0, ship: 0, fee: 95, shipCost: 48,
+  items: [{ sku: 'SKU-141', qty: 5, price: 96 }]
+}));
+var row62 = rowsWith(head62, 1)[0];
+eq('ค่าธรรมเนียมลงช่องของตัวเอง',
+  head62.cell(row62, api62.SH.head.IN.fee).v, 95);
+eq('ค่าส่งที่ร้านออกเองลงอีกช่อง',
+  head62.cell(row62, api62.SH.head.IN.shipCost).v, 48);
+eq('ยอดขายไม่ถูกหักด้วยค่าธรรมเนียม', o62.subtotal, 480);
+eq('ยอดสุทธิก็ไม่ถูกหัก — ลูกค้าจ่ายเท่าเดิม', o62.net, 480);
+var g62 = api62.getOrders(0).filter(function (x) { return x.no === o62.no })[0];
+eq('อ่านกลับมาได้ครบ', [g62.fee, g62.shipCost], [95, 48]);
+
+console.log('\n   ใบที่ไม่ได้ขายผ่านแพลตฟอร์ม ต้องเป็นศูนย์ ไม่ใช่เดาเอา');
+var o62b = api62.createOrder(order({ cust: 'ใบขายหน้าร้าน', discount: 0, ship: 50 }));
+var g62b = api62.getOrders(0).filter(function (x) { return x.no === o62b.no })[0];
+eq('ไม่มีค่าธรรมเนียม', [g62b.fee, g62b.shipCost], [0, 0]);
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับ');
+var over62 = [];
+for (var nm62 in fx62.sheets) over62 = over62.concat(fx62.sheets[nm62].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over62, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

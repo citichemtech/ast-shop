@@ -2172,7 +2172,11 @@ function setupAccounting_(ss) {
   var cols = [
     { col: C.acct, head: 'สถานะบัญชี', width: 130 },
     { col: C.acctAt, head: 'วันที่ส่งบัญชี', width: 150 },
-    { col: C.acctWhat, head: 'ส่งบัญชีอะไรไปบ้าง', width: 320 }
+    { col: C.acctWhat, head: 'ส่งบัญชีอะไรไปบ้าง', width: 320 },
+    /* เงินที่แพลตฟอร์มหักไปก่อนโอนเข้าร้าน — เป็นรายจ่ายของร้าน ไม่ใช่ส่วนลดลูกค้า
+       จึงห้ามเอาไปลดยอดขายหรือยอดในใบกำกับภาษี ต้องอยู่คนละช่องกันคนละเรื่อง */
+    { col: C.fee, head: 'ค่าธรรมเนียม\nแพลตฟอร์ม', width: 120 },
+    { col: C.shipCost, head: 'ค่าส่งที่ร้าน\nออกเอง', width: 110 }
   ];
 
   var need = SH.head.width;
@@ -2219,6 +2223,8 @@ function setupAccounting_(ss) {
     s.getRange(DATA_ROW, C.acct, n, 1).setDataValidation(rule).setFontColor(C_IN_FG);
     s.getRange(DATA_ROW, C.acctAt, n, 1).setFontColor(C_IN_FG);
     s.getRange(DATA_ROW, C.acctWhat, n, 1).setFontColor(C_IN_FG);
+    s.getRange(DATA_ROW, C.fee, n, 1).setFontColor(C_IN_FG).setNumberFormat('#,##0.00');
+    s.getRange(DATA_ROW, C.shipCost, n, 1).setFontColor(C_IN_FG).setNumberFormat('#,##0.00');
   }
 
   return 'เพิ่มคอลัมน์ V W X (สถานะบัญชี) ที่ชีท ' + SH.head.name +

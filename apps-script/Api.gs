@@ -394,6 +394,10 @@ function readOrders_(opts) {
         acct: String(hcell(hv[i], SH.head.IN.acct) || '').trim(),
         acctAt: String(hcell(hv[i], SH.head.IN.acctAt) || '').trim(),
         acctWhat: String(hcell(hv[i], SH.head.IN.acctWhat) || '').trim(),
+        /* รายจ่ายของร้านที่แพลตฟอร์มหักไป — ไม่เกี่ยวกับยอดที่ลูกค้าจ่าย
+           กำไรที่ชีทคิดในช่อง P ยังไม่ได้หักสองก้อนนี้ หน้าจอจึงต้องเห็นเพื่อหักเอง */
+        fee: Number(hcell(hv[i], SH.head.IN.fee) || 0),
+        shipCost: Number(hcell(hv[i], SH.head.IN.shipCost) || 0),
         items: []
       };
 
@@ -3008,6 +3012,10 @@ function planOrder_(p, email) {
        ถ้าไม่ได้เลือกก็ใช้อีเมลไปก่อน และไม่ว่าทางไหน Log ยังบันทึกอีเมลจริงไว้เสมอ */
     status: status, staff: String(p.by || '').trim().slice(0, 40) || email,
     note: String(p.note || '').trim(),
+    /* เงินที่แพลตฟอร์มหักไปก่อนโอนเข้าร้าน กับค่าส่งที่ร้านออกเอง
+       เก็บแยกจากยอดขาย เพราะเป็นรายจ่าย ไม่ใช่ส่วนลดที่ให้ลูกค้า
+       เอาไปลดยอดขายเมื่อไร ใบกำกับภาษีกับภาษีขายจะต่ำกว่าความจริงทันที */
+    fee: numOr0_(p.fee), shipCost: numOr0_(p.shipCost),
     items: items, cuts: cuts,
     newProds: newProds, recvRows: recvRows,
     recvType: recvRows.length ? pickRecvType_(lists.recvType) : '',
@@ -3144,7 +3152,8 @@ function commitOrder_(plan) {
       no: plan.no, date: plan.date, channel: plan.channel, cust: plan.cust,
       tel: plan.tel, addr: plan.addr, carrier: plan.carrier, track: plan.track,
       vat: plan.vat, discount: plan.discount, ship: plan.ship,
-      status: plan.status, staff: plan.staff, note: plan.note
+      status: plan.status, staff: plan.staff, note: plan.note,
+      fee: plan.fee, shipCost: plan.shipCost
     });
     written.head = hRow;
   }

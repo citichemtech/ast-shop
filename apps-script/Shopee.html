@@ -114,13 +114,48 @@ var SHOPEE_COLS = [
     pats: ["จำนวน", "quantity", "จำนวนสินค้า"] },
   { key: "price", label: "ราคาขาย",
     not: ["สุทธิ", "ทั้งหมด", "รวม", "total", "subtotal"],
-    pats: ["ราคาขาย", "dealprice", "ราคาที่ชำระ", "ราคาตั้งต้น", "originalprice"] }
+    pats: ["ราคาขาย", "dealprice", "ราคาที่ชำระ", "ราคาตั้งต้น", "originalprice"] },
+
+  /* ------- เงินที่แพลตฟอร์มหักไปก่อนโอนเข้าร้าน -------
+     ของจริงที่วัดได้จากไฟล์วันเดียว: ขาย 13,182 โดนหัก 2,591 = 19.7% ของยอดขาย
+     บวกค่าส่งที่ร้านออกเองอีก 300 รวมเป็น 21.9%
+     ถ้าไม่ดึงเข้ามา กำไรในชีทจะสูงกว่าความจริงราวหนึ่งในห้าทุกใบที่ขายช้อปปี้
+
+     ทุกช่องในกลุ่มนี้ไม่ need เพราะไฟล์เก่าหรือไฟล์ที่ก๊อปมาไม่ครบจะไม่มี
+     ขาดไปแล้วต้องยังนำเข้าได้ ไม่ใช่บล็อกทั้งไฟล์ — แต่หน้าตรวจจะบอกว่าไม่เจอ */
+  { key: "fee", label: "ค่าคอมมิชชั่น",
+    not: ["percent", "อัตรา"],
+    pats: ["ค่าคอมมิชชั่น", "ค่าคอมมิชชัน", "commissionfee"] },
+  { key: "txFee", label: "Transaction Fee",
+    not: ["percent", "อัตรา"],
+    pats: ["transactionfee", "ค่าธรรมเนียมการทำรายการ", "ค่าธรรมเนียมธุรกรรม"] },
+  { key: "svcFee", label: "ค่าบริการ",
+    not: ["percent", "อัตรา", "เสริม"],
+    pats: ["ค่าบริการ", "servicefee"] },
+
+  /* ค่าส่งมีสามตัวและความหมายต่างกันคนละเรื่อง ห้ามสลับ
+       shipPaid = ลูกค้าจ่ายเอง        → ไม่ใช่รายจ่ายของร้าน
+       shipSub  = Shopee ออกให้        → ไม่ใช่รายจ่ายของร้าน
+       shipAll  = ค่าส่งจริงทั้งก้อน   → ส่วนที่เหลือจากสองตัวบนคือร้านออกเอง */
+  { key: "shipPaid", label: "ค่าจัดส่งที่ผู้ซื้อจ่าย",
+    pats: ["ค่าจัดส่งที่ชำระโดยผู้ซื้อ", "ค่าจัดส่งที่ผู้ซื้อชำระ", "buyerpaidshippingfee"] },
+  { key: "shipSub", label: "ค่าจัดส่งที่ Shopee ออกให้",
+    pats: ["ค่าจัดส่งที่shopeeออกให้โดยประมาณ", "ค่าจัดส่งที่shopeeออกให้",
+           "shopeeshippingrebate", "ส่วนลดค่าจัดส่งจากshopee"] },
+  { key: "shipAll", label: "ค่าจัดส่งโดยประมาณ",
+    not: ["ผู้ซื้อ", "shopee", "คืน", "return"],
+    pats: ["ค่าจัดส่งโดยประมาณ", "actualshippingfee", "ค่าจัดส่งจริง"] }
 ];
 
 function shopeeBanned(c, h) {
   var no = c.not || [];
   for (var i = 0; i < no.length; i++) {
-    if (h.indexOf(shopeeNormHd(no[i])) > -1) return true;
+    var bad = shopeeNormHd(no[i]);
+    /* คำที่เหลือค่าว่างหลังล้าง (เช่น "%" ที่มีแต่สัญลักษณ์) ต้องข้ามไป
+       ไม่งั้น indexOf("") จะได้ 0 เสมอ = แบนทุกคอลัมน์ทั้งไฟล์เงียบ ๆ
+       แล้วช่องนั้นจะว่างทุกใบโดยไม่มี error สักตัว หาสาเหตุไม่เจอด้วย */
+    if (!bad) continue;
+    if (h.indexOf(bad) > -1) return true;
   }
   return false;
 }
@@ -169,6 +204,11 @@ function shopeeHeadRow(rows) {
 }
 
 /** ตัวเลขจากช่องในตาราง — ตัดจุลภาค สัญลักษณ์เงิน และช่องว่างออกก่อน */
+/* ชื่อขึ้นต้นด้วย shopee เสมอ เพราะทุกไฟล์ถูกต่อกันเป็นหน้าเดียวตอนขึ้น Google
+   ตั้งชื่อสั้น ๆ อย่าง num หรือ round2 เมื่อไร มีสิทธิ์ทับของไฟล์อื่นเงียบ ๆ */
+function shopeeN(v) { var n = Number(v); return isFinite(n) ? n : 0 }
+function shopeeR2(v) { return Math.round((Number(v) || 0) * 100) / 100 }
+
 function shopeeNum(v) {
   var s = String(v == null ? "" : v).replace(/[^0-9.\-]/g, "");
   var n = Number(s);
@@ -244,6 +284,16 @@ function shopeeRead(text) {
     first(o, "status", cell(row, "status"));
     first(o, "backWhy", cell(row, "back"));
 
+    /* ค่าธรรมเนียมเป็นข้อมูลระดับใบ ไฟล์ซ้ำค่าเดิมทุกบรรทัดของใบเดียวกัน
+       บวกสะสมเมื่อไร ใบที่มีสามสินค้าจะโดนหักสามเท่า — เก็บค่าแรกที่เจอเท่านั้น
+       เช็คว่า "ช่องมีค่า" ไม่ใช่ "ค่าไม่เป็นศูนย์" เพราะ 0 เป็นคำตอบที่ถูกได้จริง */
+    ["fee", "txFee", "svcFee", "shipPaid", "shipSub", "shipAll"].forEach(function (k) {
+      if (o[k] === undefined) {
+        var raw = cell(row, k);
+        if (raw !== "") o[k] = shopeeNum(raw);
+      }
+    });
+
     if (nm || vr || sk) {
       var pr = cell(row, "price");
       o.lines.push({
@@ -261,6 +311,27 @@ function shopeeRead(text) {
        ปล่อยว่างไว้คือบันทึกไม่ผ่านทั้งใบ จึงใส่ชื่อที่ตามกลับไปหาใบเดิมได้แทน
        และหน้าตรวจโชว์ชื่อนี้ตรง ๆ ก่อนกดยืนยัน ไม่ได้เติมให้เงียบ ๆ */
     if (!od.cust) od.cust = "ลูกค้า Shopee " + od.sn;
+
+    /* เก็บที่มาไว้ก่อนรวม ให้หน้าตรวจกางให้ดูได้ว่าตัวเลขมาจากไหน ไม่ใช่โผล่มาเฉย ๆ */
+    od.feeFrom = { comm: shopeeN(od.fee), tx: shopeeN(od.txFee), svc: shopeeN(od.svcFee),
+                   shipAll: shopeeN(od.shipAll), shipPaid: shopeeN(od.shipPaid),
+                   shipSub: shopeeN(od.shipSub) };
+
+    /* ค่าธรรมเนียมที่ร้านโดนหัก = คอมมิชชั่น + ค่าธรรมเนียมทำรายการ + ค่าบริการ */
+    od.fee = shopeeR2(od.feeFrom.comm + od.feeFrom.tx + od.feeFrom.svc);
+
+    /* ค่าส่งที่ร้านออกเอง = ค่าส่งจริง − ที่ลูกค้าจ่าย − ที่ Shopee ออกให้
+       ติดลบแปลว่าเก็บได้มากกว่าที่จ่ายจริง ซึ่งไม่ใช่รายจ่าย ปัดเป็น 0
+       ของจริงวันเดียวเจอ 7 ใบที่ร้านออกค่าส่งเอง รวม 300 บาท โดยไม่มีที่ไหนบอก */
+    od.shipCost = Math.max(0, shopeeR2(
+      od.feeFrom.shipAll - od.feeFrom.shipPaid - od.feeFrom.shipSub));
+
+    /* ค่าดิบที่ใช้คิดเสร็จแล้วต้องไม่ติดไปกับใบ — มันจะถูกส่งขึ้นชีทไปด้วยทั้งที่
+       ไม่มีใครใช้ และทำให้ข้อสอบที่ตรึงรูปร่างของใบไว้หลุดมือ ไม่รู้ว่าอะไรงอกมาบ้าง
+       ที่มายังดูได้ที่ feeFrom ซึ่งตั้งใจเก็บไว้ให้หน้าตรวจกาง */
+    ["txFee", "svcFee", "shipPaid", "shipSub", "shipAll"].forEach(function (k) {
+      delete od[k];
+    });
     od.back = shopeeBack(od);
     od.done = !od.back && shopeeDone(od);
   }
@@ -543,6 +614,21 @@ function shopRender() {
       money += ' · <span style="color:var(--amber)">ยังไม่มีต้นทุนในฐานสินค้า คิดกำไรไม่ได้</span>';
     }
 
+    /* กำไรที่ชีทคิดยังไม่ได้หักเงินที่แพลตฟอร์มหักไป ต้องโชว์ให้เห็นตรงนี้ด้วย
+       ไม่งั้นคนตรวจจะเห็นกำไรที่สูงกว่าความจริงราวหนึ่งในห้าแล้วเชื่อไปเลย */
+    var cut = (o.fee || 0) + (o.shipCost || 0);
+    if (cut > 0) {
+      money += '<br><span style="color:var(--amber)">Shopee หักไป ' + baht(cut) +
+        (o.fee ? " (ค่าธรรมเนียม " + baht(o.fee) + ")" : "") +
+        (o.shipCost ? " (ค่าส่งที่ร้านออกเอง " + baht(o.shipCost) + ")" : "") +
+        "</span>";
+      if (o.profit !== null && o.profit !== undefined && o.costTotal !== null &&
+          o.costTotal !== undefined) {
+        money += ' · <b>กำไรจริงหลังหัก ' +
+          baht(Math.round((o.profit - cut) * 100) / 100) + "</b>";
+      }
+    }
+
     return '<div class="row"><div class="i">' +
       "<b>" + esc(o.cust) + "</b>" +
       "<span>" + esc(o.sn) + (o.date ? " · ส่งวันที่ " + esc(thaiDate(o.date)) : "") +
@@ -578,6 +664,12 @@ function shopPayload(o) {
     status: shopStatus(o),
     by: $("#sp-by").value,
     note: "Shopee " + o.sn,
+    /* เงินที่แพลตฟอร์มหักไปก่อนโอนเข้าร้าน — ไม่ใช่ส่วนลดที่ให้ลูกค้า
+       จึงไม่ไปลดยอดขายหรือราคาต่อชิ้น แต่เก็บแยกไว้ให้กำไรคิดถูก
+       วัดจากไฟล์จริงวันเดียว: ค่าธรรมเนียม 2,591 + ค่าส่งที่ร้านออกเอง 300
+       = 21.9% ของยอดขาย 13,182 ซึ่งก่อนหน้านี้ไม่มีที่ลงเลยสักบาท */
+    fee: o.fee || 0,
+    shipCost: o.shipCost || 0,
     items: (o.items || []).map(function (x) {
       return { sku: x.sku, qty: x.qty, price: (x.price === null ? "" : x.price) };
     })
