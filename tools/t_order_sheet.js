@@ -3660,5 +3660,58 @@ var over58 = [];
 for (var nm58 in fx58.sheets) over58 = over58.concat(fx58.sheets[nm58].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over58, []);
 
+/* ------------------------------------------------ 59. ยอดล็อตไม่ตรงกับสต๊อก */
+console.log('\n59. บอกให้ได้ว่า SKU ไหนยอดล็อตไม่ตรงกับสต๊อก และไม่ตรงเพราะอะไร');
+/* ช่อง I3 ของชีท ล็อตสินค้า นับจำนวน SKU ที่เพี้ยนไว้ แต่บอกแค่ตัวเลข
+   เจ้าของร้านเห็นเลข 4 ก็รู้แค่ว่ามีปัญหา ไม่รู้ว่าตัวไหน ต้องไล่ดูเองร้อยกว่าแถว
+   คำเตือนที่ไม่บอกว่าตัวไหนคือคำเตือนที่ลงมือแก้ไม่ได้ (เจอของจริง 16 ก.ย. 69) */
+var fx59 = FS.build({ lots: [
+  { sku: 'CHEM-001', lotNo: 'L-59a', exp: '2027-01-01', recv: '2026-01-01', qty: 100 },
+  { sku: 'SKU-141', lotNo: 'L-59b', exp: '2027-01-01', recv: '2026-01-01', qty: 40 },
+  { sku: 'CHEM-999', lotNo: 'L-59c', exp: '2027-01-01', recv: '2026-01-01', qty: 7 }
+] });
+var api59 = FS.load(fx59);
+var st59 = fx59.sheets['สต๊อกคงเหลือ'];
+function setStock59(sku, open, got, adj, sold) {
+  for (var r = DATA_ROW; r <= 150; r++) {
+    if (String(st59.cell(r, 2).v || '') !== sku) continue;
+    st59.cell(r, 5).v = open; st59.cell(r, 6).v = got;
+    st59.cell(r, 7).v = adj;  st59.cell(r, 8).v = sold;
+    st59.cell(r, 9).v = open + got - adj - sold;
+    return true;
+  }
+  return false;
+}
+/* CHEM-001 — ลงล็อต 100 ไว้ แต่ยังไม่ได้ลง รับเข้า คู่กัน (อาการที่เจอจริง) */
+truthy2('ตั้งฉากทดสอบที่ CHEM-001 ได้', setStock59('CHEM-001', 0, 0, 0, 0));
+/* SKU-141 — ของเข้าตรงกัน แต่ขายไปแล้ว 5 โดยล็อตไม่ถูกตัด */
+truthy2('ตั้งฉากทดสอบที่ SKU-141 ได้', setStock59('SKU-141', 40, 0, 0, 5));
+/* CHEM-999 — มีล็อตแต่ไม่มีตัวนี้ในชีทสต๊อกเลย ต้องไม่เงียบ */
+
+var rep59 = api59.checkLotStock();
+truthy2('บอกจำนวน SKU ที่เพี้ยน', /ไม่ตรงกับสต๊อก 3 SKU/.test(rep59));
+truthy2('เรียกชื่อ SKU ตัวที่เพี้ยนออกมาเลย', /CHEM-001/.test(rep59) && /SKU-141/.test(rep59));
+truthy2('กางตัวเลขทั้งสองฝั่งให้ดู', /ล็อต   : รับ 100/.test(rep59) && /ยกมา 0 \+ รับเข้า 0/.test(rep59));
+truthy2('บอกว่าต่างกันกี่ชิ้น', /ต่างกัน : 100 ชิ้น/.test(rep59));
+truthy2('ชี้ว่า CHEM-001 ยังไม่ได้ลงรับเข้า', /ยังไม่ได้ลง รับเข้า/.test(rep59));
+truthy2('ชี้ว่า SKU-141 ขายไปแล้วแต่ล็อตไม่ถูกตัด', /ขายไปแล้วแต่ล็อตไม่ถูกตัด/.test(rep59));
+truthy2('ล็อตที่ไม่มี SKU ในชีทสต๊อกก็ต้องฟ้อง',
+  /CHEM-999 : มีล็อต 1 ล็อต คงเหลือ 7 แต่ไม่มี SKU นี้ในชีท/.test(rep59));
+truthy2('เตือนไม่ให้ไปพิมพ์ทับช่องสูตร', /ไม่ต้องไปพิมพ์ทับช่องคงเหลือ/.test(rep59));
+
+console.log('\n   ชีทที่ยอดตรงกันต้องไม่ฟ้องผิด ๆ');
+setStock59('CHEM-001', 100, 0, 0, 0);
+setStock59('SKU-141', 40, 0, 0, 0);
+fx59.sheets['ล็อตสินค้า'].cell(DATA_ROW + 2, 2).v = '';   /* เอาล็อตที่ไม่มีในฐานสินค้าออก */
+fx59.sheets['ล็อตสินค้า'].cell(DATA_ROW + 2, 9).v = '';
+var ok59 = api59.checkLotStock();
+truthy2('บอกว่าตรงกันหมด', /ตรงกับยอดสต๊อกทุก SKU/.test(ok59));
+truthy2('ไม่หลงเรียกชื่อ SKU ที่ไม่ได้เพี้ยน', !/CHEM-001|SKU-141/.test(ok59));
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับ');
+var over59 = [];
+for (var nm59 in fx59.sheets) over59 = over59.concat(fx59.sheets[nm59].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over59, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

@@ -1439,6 +1439,86 @@ var STOCK_ROW6 = {
   14: '=IF($B6="","",ROUND($I6*$M6,2))'
 };
 
+/**
+ * บอกว่า SKU ไหนที่ยอดล็อตไม่ตรงกับยอดสต๊อก และไม่ตรงเพราะอะไร
+ *
+ * ช่อง I3 ของชีท ล็อตสินค้า นับจำนวน SKU ที่เพี้ยนไว้ให้แล้ว แต่บอกแค่ตัวเลข
+ * เห็นเลข 4 ก็รู้แค่ว่ามีปัญหา ไม่รู้ว่าตัวไหน ต้องไล่ดูเองทีละแถวจากร้อยกว่าแถว
+ * คำเตือนที่ไม่บอกว่าตัวไหนคือคำเตือนที่ลงมือแก้ไม่ได้ ฟังก์ชันนี้จึงบอกให้ครบ
+ *
+ * สองชีทนับคนละทาง จึงเพี้ยนกันได้:
+ *   ล็อตสินค้า   คงเหลือ = จำนวนรับ − ตัดออกแล้ว   (นับจากทะเบียนล็อต)
+ *   สต๊อกคงเหลือ คงเหลือ = ยกมา + รับเข้า − ปรับลด − ขายออก  (นับจากเอกสาร)
+ * ลงล็อตไว้แต่ไม่ได้ลง รับเข้า คู่กัน สองฝั่งก็ไม่มีวันตรงกัน
+ */
+function checkLotStock() {
+  requireStaff_();
+  var ls = sheet_('lot'), last = formulaLimit_('lot');
+  var lot = {};
+  if (last >= DATA_ROW) {
+    var lv = ls.getRange(DATA_ROW, 1, last - DATA_ROW + 1, SH.lot.remain).getValues();
+    for (var i = 0; i < lv.length; i++) {
+      var k = String(lv[i][SH.lot.IN.sku - 1] || '').trim();
+      if (!k) continue;
+      if (!lot[k]) lot[k] = { got: 0, cut: 0, left: 0, rows: 0 };
+      lot[k].got  += Number(lv[i][SH.lot.IN.qty - 1] || 0);
+      lot[k].cut  += Number(lv[i][7] || 0);              /* H ตัดออกแล้ว */
+      lot[k].left += Number(lv[i][SH.lot.remain - 1] || 0);
+      lot[k].rows += 1;
+    }
+  }
+
+  var ss = sheet_('stock'), slast = ss.getLastRow(), stock = {};
+  if (slast >= DATA_ROW) {
+    var sv = ss.getRange(DATA_ROW, 1, slast - DATA_ROW + 1, SH.stock.remain).getValues();
+    for (var j = 0; j < sv.length; j++) {
+      var sk = String(sv[j][SH.stock.sku - 1] || '').trim();
+      if (!sk) continue;
+      stock[sk] = { open: Number(sv[j][4] || 0), got: Number(sv[j][5] || 0),
+                    adj: Number(sv[j][6] || 0), sold: Number(sv[j][7] || 0),
+                    left: Number(sv[j][SH.stock.remain - 1] || 0) };
+    }
+  }
+
+  var bad = [];
+  for (var sku in lot) {
+    var st = stock[sku];
+    if (!st) { bad.push('  ' + sku + ' : มีล็อต ' + lot[sku].rows + ' ล็อต คงเหลือ ' +
+      lot[sku].left + ' แต่ไม่มี SKU นี้ในชีท ' + SH.stock.name); continue; }
+    if (Math.round(lot[sku].left * 1000) === Math.round(st.left * 1000)) continue;
+
+    /* แยกให้เห็นว่าเพี้ยนฝั่งของเข้าหรือฝั่งของออก จะได้รู้ว่าต้องไปแก้ที่ไหน */
+    var inGap  = Math.round((lot[sku].got - (st.open + st.got)) * 1000) / 1000;
+    var outGap = Math.round((lot[sku].cut - (st.sold + st.adj)) * 1000) / 1000;
+    var why = [];
+    if (inGap)  why.push(inGap > 0
+      ? 'ของเข้าในล็อตมากกว่าในสต๊อก ' + inGap + ' ชิ้น — ลงล็อตแล้วแต่ยังไม่ได้ลง ' +
+        SH.recv.name + ' หรือยอดยกมาใน ' + SH.prod.name + ' ยังเป็น 0'
+      : 'ของเข้าในสต๊อกมากกว่าในล็อต ' + (-inGap) + ' ชิ้น — ลง ' + SH.recv.name +
+        ' แล้วแต่ยังไม่ได้เปิดล็อตคู่กัน');
+    if (outGap) why.push(outGap > 0
+      ? 'ตัดล็อตมากกว่าที่สต๊อกหักออก ' + outGap + ' ชิ้น'
+      : 'สต๊อกหักออกมากกว่าที่ตัดล็อต ' + (-outGap) + ' ชิ้น — ขายไปแล้วแต่ล็อตไม่ถูกตัด ' +
+        '(สินค้าตัวนี้อาจขายตอนที่ยังไม่มีล็อตในทะเบียน)');
+    if (!why.length) why.push('ยอดรวมสองฝั่งเท่ากัน แต่คงเหลือไม่เท่า — สูตรช่องคงเหลือน่าจะเสีย');
+
+    bad.push('  ' + sku +
+      '\n      ล็อต   : รับ ' + lot[sku].got + ' · ตัด ' + lot[sku].cut +
+      ' · คงเหลือ ' + lot[sku].left + ' (' + lot[sku].rows + ' ล็อต)' +
+      '\n      สต๊อก  : ยกมา ' + st.open + ' + รับเข้า ' + st.got +
+      ' − ปรับลด ' + st.adj + ' − ขายออก ' + st.sold + ' = คงเหลือ ' + st.left +
+      '\n      ต่างกัน : ' + (Math.round((lot[sku].left - st.left) * 1000) / 1000) + ' ชิ้น' +
+      '\n      สาเหตุ : ' + why.join(' · '));
+  }
+
+  var msg = bad.length
+    ? 'ยอดล็อตไม่ตรงกับสต๊อก ' + bad.length + ' SKU\n' + bad.join('\n') +
+      '\n\nแก้ที่ต้นเหตุ ไม่ต้องไปพิมพ์ทับช่องคงเหลือ เพราะเป็นช่องสูตร พิมพ์ทับแล้วจะนิ่งค้างไว้'
+    : 'ยอดล็อตตรงกับยอดสต๊อกทุก SKU ที่มีล็อต (' + Object.keys(lot).length + ' SKU)';
+  Logger.log(msg);
+  return msg;
+}
+
 function repairStockSheet() {
   requireStaff_();
   var s = sheet_('stock');
