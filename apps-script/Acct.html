@@ -40,11 +40,23 @@ function acctRender() {
   var now = String(p.acct || "").trim() || (list[0] || "ยังไม่ส่งบัญชี");
 
   var docs = p.docs || [];
+  /* ใบที่ยกเลิกก็ต้องเลือกส่งได้ เพราะเล่มใบกำกับภาษีต้องมีเลขครบทุกเลข
+     แต่ต้องไม่ติ๊กมาให้เอง และต้องเห็นตั้งแต่แวบแรกว่าใบไหนยกเลิก
+     ไม่งั้นคนกดส่งรวดเดียวจะส่งใบยกเลิกปนไปโดยไม่ตั้งใจ
+     กระดาษมีตราประทับ ยกเลิก/CANCELLED ทับอยู่แล้ว แต่ในรายการต้องบอกก่อนกด */
+  var firstLive = -1;
+  docs.forEach(function (d, i) { if (!d.voidWhy && firstLive < 0) firstLive = i; });
   var docHtml = docs.length
     ? docs.map(function (d, i) {
-        return '<label><input type="checkbox" class="ac-doc" value="' + esc(d.no) + '"' +
-          (i === 0 ? " checked" : "") + '><span>' + esc(d.type) + " <b>" + esc(d.no) +
-          "</b><br>" + esc(thaiDate(d.date)) + " · " + baht(d.total) + "</span></label>";
+        var dead = !!d.voidWhy;
+        return '<label' + (dead ? ' style="color:var(--red)"' : '') + '>'
+          + '<input type="checkbox" class="ac-doc" value="' + esc(d.no) + '"'
+          + (i === firstLive ? " checked" : "") + '><span>' + esc(d.type)
+          + " <b>" + esc(d.no) + "</b>"
+          + (dead ? ' <b style="color:var(--red)">· ยกเลิกแล้ว</b>' : '')
+          + "<br>" + esc(thaiDate(d.date)) + " · " + baht(d.total)
+          + (dead ? '<br><span style="font-size:0.8rem">' + esc(d.voidWhy) + '</span>' : '')
+          + "</span></label>";
       }).join("")
     : '<div class="hint">ใบนี้ยังไม่เคยออกเอกสารเลย — ออกเอกสารก่อน (ปุ่ม 📄 ที่แถวออเดอร์) ' +
       "แล้วค่อยกลับมาส่งบัญชี ตอนนี้ส่งได้แต่ใบสรุปข้อมูล</div>";
@@ -68,6 +80,12 @@ function acctRender() {
 
     +'<div class="subhd">เอกสารที่จะส่ง</div>'
     +'<div class="fchk" id="ac-docs" style="grid-template-columns:1fr">' + docHtml + "</div>"
+    + (docs.filter(function (d) { return !!d.voidWhy }).length
+      ? '<div class="hint">ใบที่ยกเลิกไม่ได้ติ๊กมาให้ แต่ติ๊กส่งได้ '
+        + 'เพราะเล่มใบกำกับภาษีต้องมีเลขครบทุกเลขเรียงต่อกัน ใบที่ยกเลิก'
+        + 'ลงรายงานภาษีขายเป็นยอด 0 พร้อมหมายเหตุ ไม่ใช่หายไปจากเล่ม<br>'
+        + 'กระดาษที่ส่งมีตราประทับ ยกเลิก/CANCELLED ทับทั้งใบอยู่แล้ว</div>'
+      : "")
 
     +'<div class="subhd">ข้อมูลประกอบ (รวมเป็นไฟล์สรุปหนึ่งใบ)</div>'
     +'<div class="fchk" style="grid-template-columns:1fr">'

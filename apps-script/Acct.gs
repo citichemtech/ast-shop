@@ -31,15 +31,25 @@ function acctPack(orderNo) {
   var ord = rows[0];
   if (!ord) throw new Error('ไม่พบออเดอร์ ' + no + ' ในชีท');
 
-  /* ใบที่ยกเลิกไปแล้วไม่ส่งบัญชี — ส่งไปก็ต้องตามไปบอกให้ถอนออกทีหลัง */
-  var docs = listDocs(no).filter(function (d) { return !d.voidWhy; });
+  /* ใบที่ยกเลิกต้องส่งบัญชีด้วย ไม่ใช่กรองทิ้ง
+     ของเดิมกรองออก ด้วยเหตุผลที่ฟังดูเข้าท่าว่า "ส่งไปก็ต้องตามไปบอกให้ถอนออก"
+     ซึ่งผิด — เล่มใบกำกับภาษีต้องมีเลขครบทุกเลขเรียงต่อกันไม่ขาด
+     ใบที่ยกเลิกลงรายงานภาษีขายเป็นยอด 0 พร้อมหมายเหตุ ไม่ใช่หายไปจากเล่ม
+     ถ้ากรองออกตรงนี้ เดือนไหนมีใบยกเลิก เล่มที่ส่งบัญชีจะขาดเลขทันที
+     แล้วรู้ตัวอีกทีตอนยื่นภาษี (เจ้าของร้านถามเองเมื่อ 15 ก.ย. 69 ว่า
+     00276-00277 ที่ยกเลิกไปจะส่งบัญชียังไง — ตอบว่า "ส่งไม่ได้" ซึ่งเป็นปัญหาจริง)
+
+     ส่งมาให้ครบ แล้วติดป้ายบอกว่าใบไหนยกเลิก ให้คนเลือกเองว่าจะส่งอะไร
+     ตัวกระดาษมีตราประทับ ยกเลิก/CANCELLED ทับอยู่แล้ว หยิบผิดไม่ได้ */
+  var docs = listDocs(no);
 
   return jsonSafe_({
     no: ord.no, date: ord.date, channel: ord.channel, cust: ord.cust,
     net: ord.net, vatAmt: ord.vatAmt, status: ord.status,
     acct: ord.acct || ACCT_FIRST, acctAt: ord.acctAt || '', acctWhat: ord.acctWhat || '',
     docs: docs.map(function (d) {
-      return { no: d.no, type: d.type, date: d.date, total: d.total, hasSnap: d.hasSnap };
+      return { no: d.no, type: d.type, date: d.date, total: d.total, hasSnap: d.hasSnap,
+               voidWhy: d.voidWhy || '' };
     })
   });
 }
@@ -239,9 +249,21 @@ function acctWriteSummary_(folder, no, p, extras) {
 
   if (pack.docs.length) {
     lines.push('เอกสารของออเดอร์ใบนี้ที่มีในระบบ');
+    var deadN = 0;
     for (var d = 0; d < pack.docs.length; d++) {
-      lines.push('  - ' + pack.docs[d].type + ' ' + pack.docs[d].no +
-        ' ลงวันที่ ' + pack.docs[d].date + ' ยอด ' + money_(pack.docs[d].total) + ' บาท');
+      var dc = pack.docs[d];
+      /* ใบที่ยกเลิกต้องเขียนกำกับไว้ในใบปะหน้าด้วย ไม่ใช่ลงเป็นบรรทัดเหมือนใบปกติ
+         บัญชีอ่านไฟล์เดียวแล้วต้องรู้ทันทีว่าเลขไหนใช้ได้ เลขไหนยกเลิก
+         ไม่ใช่ต้องเปิดไฟล์ทีละใบดูว่ามีตราประทับทับอยู่หรือเปล่า */
+      lines.push('  - ' + dc.type + ' ' + dc.no +
+        ' ลงวันที่ ' + dc.date + ' ยอด ' + money_(dc.total) + ' บาท' +
+        (dc.voidWhy ? '   *** ยกเลิก — ' + dc.voidWhy + ' ***' : ''));
+      if (dc.voidWhy) deadN++;
+    }
+    if (deadN) {
+      lines.push('');
+      lines.push('หมายเหตุ: มีใบที่ยกเลิก ' + deadN + ' ใบในรายการข้างบน');
+      lines.push('เลขที่ของใบที่ยกเลิกไม่ถูกนำกลับมาใช้ซ้ำ และยังอยู่ในเล่มตามลำดับ');
     }
     lines.push('');
   }
