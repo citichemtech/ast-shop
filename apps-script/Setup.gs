@@ -47,6 +47,7 @@ function setup() {
   made.push(setupAccounting_(ss));
   made.push(setupCarrierList_(ss));
   made.push(setupStatusList_(ss));
+  made.push(setupRecvTypeList_(ss));
   // ซ่อมให้อัตโนมัติ แต่ห้ามล้มทั้ง setup ถ้าซ่อมไม่ได้ — ส่วนอื่นติดตั้งไปแล้ว
   try { made.push(repairStockSheet()); }
   catch (e) { made.push('ซ่อมชีทสต๊อกไม่สำเร็จ: ' + e.message); }
@@ -2078,6 +2079,61 @@ function setupStatusList_(ss) {
   return added.length
     ? 'เพิ่มสถานะ ' + added.join(' · ') + ' ในชีท ' + SH.cfg.name + ' และขยายช่วงตัวเลือกให้แล้ว'
     : 'สถานะครบอยู่แล้ว (ขยายช่วงตัวเลือกให้เผื่อเติมเองภายหลัง)';
+}
+
+/* ------------------------------------------- ประเภทรับเข้า ที่ชีท ตั้งค่า (H) */
+
+/**
+ * ตัวเลือกประเภทของแถว รับเข้า ที่ระบบต้องใช้เอง
+ *
+ * "เติมน้ำยา" คือการกรอกน้ำยาจากถัง 200 ลิตรใส่ขวดขาย ซึ่งที่ร้านทำทุกวัน
+ * ถ้าคำนี้ไม่มีในชีท ตั้งค่า แถวที่ระบบเขียนจะขึ้นสามเหลี่ยมเตือนทุกแถว
+ * เพราะช่องประเภทมี data validation ผูกกับรายการนี้อยู่
+ */
+var EXTRA_RECV_TYPE = ['เติมน้ำยา'];
+
+function setupRecvTypeList_(ss) {
+  var cfg = sheet_('cfg');
+  var recv = findSheet_(ss, SH.recv.name);
+  if (!recv) throw new Error('ไม่พบชีท ' + SH.recv.name);
+
+  var TOP = DATA_ROW + 1;
+  var ROWS = 20;
+  if (cfg.getMaxRows() < TOP + ROWS - 1) {
+    cfg.insertRowsAfter(cfg.getMaxRows(), TOP + ROWS - 1 - cfg.getMaxRows());
+  }
+
+  var col = 8;                     // H = ประเภทรับเข้า
+  var have = {}, firstFree = 0;
+  var v = cfg.getRange(TOP, col, ROWS, 1).getValues();
+  for (var i = 0; i < ROWS; i++) {
+    var x = String(v[i][0] || '').trim();
+    if (x) have[x] = true;
+    else if (!firstFree) firstFree = TOP + i;
+  }
+
+  var added = [];
+  for (var k = 0; k < EXTRA_RECV_TYPE.length; k++) {
+    var want = EXTRA_RECV_TYPE[k];
+    if (have[want]) continue;
+    if (!firstFree) break;         // เต็มช่วงแล้ว ไม่ไปเขียนทับของใคร
+    cfg.getRange(firstFree, col).setValue(want).setFontColor(C_IN_FG);
+    have[want] = true;
+    added.push(want);
+    firstFree = (firstFree - TOP + 1 < ROWS) ? firstFree + 1 : 0;
+  }
+
+  var last = formulaLimit_('recv');
+  if (last >= DATA_ROW) {
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(cfg.getRange(TOP, col, ROWS, 1), true)
+      .setAllowInvalid(true).build();
+    recv.getRange(DATA_ROW, SH.recv.IN.type, last - DATA_ROW + 1, 1).setDataValidation(rule);
+  }
+
+  return added.length
+    ? 'เพิ่มประเภทรับเข้า ' + added.join(' · ') + ' ในชีท ' + SH.cfg.name
+    : 'ประเภทรับเข้าครบอยู่แล้ว';
 }
 
 /* ----------------------------------------------- สถานะบัญชี ที่ ออเดอร์_หัวบิล */

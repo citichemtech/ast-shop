@@ -4921,6 +4921,11 @@ function recvInit(){
 
   $("#r-sku").onchange = recvSkuChanged;
   $("#btn-recv").onclick = recvSave;
+
+  /* ปุ่มสลับโหมดผูกที่นี่ เพราะ recvInit ทำงานครั้งเดียวตอนเปิดหน้ารับเข้าครั้งแรก */
+  $$("#rv-mode .chip").forEach(function(b2){
+    b2.onclick = function(){ fillMode(this.dataset.rv) };
+  });
   recvSkuChanged();
 }
 
@@ -5017,6 +5022,129 @@ function recvDone(res){
   ["r-qty","r-cost","r-lot","r-exp","r-doc","r-ref","r-note"].forEach(function(id){
     $("#"+id).value = "";
   });
+}
+
+/* ------------------------------------------------- เติมน้ำยาประจำวัน (แบ่งจากถัง) */
+
+/* ที่ร้านกรอกน้ำยาจากถัง 200 ลิตรใส่ขวดขายทุกวัน วันละหลายขนาด
+   หน้ารับเข้าปกติคีย์ได้ทีละตัวและบังคับใส่เลขล็อตทุกครั้ง ใช้กับงานรายวันไม่ไหว
+   พนักงานจึงไปจดใส่ชีทแยก กลายเป็นของชิ้นเดียวถูกจดสองที่ที่ไม่คุยกัน
+   แล้วยอดสองฝั่งก็ห่างขึ้นทุกวัน (ของจริง: IPA ขาย 469 ขวดในเดือนเดียว
+   ระบบรู้จักแค่ 112) หน้านี้จึงต้องเติมทีเดียวหลายตัว และไม่ต้องคิดเลขล็อตเอง */
+
+var FILL_KEY = "";
+var FILL_READY = false;
+
+/** น้ำยาที่กรอกเอง — ดูจากหมวดในฐานสินค้า ไม่ฮาร์ดโค้ดรหัส เพราะร้านเพิ่มขนาดใหม่เองได้ */
+function fillProds(){
+  return (CFG.products || []).filter(function(p){
+    return /CHEM|เคมี|น้ำยา/i.test(String(p.group || "") + " " + String(p.name || ""));
+  });
+}
+
+function fillInit(){
+  if(FILL_READY) return;
+  FILL_READY = true;
+  $("#rf-date").value = todayISO();
+
+  var by = $("#f-by");
+  $("#rf-by").innerHTML = by ? by.innerHTML : "";
+  if(by && by.value && by.value !== BY_NEW) $("#rf-by").value = by.value;
+
+  $("#btn-rf").onclick = fillSave;
+  fillDraw();
+}
+
+function fillDraw(){
+  var list = fillProds();
+  if(!list.length){
+    $("#rf-rows").innerHTML = '<div class="hint">ยังไม่มีสินค้าหมวดน้ำยาในฐานสินค้า ' +
+      '— ตัวที่จะเติมได้ต้องอยู่ในชีท <b>ฐานสินค้า</b> ก่อน</div>';
+    return;
+  }
+  $("#rf-rows").innerHTML = list.map(function(p){
+    var left = (p.remain === null || p.remain === undefined) ? "—" : p.remain;
+    return '<div class="rf-row" data-sku="' + esc(p.sku) + '">' +
+      '<div class="rf-nm"><b>' + esc(p.name) + '</b>' +
+      '<em>' + esc(p.sku) + ' · ตอนนี้เหลือ ' + esc(String(left)) + '</em></div>' +
+      '<input class="rf-q" type="number" inputmode="numeric" min="0" step="any" placeholder="0">' +
+      '</div>';
+  }).join("");
+  $$(".rf-q").forEach(function(el){ el.oninput = fillSum });
+  fillSum();
+}
+
+function fillRows(){
+  return $$(".rf-row").map(function(r){
+    return { sku: r.dataset.sku, qty: r.querySelector(".rf-q").value.trim() };
+  }).filter(function(x){ return x.qty !== "" && Number(x.qty) > 0 });
+}
+
+function fillSum(){
+  var got = fillRows(), n = 0;
+  got.forEach(function(x){ n += Number(x.qty) || 0 });
+  $("#rf-sum").textContent = got.length
+    ? "จะบันทึก " + got.length + " รายการ รวม " + n + " ขวด/แกลลอน"
+    : "ยังไม่ได้ใส่จำนวนสักตัว";
+}
+
+function fillSave(){
+  clearMsg();
+  var got = fillRows();
+  if(!got.length){ showErr("ยังไม่ได้ใส่จำนวนสักตัว — ใส่เฉพาะตัวที่กรอกวันนี้"); return }
+
+  /* คีย์เดิมตลอดจนกว่าจะบันทึกสำเร็จ กดซ้ำหรือเน็ตหลุดแล้วยิงใหม่จึงไม่ได้ของสองก้อน */
+  if(!FILL_KEY) FILL_KEY = "rf-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+
+  var btn = $("#btn-rf");
+  btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+  call("refillChem", [{
+    clientKey: FILL_KEY, date: $("#rf-date").value,
+    staff: $("#rf-by").value, lines: got
+  }], function(res){
+    btn.disabled = false; btn.textContent = "บันทึกการเติม";
+    if(!res){ showErr("ชีทตอบกลับมาไม่ได้ — ลองกดใหม่อีกครั้ง"); return }
+    FILL_KEY = "";
+    fillDone(res);
+  }, function(m){
+    btn.disabled = false; btn.textContent = "บันทึกการเติม";
+    showErr(m);
+  });
+}
+
+function fillDone(res){
+  /* ยอดที่โชว์อ่านกลับจากชีทหลังคำนวณเสร็จ ไม่ใช่บวกเอาเองในแอป */
+  var L = (res.lines || []).map(function(x){
+    return "• " + esc(x.name || x.sku) + " +" + x.qty +
+      (x.remain === null || x.remain === undefined ? "" : " → เหลือ " + x.remain);
+  });
+  showOk("บันทึกการเติมแล้ว (ล็อต " + esc(res.lotNo) + ")<br>" + L.join("<br>"));
+  toast("บันทึกการเติมแล้ว");
+
+  call("getBootstrap", [], function(b){
+    if(!b) return;
+    BOOT = b;
+    CFG.products = (b.products||[]).map(function(p){
+      return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
+               unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
+               reorder:p.reorder };
+    });
+    refreshProdOptions();
+    fillDraw();
+  }, function(){ /* โหลดยอดใหม่ไม่ได้ไม่ใช่เรื่องใหญ่ ของลงชีทไปแล้ว */ });
+
+  $$(".rf-q").forEach(function(el){ el.value = "" });
+  fillSum();
+}
+
+/** สลับระหว่างซื้อของเข้าร้าน กับ เติมน้ำยาประจำวัน */
+function fillMode(which){
+  $$("#rv-mode .chip").forEach(function(b){
+    b.classList.toggle("on", b.dataset.rv === which);
+  });
+  $("#rv-buy").style.display  = (which === "fill") ? "none" : "";
+  $("#rv-fill").style.display = (which === "fill") ? "" : "none";
+  if(which === "fill") fillInit();
 }
 
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */

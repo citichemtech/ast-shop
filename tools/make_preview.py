@@ -33,6 +33,11 @@ PRODUCTS = [
      "name": "End Mill Corn cut 2F 1.8*8.5*3.175*38L (1pcs)"},
     {"sku": "CHEM-001", "group": "CHEMICAL", "unit": "แกลลอน", "perPack": 1, "price": 1200, "remain": 14,
      "name": "น้ำยาหล่อเย็น 20L", "reorder": 20},
+    # น้ำยาที่กรอกเองจากถังใหญ่ — หน้าเติมน้ำยาต้องเจอหลายขนาด ไม่ใช่ตัวเดียว
+    {"sku": "CHEM-002", "group": "CHEMICAL", "unit": "ขวด", "perPack": 1, "price": 129, "remain": 46,
+     "name": "IPA 99.9% (สูตรไทออย) 1000 ml"},
+    {"sku": "CHEM-003", "group": "CHEMICAL", "unit": "แกลลอน", "perPack": 1, "price": 690, "remain": 8,
+     "name": "IPA 99.9% (สูตรไทออย) 5000 ml"},
 ]
 
 BOOT = {
@@ -884,6 +889,40 @@ window.google = { script: { run: (function(){
         return { ok:true, sku:p.sku, name:pr.name, qty:qty, lotNo:p.lotNo||"",
                  exp:p.exp||"", remain:(pr.remain===undefined?null:pr.remain),
                  lotRemain:(p.lotNo && lot)?lot.total:null, recvRow:9, lotRow:p.lotNo?9:0 };
+      });
+    },
+    /* เติมน้ำยาประจำวัน — ล้อกติกาฝั่งชีทตัวจริง (planRefill_)
+       ล็อตเป็นรายเดือน เติมซ้ำเดือนเดิมรวมล็อตเดิม · วันหมดอายุ = วันเติม + 1 ปี */
+    refillChem: function(p){
+      window.SENT.push(p);
+      reply(function(){
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        var raw = p.lines || [];
+        var d = p.date ? new Date(p.date + "T00:00:00") : new Date();
+        var lotNo = "R" + String(d.getFullYear()+543).slice(-2) +
+                    ("0" + (d.getMonth()+1)).slice(-2);
+        var seen = {}, out = [];
+        raw.forEach(function(x){
+          var sku = String(x.sku||"").trim();
+          if(!sku) return;
+          var q = Number(x.qty);
+          if(!isFinite(q) || q === 0) return;
+          if(q < 0) throw new Error("จำนวนที่เติมของ "+sku+" ติดลบไม่ได้");
+          if(seen[sku]) throw new Error("ใส่ "+sku+" มาสองแถว — รวมเป็นแถวเดียวก่อน");
+          seen[sku] = true;
+          var pr = MOCK_BOOT.products.filter(function(y){ return y.sku===sku })[0];
+          if(!pr) throw new Error("ไม่มีรหัส "+sku+" ในชีท ฐานสินค้า");
+          if(pr.remain !== null && pr.remain !== undefined) pr.remain = Number(pr.remain) + q;
+          var lot = MOCK_BOOT.lots[sku];
+          if(!lot) lot = MOCK_BOOT.lots[sku] = { total:0, count:0, next:null };
+          lot.total += q;
+          if(!lot.months) lot.months = {};
+          if(!lot.months[lotNo]){ lot.months[lotNo] = true; lot.count += 1 }
+          out.push({ sku:sku, name:pr.name, unit:pr.unit||"ชิ้น", qty:q,
+                     remain:(pr.remain===undefined?null:pr.remain), lotRemain:lot.total });
+        });
+        if(!out.length) throw new Error("ยังไม่ได้ใส่จำนวนสักตัว");
+        return { ok:true, lotNo:lotNo, date:p.date||"", lines:out };
       });
     },
     /* ตรวจออเดอร์ Shopee ก่อนนำเข้า — ล้อตรรกะฝั่งชีทตัวจริง (Api.gs)

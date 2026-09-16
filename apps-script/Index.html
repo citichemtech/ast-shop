@@ -171,6 +171,13 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
 .it .hd .rm{margin-left:auto}
 .it .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 .lotline{font-size:0.8rem;margin-top:6px;line-height:1.5}
+/* แถวเติมน้ำยา — ชื่อยาวอ่านได้ ช่องจำนวนอยู่ขวาสุดนิ้วโป้งถึง กดรัวได้ทั้งคอลัมน์ */
+.rf-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line)}
+.rf-row:last-child{border-bottom:0}
+.rf-nm{flex:1;min-width:0;line-height:1.35}
+.rf-nm b{display:block;font-weight:600;font-size:0.92rem}
+.rf-nm em{display:block;font-style:normal;font-size:0.76rem;color:var(--gray)}
+.rf-q{width:88px;flex:none;text-align:right}
 .lotline.warn{color:var(--amber)}
 .lotline.bad{color:var(--red);font-weight:600}
 .lotline.ok{color:var(--green)}
@@ -1191,6 +1198,39 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
   <!-- รับของเข้าสต๊อก — ลงชีท รับเข้า กับ ล็อตสินค้า พร้อมกันในครั้งเดียว
        ก่อนมีหน้านี้ต้องเปิดชีทลงเองสองที่ ซึ่งลืมอันใดอันหนึ่งเมื่อไรคือพังเงียบ ๆ -->
   <section id="pg-recv" style="display:none">
+    <!-- สองงานคนละจังหวะกัน: ซื้อของเข้าร้านนาน ๆ ที · กรอกน้ำยาใส่ขวดทุกวัน
+         งานที่ทำทุกวันต้องเร็วกว่านี้มาก ไม่งั้นคนจะเลี่ยงไปจดใส่ชีทแยกเหมือนเดิม -->
+    <div class="chips" id="rv-mode">
+      <button class="chip on" data-rv="buy">📦 ซื้อของเข้าร้าน</button>
+      <button class="chip" data-rv="fill">🧪 เติมน้ำยาประจำวัน</button>
+    </div>
+
+    <div id="rv-fill" style="display:none">
+      <div class="card">
+        <div class="sec-hd"><h2>เติมน้ำยาประจำวัน</h2></div>
+        <div class="hint" style="padding:0 2px 10px">
+          กรอกน้ำยาจากถังใหญ่ใส่ขวดขาย — ใส่เฉพาะตัวที่กรอกวันนี้ ที่เหลือเว้นว่างไว้
+          <br>ระบบคิดวันหมดอายุให้เอง (เก็บได้ 1 ปี) และรวมการเติมทั้งเดือนไว้ล็อตเดียว
+          ทะเบียนล็อตจะได้ไม่เต็ม
+        </div>
+        <div class="two">
+          <div class="fld">
+            <label>วันที่เติม</label>
+            <input id="rf-date" type="date">
+          </div>
+          <div class="fld">
+            <label>ผู้บันทึก</label>
+            <select id="rf-by"></select>
+          </div>
+        </div>
+        <div id="rf-rows"><div class="load">กำลังโหลด…</div></div>
+        <div class="hint" id="rf-sum" style="padding:8px 2px 0"></div>
+        <button class="btn" id="btn-rf">บันทึกการเติม</button>
+      </div>
+      <div id="rf-done"></div>
+    </div>
+
+    <div id="rv-buy">
     <div class="card">
       <div class="fld">
         <label>สินค้าที่รับเข้า</label>
@@ -1262,6 +1302,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
         จำนวนสองที่มาจากเลขเดียวกันเสมอ จึงไม่มีทางกรอกไม่ตรงกัน</div>
     </div>
     <div id="r-done"></div>
+    </div>
   </section>
 
   <section id="pg-day" style="display:none">

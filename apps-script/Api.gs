@@ -3619,3 +3619,217 @@ function shopeeImported_() {
   }
   return out;
 }
+
+/* ==================================================== เติมน้ำยา (แบ่งจากถังใหญ่) */
+
+/**
+ * ประเภทแถว รับเข้า ที่ใช้กับการเติมน้ำยา
+ *
+ * ต้องเป็นคำที่มีอยู่จริงในชีท ตั้งค่า ไม่งั้น data validation จะขึ้นสามเหลี่ยมเตือน
+ * ทุกแถว setupRecvTypeList_ เติมคำนี้ให้ตอนสั่ง setup แต่ถ้าชีทเก่ายังไม่มี
+ * ให้ตกลงมาใช้คำที่แปลว่า "ได้ของเพิ่ม" ตัวไหนก็ได้ที่มีอยู่ ดีกว่าบันทึกไม่ได้ทั้งใบ
+ */
+var REFILL_TYPE = 'เติมน้ำยา';
+
+function pickRefillType_(list) {
+  list = list || [];
+  for (var i = 0; i < list.length; i++) if (list[i].indexOf('เติม') > -1) return list[i];
+  for (var j = 0; j < list.length; j++) if (list[j].indexOf('ปรับเพิ่ม') > -1) return list[j];
+  for (var k = 0; k < list.length; k++) if (list[k].indexOf('ซื้อ') > -1) return list[k];
+  return list.length ? list[0] : REFILL_TYPE;
+}
+
+/** อายุน้ำยาหลังกรอก — เจ้าของร้านบอกว่าอยู่ได้ 1 ปี */
+var REFILL_SHELF_MONTHS = 12;
+
+/**
+ * เลขล็อตของการเติม — หนึ่งล็อตต่อหนึ่งเดือน
+ *
+ * เติมทุกวัน 14 ตัว ถ้าเปิดล็อตใหม่ทุกครั้งจะได้เดือนละ ~400 แถว
+ * ทะเบียนล็อตมี 1,000 แถว เต็มในสองเดือนแล้วเติมไม่ได้อีกเลยทั้งระบบ
+ * จึงรวมการเติมในเดือนเดียวกันไว้ล็อตเดียว แล้วเก็บรายครั้งไว้ที่ชีท รับเข้า แทน
+ * — ยอดรวมเท่ากัน ประวัติรายวันยังอยู่ครบ และทะเบียนล็อตอยู่ได้ห้าปีขึ้นไป
+ */
+function refillLotNo_(d) {
+  var y = String(d.getFullYear() + 543).slice(-2);
+  var m = String(d.getMonth() + 1);
+  return 'R' + y + (m.length < 2 ? '0' + m : m);
+}
+
+/**
+ * ตรวจให้ครบก่อนเขียนแม้แต่แถวเดียว
+ *
+ * เติมทีละหลายตัว ถ้าตัวที่ห้าผิดแล้วสี่ตัวแรกเขียนไปแล้ว จะเหลือของครึ่งใบในชีท
+ * ที่ไม่มีใครรู้ว่าครึ่งไหนจริง — ตรวจให้จบก่อน แล้วค่อยเขียนทีเดียว
+ */
+function planRefill_(p, email) {
+  var lists = cfgLists_();
+  var date = parseDate_(p.date) || new Date();
+
+  var raw = p.lines || [];
+  if (!raw.length) throw new Error('ยังไม่ได้ใส่ว่าเติมอะไรไปบ้าง');
+
+  var prods = readProducts_(), byS = {};
+  for (var i = 0; i < prods.length; i++) byS[prods[i].sku] = prods[i];
+
+  var lots = readLots_();
+  var lotNo = refillLotNo_(date);
+  var seen = {}, lines = [];
+
+  for (var n = 0; n < raw.length; n++) {
+    var sku = String(raw[n].sku || '').trim();
+    if (!sku) continue;
+    var qty = Number(raw[n].qty);
+    if (!isFinite(qty) || qty === 0) continue;      /* เว้นว่าง = วันนี้ไม่ได้เติมตัวนี้ */
+    if (qty < 0) throw new Error('จำนวนที่เติมของ ' + sku + ' ติดลบไม่ได้');
+    if (seen[sku]) throw new Error('ใส่ ' + sku + ' มาสองแถว — รวมเป็นแถวเดียวก่อน');
+    seen[sku] = true;
+
+    var prod = byS[sku];
+    if (!prod) throw new Error('ไม่มีรหัส ' + sku + ' ในชีท ' + SH.prod.name);
+
+    /* ล็อตของเดือนนี้มีอยู่แล้วก็เติมเข้าไปในล็อตเดิม ไม่เปิดใหม่
+       วันหมดอายุคงไว้ตามครั้งแรกของเดือน ซึ่งเป็นวันที่ใกล้ที่สุดในกลุ่ม
+       เลือกวันที่ใกล้ที่สุดเสมอ จะได้ไม่มีทางบอกว่าของอยู่ได้นานกว่าความจริง */
+    var have = lots[sku] || [], hit = null;
+    for (var h = 0; h < have.length; h++) if (have[h].lotNo === lotNo) { hit = have[h]; break; }
+    if (hit && hit.broken) {
+      throw new Error('ล็อต ' + lotNo + ' ของ ' + sku + ' ช่องคงเหลือในชีทเสียอยู่ ' +
+        '— ต้องซ่อมสูตรก่อน ไม่งั้นเติมเข้าไปแล้วยอดจะไม่ขยับ');
+    }
+
+    var exp = new Date(date.getTime());
+    exp.setMonth(exp.getMonth() + REFILL_SHELF_MONTHS);
+
+    lines.push({ sku: sku, name: prod.name, unit: prod.unit, qty: qty,
+      lotRow: hit ? hit.row : 0, exp: exp });
+  }
+
+  if (!lines.length) throw new Error('ยังไม่ได้ใส่จำนวนสักตัว');
+
+  return {
+    date: date, lotNo: lotNo, lines: lines,
+    type: pickRefillType_(lists.recvType),
+    staff: String(p.staff || '').trim() || email,
+    note: String(p.note || '').trim()
+  };
+}
+
+/**
+ * บันทึกการเติมน้ำยาประจำวัน — หลายตัวในครั้งเดียว
+ *
+ * ทำไมต้องมีหน้านี้แยกจาก "รับเข้าสินค้า": ที่ร้านกรอกน้ำยาจากถัง 200 ลิตร
+ * ใส่ขวดทุกวัน วันละหลายขนาด หน้ารับเข้าเดิมคีย์ได้ทีละตัวและบังคับใส่เลขล็อต
+ * ทุกครั้ง ใช้กับงานประจำวันไม่ไหว พนักงานเลยไปจดใส่ชีทแยกแทน
+ * — กลายเป็นของชิ้นเดียวถูกจดสองที่ที่ไม่คุยกัน แล้วยอดสองฝั่งก็ห่างขึ้นทุกวัน
+ * (ของจริง: IPA ขายไป 469 ขวดในเดือนเดียว ระบบรู้จักแค่ 112)
+ *
+ * ถังใหญ่ไม่ถูกหักในขั้นนี้ เพราะยังไม่มีรหัสถังในฐานสินค้า — ตั้งใจไม่เดาให้
+ * หักของที่ระบบยังไม่รู้จักคือการสร้างตัวเลขปลอมขึ้นมาอีกชุด
+ */
+function refillChem(payload) {
+  var email = requireStaff_();
+  var p = payload || {};
+
+  var clientKey = String(p.clientKey || '').trim();
+  if (!clientKey) throw new Error('คำขอไม่มี clientKey — ระบบกันบันทึกซ้ำไม่ได้ ไม่บันทึกให้');
+
+  var props = PropertiesService.getScriptProperties();
+  var done = props.getProperty('rf_' + clientKey);
+  if (done) return jsonSafe_(JSON.parse(done));
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('มีคนกำลังบันทึกอยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
+
+  var wrRecv = [], wrLot = [], wasLot = [];
+  try {
+    done = props.getProperty('rf_' + clientKey);
+    if (done) return jsonSafe_(JSON.parse(done));
+
+    var plan = planRefill_(p, email);
+
+    var rRows = nextRows_('recv', SH.recv.IN.sku, plan.lines.length);
+    if (rRows.length < plan.lines.length) {
+      throw new Error('ชีท ' + SH.recv.name + ' เหลือที่ว่างไม่พอ ' + plan.lines.length +
+        ' แถว (สูตรมีถึงแถว ' + formulaLimit_('recv') + ') — ต้องลากสูตรลงเพิ่มก่อน');
+    }
+
+    var ls = sheet_('lot');
+    for (var i = 0; i < plan.lines.length; i++) {
+      var L = plan.lines[i];
+
+      writeRow_('recv', rRows[i], {
+        date: plan.date, type: plan.type, sku: L.sku, qty: L.qty,
+        ref: 'เติมน้ำยา ' + plan.lotNo, staff: plan.staff,
+        note: plan.note || 'แบ่งจากถังใหญ่'
+      });
+      wrRecv.push(rRows[i]);
+
+      if (L.lotRow) {
+        /* ล็อตเดือนนี้มีอยู่แล้ว บวกเข้าไปในช่องจำนวนรับ ซึ่งเป็นช่องกรอก ไม่ใช่ช่องสูตร
+           จำค่าเดิมไว้ด้วย ล้มกลางทางจะได้ใส่กลับให้ตรงเป๊ะ ไม่ใช่ลบแถวคนอื่นทิ้ง */
+        var cell = ls.getRange(L.lotRow, SH.lot.IN.qty);
+        var was = Number(cell.getValue() || 0);
+        wasLot.push({ row: L.lotRow, qty: was });
+        cell.setValue(was + L.qty);
+      } else {
+        var lRow = nextRow_('lot', SH.lot.IN.sku);
+        if (!lRow) throw new Error('ชีท ' + SH.lot.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
+          formulaLimit_('lot') + ') — ต้องลากสูตรลงเพิ่มก่อน');
+        writeRow_('lot', lRow, {
+          sku: L.sku, lotNo: plan.lotNo, exp: L.exp, recv: plan.date,
+          qty: L.qty, note: 'เติมจากถังใหญ่ รวมทั้งเดือนไว้ล็อตเดียว'
+        });
+        wrLot.push(lRow);
+        /* ตัวถัดไปที่เป็น SKU เดียวกันต้องเห็นว่าล็อตนี้เปิดแล้ว ไม่งั้นเปิดซ้ำ */
+        for (var j = i + 1; j < plan.lines.length; j++) {
+          if (plan.lines[j].sku === L.sku && !plan.lines[j].lotRow) plan.lines[j].lotRow = lRow;
+        }
+      }
+    }
+
+    SpreadsheetApp.flush();
+
+    /* อ่านยอดกลับจากชีทที่คิดเสร็จแล้ว ไม่ใช่บวกเอาเองในโค้ด
+       ตัวเลขที่โชว์ให้คนอ่านต้องเป็นตัวเดียวกับที่ชีทเห็น ไม่งั้นเถียงกันทีหลัง */
+    var stock = readStock_(), after = readLots_();
+    var out = [];
+    for (var k = 0; k < plan.lines.length; k++) {
+      var s2 = plan.lines[k].sku, left = 0;
+      var hv = after[s2] || [];
+      for (var q = 0; q < hv.length; q++) left += hv[q].remain;
+      out.push({ sku: s2, name: plan.lines[k].name, unit: plan.lines[k].unit,
+        qty: plan.lines[k].qty,
+        remain: stock[s2] === undefined ? null : stock[s2], lotRemain: left });
+    }
+
+    var res = { ok: true, lotNo: plan.lotNo, date: ymd_(plan.date), lines: out };
+    props.setProperty('rf_' + clientKey, JSON.stringify(res));
+
+    var what = [];
+    for (var w = 0; w < plan.lines.length; w++) {
+      what.push(plan.lines[w].sku + ' ' + plan.lines[w].qty);
+    }
+    writeLog_(email, 'เติมน้ำยา', SH.recv.name, plan.lotNo, what.join(' · '), '',
+      plan.lines.length, 'เติมน้ำยาจากแอป โดย ' + plan.staff + ' (บัญชี ' + email + ')');
+
+    return jsonSafe_(res);
+  } catch (err) {
+    try {
+      var ls2 = sheet_('lot');
+      for (var a = 0; a < wasLot.length; a++) {
+        ls2.getRange(wasLot[a].row, SH.lot.IN.qty).setValue(wasLot[a].qty);
+      }
+      for (var b = 0; b < wrLot.length; b++) clearRow_('lot', wrLot[b]);
+      for (var c = 0; c < wrRecv.length; c++) clearRow_('recv', wrRecv[c]);
+      SpreadsheetApp.flush();
+    } catch (e) {
+      Logger.log('ถอยกลับการเติมน้ำยาไม่สำเร็จ: ' + e.message +
+        ' recv=' + JSON.stringify(wrRecv) + ' lot=' + JSON.stringify(wrLot) +
+        ' คืนค่า=' + JSON.stringify(wasLot));
+    }
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}

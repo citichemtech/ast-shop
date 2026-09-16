@@ -3730,5 +3730,101 @@ var over59 = [];
 for (var nm59 in fx59.sheets) over59 = over59.concat(fx59.sheets[nm59].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over59, []);
 
+/* ----------------------------------------------- 60. เติมน้ำยาประจำวัน */
+console.log('\n60. เติมน้ำยา — กรอกจากถัง 200 ลิตรใส่ขวดขาย ทำทุกวัน หลายขนาด');
+/* ที่ร้านกรอกน้ำยาใส่ขวดทุกวัน แต่หน้ารับเข้าเดิมคีย์ได้ทีละตัวและบังคับใส่เลขล็อต
+   ใช้กับงานประจำวันไม่ไหว พนักงานเลยไปจดใส่ชีทแยก กลายเป็นของชิ้นเดียวถูกจดสองที่
+   ที่ไม่คุยกัน ยอดสองฝั่งห่างขึ้นทุกวัน (ของจริง: IPA ขาย 469 ขวดในเดือนเดียว
+   ระบบรู้จักแค่ 112) หน้านี้จึงต้องเติมทีเดียวหลายตัวและไม่ต้องคิดเลขล็อตเอง */
+var fx60 = FS.build({ products: [
+  { sku: 'CH-1000', name: 'IPA 99.9% 1000ml', price: 129, cost: 60 },
+  { sku: 'CH-5000', name: 'IPA 99.9% 5000ml', price: 690, cost: 300 },
+  { sku: 'CH-20L',  name: 'IPA 99.9% 20 ลิตร', price: 1890, cost: 900 }
+] });
+var api60 = FS.load(fx60);
+var recv60 = fx60.sheets['รับเข้า'], lot60 = fx60.sheets['ล็อตสินค้า'];
+
+var r60 = api60.refillChem({ clientKey: 'rf-1', date: '2026-09-16', staff: 'น้องบี',
+  lines: [{ sku: 'CH-1000', qty: 60 }, { sku: 'CH-5000', qty: 12 }, { sku: 'CH-20L', qty: '' }] });
+eq('เขียนเฉพาะตัวที่ใส่จำนวนมา ตัวที่เว้นว่างไม่ถูกแตะ', r60.lines.length, 2);
+eq('เลขล็อตเป็นรายเดือน ไม่ใช่รายครั้ง', r60.lotNo, 'R6909');
+eq('ลงชีทรับเข้าสองแถว', rowsWith(recv60, api60.SH.recv.IN.sku), [6, 7]);
+eq('เปิดล็อตให้สองแถว', rowsWith(lot60, api60.SH.lot.IN.sku), [6, 7]);
+eq('ประเภทตกลงมาใช้คำที่มีในชีทได้ ไม่ทำให้บันทึกล้ม',
+  recv60.cell(6, api60.SH.recv.IN.type).v, 'ปรับเพิ่ม');
+eq('จำนวนในล็อตตรงกับที่เติม', lot60.cell(6, api60.SH.lot.IN.qty).v, 60);
+
+/* เจ้าของร้านบอกว่าน้ำยาอยู่ได้ 1 ปี ระบบจึงคิดวันหมดอายุเองได้ ไม่ต้องพิมพ์ทุกวัน */
+var exp60 = lot60.cell(6, api60.SH.lot.IN.exp).v;
+eq('วันหมดอายุ = วันที่เติม + 1 ปี ไม่ต้องพิมพ์เอง',
+  [exp60.getFullYear(), exp60.getMonth() + 1, exp60.getDate()], [2027, 9, 16]);
+
+console.log('\n   เติมซ้ำในเดือนเดียวกันต้องรวมล็อตเดิม ไม่เปิดล็อตใหม่');
+/* เติมทุกวัน 14 ตัว ถ้าเปิดล็อตใหม่ทุกครั้งจะได้เดือนละ ~400 แถว
+   ทะเบียนล็อตมี 1,000 แถว เต็มในสองเดือนแล้วทั้งระบบเติมไม่ได้อีกเลย */
+api60.refillChem({ clientKey: 'rf-2', date: '2026-09-17', staff: 'น้องบี',
+  lines: [{ sku: 'CH-1000', qty: 40 }] });
+eq('ไม่มีล็อตแถวใหม่เพิ่ม', rowsWith(lot60, api60.SH.lot.IN.sku), [6, 7]);
+eq('จำนวนรับในล็อตเดิมถูกบวกเพิ่ม', lot60.cell(6, api60.SH.lot.IN.qty).v, 100);
+eq('แต่ชีทรับเข้ายังเก็บรายครั้งไว้ครบ', rowsWith(recv60, api60.SH.recv.IN.sku), [6, 7, 8]);
+var exp60b = lot60.cell(6, api60.SH.lot.IN.exp).v;
+eq('วันหมดอายุคงไว้ตามครั้งแรกของเดือน ซึ่งใกล้ที่สุดในกลุ่ม',
+  [exp60b.getFullYear(), exp60b.getMonth() + 1, exp60b.getDate()], [2027, 9, 16]);
+
+console.log('\n   ข้ามเดือนต้องเป็นล็อตใหม่ เพราะวันหมดอายุคนละวัน');
+api60.refillChem({ clientKey: 'rf-3', date: '2026-10-02', staff: 'น้องบี',
+  lines: [{ sku: 'CH-1000', qty: 25 }] });
+eq('เปิดล็อตใหม่ให้เดือนใหม่', rowsWith(lot60, api60.SH.lot.IN.sku), [6, 7, 8]);
+eq('เลขล็อตเป็นของเดือนตุลา', lot60.cell(8, api60.SH.lot.IN.lotNo).v, 'R6910');
+eq('ล็อตเดือนกันยาไม่ถูกแตะ', lot60.cell(6, api60.SH.lot.IN.qty).v, 100);
+
+console.log('\n   กันกดซ้ำและกันคีย์ผิด');
+var again60 = api60.refillChem({ clientKey: 'rf-3', date: '2026-10-02', staff: 'น้องบี',
+  lines: [{ sku: 'CH-1000', qty: 25 }] });
+eq('กดซ้ำได้ผลเดิม ไม่เขียนเพิ่ม', again60.lotNo, 'R6910');
+eq('จำนวนแถวรับเข้าเท่าเดิม', rowsWith(recv60, api60.SH.recv.IN.sku).length, 4);
+
+var recvBefore = rowsWith(recv60, api60.SH.recv.IN.sku).length;
+var lotBefore = rowsWith(lot60, api60.SH.lot.IN.sku).length;
+throws('จำนวนติดลบไม่ได้', function () {
+  api60.refillChem({ clientKey: 'rf-4', date: '2026-10-02',
+    lines: [{ sku: 'CH-1000', qty: 10 }, { sku: 'CH-5000', qty: -3 }] });
+}, 'ติดลบ');
+throws('รหัสที่ไม่มีในฐานสินค้าไม่ได้', function () {
+  api60.refillChem({ clientKey: 'rf-5', date: '2026-10-02',
+    lines: [{ sku: 'CH-1000', qty: 10 }, { sku: 'CH-ไม่มีจริง', qty: 5 }] });
+}, 'ไม่มีรหัส');
+throws('ใส่ตัวเดียวกันสองแถวไม่ได้', function () {
+  api60.refillChem({ clientKey: 'rf-6', date: '2026-10-02',
+    lines: [{ sku: 'CH-1000', qty: 10 }, { sku: 'CH-1000', qty: 5 }] });
+}, 'สองแถว');
+throws('ไม่ใส่จำนวนสักตัวก็ไม่บันทึก', function () {
+  api60.refillChem({ clientKey: 'rf-7', date: '2026-10-02',
+    lines: [{ sku: 'CH-1000', qty: '' }] });
+}, 'จำนวน');
+throws('ไม่มี clientKey ไม่บันทึกให้', function () {
+  api60.refillChem({ date: '2026-10-02', lines: [{ sku: 'CH-1000', qty: 10 }] });
+}, 'clientKey');
+/* ล้มแล้วต้องไม่เหลือของครึ่งใบ — ตัวที่ถูกต้องในใบเดียวกันก็ต้องไม่ถูกเขียน */
+eq('ล้มแล้วไม่มีแถวรับเข้างอกขึ้นมา',
+  rowsWith(recv60, api60.SH.recv.IN.sku).length, recvBefore);
+eq('ล้มแล้วไม่มีล็อตงอกขึ้นมา',
+  rowsWith(lot60, api60.SH.lot.IN.sku).length, lotBefore);
+eq('และจำนวนในล็อตเดิมไม่ถูกบวกค้างไว้', lot60.cell(6, api60.SH.lot.IN.qty).v, 100);
+
+console.log('\n   ชีทที่มีตัวเลือก "เติมน้ำยา" แล้ว ต้องใช้คำนั้น ไม่ใช่ปรับเพิ่ม');
+fx60.sheets['ตั้งค่า'].cell(12, 8).v = 'เติมน้ำยา';
+api60.refillChem({ clientKey: 'rf-8', date: '2026-10-03',
+  lines: [{ sku: 'CH-5000', qty: 6 }] });
+var lastRecv = rowsWith(recv60, api60.SH.recv.IN.sku).pop();
+eq('ใช้ประเภท เติมน้ำยา', recv60.cell(lastRecv, api60.SH.recv.IN.type).v, 'เติมน้ำยา');
+truthy2('อ้างเลขล็อตไว้ในช่องอ้างอิง จะได้ตามกลับได้',
+  /เติมน้ำยา R6910/.test(String(recv60.cell(lastRecv, api60.SH.recv.IN.ref).v || '')));
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับ');
+var over60 = [];
+for (var nm60 in fx60.sheets) over60 = over60.concat(fx60.sheets[nm60].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over60, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

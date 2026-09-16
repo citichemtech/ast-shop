@@ -72,8 +72,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('บอกว่าใครล็อกอินอยู่', await page.textContent('#who'), 'somchai@chem-inno-tech.com');
   eq('บอกเลขออเดอร์ถัดไป', await page.textContent('#next-no'), 'AST-26-0006');
   eq('มีแถวสินค้าให้กรอกแล้ว 1 แถว', await page.locator('#items .it').count(), 1);
-  eq('มีสินค้าให้เลือกครบ 5 ตัว + บรรทัดว่าง',
-    await page.locator('#items .it:first-child .i-sku option').count(), 6);
+  eq('มีสินค้าให้เลือกครบ 7 ตัว + บรรทัดว่าง',
+    await page.locator('#items .it:first-child .i-sku option').count(), 8);
   eq('วันที่ตั้งเป็นวันนี้ให้แล้ว',
     (await page.inputValue('#f-date')).length, 10);
 
@@ -4112,6 +4112,68 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(200);
 
   /* ---------- 21. ไม่มี error หลุดใน console ---------- */
+  /* ---------- 60. เติมน้ำยาประจำวัน ---------- */
+  console.log('\n60. เติมน้ำยาประจำวัน — กรอกจากถังใหญ่ใส่ขวดขาย ทำทุกวัน');
+  /* งานนี้ทำทุกวัน วันละหลายขนาด หน้ารับเข้าปกติคีย์ทีละตัวและบังคับใส่เลขล็อต
+     ใช้ไม่ไหว พนักงานเลยไปจดใส่ชีทแยก ของชิ้นเดียวถูกจดสองที่ที่ไม่คุยกัน
+     ยอดสองฝั่งห่างขึ้นทุกวัน (ของจริง: IPA ขาย 469 ขวดในเดือนเดียว ระบบรู้จัก 112) */
+  await page.click('.tabs button[data-go="recv"]');
+  await page.waitForTimeout(250);
+  truthy('เปิดมาเจอโหมดซื้อของเข้าร้านก่อน ของเดิมไม่ถูกย้ายที่',
+    await page.isVisible('#rv-buy') && !(await page.isVisible('#rv-fill')));
+
+  await page.click('#rv-mode .chip[data-rv="fill"]');
+  await page.waitForTimeout(300);
+  truthy('สลับมาโหมดเติมน้ำยาได้', await page.isVisible('#rv-fill'));
+  truthy('และซ่อนหน้าซื้อของเข้าร้านไว้', !(await page.isVisible('#rv-buy')));
+
+  /* ต้องขึ้นน้ำยาทุกตัวในฐานสินค้า ไม่ใช่ฮาร์ดโค้ดสามขนาด เพราะร้านเพิ่มขนาดใหม่เองได้ */
+  eq('ขึ้นน้ำยาทุกตัวให้เลือกเติม', await page.locator('.rf-row').count(), 3);
+  truthy('บอกยอดคงเหลือปัจจุบันของแต่ละตัวด้วย',
+    /ตอนนี้เหลือ 46/.test(await page.textContent('#rf-rows')));
+  truthy('ยังไม่ใส่อะไร บอกว่ายังไม่ได้ใส่จำนวน',
+    /ยังไม่ได้ใส่จำนวนสักตัว/.test(await page.textContent('#rf-sum')));
+
+  console.log('\n   ใส่เฉพาะตัวที่กรอกวันนี้ ตัวที่ไม่ได้กรอกต้องไม่ถูกส่งไป');
+  await page.fill('#rf-date', '2026-09-16');
+  await page.fill('.rf-row[data-sku="CHEM-002"] .rf-q', '60');
+  await page.fill('.rf-row[data-sku="CHEM-003"] .rf-q', '12');
+  await page.waitForTimeout(200);
+  truthy('สรุปให้เห็นก่อนกดว่าจะบันทึกกี่รายการ รวมกี่ขวด',
+    /2 รายการ รวม 72/.test(await page.textContent('#rf-sum')));
+
+  var beforeFill = await page.evaluate(function () {
+    return MOCK_BOOT.products.filter(function (p) { return p.sku === 'CHEM-002' })[0].remain;
+  });
+  await page.click('#btn-rf');
+  await page.waitForTimeout(1200);
+  var sentFill = await page.evaluate(function () { return window.SENT[window.SENT.length - 1] });
+  eq('ส่งเฉพาะตัวที่ใส่จำนวน ตัวที่เว้นว่างไม่ติดไปด้วย',
+    sentFill.lines.map(function (x) { return x.sku + ':' + x.qty }),
+    ['CHEM-002:60', 'CHEM-003:12']);
+  eq('ส่งวันที่ที่เลือกไปด้วย', sentFill.date, '2026-09-16');
+  truthy('มี clientKey กันบันทึกซ้ำติดไปด้วย', /^rf-/.test(String(sentFill.clientKey || '')));
+  truthy('ขึ้นเลขล็อตรายเดือนที่ระบบตั้งให้ ไม่ต้องคิดเอง',
+    /ล็อต R6909/.test(await page.textContent('#ok')));
+  truthy('บอกยอดคงเหลือใหม่ของแต่ละตัว',
+    /IPA 99\.9%[^<]*1000 ml \+60/.test(await page.innerHTML('#ok')));
+  eq('ยอดคงเหลือเพิ่มขึ้นจริง', await page.evaluate(function () {
+    return MOCK_BOOT.products.filter(function (p) { return p.sku === 'CHEM-002' })[0].remain;
+  }), beforeFill + 60);
+  eq('ล้างช่องจำนวนให้พร้อมเติมรอบหน้า',
+    await page.evaluate(function () {
+      return $$('.rf-q').map(function (el) { return el.value }).join('|');
+    }), '||');
+
+  console.log('\n   ไม่ใส่จำนวนสักตัวแล้วกดบันทึก ต้องเตือน ไม่ใช่ยิงเปล่า');
+  var nSent = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#btn-rf');
+  await page.waitForTimeout(400);
+  truthy('เตือนว่ายังไม่ได้ใส่จำนวน',
+    /ยังไม่ได้ใส่จำนวนสักตัว/.test(await page.textContent('#err')));
+  eq('และไม่ยิงขึ้นชีทเลย',
+    await page.evaluate(function () { return window.SENT.length }), nSent);
+
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 
