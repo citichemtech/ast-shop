@@ -1203,6 +1203,39 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
     <div class="chips" id="rv-mode">
       <button class="chip on" data-rv="buy">📦 ซื้อของเข้าร้าน</button>
       <button class="chip" data-rv="fill">🧪 เติมน้ำยาประจำวัน</button>
+      <button class="chip" data-rv="count">📋 นับสต๊อก</button>
+    </div>
+
+    <div id="rv-count" style="display:none">
+      <div class="card">
+        <div class="sec-hd"><h2>นับสต๊อกตั้งต้น</h2></div>
+        <div class="hint" style="padding:0 2px 10px">
+          ของที่ขายไปก่อนมีระบบไม่มีประวัติให้ย้อน — นับของที่เหลือจริงแล้วตั้งเป็นยอดตั้งต้น
+          จากนั้นมันจะเดินตรงเอง
+          <br>ใส่เฉพาะตัวที่นับแล้ว ตัวที่ยังไม่ได้นับ<b>เว้นว่างไว้</b>
+          (เว้นว่าง ≠ นับได้ศูนย์)
+        </div>
+        <div class="two">
+          <div class="fld">
+            <label>วันที่นับ</label>
+            <input id="cn-date" type="date">
+          </div>
+          <div class="fld">
+            <label>ผู้นับ</label>
+            <select id="cn-by"></select>
+          </div>
+        </div>
+        <div class="fld">
+          <label>ค้นหาสินค้า</label>
+          <input id="cn-find" placeholder="พิมพ์ชื่อหรือรหัส — เว้นว่างเพื่อดูทั้งหมด"
+                 autocomplete="off">
+        </div>
+        <div id="cn-rows"><div class="load">กำลังโหลด…</div></div>
+        <div class="hint" id="cn-sum" style="padding:8px 2px 0"></div>
+        <button class="btn" id="btn-cn-try">ลองก่อน — ดูว่าจะเปลี่ยนอะไรบ้าง</button>
+        <div id="cn-plan"></div>
+      </div>
+      <div id="cn-done"></div>
     </div>
 
     <div id="rv-fill" style="display:none">

@@ -925,6 +925,60 @@ window.google = { script: { run: (function(){
         return { ok:true, lotNo:lotNo, date:p.date||"", lines:out };
       });
     },
+    /* นับสต๊อกตั้งต้น — ล้อกติกาฝั่งชีทตัวจริง (planCount_)
+       โหมดลองก่อนต้องไม่ขยับตัวเลขอะไรเลย ไม่งั้นข้อสอบจะไม่จับว่ามันแอบเขียน */
+    countStock: function(p){
+      window.SENT.push(p);
+      reply(function(){
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        var raw = p.lines || [], seen = {}, plan = [];
+        raw.forEach(function(x){
+          var sku = String(x.sku||"").trim();
+          if(!sku) return;
+          var c = x.counted;
+          if(c === "" || c === null || c === undefined) return;
+          c = Number(c);
+          if(!isFinite(c)) throw new Error("จำนวนที่นับได้ของ "+sku+" ไม่ใช่ตัวเลข");
+          if(c < 0) throw new Error("จำนวนที่นับได้ของ "+sku+" ติดลบไม่ได้");
+          if(seen[sku]) throw new Error("ใส่ "+sku+" มาสองแถว — รวมเป็นแถวเดียวก่อน");
+          seen[sku] = true;
+          var pr = MOCK_BOOT.products.filter(function(y){ return y.sku===sku })[0];
+          if(!pr) throw new Error("ไม่มีรหัส "+sku+" ในชีท ฐานสินค้า");
+          var was = (pr.remain===null||pr.remain===undefined) ? 0 : Number(pr.remain);
+          var lot = MOCK_BOOT.lots[sku];
+          plan.push({ sku:sku, name:pr.name, was:was, counted:c, diff:c-was,
+                      lotWas: lot ? lot.total : 0, lotDiff: lot ? (c - lot.total) : 0,
+                      hasLot: !!lot, pr:pr, lot:lot });
+        });
+        if(!plan.length) throw new Error("ยังไม่ได้ใส่จำนวนที่นับได้สักตัว");
+
+        var pre = plan.map(function(L){
+          var t = L.sku + " (" + L.name + ")\\n  สต๊อก : " + L.was + " → " + L.counted +
+            (L.diff === 0 ? "  (ตรงอยู่แล้ว ไม่ต้องแก้)"
+              : "  ลง" + (L.diff > 0 ? "ปรับเพิ่ม " : "ปรับลด ") + Math.abs(L.diff));
+          t += L.hasLot
+            ? "\\n  ล็อต  : " + L.lotWas + " → " + L.counted +
+              (L.lotDiff === 0 ? "  (ตรงอยู่แล้ว)" : "  แก้จำนวนรับในล็อต " + L.lotDiff)
+            : "\\n  ล็อต  : ไม่มีล็อตในทะเบียน ไม่ต้องแก้";
+          return t;
+        }).join("\\n");
+
+        if(p.dryRun){
+          return { ok:true, dryRun:true, preview:pre, lines: plan.map(function(L){
+            return { sku:L.sku, name:L.name, was:L.was, counted:L.counted,
+                     diff:L.diff, lotWas:L.lotWas, lotDiff:L.lotDiff, hasLot:L.hasLot };
+          }) };
+        }
+        if(!p.clientKey) throw new Error("คำขอไม่มี clientKey — ระบบกันบันทึกซ้ำไม่ได้ ไม่บันทึกให้");
+        plan.forEach(function(L){
+          L.pr.remain = L.counted;
+          if(L.lot) L.lot.total = L.counted;
+        });
+        return { ok:true, date:p.date||"", preview:pre, lines: plan.map(function(L){
+          return { sku:L.sku, name:L.name, was:L.was, counted:L.counted, diff:L.diff };
+        }) };
+      });
+    },
     /* ตรวจออเดอร์ Shopee ก่อนนำเข้า — ล้อตรรกะฝั่งชีทตัวจริง (Api.gs)
        จับคู่ด้วยรหัสก่อน แล้วค่อยชื่อ · ใบที่เคยนำเข้าแล้วดูจากคำว่า Shopee ในหมายเหตุ */
     shopeeMatch: function(list){

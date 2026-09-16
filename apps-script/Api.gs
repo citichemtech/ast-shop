@@ -3833,3 +3833,247 @@ function refillChem(payload) {
     lock.releaseLock();
   }
 }
+
+/* ========================================================= นับสต๊อกตั้งต้น */
+
+/**
+ * ตั้งยอดคงเหลือให้เท่ากับของที่นับได้จริง
+ *
+ * ของที่ขายไปก่อนมีแอปไม่มีประวัติให้กู้ ต่อให้ไล่ย้อนใบเก่าก็ได้แค่ตัวเลขที่เดาขึ้นมา
+ * สิ่งเดียวที่เชื่อได้คือของที่นับได้ตอนนี้ — นับแล้วตั้งเป็นยอดตั้งต้น
+ * แล้วนับจากวันนี้ไปทุกอย่างจะเดินตรงเอง เพราะขายกับเติมเข้าระบบเดียวกันหมดแล้ว
+ *
+ * ไม่ไปพิมพ์ทับช่องคงเหลือเด็ดขาด เพราะเป็นช่องสูตร พิมพ์ทับแล้วจะนิ่งค้างถาวร
+ * วิธีที่ถูกคือลงส่วนต่างเป็นแถว ปรับเพิ่ม/ปรับลด ในชีท รับเข้า แล้วให้สูตรคิดเอง
+ *
+ * ประเภทที่ใช้จงใจเลือกเฉพาะ ปรับเพิ่ม/ปรับลด ซึ่งรู้แน่ว่าสูตรฝั่งชีทนับเข้าช่องไหน
+ * ไม่ใช้ "ตรวจนับ" เพราะยังไม่รู้ว่าสูตรของชีทนี้จับคำนั้นเข้าช่องรับเข้าหรือปรับลด
+ * เดาผิดคือยอดวิ่งผิดทาง — คำว่าตรวจนับไปอยู่ในช่องอ้างอิงแทน อ่านย้อนได้เหมือนกัน
+ *
+ * เขียนเสร็จแล้วอ่านยอดกลับจากชีทมาเทียบกับที่นับได้ ไม่ตรงคือถอยทั้งหมด
+ * ดีกว่าปล่อยให้ตัวเลขผิดค้างไว้แล้วไม่มีใครรู้
+ */
+function planCount_(p, email) {
+  var raw = p.lines || [];
+  if (!raw.length) throw new Error('ยังไม่ได้ใส่ว่านับอะไรได้เท่าไร');
+
+  var prods = readProducts_(), byS = {};
+  for (var i = 0; i < prods.length; i++) byS[prods[i].sku] = prods[i];
+
+  var stock = readStock_(), lots = readLots_();
+  var seen = {}, lines = [];
+
+  for (var n = 0; n < raw.length; n++) {
+    var sku = String(raw[n].sku || '').trim();
+    if (!sku) continue;
+    var got = raw[n].counted;
+    if (got === '' || got === null || got === undefined) continue;   /* ยังไม่ได้นับตัวนี้ */
+    got = Number(got);
+    if (!isFinite(got)) throw new Error('จำนวนที่นับได้ของ ' + sku + ' ไม่ใช่ตัวเลข');
+    if (got < 0) throw new Error('จำนวนที่นับได้ของ ' + sku + ' ติดลบไม่ได้');
+    if (seen[sku]) throw new Error('ใส่ ' + sku + ' มาสองแถว — รวมเป็นแถวเดียวก่อน');
+    seen[sku] = true;
+
+    var prod = byS[sku];
+    if (!prod) throw new Error('ไม่มีรหัส ' + sku + ' ในชีท ' + SH.prod.name);
+
+    var was = (stock[sku] === undefined || stock[sku] === null) ? 0 : Number(stock[sku]);
+    var have = lots[sku] || [];
+    var lotWas = 0;
+    for (var h = 0; h < have.length; h++) {
+      if (have[h].broken) {
+        throw new Error('ล็อต ' + have[h].lotNo + ' ของ ' + sku + ' ช่องคงเหลือในชีทเสียอยู่ ' +
+          '— ต้องซ่อมสูตรก่อน ไม่งั้นตั้งยอดแล้วล็อตจะยังเพี้ยน');
+      }
+      lotWas += have[h].remain;
+    }
+
+    /* ล็อตเรียงใหม่สุดก่อน ปรับยอดจะได้ไปลงล็อตที่เพิ่งรับมา ไม่ใช่ล็อตเก่าที่ใกล้หมดอายุ */
+    var order = have.slice().sort(function (a, b) {
+      return (b.recv || 0) - (a.recv || 0) || b.row - a.row;
+    });
+
+    lines.push({ sku: sku, name: prod.name, unit: prod.unit, counted: got,
+      was: was, diff: round2_(got - was),
+      lotWas: lotWas, lotDiff: round2_(got - lotWas), lots: order });
+  }
+
+  if (!lines.length) throw new Error('ยังไม่ได้ใส่จำนวนที่นับได้สักตัว');
+
+  return {
+    date: parseDate_(p.date) || new Date(), lines: lines,
+    staff: String(p.staff || '').trim() || email,
+    why: String(p.why || '').trim()
+  };
+}
+
+/** ข้อความสรุปว่าจะเกิดอะไรขึ้น ใช้ทั้งโหมดลองก่อนและตอนบันทึกจริง */
+function countPreview_(plan) {
+  var out = [];
+  for (var i = 0; i < plan.lines.length; i++) {
+    var L = plan.lines[i];
+    var t = L.sku + ' (' + L.name + ')\n' +
+      '  สต๊อก : ' + L.was + ' → ' + L.counted +
+      (L.diff === 0 ? '  (ตรงอยู่แล้ว ไม่ต้องแก้)'
+        : '  ลง' + (L.diff > 0 ? 'ปรับเพิ่ม ' : 'ปรับลด ') + Math.abs(L.diff));
+    if (L.lots.length) {
+      t += '\n  ล็อต  : ' + L.lotWas + ' → ' + L.counted +
+        (L.lotDiff === 0 ? '  (ตรงอยู่แล้ว)' : '  แก้จำนวนรับในล็อต ' + L.lotDiff);
+    } else {
+      t += '\n  ล็อต  : ไม่มีล็อตในทะเบียน ไม่ต้องแก้';
+    }
+    out.push(t);
+  }
+  return out.join('\n');
+}
+
+function countStock(payload) {
+  var email = requireStaff_();
+  var p = payload || {};
+  var dry = !!p.dryRun;
+
+  var clientKey = String(p.clientKey || '').trim();
+  if (!dry && !clientKey) {
+    throw new Error('คำขอไม่มี clientKey — ระบบกันบันทึกซ้ำไม่ได้ ไม่บันทึกให้');
+  }
+
+  var props = PropertiesService.getScriptProperties();
+  if (!dry) {
+    var done = props.getProperty('ct_' + clientKey);
+    if (done) return jsonSafe_(JSON.parse(done));
+  }
+
+  /* โหมดลองก่อน อ่านอย่างเดียว ไม่จับล็อก ไม่เขียนอะไรเลยสักช่อง */
+  if (dry) {
+    var dplan = planCount_(p, email);
+    return jsonSafe_({ ok: true, dryRun: true, preview: countPreview_(dplan),
+      lines: dplan.lines.map(function (L) {
+        return { sku: L.sku, name: L.name, was: L.was, counted: L.counted,
+          diff: L.diff, lotWas: L.lotWas, lotDiff: L.lotDiff, hasLot: !!L.lots.length };
+      }) });
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('มีคนกำลังบันทึกอยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
+
+  var wrRecv = [], wasLot = [];
+  try {
+    var d2 = props.getProperty('ct_' + clientKey);
+    if (d2) return jsonSafe_(JSON.parse(d2));
+
+    var plan = planCount_(p, email);
+    var lists = cfgLists_();
+    var upType = pickWord_(lists.recvType, ['ปรับเพิ่ม', 'รับเข้า', 'ซื้อ']);
+    var dnType = pickWord_(lists.recvType, ['ปรับลด']);
+    if (!dnType) {
+      throw new Error('ชีท ' + SH.cfg.name + ' ไม่มีประเภท "ปรับลด" ให้เลือก ' +
+        '— ลดยอดไม่ได้เลยถ้าไม่มีคำนี้ ต้องเติมในชีทก่อน');
+    }
+
+    var need = 0;
+    for (var c = 0; c < plan.lines.length; c++) if (plan.lines[c].diff !== 0) need++;
+    var rRows = need ? nextRows_('recv', SH.recv.IN.sku, need) : [];
+    if (rRows.length < need) {
+      throw new Error('ชีท ' + SH.recv.name + ' เหลือที่ว่างไม่พอ ' + need + ' แถว');
+    }
+
+    var ls = sheet_('lot'), at = 0;
+    var why = plan.why || 'ตั้งยอดตั้งต้นจากการนับของจริง';
+
+    for (var i = 0; i < plan.lines.length; i++) {
+      var L = plan.lines[i];
+
+      if (L.diff !== 0) {
+        writeRow_('recv', rRows[at], {
+          date: plan.date, type: (L.diff > 0 ? upType : dnType),
+          sku: L.sku, qty: Math.abs(L.diff),
+          ref: 'ตรวจนับ ' + ymd_(plan.date), staff: plan.staff, note: why
+        });
+        wrRecv.push(rRows[at]);
+        at++;
+      }
+
+      /* ฝั่งล็อต: ช่องคงเหลือเป็นสูตร (จำนวนรับ − ตัดออกแล้ว) แก้ได้ที่จำนวนรับเท่านั้น
+         ลดยอดต้องไม่ลดจนต่ำกว่าที่ตัดออกไปแล้ว ไม่งั้นล็อตจะคงเหลือติดลบ
+         ลดไม่ครบก็บอกตรง ๆ ว่าเหลือเท่าไร ดีกว่าเขียนตัวเลขที่รู้อยู่แล้วว่าผิด */
+      var rest = L.lotDiff;
+      if (L.lots.length && rest !== 0) {
+        for (var k = 0; k < L.lots.length && rest !== 0; k++) {
+          var lot = L.lots[k];
+          var cell = ls.getRange(lot.row, SH.lot.IN.qty);
+          var cur = Number(cell.getValue() || 0);
+          var cut = round2_(cur - lot.remain);          /* ตัดออกแล้วของล็อตนี้ */
+          var floor = cut;                              /* ต่ำกว่านี้คงเหลือจะติดลบ */
+          var want = round2_(cur + rest);
+          if (want < floor) want = floor;
+          if (want === cur) continue;
+          wasLot.push({ row: lot.row, qty: cur });
+          cell.setValue(want);
+          rest = round2_(rest - (want - cur));
+        }
+        if (rest !== 0) {
+          throw new Error(L.sku + ': ปรับยอดล็อตได้ไม่ครบ เหลืออีก ' + rest + ' ชิ้น ' +
+            '— ล็อตที่มีถูกตัดขายไปแล้วมากกว่าที่นับได้ ต้องดูทะเบียนล็อตด้วยตาก่อน');
+        }
+      }
+    }
+
+    SpreadsheetApp.flush();
+
+    /* อ่านกลับจากชีทที่คิดเสร็จแล้วมาเทียบ ไม่ตรงคือถอยทั้งหมด
+       ประเภทที่ใช้อาจถูกสูตรของชีทนับเข้าคนละช่องกับที่คิดไว้ ถ้าไม่ตรวจก็ไม่มีทางรู้ */
+    var back = readStock_(), bad = [];
+    for (var v = 0; v < plan.lines.length; v++) {
+      var s3 = plan.lines[v].sku;
+      var now = (back[s3] === undefined || back[s3] === null) ? 0 : Number(back[s3]);
+      if (Math.abs(now - plan.lines[v].counted) > 0.005) {
+        bad.push(s3 + ' ตั้งไว้ ' + plan.lines[v].counted + ' แต่ชีทคิดออกมาเป็น ' + now);
+      }
+    }
+    if (bad.length) {
+      throw new Error('ตั้งยอดแล้วชีทไม่ได้ยอดตามที่นับ — ถอยคืนให้หมดแล้ว ไม่แตะอะไรทั้งนั้น\n' +
+        bad.join('\n') + '\nสาเหตุที่เป็นไปได้: สูตรช่องรับเข้า/ปรับลด ของชีทไม่ได้นับ "' +
+        upType + '" หรือ "' + dnType + '" เข้าไปด้วย');
+    }
+
+    var res = { ok: true, date: ymd_(plan.date), preview: countPreview_(plan),
+      lines: plan.lines.map(function (L) {
+        return { sku: L.sku, name: L.name, was: L.was, counted: L.counted, diff: L.diff };
+      }) };
+    props.setProperty('ct_' + clientKey, JSON.stringify(res));
+
+    for (var g = 0; g < plan.lines.length; g++) {
+      writeLog_(email, 'ตรวจนับสต๊อก', SH.recv.name, ymd_(plan.date),
+        plan.lines[g].sku, plan.lines[g].was, plan.lines[g].counted,
+        why + ' โดย ' + plan.staff + ' (บัญชี ' + email + ')');
+    }
+
+    return jsonSafe_(res);
+  } catch (err) {
+    try {
+      var ls2 = sheet_('lot');
+      for (var a = 0; a < wasLot.length; a++) {
+        ls2.getRange(wasLot[a].row, SH.lot.IN.qty).setValue(wasLot[a].qty);
+      }
+      for (var b = 0; b < wrRecv.length; b++) clearRow_('recv', wrRecv[b]);
+      SpreadsheetApp.flush();
+    } catch (e) {
+      Logger.log('ถอยกลับการตรวจนับไม่สำเร็จ: ' + e.message +
+        ' recv=' + JSON.stringify(wrRecv) + ' คืนค่าล็อต=' + JSON.stringify(wasLot));
+    }
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** หาคำแรกในรายการของชีทที่ตรงกับคำที่อยากได้ — ไม่ฮาร์ดโค้ด เพราะร้านแก้ชีทเองได้ */
+function pickWord_(list, wants) {
+  list = list || [];
+  for (var w = 0; w < wants.length; w++) {
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i]).indexOf(wants[w]) > -1) return list[i];
+    }
+  }
+  return '';
+}

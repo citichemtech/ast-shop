@@ -3835,5 +3835,99 @@ var over60 = [];
 for (var nm60 in fx60.sheets) over60 = over60.concat(fx60.sheets[nm60].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over60, []);
 
+/* -------------------------------------------- 61. นับสต๊อกตั้งต้น */
+console.log('\n61. นับสต๊อกตั้งต้น — ของที่ขายไปก่อนมีแอปไม่มีประวัติให้กู้');
+/* เจ้าของร้านชี้เอง: "ของพวกนี้ขายมาก่อนทำแอปเสร็จ การไปตัดออเดอร์เก่าคงไม่ใช่ทาง
+   สิ่งที่ทำได้คือนับสิ่งที่เหลือ" — ถูกต้อง ประวัติที่ไม่เคยมีสร้างขึ้นมาไม่ได้
+   ตัวเลขเดียวที่เชื่อได้คือของที่นับได้ตอนนี้ (16 ก.ย. 69) */
+/* ยอดยกมาตั้งให้ตรงกับของจริงที่เจอ: 169 ไม่เคยลงรับเข้าเลย · 170 ยกมาไว้ 1 */
+var fx61 = FS.build({
+  products: [
+    { sku: 'SKU-169', name: 'Adapter For Trimmer 6.35-3.175mm', price: 225, cost: 35,
+      opening: 0 },
+    { sku: 'SKU-170', name: 'Adapter For Trimmer 6.35-4.0mm', price: 225, cost: 35,
+      opening: 1000 }
+  ],
+  lots: [{ sku: 'SKU-170', lotNo: 'L-170', exp: '', recv: '2026-08-01', qty: 3600 }]
+});
+var api61 = FS.load(fx61);
+var recv61 = fx61.sheets['รับเข้า'], lot61 = fx61.sheets['ล็อตสินค้า'];
+eq('ตั้งต้น: 169 ไม่มีของในระบบเลย', api61.getBootstrap().products
+  .filter(function (x) { return x.sku === 'SKU-169' })[0].remain, 0);
+
+console.log('\n   โหมดลองก่อน — ต้องบอกว่าจะทำอะไร โดยไม่แตะชีทเลยสักช่อง');
+var dry61 = api61.countStock({ dryRun: true, date: '2026-09-16',
+  lines: [{ sku: 'SKU-169', counted: 1600 }, { sku: 'SKU-170', counted: 900 }] });
+truthy2('บอกว่าเป็นการลองก่อน', dry61.dryRun === true);
+truthy2('กางให้เห็นว่าสต๊อกจะเปลี่ยนจากเท่าไรเป็นเท่าไร',
+  /สต๊อก : 0 → 1600/.test(dry61.preview) && /สต๊อก : 1000 → 900/.test(dry61.preview));
+truthy2('บอกด้วยว่าตัวไหนไม่มีล็อตในทะเบียน',
+  /SKU-169[\s\S]*ไม่มีล็อตในทะเบียน/.test(dry61.preview));
+truthy2('และตัวที่มีล็อตจะถูกปรับยอดล็อตด้วย', /ล็อต  : 3600 → 900/.test(dry61.preview));
+eq('ลองก่อนแล้วต้องไม่มีแถวรับเข้างอกขึ้นมา',
+  rowsWith(recv61, api61.SH.recv.IN.sku), []);
+eq('และจำนวนในล็อตต้องไม่ถูกแตะ', lot61.cell(DATA_ROW, api61.SH.lot.IN.qty).v, 3600);
+
+console.log('\n   บันทึกจริง');
+var run61 = api61.countStock({ clientKey: 'ct-1', date: '2026-09-16', staff: 'เอ๋',
+  lines: [{ sku: 'SKU-169', counted: 1600 }, { sku: 'SKU-170', counted: 900 }] });
+truthy2('บันทึกผ่าน', run61.ok === true);
+eq('ลงแถวปรับยอดสองแถว', rowsWith(recv61, api61.SH.recv.IN.sku), [6, 7]);
+eq('ตัวที่ขาดใช้ปรับเพิ่ม', recv61.cell(6, api61.SH.recv.IN.type).v, 'ปรับเพิ่ม');
+eq('จำนวนที่ปรับคือส่วนต่าง ไม่ใช่ยอดที่นับได้', recv61.cell(6, api61.SH.recv.IN.qty).v, 1600);
+eq('ตัวที่เกินใช้ปรับลด', recv61.cell(7, api61.SH.recv.IN.type).v, 'ปรับลด');
+eq('ส่วนต่างของตัวที่เกิน ไม่ใช่ยอดที่นับได้', recv61.cell(7, api61.SH.recv.IN.qty).v, 100);
+truthy2('เขียนคำว่าตรวจนับไว้ในช่องอ้างอิง อ่านย้อนได้',
+  /ตรวจนับ 2026-09-16/.test(String(recv61.cell(6, api61.SH.recv.IN.ref).v || '')));
+eq('ยอดในชีทสต๊อกกลายเป็นยอดที่นับได้', api61.getBootstrap().products
+  .filter(function (x) { return x.sku === 'SKU-169' })[0].remain, 1600);
+eq('จำนวนรับในล็อตถูกลดลงให้ยอดล็อตตรงกับที่นับได้',
+  lot61.cell(DATA_ROW, api61.SH.lot.IN.qty).v, 900);
+
+console.log('\n   นับแล้วต้องไม่เหลือความไม่ตรงกันอีก');
+truthy2('ตัวตรวจไม่ฟ้องอะไรแล้ว', /ตรงกับยอดสต๊อกทุก SKU/.test(api61.checkLotStock()));
+
+console.log('\n   กันกดซ้ำและกันคีย์ผิด');
+var again61 = api61.countStock({ clientKey: 'ct-1', date: '2026-09-16',
+  lines: [{ sku: 'SKU-169', counted: 1600 }, { sku: 'SKU-170', counted: 900 }] });
+eq('กดซ้ำไม่เขียนเพิ่ม', rowsWith(recv61, api61.SH.recv.IN.sku), [6, 7]);
+truthy2('และคืนผลเดิม', again61.ok === true);
+throws('นับได้ติดลบไม่ได้', function () {
+  api61.countStock({ clientKey: 'ct-2', lines: [{ sku: 'SKU-169', counted: -5 }] });
+}, 'ติดลบ');
+throws('ไม่มี clientKey ตอนบันทึกจริงไม่ได้', function () {
+  api61.countStock({ lines: [{ sku: 'SKU-169', counted: 5 }] });
+}, 'clientKey');
+/* เว้นว่าง = ยังไม่ได้นับตัวนั้น ต้องข้ามไป ไม่ใช่ตั้งเป็นศูนย์แล้วล้างสต๊อกทิ้ง */
+throws('เว้นว่างทุกตัวคือยังไม่ได้นับ ไม่ใช่ให้ตั้งเป็นศูนย์', function () {
+  api61.countStock({ clientKey: 'ct-3', lines: [{ sku: 'SKU-169', counted: '' }] });
+}, 'ยังไม่ได้ใส่จำนวนที่นับได้');
+
+console.log('\n   ของที่ขายไปแล้วต้องไม่หายไปจากประวัติ ตอนลดยอดล็อต');
+/* ล็อตคงเหลือ = จำนวนรับ − ตัดออกแล้ว · ลดจำนวนรับต่ำกว่าที่ตัดขายไปแล้ว
+   คงเหลือจะติดลบ และประวัติว่าเคยขายไปเท่าไรก็เพี้ยนตาม */
+var fx61b = FS.build({
+  products: [{ sku: 'CHEM-001', name: 'น้ำยาหล่อเย็น 20L', price: 1200, cost: 800,
+    opening: 0 }],
+  lots: [{ sku: 'CHEM-001', lotNo: 'L-b', exp: '2027-01-01', recv: '2026-01-01', qty: 10 }]
+});
+var api61b = FS.load(fx61b);
+api61b.createOrder(order({ items: [{ sku: 'CHEM-001', qty: 8, price: 1200 }] }));
+var lotB = fx61b.sheets['ล็อตสินค้า'];
+eq('ขายไป 8 ล็อตเหลือ 2', lotB.cell(DATA_ROW, api61b.SH.lot.remain).v, 2);
+
+api61b.countStock({ clientKey: 'ct-b', lines: [{ sku: 'CHEM-001', counted: 0 }] });
+eq('นับได้ 0 จำนวนรับถูกลดลงเหลือเท่าที่ขายไปแล้ว ไม่ต่ำกว่านั้น',
+  lotB.cell(DATA_ROW, api61b.SH.lot.IN.qty).v, 8);
+eq('ล็อตคงเหลือเป็น 0 พอดี ไม่ติดลบ', lotB.cell(DATA_ROW, api61b.SH.lot.remain).v, 0);
+eq('และยอดที่ขายไปแล้ว 8 ยังอยู่ในประวัติครบ',
+  lotB.cell(DATA_ROW, 8).v, 8);
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับ');
+var over61 = [];
+for (var nm61 in fx61.sheets) over61 = over61.concat(fx61.sheets[nm61].overwrittenFormulas);
+for (var nb61 in fx61b.sheets) over61 = over61.concat(fx61b.sheets[nb61].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over61, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

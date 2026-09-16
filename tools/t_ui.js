@@ -4174,6 +4174,83 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('และไม่ยิงขึ้นชีทเลย',
     await page.evaluate(function () { return window.SENT.length }), nSent);
 
+  /* ---------- 61. นับสต๊อกตั้งต้น ---------- */
+  console.log('\n61. นับสต๊อกตั้งต้น — ของที่ขายก่อนมีระบบไม่มีประวัติให้ย้อน');
+  /* เจ้าของร้านชี้เอง: "ของพวกนี้ขายมาก่อนทำแอปเสร็จ การไปตัดออเดอร์เก่าคงไม่ใช่ทาง
+     สิ่งที่ทำได้คือนับสิ่งที่เหลือ" — ประวัติที่ไม่เคยมี สร้างขึ้นมาไม่ได้ */
+  await page.click('#rv-mode .chip[data-rv="count"]');
+  await page.waitForTimeout(300);
+  truthy('สลับมาโหมดนับสต๊อกได้', await page.isVisible('#rv-count'));
+  truthy('และซ่อนอีกสองโหมดไว้',
+    !(await page.isVisible('#rv-buy')) && !(await page.isVisible('#rv-fill')));
+  truthy('ขึ้นสินค้าทุกตัว ไม่ใช่เฉพาะน้ำยา',
+    (await page.locator('.cn-row').count()) >= 7);
+
+  console.log('\n   ค้นหาแล้วค่าที่พิมพ์ไปแล้วต้องไม่หาย');
+  /* คนนับทีละชั้น พิมพ์ค้นหาสลับไปมาตลอด ถ้าค่าหายทุกครั้งที่ค้น จะนับไม่มีวันจบ
+     และไม่มีใครรู้ด้วยว่าหายไปกี่ตัว */
+  await page.fill('.cn-row[data-sku="SKU-141"] .cn-q', '1600');
+  await page.fill('#cn-find', 'CHEM');
+  await page.waitForTimeout(250);
+  eq('ค้นแล้วเหลือเฉพาะที่ตรง', await page.locator('.cn-row').count(), 3);
+  await page.fill('.cn-row[data-sku="CHEM-001"] .cn-q', '10');
+  await page.fill('#cn-find', '');
+  await page.waitForTimeout(250);
+  eq('ค่าที่พิมพ์ก่อนค้นยังอยู่',
+    await page.inputValue('.cn-row[data-sku="SKU-141"] .cn-q'), '1600');
+  eq('ค่าที่พิมพ์ตอนค้นก็ยังอยู่',
+    await page.inputValue('.cn-row[data-sku="CHEM-001"] .cn-q'), '10');
+  truthy('บอกว่านับไปแล้วกี่รายการ และย้ำว่าตัวที่เว้นว่างจะไม่ถูกแตะ',
+    /นับไปแล้ว 2 รายการ/.test(await page.textContent('#cn-sum')) &&
+    /เว้นว่างไว้ ระบบจะไม่แตะ/.test(await page.textContent('#cn-sum')));
+
+  console.log('\n   ลองก่อน — ต้องบอกว่าจะเปลี่ยนอะไร โดยยังไม่เขียนอะไรลงชีท');
+  var ipaBefore = await page.evaluate(function () {
+    return MOCK_BOOT.products.filter(function (p) { return p.sku === 'CHEM-001' })[0].remain;
+  });
+  await page.click('#btn-cn-try');
+  await page.waitForTimeout(900);
+  var dryUi = await page.evaluate(function () { return window.SENT[window.SENT.length - 1] });
+  eq('ยิงแบบลองก่อนจริง ๆ', dryUi.dryRun, true);
+  truthy('ไม่มี clientKey ติดไปตอนลองก่อน เพราะไม่ได้จะเขียนอะไร', !dryUi.clientKey);
+  var pre61 = await page.textContent('#cn-pre');
+  truthy('กางให้เห็นว่าจะเปลี่ยนจากเท่าไรเป็นเท่าไร',
+    pre61.indexOf('สต๊อก : ' + ipaBefore + ' → 10') > -1);
+  truthy('บอกด้วยว่าจะลงปรับลดเท่าไร',
+    pre61.indexOf('ลงปรับลด ' + (ipaBefore - 10)) > -1);
+  truthy('เตือนว่าไม่ไปพิมพ์ทับช่องสูตร',
+    /ไม่ไปพิมพ์ทับช่องคงเหลือ/.test(await page.textContent('#cn-plan')));
+  eq('ลองก่อนแล้วยอดจริงต้องไม่ขยับเลย', await page.evaluate(function () {
+    return MOCK_BOOT.products.filter(function (p) { return p.sku === 'CHEM-001' })[0].remain;
+  }), ipaBefore);
+
+  console.log('\n   ยืนยันแล้วค่อยเขียนจริง');
+  await page.click('#btn-cn-go');
+  await page.waitForTimeout(1200);
+  var goUi = await page.evaluate(function () { return window.SENT[window.SENT.length - 1] });
+  truthy('ตอนเขียนจริงมี clientKey กันบันทึกซ้ำ', /^ct-/.test(String(goUi.clientKey || '')));
+  truthy('ไม่ใช่โหมดลองแล้ว', !goUi.dryRun);
+  truthy('ส่งเหตุผลไปลง Log ด้วย', /ตั้งยอดตั้งต้น/.test(String(goUi.why || '')));
+  eq('ยอดกลายเป็นยอดที่นับได้', await page.evaluate(function () {
+    return MOCK_BOOT.products.filter(function (p) { return p.sku === 'CHEM-001' })[0].remain;
+  }), 10);
+  truthy('ขึ้นสรุปว่าตั้งยอดไปกี่รายการ',
+    /ตั้งยอดตั้งต้นแล้ว 2 รายการ/.test(await page.textContent('#ok')));
+  truthy('บอกด้วยว่าตัวไหนเปลี่ยนจากเท่าไรเป็นเท่าไร',
+    (await page.textContent('#ok')).indexOf(ipaBefore + ' → 10') > -1);
+  eq('ล้างช่องนับให้พร้อมนับรอบหน้า', await page.evaluate(function () {
+    return $$('.cn-q').filter(function (el) { return el.value !== '' }).length;
+  }), 0);
+
+  console.log('\n   ไม่ได้นับอะไรเลยแล้วกด ต้องเตือน ไม่ใช่ยิงเปล่า');
+  var nCnt = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#btn-cn-try');
+  await page.waitForTimeout(400);
+  truthy('เตือนว่ายังไม่ได้ใส่จำนวนที่นับได้',
+    /ยังไม่ได้ใส่จำนวนที่นับได้/.test(await page.textContent('#err')));
+  eq('และไม่ยิงขึ้นชีทเลย',
+    await page.evaluate(function () { return window.SENT.length }), nCnt);
+
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 

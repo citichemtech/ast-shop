@@ -205,7 +205,8 @@ function build(opts) {
     prod.cell(r, 2).v = p.sku; prod.cell(r, 3).v = 'TOOLING'; prod.cell(r, 4).v = p.name;
     prod.cell(r, 5).v = 1; prod.cell(r, 6).v = 'ชิ้น';
     prod.cell(r, 7).v = p.cost; prod.cell(r, 8).v = p.price;
-    prod.cell(r, 9).v = 1000; prod.cell(r, 10).v = 10;
+    prod.cell(r, 9).v = (p.opening === undefined) ? 1000 : p.opening;
+    prod.cell(r, 10).v = 10;
   });
 
   /* สต๊อกคงเหลือ — สูตรล้วน */
@@ -305,6 +306,39 @@ function build(opts) {
       lot.cell(lr, 12).v = lkey;
       lot.cell(lr, 8).v = cutBy[lkey] || 0;
       lot.cell(lr, 9).v = Number(lot.cell(lr, 7).v || 0) - (cutBy[lkey] || 0);
+    }
+
+    /* สต๊อกคงเหลือ = ยกมา + รับเข้า − ปรับลด − ขายออก  (ตรงกับ STOCK_ROW6 ใน Setup.gs)
+       ของเดิมชีทจำลองตั้งคงเหลือเป็นเลขนิ่ง 1000 ไว้เฉย ๆ ไม่เคยคิดจากเอกสารเลย
+       ตัวที่เขียนแถว รับเข้า แล้วหวังให้ยอดขยับจึงทดสอบอะไรไม่ได้ — ผ่านทุกครั้ง
+       เพราะไม่มีอะไรขยับตั้งแต่แรก ไม่ใช่เพราะโค้ดถูก */
+    var gotBy = {}, adjBy = {}, soldBy = {};
+    for (var vr = DATA_ROW; vr <= 400; vr++) {
+      var vsku = recv.cell(vr, 6).v;
+      if (!vsku) continue;
+      var vq = Number(recv.cell(vr, 8).v || 0);
+      var vt = String(recv.cell(vr, 4).v || '');
+      if (vt.indexOf('ปรับลด') > -1) adjBy[vsku] = (adjBy[vsku] || 0) + vq;
+      else gotBy[vsku] = (gotBy[vsku] || 0) + vq;
+    }
+    for (var xr = DATA_ROW; xr <= itemLimit; xr++) {
+      var xsku = item.cell(xr, 4).v;
+      if (!xsku || !item.cell(xr, 2).v) continue;
+      soldBy[xsku] = (soldBy[xsku] || 0) + Number(item.cell(xr, 7).v || 0);
+    }
+    var openBy = {};
+    for (var pr2 = DATA_ROW; pr2 <= 150; pr2++) {
+      var psku2 = prod.cell(pr2, 2).v;
+      if (psku2) openBy[psku2] = Number(prod.cell(pr2, 9).v || 0);
+    }
+    for (var sr = DATA_ROW; sr <= 150; sr++) {
+      var ssku = stock.cell(sr, 2).v;
+      if (!ssku) continue;
+      var op = openBy[ssku] || 0, gt = gotBy[ssku] || 0;
+      var ad = adjBy[ssku] || 0, sd = soldBy[ssku] || 0;
+      stock.cell(sr, 5).v = op; stock.cell(sr, 6).v = gt;
+      stock.cell(sr, 7).v = ad; stock.cell(sr, 8).v = sd;
+      stock.cell(sr, 9).v = Math.round((op + gt - ad - sd) * 1000) / 1000;
     }
 
     for (var hr = DATA_ROW; hr <= headLimit; hr++) {

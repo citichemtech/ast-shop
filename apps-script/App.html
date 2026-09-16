@@ -5137,14 +5137,180 @@ function fillDone(res){
   fillSum();
 }
 
-/** สลับระหว่างซื้อของเข้าร้าน กับ เติมน้ำยาประจำวัน */
+/* ------------------------------------------------------- นับสต๊อกตั้งต้น */
+
+/* ของที่ขายไปก่อนมีระบบไม่มีประวัติให้ย้อน ต่อให้ไล่ใบเก่าก็ได้แค่ตัวเลขที่เดาขึ้นมา
+   สิ่งเดียวที่เชื่อได้คือของที่นับได้ตอนนี้ — เจ้าของร้านชี้เอง และถูกที่สุด
+   หน้านี้จึงไม่พยายามซ่อมอดีต แค่ตั้งยอดตั้งต้นให้ตรงกับของจริงแล้วเดินต่อจากตรงนั้น */
+
+var CNT_KEY = "";
+var CNT_READY = false;
+/* จำค่าที่นับไว้ทั้งหมด ไม่ใช่เก็บจากหน้าจอตอนวาดใหม่
+   คนนับทีละชั้น พิมพ์ค้นหาสลับไปมาตลอด ตัวที่ถูกกรองออกจากจอจะหลุดจาก DOM ไปเลย
+   ถ้าอ่านค่าจากจออย่างเดียว ของที่นับไปแล้วแต่ไม่อยู่ในผลค้นหาจะหายเงียบ ๆ
+   แล้วคนนับก็ไม่มีทางรู้ว่าหายไปกี่ตัว — ต้องเก็บไว้นอกจอ */
+var CNT_VALS = {};
+
+function cntInit(){
+  if(CNT_READY) return;
+  CNT_READY = true;
+  $("#cn-date").value = todayISO();
+
+  var by = $("#f-by");
+  $("#cn-by").innerHTML = by ? by.innerHTML : "";
+  if(by && by.value && by.value !== BY_NEW) $("#cn-by").value = by.value;
+
+  $("#cn-find").oninput = cntDraw;
+  $("#btn-cn-try").onclick = cntTry;
+  cntDraw();
+}
+
+function cntDraw(){
+  cntGrab();
+  var q = ($("#cn-find").value || "").trim().toLowerCase();
+  var list = (CFG.products || []).filter(function(p){
+    if(!q) return true;
+    return (String(p.sku) + " " + String(p.name)).toLowerCase().indexOf(q) > -1;
+  });
+
+  if(!list.length){
+    $("#cn-rows").innerHTML = '<div class="hint">ไม่เจอสินค้าที่ค้นหา</div>';
+    return;
+  }
+  $("#cn-rows").innerHTML = list.map(function(p){
+    var left = (p.remain === null || p.remain === undefined) ? "—" : p.remain;
+    var was = (CNT_VALS[p.sku] === undefined) ? "" : esc(CNT_VALS[p.sku]);
+    return '<div class="rf-row cn-row" data-sku="' + esc(p.sku) + '">' +
+      '<div class="rf-nm"><b>' + esc(p.name) + '</b>' +
+      '<em>' + esc(p.sku) + ' · ระบบว่าเหลือ ' + esc(String(left)) + '</em></div>' +
+      '<input class="rf-q cn-q" type="number" inputmode="numeric" min="0" step="any" ' +
+      'placeholder="นับได้" value="' + was + '"></div>';
+  }).join("");
+  $$(".cn-q").forEach(function(el){
+    el.oninput = function(){ cntGrab(); cntSum() };
+  });
+  cntSum();
+}
+
+/** เก็บค่าที่อยู่บนจอตอนนี้เข้าคลัง — เรียกก่อนวาดใหม่ทุกครั้ง และทุกครั้งที่พิมพ์ */
+function cntGrab(){
+  $$(".cn-row").forEach(function(r){
+    var v = r.querySelector(".cn-q").value.trim();
+    if(v === "") delete CNT_VALS[r.dataset.sku];
+    else CNT_VALS[r.dataset.sku] = v;
+  });
+}
+
+function cntRows(){
+  cntGrab();
+  var out = [];
+  for(var sku in CNT_VALS) out.push({ sku: sku, counted: CNT_VALS[sku] });
+  return out;
+}
+
+function cntSum(){
+  var got = cntRows();
+  $("#cn-sum").textContent = got.length
+    ? "นับไปแล้ว " + got.length + " รายการ (ตัวที่ยังไม่ได้นับเว้นว่างไว้ ระบบจะไม่แตะ)"
+    : "ยังไม่ได้ใส่จำนวนที่นับได้สักตัว";
+}
+
+/** ลองก่อน — อ่านอย่างเดียว ไม่เขียนชีท แล้วโชว์ว่าจะเปลี่ยนอะไรบ้าง */
+function cntTry(){
+  clearMsg();
+  $("#cn-plan").innerHTML = "";
+  var got = cntRows();
+  if(!got.length){ showErr("ยังไม่ได้ใส่จำนวนที่นับได้สักตัว"); return }
+
+  var btn = $("#btn-cn-try");
+  btn.disabled = true; btn.textContent = "กำลังตรวจ…";
+  call("countStock", [{
+    dryRun: true, date: $("#cn-date").value, staff: $("#cn-by").value, lines: got
+  }], function(res){
+    btn.disabled = false; btn.textContent = "ลองก่อน — ดูว่าจะเปลี่ยนอะไรบ้าง";
+    if(!res){ showErr("ชีทตอบกลับมาไม่ได้ — ลองกดใหม่อีกครั้ง"); return }
+    cntPlan(res);
+  }, function(m){
+    btn.disabled = false; btn.textContent = "ลองก่อน — ดูว่าจะเปลี่ยนอะไรบ้าง";
+    showErr(m);
+  });
+}
+
+function cntPlan(res){
+  var same = (res.lines || []).filter(function(x){ return x.diff === 0 }).length;
+  $("#cn-plan").innerHTML =
+    '<div class="card" style="margin-top:12px">' +
+    '<div class="sec-hd"><h2>จะเปลี่ยนแบบนี้ — ยังไม่ได้เขียนลงชีท</h2></div>' +
+    '<pre id="cn-pre" style="white-space:pre-wrap;font-size:0.84rem;line-height:1.6;' +
+    'margin:0 0 10px">' + esc(res.preview || "") + '</pre>' +
+    (same ? '<div class="hint">' + same + ' รายการตรงอยู่แล้ว ไม่ต้องแก้อะไร</div>' : '') +
+    '<div class="fld"><label>เหตุผล (ลงใน Log ให้ย้อนอ่านได้)</label>' +
+    '<input id="cn-why" value="ตั้งยอดตั้งต้นจากการนับของจริง"></div>' +
+    '<button class="btn" id="btn-cn-go">ยืนยัน — ตั้งยอดตามนี้</button>' +
+    '<div class="hint">ระบบจะลงส่วนต่างเป็นแถวปรับเพิ่ม/ปรับลดในชีท <b>รับเข้า</b> ' +
+    'ไม่ไปพิมพ์ทับช่องคงเหลือ เพราะเป็นช่องสูตร พิมพ์ทับแล้วจะนิ่งค้างถาวร</div>' +
+    '</div>';
+  $("#btn-cn-go").onclick = cntGo;
+}
+
+function cntGo(){
+  clearMsg();
+  var got = cntRows();
+  if(!got.length){ showErr("ยังไม่ได้ใส่จำนวนที่นับได้สักตัว"); return }
+
+  /* คีย์เดิมตลอดจนกว่าจะบันทึกสำเร็จ กดซ้ำหรือเน็ตหลุดแล้วยิงใหม่จึงไม่ปรับยอดสองรอบ */
+  if(!CNT_KEY) CNT_KEY = "ct-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+
+  var btn = $("#btn-cn-go");
+  btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+  call("countStock", [{
+    clientKey: CNT_KEY, date: $("#cn-date").value, staff: $("#cn-by").value,
+    why: ($("#cn-why") ? $("#cn-why").value.trim() : ""), lines: got
+  }], function(res){
+    btn.disabled = false; btn.textContent = "ยืนยัน — ตั้งยอดตามนี้";
+    if(!res){ showErr("ชีทตอบกลับมาไม่ได้ — ลองกดใหม่อีกครั้ง"); return }
+    CNT_KEY = "";
+    cntDone(res);
+  }, function(m){
+    btn.disabled = false; btn.textContent = "ยืนยัน — ตั้งยอดตามนี้";
+    showErr(m);
+  });
+}
+
+function cntDone(res){
+  var moved = (res.lines || []).filter(function(x){ return x.diff !== 0 });
+  showOk("ตั้งยอดตั้งต้นแล้ว " + moved.length + " รายการ<br>" +
+    moved.map(function(x){
+      return "• " + esc(x.name || x.sku) + " " + x.was + " → " + x.counted;
+    }).join("<br>"));
+  toast("ตั้งยอดตามที่นับแล้ว");
+  $("#cn-plan").innerHTML = "";
+
+  call("getBootstrap", [], function(b){
+    if(!b) return;
+    BOOT = b;
+    CFG.products = (b.products||[]).map(function(p){
+      return { id:p.sku, sku:p.sku, code:"", name:p.name, price:p.price,
+               unit:p.unit, perPack:p.perPack, remain:p.remain, group:p.group,
+               reorder:p.reorder };
+    });
+    refreshProdOptions();
+    CNT_VALS = {};
+    $$(".cn-q").forEach(function(el){ el.value = "" });
+    cntDraw();
+  }, function(){ /* โหลดยอดใหม่ไม่ได้ไม่ใช่เรื่องใหญ่ ของลงชีทไปแล้ว */ });
+}
+
+/** สลับระหว่างซื้อของเข้าร้าน · เติมน้ำยาประจำวัน · นับสต๊อก */
 function fillMode(which){
   $$("#rv-mode .chip").forEach(function(b){
     b.classList.toggle("on", b.dataset.rv === which);
   });
-  $("#rv-buy").style.display  = (which === "fill") ? "none" : "";
-  $("#rv-fill").style.display = (which === "fill") ? "" : "none";
-  if(which === "fill") fillInit();
+  $("#rv-buy").style.display   = (which === "buy")   ? "" : "none";
+  $("#rv-fill").style.display  = (which === "fill")  ? "" : "none";
+  $("#rv-count").style.display = (which === "count") ? "" : "none";
+  if(which === "fill")  fillInit();
+  if(which === "count") cntInit();
 }
 
 /* --------------------------------------------------------------- ผูกปุ่มทั้งหมด */
