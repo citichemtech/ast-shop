@@ -625,6 +625,44 @@ function setTracking(no, track, status, carrier) {
  * ใบกำกับภาษีสองใบสำหรับการขายครั้งเดียวเป็นปัญหาทางบัญชีของทั้งร้านและลูกค้า
  * ถ้าจะออกใหม่จริง ๆ ต้องยกเลิกใบเก่าก่อน (กรอกเหตุผลในชีท) แล้วส่ง allowDup มา
  */
+/**
+ * ดูใบก่อนออกเลข — ไม่แตะชีท ไม่กินเลขในเล่ม ไม่ลงทะเบียนอะไรทั้งนั้น
+ *
+ * ของเดิมกด "ออกเอกสาร" ทีเดียวคือจองเลขทันที แล้วค่อยได้เห็นกระดาษ
+ * พิมพ์ชื่อผิด ลืมแยกค่าส่ง เลือกชนิดเอกสารผิด — รู้ตัวตอนเลขถูกกินไปแล้วทุกครั้ง
+ * และเลขในเล่มใบกำกับภาษีเอาคืนไม่ได้ ต้องยกเลิกแล้วออกใหม่ ซึ่งเป็นงานของ
+ * ทั้งร้านและบัญชี เจ้าของร้านเจอวันเดียวสามรอบ: "ต้องกลับไปแก้อีก"
+ *
+ * คิดด้วยทางเดินเดียวกับ issueDoc เป๊ะ ๆ (buildDoc_ ตัวเดียวกัน ด่านชื่อสินค้าตัวเดียวกัน)
+ * ไม่งั้นตัวอย่างจะสวยแต่ใบจริงออกมาคนละอย่าง ซึ่งแย่กว่าไม่มีตัวอย่างเลย
+ */
+function previewDoc(payload) {
+  requireStaff_();
+  var p = payload || {};
+  var t = docType_(String(p.type || ''));
+  if (!t) throw new Error('ไม่รู้จักชนิดเอกสาร');
+
+  var cfg = appCfg_();
+  var src;
+  if (t.quote) {
+    src = { items: withProdNames_(p.items || []), ship: p.ship, discount: p.discount };
+  } else {
+    var orderNo = String(p.orderNo || '').trim();
+    if (!orderNo) throw new Error('เอกสารชนิดนี้ต้องอ้างออเดอร์ ยังไม่ได้บอกว่าออเดอร์ไหน');
+    var ord = findOrder_(orderNo);
+    if (!ord) throw new Error('ไม่พบออเดอร์ ' + orderNo + ' ในชีท');
+    src = { items: ord.items, ship: ord.ship, discount: ord.discount };
+  }
+
+  assertDocNames_(src.items);
+
+  var d = buildDoc_(t.key, src, {
+    vatRate: p.novat ? 0 : cfgGet_().vatRate,
+    vatMode: p.vatMode || cfg.vatMode
+  });
+  return jsonSafe_({ ok: true, preview: true, no: '', type: t.key, typeTh: t.th, doc: d });
+}
+
 function issueDoc(payload) {
   var email = requireStaff_();
   var p = payload || {};

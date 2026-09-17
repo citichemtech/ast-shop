@@ -1734,6 +1734,16 @@ function askRevise(no, btn, redraw){
         +'<input class="rv-tel" placeholder="โทร" style="flex:1">'
         +'<input class="rv-email" placeholder="อีเมล" style="flex:2">'
       +'</div>'
+      /* วิธีคิด VAT ต้องโผล่มาให้เห็นและตั้งค่าตามใบเดิม
+         ของเดิมกล่องนี้ไม่มีช่อง แล้วโค้ดไปอ่าน #dc-vat ของหน้าออกเอกสาร
+         ซึ่งไม่มีตัวตนเมื่อเปิดจากแฟ้มเอกสาร จึงส่ง "excl" ขึ้นไปทุกครั้ง
+         ใบที่ออกแบบราคารวม VAT ไว้แล้ว พอกดแก้ทีจะกลายเป็นบวก VAT ซ้ำเงียบ ๆ
+         ของจริง: ใบ ONIV26-00300 ยอด 571.00 กลายเป็น 571.01 หลังกดแก้ */
+      +'<select class="rv-vat">'
+        +'<option value="excl">บวก VAT 7% จากราคา</option>'
+        +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
+        +'<option value="none">ไม่คิด VAT</option>'
+      +'</select>'
     +'</div>'
     +'<input class="rv-why" placeholder="เหตุผล เช่น ชื่อลูกค้าผิด / ยอดผิด">'
     +'<div style="display:flex;gap:8px;margin-top:8px">'
@@ -1758,6 +1768,8 @@ function askRevise(no, btn, redraw){
     box.querySelector(".rv-addr").value = c.addr || "";
     box.querySelector(".rv-tel").value = c.tel || "";
     box.querySelector(".rv-email").value = c.email || "";
+    box.querySelector(".rv-vat").value =
+      res.meta.novat ? "none" : (res.meta.vatMode === "incl" ? "incl" : "excl");
     custReady = true;
     go.disabled = false;
   }, function(e){
@@ -1803,15 +1815,22 @@ function askRevise(no, btn, redraw){
       tel: box.querySelector(".rv-tel").value.trim(),
       email: box.querySelector(".rv-email").value.trim()
     } : null;
-    var vatSel = $("#dc-vat") ? $("#dc-vat").value : "excl";
+    var send = { no: no, why: r, by: byName(), cust: cust,
+                 clientKey: "rv-" + no + "-" + rvKey };
+    /* อ่านของเดิมไม่ได้ = ไม่รู้ว่าใบนี้คิด VAT แบบไหน ห้ามเดา
+       ไม่ส่งขึ้นไปเลย ฝั่งหลังบ้านจะใช้วิธีคิดเดิมของใบนั้นต่อ */
+    if (custReady) {
+      var vatSel = box.querySelector(".rv-vat").value;
+      send.vatMode = vatSel === "incl" ? "incl" : "excl";
+      send.novat = vatSel === "none";
+      /* ใส่เฉพาะที่มีช่องอยู่จริง — ของเดิมส่ง "" ขึ้นไปเมื่อไม่มีช่อง
+         ซึ่งฝั่งหลังบ้านนับว่า "สั่งให้เป็นค่าว่าง" แล้วล้างเลข PO กับเงื่อนไข
+         ชำระเงินของใบเดิมทิ้งทุกครั้งที่กดแก้จากแฟ้มเอกสาร */
+      if ($("#dc-po")) send.po = $("#dc-po").value.trim();
+      if ($("#dc-terms")) send.terms = $("#dc-terms").value;
+    }
 
-    api("reviseDoc", {
-      no: no, why: r, by: byName(), cust: cust,
-      po: $("#dc-po") ? $("#dc-po").value.trim() : "",
-      terms: $("#dc-terms") ? $("#dc-terms").value : "",
-      vatMode: vatSel === "incl" ? "incl" : "excl", novat: vatSel === "none",
-      clientKey: "rv-" + no + "-" + rvKey
-    }).then(function(res){
+    api("reviseDoc", send).then(function(res){
       toast("แก้ใบ " + no + " แล้ว · ยอดใหม่ " + baht(res.doc ? res.doc.total : 0));
       redraw();
     }, function(e){
@@ -2075,7 +2094,9 @@ function openDoc(o, preType){
     +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
     +'<option value="none">ไม่คิด VAT (= บิลเงินสด)</option></select>'
     +'<div class="hint" id="dc-vatmsg"></div></div></div>'
-    +'<button class="btn" id="dc-make">ออกเอกสาร</button>'
+    /* ดูก่อนออกเลข — เลขในเล่มใบกำกับภาษีเอาคืนไม่ได้ ต้องเห็นกระดาษก่อนเสมอ */
+    +'<button class="btn ghost" id="dc-prev">👁 ดูตัวอย่างก่อน (ยังไม่กินเลข)</button>'
+    +'<button class="btn" id="dc-make" style="margin-top:9px">ออกเอกสาร</button>'
     +'<div id="dc-out" style="margin-top:12px"></div>');
 
   /* ติ๊กชื่อบนหัวใบให้ตามชนิดที่เลือกไว้ก่อน แล้วคนออกใบแก้เองได้
@@ -2158,6 +2179,36 @@ function openDoc(o, preType){
     else { m.textContent="⚠ เลขนี้ไม่ผ่านการตรวจ ลองทานอีกครั้ง ถ้าผิดลูกค้าใช้ใบไม่ได้"; m.style.color="var(--red)" }
   });
 
+  /* อ่านค่าที่กรอกไว้ทั้งชุดที่เดียว ตัวอย่างกับใบจริงจะได้ส่งของเหมือนกันเป๊ะ
+     ถ้าสองปุ่มอ่านคนละที่ วันหนึ่งตัวอย่างจะถูกแต่ใบจริงผิด ซึ่งแย่กว่าไม่มีตัวอย่าง */
+  function dcRead(){
+    var vatSel = $("#dc-vat").value;
+    return {
+      type: (document.querySelector('input[name=dctype]:checked')||{}).value || "rec",
+      cust: { name:$("#dc-name").value.trim(), taxId:$("#dc-tax").value.replace(/[^\d]/g,""),
+              branch:$("#dc-branch").value, addr:$("#dc-addr").value.trim(),
+              tel:$("#dc-tel").value.trim(), email:$("#dc-email").value.trim() },
+      po: $("#dc-po").value.trim(), terms: $("#dc-terms").value,
+      vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
+      form: readFormTicks()
+    };
+  }
+
+  $("#dc-prev").onclick = function(){
+    var f = dcRead();
+    var btn=this; btn.disabled=true;
+    $("#dc-out").innerHTML='<div class="load">กำลังวาดตัวอย่าง…</div>';
+    api("previewDoc", { type:f.type, orderNo:o.no, vatMode:f.vatMode, novat:f.novat })
+      .then(function(r){
+        btn.disabled=false;
+        drawDocPreview(r, o, f);
+      }, function(e){
+        btn.disabled=false;
+        $("#dc-out").innerHTML='<div style="color:var(--red)">ดูตัวอย่างไม่ได้: '
+          +esc(e&&e.message?e.message:e)+'</div>';
+      });
+  };
+
   $("#dc-make").onclick = function(){
     var type = (document.querySelector('input[name=dctype]:checked')||{}).value || "rec";
     var vatSel = $("#dc-vat").value;
@@ -2197,6 +2248,34 @@ function readFormTicks(){
   var out = [];
   $$("#dc-form .fchk-i").forEach(function(c){ if(c.checked) out.push(Number(c.value)) });
   return out;
+}
+
+/* วาดตัวอย่างใบ — กระดาษแผ่นเดียวกับใบจริง แต่ยังไม่มีเลข ยังไม่ลงชีท
+
+   จงใจไม่ใส่ปุ่มแชร์/พิมพ์/บันทึกไว้ในหน้านี้ ตัวอย่างที่พิมพ์ออกไปได้
+   คือใบกำกับภาษีที่ไม่มีเลข ซึ่งเป็นเอกสารที่ใช้ไม่ได้และอธิบายยากถ้าหลุดถึงลูกค้า */
+function drawDocPreview(r, o, f){
+  if(!$("#dc-out")) return;
+  var m = { no:"(ตัวอย่าง — ยังไม่ออกเลข)", date:o.date, cust:f.cust, po:f.po,
+            terms:f.terms, seller:CFG.docSeller||"", sellerEmail:CFG.docSellerEmail||"",
+            note:"", form:f.form||[] };
+  $("#dc-out").innerHTML='<div class="load">กำลังวาดตัวอย่าง…</div>';
+  buildDocPage(r.doc, m, CFG.doc||{}, "ตัวอย่าง").then(function(url){
+    if(!$("#dc-out")) return;
+    $("#dc-out").innerHTML =
+       '<div class="msg" style="display:block;background:#fff8e1;border-color:#ffd54f">'
+      +'<b>นี่คือตัวอย่าง ยังไม่ได้ออกเลข ยังไม่ได้ลงชีท</b><br>'
+      +'ตรวจให้ครบก่อนกดออกเอกสาร: ชื่อและที่อยู่ผู้ซื้อ · ชื่อสินค้าแต่ละบรรทัด · '
+      +'ค่าจัดส่งแยกบรรทัดหรือยัง · ฐานภาษีกับ VAT · ยอดรวมตรงกับที่ลูกค้าจ่ายไหม<br>'
+      +'พอกดออกเอกสารแล้ว เลขในเล่มจะถูกใช้ไปหนึ่งเลข เอาคืนไม่ได้</div>'
+      +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
+      +'<div class="hint" style="text-align:center;margin-top:10px">'
+      +'ถ้ายังไม่ถูก แก้ในช่องข้างบนแล้วกดดูตัวอย่างใหม่ได้เรื่อย ๆ</div>';
+  }, function(e){
+    if(!$("#dc-out")) return;
+    $("#dc-out").innerHTML='<div style="color:var(--red)">วาดตัวอย่างไม่สำเร็จ: '
+      +esc(e&&e.message?e.message:e)+'</div>';
+  });
 }
 
 function drawDoc(r, o, cust, type, form){
@@ -2417,13 +2496,24 @@ function edSum(o){
   var isVat = vatSel ? vatSel.value.indexOf("ไม่") !== 0
                      : (o && String(o.vat||"").indexOf("ไม่") !== 0);
   var rate = Number(BOOT ? BOOT.vatRate : 0) || 0;
-  var vat = isVat ? Math.round((sub - disc) * rate * 100) / 100 : 0;
+  /* ค่าส่งอยู่ในฐานภาษีด้วย — ต้องตรงกับ HEAD_VAT_FORMULA ในชีทเป๊ะ ๆ
+     ROUND(($J-$K+$L)*อัตรา, 2) โดย L คือค่าจัดส่ง
+
+     ของเดิมหน้านี้ลืมบวกค่าส่งเข้าฐาน หน้าจอจึงบอกยอดหนึ่ง ชีทคิดอีกยอดหนึ่ง
+     ของจริง 17 ก.ย. 69 ใบ ONIV26-00300: หน้าจอขึ้น ฿571.00 (VAT 31.40 จาก 448.60)
+     แต่ชีทคิด VAT จาก 448.60+91.00 = 37.77 แล้วใบออกมาเป็น ฿577.37
+     ตัวเลขบนหน้าจอที่ไม่ตรงกับใบที่พิมพ์ออกมา แย่กว่าไม่โชว์ตัวเลขเลย */
+  var vat = isVat ? Math.round((sub - disc + ship) * rate * 100) / 100 : 0;
   var net = Math.round((sub - disc + ship + vat) * 100) / 100;
 
   box.innerHTML = '<div class="line"><span>ยอดสินค้า</span><b>'+baht(sub)+'</b></div>'
     + (disc ? '<div class="line"><span>ส่วนลด</span><b>-'+baht(disc)+'</b></div>' : '')
-    + (isVat ? '<div class="line"><span>ภาษีมูลค่าเพิ่ม '+Math.round(rate*100)+'%</span><b>'+baht(vat)+'</b></div>' : '')
+    /* ค่าจัดส่งต้องอยู่เหนือบรรทัด VAT เพราะมันอยู่ในฐานภาษี
+       วางสลับกันเมื่อไร คนอ่านจะนึกว่า VAT คิดจากค่าสินค้าอย่างเดียว แล้วบวกเองไม่ตรง */
     + (ship ? '<div class="line"><span>ค่าจัดส่ง</span><b>'+baht(ship)+'</b></div>' : '')
+    + (isVat ? '<div class="line"><span>ภาษีมูลค่าเพิ่ม '+Math.round(rate*100)+'%'
+        + (ship ? ' (คิดจากค่าสินค้า+ค่าส่ง)' : '')
+        + '</span><b>'+baht(vat)+'</b></div>' : '')
     + '<div class="line"><span><b>ยอดสุทธิ (ประมาณ)</b></span><b>'+baht(net)+'</b></div>'
     + (unknown ? '<div class="hint">มี '+unknown+' บรรทัดที่ยังไม่ได้เลือกสินค้าหรือใส่ราคา</div>' : '')
     + '<div class="hint">ยอดจริงชีทเป็นคนคิดตอนบันทึก ตัวเลขนี้ไว้ดูคร่าว ๆ ก่อนกด</div>';

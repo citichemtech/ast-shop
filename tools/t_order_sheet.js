@@ -4106,5 +4106,65 @@ var over65 = [];
 for (var nm65 in fx65.sheets) over65 = over65.concat(fx65.sheets[nm65].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over65, []);
 
+/* ------------------- 67. ดูใบก่อนออกเลข ต้องไม่กินเลขและไม่แตะชีท */
+console.log('\n67. ดูตัวอย่างใบก่อนออกเลข — ต้องไม่กินเลขในเล่ม ไม่ลงทะเบียน');
+/* เจ้าของร้าน 17 ก.ย. 69: "ต้องกลับไปแก้อีก" — วันเดียวสามรอบ
+   ทุกรอบเป็นเรื่องที่มองเห็นได้ทันทีถ้าได้เห็นกระดาษก่อน (ชื่อผิด · ค่าส่งไม่แยกบรรทัด)
+   แต่ของเดิมกดออกเอกสารทีเดียวคือจองเลขทันที แล้วค่อยได้เห็นใบ
+   เลขในเล่มใบกำกับภาษีเอาคืนไม่ได้ ต้องยกเลิกแล้วออกใหม่ทุกครั้ง */
+var fx67 = FS.build();
+var api67 = FS.load(fx67);
+api67.setup();
+var o67 = api67.createOrder(order({
+  cust: 'บริษัท ขอดูก่อน จำกัด',
+  ship: 91,
+  items: [{ sku: 'SKU-141', qty: 5, price: 96 }]
+}));
+
+var noBefore67 = api67.peekDocNos().rec;
+var docRows67 = rowsWith(fx67.sheets['เอกสาร'], api67.SH.doc.IN.no).length;
+
+var pv67 = api67.previewDoc({ type: 'rec', orderNo: o67.no, vatMode: 'incl' });
+truthy2('บอกว่าเป็นตัวอย่าง', pv67.preview === true);
+eq('ตัวอย่างไม่มีเลขใบ', pv67.no, '');
+eq('ยังไม่กินเลขในเล่ม', api67.peekDocNos().rec, noBefore67);
+eq('ไม่มีแถวใหม่ในชีท เอกสาร',
+  rowsWith(fx67.sheets['เอกสาร'], api67.SH.doc.IN.no).length, docRows67);
+
+console.log('\n   ค่าจัดส่งต้องแยกบรรทัดให้เอง ไม่ต้องรอลูกค้าทัก');
+/* ลูกค้าจริงทักมาว่า "แยกราคาค่าสินค้า กับค่าขนส่งค่ะ รบกวนแก้ไขให้ใหม่ได้มั้ยคะ" */
+eq('มีสองบรรทัด สินค้ากับค่าจัดส่ง', pv67.doc.lines.length, 2);
+eq('บรรทัดที่สองคือค่าจัดส่ง', pv67.doc.lines[1].name, 'ค่าจัดส่ง');
+eq('ค่าจัดส่งเท่าที่คีย์ไว้', pv67.doc.lines[1].amount, 91);
+eq('ยอดรวมเท่ากับที่ลูกค้าจ่าย', pv67.doc.total, 571);
+eq('ฐานภาษีบวก VAT ต้องเท่ายอดรวมพอดี',
+  Math.round((pv67.doc.base + pv67.doc.vat) * 100) / 100, 571);
+
+console.log('\n   ตัวอย่างกับใบจริงต้องออกมาเหมือนกันเป๊ะ');
+var real67 = api67.issueDoc({ type: 'rec', orderNo: o67.no, vatMode: 'incl',
+  cust: { name: 'บริษัท ขอดูก่อน จำกัด' }, by: 'AEY', clientKey: 'dk-67-1' });
+eq('ยอดรวมตรงกัน', real67.doc.total, pv67.doc.total);
+eq('ฐานภาษีตรงกัน', real67.doc.base, pv67.doc.base);
+eq('VAT ตรงกัน', real67.doc.vat, pv67.doc.vat);
+eq('จำนวนบรรทัดตรงกัน', real67.doc.lines.length, pv67.doc.lines.length);
+truthy2('คราวนี้ถึงจะกินเลข', api67.peekDocNos().rec !== noBefore67);
+
+console.log('\n   ตัวอย่างต้องติดด่านชื่อสินค้าเหมือนใบจริง');
+/* ถ้าตัวอย่างวาดได้แต่ใบจริงออกไม่ได้ คนจะรู้ตัวตอนกดออกเอกสารอยู่ดี
+   ซึ่งคือปัญหาเดิมที่ตัวอย่างตั้งใจจะแก้ */
+var fx67b = FS.build({ nameLookupLast: 8 });
+var api67b = FS.load(fx67b);
+var o67b = api67b.createOrder(order({
+  items: [{ free: true, name: 'ของเลยขอบ', qty: 1, price: 100, cost: 50 }]
+}));
+throws('ตัวอย่างก็ต้องไม่ยอมวาดให้', function () {
+  api67b.previewDoc({ type: 'rec', orderNo: o67b.no });
+}, 'ไม่มีชื่อสินค้า');
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับ');
+var over67 = [];
+for (var nm67 in fx67.sheets) over67 = over67.concat(fx67.sheets[nm67].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over67, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

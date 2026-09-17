@@ -131,6 +131,9 @@ async function buildDocPage(d, m, cfg, copy) {
   var co = (cfg && cfg.co) || {};
   var cu = (m && m.cust) || {};
   var isCopy = String(copy || "") === "สำเนา";
+  /* ตัวอย่างก่อนออกเลข — ต้องดูออกตั้งแต่แวบแรกว่ายังไม่ใช่ใบจริง
+     ใบกำกับภาษีที่ไม่มีเลข ถ้าหลุดถึงมือลูกค้าคือเอกสารที่ใช้ไม่ได้และอธิบายยาก */
+  var isDraft = String(copy || "") === "ตัวอย่าง";
 
   /* ================= หัวกระดาษ ================= */
   var logo = await loadImg((cfg && cfg.logo) || (typeof DOC_LOGO !== "undefined" ? DOC_LOGO : ""));
@@ -146,8 +149,10 @@ async function buildDocPage(d, m, cfg, copy) {
   x.fillStyle = C_BAND; roundRect(x, bx, 44, bw, 54, 26); x.fill();
   x.strokeStyle = "#7f9dbb"; roundRect(x, bx, 44, bw, 54, 26); x.stroke();
   x.fillStyle = "#0b2545";
-  fitCenter(x, isCopy ? "สำเนา" : "ต้นฉบับ", bx + bw / 2, 50, bw - 20, pt(11), 700);
-  fitCenter(x, isCopy ? "(Copy)" : "(Original)", bx + bw / 2, 76, bw - 20, F_SMALL, 400);
+  fitCenter(x, isDraft ? "ตัวอย่าง" : (isCopy ? "สำเนา" : "ต้นฉบับ"),
+    bx + bw / 2, 50, bw - 20, pt(11), 700);
+  fitCenter(x, isDraft ? "(Draft — ยังไม่ออกเลข)" : (isCopy ? "(Copy)" : "(Original)"),
+    bx + bw / 2, 76, bw - 20, F_SMALL, 400);
   x.strokeStyle = "#000"; x.lineWidth = 1.1;
   x.strokeRect(bx, 106, bw, 46);
   x.fillStyle = "#000";
@@ -495,8 +500,29 @@ async function buildDocPage(d, m, cfg, copy) {
      ถ้าพิมพ์ออกมาแล้วหน้าตาเหมือนใบที่ยังใช้ได้เป๊ะ วันหนึ่งจะมีใครหยิบผิดไปให้ลูกค้า
      ทับทั้งใบด้วยตัวอักษรโปร่ง จึงอ่านรายการข้างใต้ได้อยู่ แต่ปฏิเสธไม่ได้ว่าถูกยกเลิก */
   if (m && m.voidWhy) stampVoid(x, W, H, m.voidWhy);
+  if (isDraft) stampDraft(x, W, H);
 
   return c.toDataURL("image/png");
+}
+
+/* ทับทั้งใบว่าเป็นตัวอย่าง — โปร่งพอให้อ่านรายการข้างใต้ได้ครบ
+   แต่ทึบพอที่ใบซึ่งพิมพ์ออกมาจะไม่มีทางถูกเข้าใจผิดว่าเป็นใบกำกับภาษีจริง */
+function stampDraft(x, W, H) {
+  x.save();
+  x.translate(W / 2, H / 2);
+  x.rotate(-Math.PI / 7);
+  x.textAlign = "center";
+  x.textBaseline = "middle";
+  x.globalAlpha = 0.15;
+  x.fillStyle = "#b8860b";
+  x.font = docWeight(800) + ' 190px ' + DOC_FF;
+  x.fillText("ตัวอย่าง", 0, -36);
+  x.font = docWeight(700) + ' 58px ' + DOC_FF;
+  x.fillText("ยังไม่ออกเลข · DRAFT", 0, 86);
+  x.restore();
+  x.globalAlpha = 1;
+  x.textAlign = "left";
+  x.textBaseline = "top";
 }
 
 function stampVoid(x, W, H, why) {

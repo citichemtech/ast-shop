@@ -1384,6 +1384,43 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   console.log('\n   กล่องสรุปต้องโชว์ยอดสุทธิ ไม่ใช่แค่ยอดก่อน VAT');
   truthy('มีบรรทัดยอดสุทธิ', /ยอดสุทธิ/.test(await page.textContent('#ed-sum')));
 
+  console.log('\n   ตัวเลขบนหน้าจอต้องคิด VAT แบบเดียวกับสูตรในชีทเป๊ะ ๆ');
+  /* ของจริง 17 ก.ย. 69 ใบ ONIV26-00300: หน้าจอนี้ขึ้น ยอดสุทธิ ฿571.00
+     (ยอดสินค้า 448.60 · VAT 31.40 · ค่าส่ง 91.00) แต่ใบที่ออกมาเป็น ฿577.37
+     เพราะสูตรในชีท HEAD_VAT_FORMULA คิด VAT จาก (ยอดสินค้า − ส่วนลด + ค่าส่ง)
+     ส่วนหน้าจอลืมบวกค่าส่งเข้าฐาน  539.60 × 7% = 37.77 ไม่ใช่ 31.40
+     เจ้าของร้าน: "ทำไมเป็นยอด 571 แล้วทำไมออกมาเก็บภาษีถึงเป็นอีกยอด" */
+  var vatCase = await page.evaluate(async function () {
+    $('#ed-disc').value = '0';
+    $('#ed-ship').value = '91';
+    /* ให้ยอดสินค้าเป็น 448.60 พอดี — หนึ่งบรรทัด จำนวน 5 ราคา 89.72 */
+    var rows = $$('#ed-rows .edrow');
+    for (var i = rows.length - 1; i >= 1; i--) {
+      var x = rows[i].querySelector('.rm');
+      if (x) x.click();
+    }
+    var r0 = $$('#ed-rows .edrow')[0];
+    r0.querySelector('.i-qty').value = '5';
+    r0.querySelector('.i-price').value = '89.72';
+    var vs = $('#ed-vat');
+    if (vs) {
+      for (var j = 0; j < vs.options.length; j++) {
+        if (vs.options[j].value.indexOf('ไม่') !== 0) { vs.value = vs.options[j].value; break }
+      }
+    }
+    edSum();
+    var txt = $('#ed-sum').textContent;
+    /* คิดแบบสูตรในชีทตรง ๆ เพื่อเทียบ ไม่ใช่ลอกเลขจากโค้ดที่กำลังทดสอบ */
+    var rate = Number(BOOT.vatRate) || 0;
+    var want = Math.round((448.60 + 91) * rate * 100) / 100;
+    return { txt: txt, want: want, net: Math.round((448.60 + 91 + want) * 100) / 100 };
+  });
+  truthy('VAT บนหน้าจอคิดรวมค่าส่งแล้ว',
+    vatCase.txt.indexOf(vatCase.want.toFixed(2)) > -1);
+  truthy('ยอดสุทธิบนหน้าจอเท่ากับที่ชีทจะคิด',
+    vatCase.txt.indexOf(vatCase.net.toFixed(2)) > -1);
+  truthy('ไม่ใช่ยอดเก่าที่ลืมบวกค่าส่งเข้าฐาน', vatCase.txt.indexOf('571.00') < 0);
+
   console.log('\n   ลบค่าส่งแล้วยอดสุทธิต้องลดลงทันทีบนหน้าจอ');
   var netBefore = await page.textContent('#ed-sum');
   await page.fill('#ed-ship', '0');
@@ -4348,6 +4385,46 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.fill('#f-paid', '');
   await page.fill('#f-paid-ship', '');
 
+  /* --------------- ดูตัวอย่างใบก่อนออกเลข */
+  console.log('\n20.4 ดูตัวอย่างใบก่อนออกเลข — ต้องไม่มีใบใหม่โผล่ในทะเบียน');
+  await page.evaluate(function () {
+    if (typeof closeModal === 'function') closeModal();
+    go('list');
+  });
+  await page.waitForTimeout(500);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec') });
+  await page.waitForTimeout(500);
+
+  var n204 = await page.evaluate(function () { return MOCK_DOCS.length });
+  await page.click('#dc-prev');
+  await page.waitForFunction(function () {
+    var o = document.querySelector('#dc-out');
+    return o && o.querySelector('img.docimg');
+  }, null, { timeout: 25000 });
+
+  var prev204 = await page.evaluate(function () {
+    return {
+      docs: MOCK_DOCS.length,
+      say: document.querySelector('#dc-out').textContent,
+      /* ปุ่มแชร์/พิมพ์ต้องไม่มีในหน้าตัวอย่าง — ใบกำกับภาษีไม่มีเลขที่พิมพ์ออกไปได้
+         คือเอกสารที่ใช้ไม่ได้ และอธิบายยากถ้าหลุดถึงมือลูกค้า */
+      share: !!document.querySelector('#dc-out #lb-share')
+    };
+  });
+  eq('ไม่มีใบใหม่ในทะเบียนเลย', prev204.docs, n204);
+  truthy('บอกชัดว่ายังไม่ได้ออกเลข', /ยังไม่ได้ออกเลข/.test(prev204.say));
+  truthy('เตือนว่ากดออกเอกสารแล้วเลขเอาคืนไม่ได้', /เอาคืนไม่ได้/.test(prev204.say));
+  truthy('ไม่มีปุ่มแชร์/พิมพ์ในหน้าตัวอย่าง', !prev204.share);
+
+  console.log('\n   กดออกเอกสารจริงถึงจะได้เลข');
+  await page.click('#dc-make');
+  await page.waitForFunction(function (n) { return MOCK_DOCS.length > n }, n204,
+    { timeout: 25000 });
+  eq('คราวนี้มีใบเพิ่มหนึ่งใบ',
+    await page.evaluate(function () { return MOCK_DOCS.length }), n204 + 1);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
+
   /* --------------- แก้ชื่อ/ที่อยู่บนใบที่ยังไม่ได้ส่ง โดยไม่ต้องเผาเลขใบทิ้ง */
   console.log('\n20.5 แก้ชื่อที่อยู่ผู้ซื้อบนใบเดิม ต้องทำได้จากกล่องแก้ใบเลย');
   /* เจ้าของร้าน 17 ก.ย. 69: "ชื่อที่อยู่ก็แก้ไม่ได้ จะล็อกทำไม เปิดให้แก้ได้ก่อนส่ง
@@ -4426,6 +4503,43 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ที่อยู่ก็ถูกแก้ด้วย', after.addr, '99/9 ถนนแก้ใหม่ กรุงเทพฯ 10240');
   eq('เลขใบยังเป็นเลขเดิม ไม่กินเลขใหม่', after.no, target);
   truthy('จดไว้ว่าแก้ไปแล้วกี่ครั้ง', after.times >= 1);
+
+  console.log('\n   กดแก้ใบต้องไม่เปลี่ยนวิธีคิด VAT ของใบเดิมเอง');
+  /* ของจริง 17 ก.ย. 69: ใบ ONIV26-00300 ยอด 571.00 (ราคารวม VAT แล้ว)
+     พอกดแก้ไขใบจากแฟ้มเอกสาร กลายเป็น 571.01 เพราะกล่องแก้ใบไม่มีช่อง VAT
+     แล้วโค้ดไปอ่าน #dc-vat ของหน้าออกเอกสาร ซึ่งไม่มีตัวตนตอนเปิดจากแฟ้ม
+     จึงส่ง "excl" ขึ้นไปทุกครั้ง = บวก VAT ทับราคาที่รวม VAT ไว้แล้ว */
+  var incl = await page.evaluate(async function () {
+    var o = (MOCK_ORDERS || [])[0];
+    var r = await new Promise(function (res) {
+      google.script.run.withSuccessHandler(res)
+        .withFailureHandler(function (e) { res({ err: String(e) }) })
+        .issueDoc({ type: 'rec', orderNo: o.no, cust: { name: 'บริษัท ราคารวมแวท จำกัด' },
+                    vatMode: 'incl', by: 'test', clientKey: 'ui-205i-' + Date.now() });
+    });
+    return r && r.no ? { no: r.no, total: r.doc.total } : { err: String(r && r.err) };
+  });
+  truthy('ออกใบแบบราคารวม VAT ได้', !!incl.no);
+  await page.evaluate(function () { drawFileDocs() });
+  await page.waitForTimeout(900);
+  await page.evaluate(function (no) {
+    document.querySelector('#fl-docs [data-rv="' + no + '"]').click();
+  }, incl.no);
+  await page.waitForFunction(function () {
+    var g = document.querySelector('.rvbox .rv-go');
+    return g && !g.disabled;
+  }, null, { timeout: 15000 });
+  eq('ช่อง VAT ในกล่องแก้ใบตั้งตามใบเดิม',
+    await page.inputValue('.rvbox .rv-vat'), 'incl');
+
+  await page.fill('.rvbox .rv-why', 'ลูกค้าขอแก้ที่อยู่');
+  page.once('dialog', function (d) { d.accept() });
+  await page.click('.rvbox .rv-go');
+  await page.waitForTimeout(1200);
+  eq('ยอดต้องเท่าเดิมเป๊ะ ไม่ถูกบวก VAT ซ้ำ',
+    await page.evaluate(function (no) {
+      return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
+    }, incl.no), incl.total);
 
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

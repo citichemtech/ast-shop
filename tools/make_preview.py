@@ -207,6 +207,22 @@ window.google = { script: { run: (function(){
     },
     /* ออกเอกสารแบบจำลอง — คิดเงินด้วยตรรกะเดียวกับ Doc.gs ตัวจริง
        (สคริปต์นี้แปะสำเนาของ buildDoc_ ไว้ให้หน้าเว็บใช้ ดูตัวแปร DOC_SRV ข้างล่าง) */
+    /* ดูตัวอย่างก่อนออกเลข — ต้องไม่แตะทะเบียน ไม่กินเลข
+       ใช้ buildDoc_ ตัวเดียวกับ issueDoc เพื่อให้ตัวอย่างกับใบจริงตรงกันเป๊ะ */
+    previewDoc: function(p){
+      reply(function(){
+        var src = (p.type === "quote")
+          ? { items: p.items || [], ship: p.ship, discount: p.discount }
+          : (function(){
+              var o = MOCK_ORDERS.filter(function(x){ return x.no === p.orderNo })[0];
+              if(!o) throw new Error("ไม่พบออเดอร์ " + p.orderNo);
+              return { items:o.items, ship:o.ship, discount:o.discount };
+            })();
+        var d = DOC_SRV.buildDoc_(p.type, src,
+          { vatRate: p.novat ? 0 : 0.07, vatMode: p.vatMode || "excl" });
+        return { ok:true, preview:true, no:"", type:p.type, doc:d };
+      });
+    },
     issueDoc: function(p){
       reply(function(){
         var src = (p.type === "quote")
