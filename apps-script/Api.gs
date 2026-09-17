@@ -3107,15 +3107,19 @@ function commitOrder_(plan) {
   if (plan.newProds.length) {
     var stockLimit = formulaLimit_('stock');
     var pRows = nextRows_('prod', SH.prod.IN.sku, plan.newProds.length);
+    /* บอกวิธีแก้ที่กดได้ ไม่ใช่บอกให้ไปลากสูตรเองในชีท
+       การแก้แถวด้วยมือในชีทนี้เคยทำให้สูตรของ สต๊อกคงเหลือ พังเป็น #REF! ไป 38 แถว */
     if (!pRows.length) throw new Error('ชีท ' + SH.prod.name + ' เหลือที่ว่างไม่พอ ' +
-      plan.newProds.length + ' รายการ (สูตรมีถึงแถว ' + formulaLimit_('prod') + ') — ต้องลากสูตรลงเพิ่มก่อน');
+      plan.newProds.length + ' รายการ (สูตรมีถึงแถว ' + formulaLimit_('prod') + ')\n' +
+      'แก้ได้โดยสั่งฟังก์ชัน growProducts หนึ่งครั้งที่หน้าแก้ไขสคริปต์ ' +
+      'แล้วกลับมากดบันทึกใหม่ — ข้อมูลในฟอร์มยังอยู่ครบ');
     for (var a = 0; a < pRows.length; a++) {
       /* สต๊อกคงเหลือ ผูกกับ ฐานสินค้า แบบแถวต่อแถว ถ้าเลยแถวสุดท้ายที่มีสูตร
          สินค้าตัวใหม่จะไม่มียอดคงเหลือ และไม่มีอะไรฟ้อง — กันไว้ตรงนี้ */
       if (pRows[a] > stockLimit) {
         throw new Error('ชีท ' + SH.stock.name + ' มีสูตรถึงแถว ' + stockLimit +
-          ' แต่สินค้าใหม่จะลงแถว ' + pRows[a] + ' — ต้องลากสูตรของ ' + SH.stock.name +
-          ' ลงให้ถึงแถวเดียวกันก่อน ไม่งั้นสินค้าตัวใหม่จะไม่มียอดคงเหลือ');
+          ' แต่สินค้าใหม่จะลงแถว ' + pRows[a] + ' — สินค้าตัวใหม่จะไม่มียอดคงเหลือ\n' +
+          'แก้ได้โดยสั่งฟังก์ชัน repairStockSheet หนึ่งครั้ง แล้วกลับมากดบันทึกใหม่');
       }
       var np = plan.newProds[a];
       writeRow_('prod', pRows[a], {

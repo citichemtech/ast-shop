@@ -2397,3 +2397,63 @@ function countHeadRef_(sh, n, M, N) {
   }
   return c;
 }
+
+/* ------------------------------------------- ขยายที่ว่างของชีท ฐานสินค้า */
+
+/**
+ * ลากสูตรของชีท ฐานสินค้า ลงเพิ่ม เพื่อให้มีที่ว่างรับสินค้าตัวใหม่
+ *
+ * สินค้า "ซื้อมาขายไป" ที่พิมพ์ชื่อเองตอนคีย์ออเดอร์ จะถูกลงฐานสินค้าให้อัตโนมัติ
+ * พอแถวที่มีสูตรเต็ม ระบบจะไม่ยอมบันทึกทั้งใบ แล้วบอกให้ "ลากสูตรลงเพิ่มก่อน"
+ * ซึ่งเป็นงานที่ต้องไปทำในชีทด้วยมือ — และการแก้แถวด้วยมือในชีทนี้เคยทำให้
+ * สูตรของชีท สต๊อกคงเหลือ พังเป็น #REF! ไป 38 แถวมาแล้ว
+ * มีปุ่มให้กดจึงปลอดภัยกว่าบอกให้ไปลากเอง
+ *
+ * ไม่ขยายเกินแถวที่ชีท สต๊อกคงเหลือ มีสูตรถึง เพราะสองชีทผูกกันแบบแถวต่อแถว
+ * สินค้าที่อยู่เลยขอบนั้นจะไม่มียอดคงเหลือ และไม่มีอะไรฟ้องให้รู้
+ */
+function growProducts() {
+  requireStaff_();
+  var s = sheet_('prod');
+  var cfg = SH.prod;
+  var from = formulaLimit_('prod');
+  var stockLimit = formulaLimit_('stock');
+
+  if (from < DATA_ROW) {
+    var none = 'ชีท ' + cfg.name + ' ไม่มีแถวไหนมีสูตรเลย — ต้องสั่ง setup ก่อน';
+    Logger.log(none);
+    return none;
+  }
+  if (stockLimit <= from) {
+    var blocked = 'ชีท ' + SH.stock.name + ' มีสูตรถึงแถว ' + stockLimit +
+      ' ซึ่งไม่เกินชีท ' + cfg.name + ' (แถว ' + from + ') อยู่แล้ว\n' +
+      'ขยาย ' + cfg.name + ' ไปก่อนจะได้สินค้าที่ไม่มียอดคงเหลือ — ' +
+      'ต้องสั่ง repairStockSheet เพื่อลากสูตรของ ' + SH.stock.name + ' ลงก่อน';
+    Logger.log(blocked);
+    return blocked;
+  }
+
+  var want = stockLimit;
+  if (s.getMaxRows() < want) s.insertRowsAfter(s.getMaxRows(), want - s.getMaxRows());
+
+  /* ลอกเฉพาะคอลัมน์ที่เป็นสูตร ช่องกรอกต้องว่างไว้ให้คนกรอกเอง
+     ลอกทั้งแถวเมื่อไร ชื่อสินค้ากับราคาของแถวสุดท้ายจะถูกก๊อปลงมาทุกแถว
+     กลายเป็นสินค้าผีเต็มฐานที่ดูเหมือนของจริง */
+  var calc = cfg.CALC || [];
+  var n = want - from;
+  for (var i = 0; i < calc.length; i++) {
+    s.getRange(from, calc[i]).copyTo(s.getRange(from + 1, calc[i], n, 1));
+  }
+  SpreadsheetApp.flush();
+  LIMIT_CACHE_ = {};
+
+  var now = formulaLimit_('prod');
+  var msg = 'ชีท ' + cfg.name + ': ลากสูตรจากแถว ' + from + ' ลงถึงแถว ' + now +
+    ' (เพิ่มที่ว่างอีก ' + (now - from) + ' รายการ)\n' +
+    'ลอกเฉพาะคอลัมน์สูตร ' + calc.join(' · ') + ' ช่องกรอกยังว่างไว้ให้กรอกเอง';
+  if (now < want) {
+    msg += '\n⚠ ได้ไม่ถึงแถว ' + want + ' ที่ตั้งใจไว้ — เปิดชีทดูว่าแถวท้าย ๆ ติดอะไรอยู่';
+  }
+  Logger.log(msg);
+  return msg;
+}
