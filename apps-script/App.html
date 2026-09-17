@@ -312,6 +312,43 @@ function fillVatModes(){
   var first = ((BOOT && BOOT.lists && BOOT.lists.vat) || [])[0];
   el.value = /^รับ/.test(String(first || "")) ? "excl" : "none";
 }
+
+/* ช่องทางขายเป็นตัวบอกว่า "ราคาที่คีย์" เป็นราคาแบบไหน
+
+   ร้านนี้มีสินค้าทั้งสองแบบจริง ๆ
+     Shopee / Lazada / TikTok  ราคาป้ายรวม VAT ไว้แล้ว (96 = 89.72 + 6.28)
+     ลูกค้าบริษัท ขายส่ง ใบเสนอราคา  ราคายังไม่รวม แล้วบวก 7% ท้ายใบ
+   สินค้าตัวเดียวกันจึงมีสองราคา ขึ้นกับว่าขายทางไหน ไม่ใช่ขึ้นกับตัวสินค้า
+   และออเดอร์หนึ่งใบมาจากช่องทางเดียวเสมอ ช่องทางจึงตัดสินได้ทั้งใบ
+
+   ของจริง 17 ก.ย. 69: ใบ ONIV26-00300 เป็นออเดอร์ Shopee แต่ถูกคีย์เป็น
+   "บวก 7%" ยอดวิ่งเป็น 577.37 แล้ว 571.01 แก้กันทั้งวันกว่าจะลง 571.00
+
+   ตั้งให้เฉย ๆ ไม่ได้ล็อก คนคีย์เปลี่ยนเองเมื่อไรก็ได้ และพอเปลี่ยนเองแล้ว
+   สลับช่องทางอีกกี่ครั้งก็จะไม่ไปทับของที่เขาตั้งไว้ */
+var VAT_BY_HAND = false;
+
+function vatModeForCh(name){
+  return isMarketCh(name) ? "incl" : "";
+}
+
+function vatFromChannel(){
+  var el = $("#f-vat"), ch = $("#f-channel");
+  if(!el || !ch) return;
+  var want = vatModeForCh(ch.value);
+  if(want && !VAT_BY_HAND && el.value !== "none") el.value = want;
+  vatChHint();
+}
+
+function vatChHint(){
+  var box = $("#f-vat-note"), ch = $("#f-channel"), el = $("#f-vat");
+  if(!box || !ch || !el) return;
+  if(!vatModeForCh(ch.value) || el.value !== "incl"){ box.textContent = ""; box.className = "hint"; return }
+  box.className = "lotline ok";
+  box.textContent = "ราคาบน " + ch.value + " รวม VAT ไว้แล้ว — "
+    + "ให้คีย์ราคาที่ลูกค้าจ่ายจริงไปเลย ระบบถอด 7% ออกให้เอง";
+}
+
 function vatMode(){ return ($("#f-vat") && $("#f-vat").value) || "excl" }
 function vatOn(){ return vatMode() !== "none" }
 /* ใบเก่าเก็บไว้แค่ว่า "รับ VAT" หรือไม่ ไม่ได้เก็บว่าราคาที่พิมพ์รวม VAT ไว้ไหม
@@ -770,6 +807,10 @@ function resetForm(){
   $("#paste").value=""; $("#pv-slot").innerHTML="";
   $("#items").innerHTML=""; addItem();
   $("#f-date").value = todayISO();
+  /* ใบใหม่คือใบใหม่ — โหมดภาษีที่คนคีย์ตั้งเองไว้ในใบก่อนต้องไม่ติดมาด้วย
+     ไม่งั้นคีย์ใบ Shopee ต่อจากใบขายส่ง จะโดนบวก 7% ทับราคาที่รวมไว้แล้ว */
+  VAT_BY_HAND = false;
+  vatFromChannel();
   recalc();
 }
 
@@ -5666,6 +5707,10 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#hp-back").onclick = function(){ go(HELP_FROM || "new") };
   ["f-disc","f-ship"].forEach(function(id){ $("#"+id).oninput = recalc });
   ["f-vat","f-status","f-channel"].forEach(function(id){ $("#"+id).onchange = recalc });
+  /* ลำดับสำคัญ: ตั้งโหมดตามช่องทางก่อน แล้วค่อยคิดยอดใหม่
+     ถ้าคิดยอดก่อน ตัวเลขบนจอจะเป็นของโหมดเก่าไปหนึ่งจังหวะ */
+  $("#f-channel").addEventListener("change", function(){ vatFromChannel(); recalc() });
+  $("#f-vat").addEventListener("change", function(){ VAT_BY_HAND = true; vatChHint() });
   $("#f-disc").addEventListener("change", recalc);
 
   /* ค่าจัดส่งแนะนำอัตโนมัติ เฉพาะตอนที่ยังไม่ได้พิมพ์เอง */

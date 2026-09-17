@@ -4385,6 +4385,49 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.fill('#f-paid', '');
   await page.fill('#f-paid-ship', '');
 
+  /* --------------- ช่องทางขายตั้งโหมดภาษีให้เอง */
+  console.log('\n20.3 ช่องทางขายต้องตั้ง "รวม/ไม่รวม VAT" ให้เอง');
+  /* ร้านมีสินค้าทั้งสองแบบจริง ๆ — Shopee ราคาป้ายรวม VAT แล้ว
+     ส่วนลูกค้าบริษัทเป็นราคาก่อน VAT แล้วบวก 7% ท้ายใบ
+     ใบ ONIV26-00300 เป็นออเดอร์ Shopee แต่ถูกคีย์เป็น "บวก 7%"
+     ยอดวิ่งเป็น 577.37 แล้ว 571.01 แก้กันทั้งวันกว่าจะลง 571.00 */
+  await page.evaluate(function () {
+    if (typeof closeModal === 'function') closeModal();
+    go('new');
+    /* ข้อสอบข้อก่อน ๆ เคยแตะช่องภาษีไว้ เริ่มข้อนี้จากใบใหม่จริง ๆ */
+    resetForm();
+  });
+  await page.waitForTimeout(400);
+
+  var chList = await page.evaluate(function () {
+    return Array.prototype.map.call($('#f-channel').options, function (o) { return o.value });
+  });
+  var market = chList.filter(function (c) { return /shopee|ช้อป|ช็อป/i.test(c) })[0];
+  var plain = chList.filter(function (c) { return !/shopee|lazada|tiktok|ช้อป|ช็อป|ลาซ|ติ๊?ก/i.test(c) })[0];
+  truthy('มีช่องทางมาร์เก็ตเพลสให้ทดสอบ', !!market);
+  truthy('มีช่องทางปกติให้ทดสอบ', !!plain);
+
+  await page.selectOption('#f-channel', plain);
+  await page.waitForTimeout(250);
+  eq('ช่องทางปกติ = บวก VAT จากราคา', await page.inputValue('#f-vat'), 'excl');
+
+  await page.selectOption('#f-channel', market);
+  await page.waitForTimeout(250);
+  eq('สลับเป็น Shopee แล้วกลายเป็นถอด VAT ออก',
+    await page.inputValue('#f-vat'), 'incl');
+  truthy('บอกด้วยว่าให้คีย์ราคาที่ลูกค้าจ่ายจริง',
+    /รวม VAT ไว้แล้ว/.test(await page.textContent('#f-vat-note')));
+
+  console.log('\n   ตั้งเองแล้วต้องไม่ถูกทับ');
+  /* คนคีย์รู้ดีกว่าระบบเสมอ พอเขาเลือกเองแล้ว สลับช่องทางอีกกี่ครั้งก็ห้ามไปทับ */
+  await page.selectOption('#f-vat', 'excl');
+  await page.waitForTimeout(200);
+  await page.selectOption('#f-channel', plain);
+  await page.waitForTimeout(200);
+  await page.selectOption('#f-channel', market);
+  await page.waitForTimeout(250);
+  eq('ของที่คนคีย์เลือกเองยังอยู่', await page.inputValue('#f-vat'), 'excl');
+
   /* --------------- ดูตัวอย่างใบก่อนออกเลข */
   console.log('\n20.4 ดูตัวอย่างใบก่อนออกเลข — ต้องไม่มีใบใหม่โผล่ในทะเบียน');
   await page.evaluate(function () {
