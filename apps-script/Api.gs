@@ -437,6 +437,9 @@ function readOrders_(opts) {
       owner.items.push({
         sku: String(iv[j][SH.item.IN.sku - 1] || ''),
         name: itemName_(iv[j][4], iv[j][SH.item.IN.sku - 1]),
+        /* ชื่อที่ได้มาเป็นชื่อจริง หรือเป็นรหัสที่ถูกหยิบมาแทนเพราะสูตรหาไม่เจอ
+           หน้าจอใช้ชื่อไหนก็พอไหว แต่ใบกำกับภาษีใช้รหัสแทนชื่อไม่ได้ */
+        nameOk: !nameBroken_(iv[j][4], iv[j][SH.item.IN.sku - 1]),
         unit: String(iv[j][5] || ''),
         qty: Number(iv[j][SH.item.IN.qty - 1] || 0),
         price: linePrice_(iv[j][SH.item.IN.price - 1], iv[j][7]),
@@ -644,7 +647,9 @@ function issueDoc(payload) {
     var orderNo = String(p.orderNo || '').trim();
     var src;
     if (t.quote) {
-      src = { items: p.items || [], ship: p.ship, discount: p.discount };
+      /* ใบเสนอราคาคีย์จากหน้าจอ บางบรรทัดส่งมาแต่รหัส — เติมชื่อจากฐานสินค้าให้
+         ไม่งั้นช่องรายการบนกระดาษจะว่างเปล่า ซึ่งแย่กว่าพิมพ์รหัสเสียอีก */
+      src = { items: withProdNames_(p.items || []), ship: p.ship, discount: p.discount };
       orderNo = '';
     } else {
       if (!orderNo) throw new Error('เอกสารชนิดนี้ต้องอ้างออเดอร์ ยังไม่ได้บอกว่าออเดอร์ไหน');
@@ -652,6 +657,10 @@ function issueDoc(payload) {
       if (!ord) throw new Error('ไม่พบออเดอร์ ' + orderNo + ' ในชีท');
       src = { items: ord.items, ship: ord.ship, discount: ord.discount };
     }
+
+    /* ก่อนจะจองเลขใบ — เลขในเล่มใบกำกับภาษีต้องเรียงไม่ขาด
+       ถ้าปล่อยให้ออกเลขไปก่อนแล้วค่อยพบว่าใบใช้ไม่ได้ จะเหลือเลขโหว่ที่อธิบายไม่ได้ */
+    assertDocNames_(src.items);
 
     var used = readDocNos_();
     if (orderNo && !p.allowDup) {
@@ -1601,6 +1610,7 @@ function getDoc(no) {
     var ord = findOrder_(m.orderNo);
     if (!ord) throw new Error('ใบ ' + want + ' อ้างออเดอร์ ' + m.orderNo + ' ซึ่งหาไม่เจอในชีทแล้ว');
     var cfg = appCfg_();
+    assertDocNames_(ord.items);
     var d = buildDoc_(key || 'rec', { items: ord.items, ship: ord.ship, discount: ord.discount },
       { vatRate: saved.vat > 0 ? cfgGet_().vatRate : 0, vatMode: cfg.vatMode });
     var same = round2_(d.total) === round2_(saved.total);
@@ -3054,10 +3064,94 @@ function pickRecvType_(list) {
  * ไว้ในช่องรหัสสินค้า จึงหยิบจากตรงนั้นมาแทน ดีกว่าพิมพ์คำว่า "ไม่พบ SKU" ออกไป
  */
 function itemName_(nameCell, skuCell) {
-  var nm = String(nameCell == null ? '' : nameCell).trim();
-  if (nm && nm.indexOf('ไม่พบ') !== 0 && nm.charAt(0) !== '#') return nm;
+  if (!lookupFailed_(nameCell)) return String(nameCell).trim();
   var sku = String(skuCell == null ? '' : skuCell).trim();
-  return sku || nm;
+  return sku || String(nameCell == null ? '' : nameCell).trim();
+}
+
+/** ช่องชื่อสินค้าของชีทไม่ได้ให้ชื่อกลับมา — ว่าง · "ไม่พบ SKU" · #N/A #REF! */
+function lookupFailed_(nameCell) {
+  var nm = String(nameCell == null ? '' : nameCell).trim();
+  return !nm || nm.indexOf('ไม่พบ') === 0 || nm.charAt(0) === '#';
+}
+
+/**
+ * หน้าตาเป็น "รหัสสินค้า" ไม่ใช่ "ชื่อสินค้า"
+ *
+ * รหัสในระบบนี้เป็นตัวอักษรกับตัวเลขคั่นด้วยขีด ไม่มีเว้นวรรค — SKU-141 · SKU-X020 ·
+ * SKU-Chem-102 · CHEM-001  ส่วนชื่อจริงของสินค้ามีเว้นวรรคและเครื่องหมายเสมอ
+ * เช่น "Single Flute Endmill 1F / 2.0*22*3.175*45L(1pcs)"
+ */
+function looksLikeSkuCode_(s) {
+  var t = String(s == null ? '' : s).trim();
+  return t.length <= 24 && /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+$/.test(t);
+}
+
+/**
+ * ชื่อสินค้าบรรทัดนี้ใช้พิมพ์ลงใบให้ลูกค้าได้หรือยัง
+ *
+ * ตัวสำรองใน itemName_() มีไว้สำหรับแถวรุ่นเก่า ที่ "ชื่อจริง" ถูกเขียนไว้ในช่องรหัส
+ * ตอนนั้นการหยิบช่องรหัสมาพิมพ์จึงได้ชื่อจริง — สมมุติฐานนั้นใช้ไม่ได้อีกแล้ว
+ * เพราะของซื้อมาขายไปเดี๋ยวนี้ได้รหัสจริง (SKU-X020) ลงฐานสินค้าให้เสมอ
+ * พอสูตรหาชื่อไม่เจอ ตัวสำรองจึงพิมพ์ "SKU-X020" ลงช่องรายการของใบกำกับภาษี
+ * — เกิดขึ้นจริงกับใบ ONIV26-00296 ซึ่งส่งถึงมือลูกค้าไปแล้ว
+ */
+function nameBroken_(nameCell, skuCell) {
+  if (!lookupFailed_(nameCell)) return false;
+  var sku = String(skuCell == null ? '' : skuCell).trim();
+  return !sku || looksLikeSkuCode_(sku);
+}
+
+/**
+ * เติมชื่อสินค้าจาก ฐานสินค้า ให้บรรทัดที่ส่งมาแต่รหัส
+ *
+ * ใช้กับใบเสนอราคาซึ่งไม่ได้ผูกกับออเดอร์ จึงไม่มีสูตรในชีทคอยหาชื่อให้
+ */
+function withProdNames_(items) {
+  var need = false;
+  (items || []).forEach(function (it) {
+    if (it && String(it.sku || '').trim() && !String(it.name || '').trim()) need = true;
+  });
+  if (!need) return items || [];
+
+  var by = {}, plist = readProducts_();
+  for (var i = 0; i < plist.length; i++) by[String(plist[i].sku).trim()] = plist[i];
+  return (items || []).map(function (it) {
+    var sku = String((it && it.sku) || '').trim();
+    if (!sku || String((it && it.name) || '').trim()) return it;
+    var hit = by[sku];
+    if (!hit) return it;
+    var copy = {};
+    for (var k in it) copy[k] = it[k];
+    copy.name = hit.name;
+    return copy;
+  });
+}
+
+/**
+ * กันไม่ให้รหัสสินค้าไปพิมพ์แทนชื่อสินค้าบนใบที่ส่งลูกค้า
+ *
+ * ประมวลรัษฎากร ม.86/4(5) บังคับว่าใบกำกับภาษีต้องมี "ชื่อ ชนิด ประเภท ปริมาณ"
+ * ของสินค้า รหัสภายในร้านอย่างเดียวไม่ใช่ชื่อสินค้า ใบแบบนั้นลูกค้าเอาไปใช้ไม่ได้
+ * และร้านต้องออกใหม่ทั้งใบ — หยุดตั้งแต่ก่อนออกเลขใบ ถูกกว่าตามแก้ทีหลังมาก
+ */
+function assertDocNames_(items) {
+  var bad = [];
+  (items || []).forEach(function (it, i) {
+    var nm = String((it && it.name) || '').trim();
+    var sku = String((it && it.sku) || '').trim();
+    var broken = (it && it.nameOk === false) || lookupFailed_(nm) ||
+      (sku && nm === sku && looksLikeSkuCode_(sku));
+    if (broken) bad.push('บรรทัดที่ ' + (i + 1) + ' (' + (nm || sku || '—') + ')');
+  });
+  if (!bad.length) return;
+  throw new Error('ใบนี้ยังพิมพ์ให้ไม่ได้ เพราะ ' + bad.join(' · ') +
+    ' ไม่มีชื่อสินค้า มีแต่รหัส\n' +
+    'ใบกำกับภาษีต้องระบุชื่อ ชนิด ประเภทของสินค้า (ประมวลรัษฎากร ม.86/4) ' +
+    'รหัสภายในร้านอย่างเดียวใช้ไม่ได้ ลูกค้าเอาไปใช้ไม่ได้และต้องออกใบใหม่ทั้งใบ\n' +
+    'สาเหตุที่เจอบ่อย: สินค้าตัวนี้เพิ่งถูกเพิ่มเข้าชีท ' + SH.prod.name +
+    ' ที่แถวล่าง ๆ แต่สูตรชื่อสินค้าในชีท ' + SH.item.name + ' มองไปไม่ถึงแถวนั้น ' +
+    '— สั่งฟังก์ชัน checkProductLinks ดูก่อน แล้วสั่ง fixProductLinks หนึ่งครั้ง');
 }
 
 /** เลขรหัสถัดไปของชุด SKU-X — ดูจากที่มีอยู่จริง ไม่ใช่นับจำนวนแถว */

@@ -4009,5 +4009,102 @@ var over64 = [];
 for (var nm64 in fx64.sheets) over64 = over64.concat(fx64.sheets[nm64].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over64, []);
 
+/* ------------- 65. สูตรที่มองมาที่ ฐานสินค้า ต้องมองถึงแถวสุดท้ายเสมอ */
+console.log('\n65. สินค้าที่อยู่เลยช่วงที่ VLOOKUP มองถึง ต้องไม่ได้ขึ้นใบกำกับภาษี');
+/* ของจริง 17 ก.ย. 69: ใบ ONIV26-00296 ที่ส่งถึงมือลูกค้าไปแล้ว มีบรรทัดหนึ่ง
+   พิมพ์ว่า "SKU-X020" ตรงช่องรายการสินค้า แทนที่จะเป็นชื่อสินค้า
+   ต้นเหตุคือ growProducts() ลากสูตรของ ฐานสินค้า ลงไปแล้ว แต่ VLOOKUP ในชีท
+   ออเดอร์_รายการ ที่ชี้กลับมายังมองอยู่แค่ช่วงเดิม สินค้าที่ลงแถวเลยขอบจึงไม่มีชื่อ
+   แล้วตัวสำรองก็หยิบ "รหัส" มาพิมพ์แทน "ชื่อ" ลงบนใบภาษี
+   ยอดเงินถูกทุกบาท ผิดแค่ช่องเดียว — ช่องที่ลูกค้าอ่าน */
+var fx65 = FS.build({ nameLookupLast: 8 });   /* มองถึงแค่แถว 8 */
+var api65 = FS.load(fx65);
+var prod65 = fx65.sheets['ฐานสินค้า'];
+
+/* สินค้าตัวที่สามจะไปลงแถวที่เลยช่วงที่สูตรมองถึง */
+var o65 = api65.createOrder(order({
+  cust: 'บริษัท ช้อยส์ อินทีเรียส จำกัด',
+  items: [
+    { sku: 'SKU-141', qty: 2, price: 123 },
+    { free: true, name: 'Single Flute 1F / D4*22*4.0*45Lmm (1pcs)', qty: 2, price: 225, cost: 100 },
+    { free: true, name: 'ของซื้อมาขายไปที่อยู่เลยขอบ', qty: 1, price: 297, cost: 200 }
+  ]
+}));
+
+var made65 = [];
+for (var r65 = DATA_ROW; r65 <= 150; r65++) {
+  if (String(prod65.cell(r65, 2).v || '').indexOf('SKU-X') === 0) made65.push(r65);
+}
+truthy2('มีสินค้าใหม่ที่ลงแถวเลยช่วงที่สูตรมองถึง',
+  made65.filter(function (r) { return r > 8 }).length > 0);
+
+var ord65 = api65.getOrders(0).filter(function (o) { return o.no === o65.no })[0];
+var lost65 = ord65.items.filter(function (i) { return i.nameOk === false });
+eq('ระบบรู้ตัวว่าบรรทัดไหนไม่มีชื่อ', lost65.length, 2);
+eq('และชื่อที่ได้มาคือรหัส ไม่ใช่ชื่อสินค้า', lost65[0].name, lost65[0].sku);
+
+console.log('\n   ใบกำกับภาษีต้องออกไม่ได้ ตั้งแต่ก่อนจองเลขใบ');
+var before65 = api65.peekDocNos().rec;
+var err65 = throws('ออกใบไม่ได้', function () {
+  api65.issueDoc({ type: 'rec', orderNo: o65.no,
+    cust: { name: 'บริษัท ช้อยส์ อินทีเรียส จำกัด' }, by: 'AEY', clientKey: 'dk-65-1' });
+}, 'ไม่มีชื่อสินค้า');
+truthy2('บอกด้วยว่าผิดกฎหมายข้อไหน', /86\/4/.test(err65 || ''));
+truthy2('บอกวิธีแก้ที่กดได้', /fixProductLinks/.test(err65 || ''));
+/* เลขในเล่มใบกำกับภาษีต้องเรียงไม่ขาด ถ้าจองเลขไปก่อนแล้วค่อยล้ม จะเหลือเลขโหว่ */
+eq('ยังไม่ได้กินเลขในเล่มไปแม้แต่เลขเดียว', api65.peekDocNos().rec, before65);
+
+console.log('\n   ตัวตรวจต้องชี้ได้ว่าคอลัมน์ไหนมองสั้นไป');
+var rep65 = api65.checkProductLinks();
+truthy2('บอกชื่อชีทกับคอลัมน์', /ออเดอร์_รายการ คอลัมน์ E/.test(rep65));
+truthy2('บอกว่ามองถึงแค่แถว 8', /แค่ถึงแถว 8/.test(rep65));
+truthy2('บอกแถวที่ไม่มีชื่อสินค้าด้วย', /ไม่มีชื่อสินค้า/.test(rep65));
+
+console.log('\n   ซ่อมแล้วต้องออกใบได้จริง');
+var fix65 = api65.fixProductLinks();
+truthy2('บอกว่าแก้ให้แล้ว', /แก้ให้แล้ว/.test(fix65));
+var f65 = fx65.sheets['ออเดอร์_รายการ'].cell(DATA_ROW, 5).f;
+truthy2('ช่วงถูกขยายถึงแถวที่ฐานสินค้ามีสูตรถึง', /\$D\$150/.test(f65));
+truthy2('ส่วนอื่นของสูตรไม่ถูกแตะ',
+  /IFERROR\(VLOOKUP\(\$D6,/.test(f65) && /"ไม่พบ SKU"/.test(f65));
+truthy2('ลากลงครบทั้งคอลัมน์',
+  /\$D\$150/.test(fx65.sheets['ออเดอร์_รายการ'].cell(200, 5).f || ''));
+
+var ord65b = api65.getOrders(0).filter(function (o) { return o.no === o65.no })[0];
+eq('ทุกบรรทัดมีชื่อสินค้าแล้ว',
+  ord65b.items.filter(function (i) { return i.nameOk === false }).length, 0);
+eq('และเป็นชื่อจริง ไม่ใช่รหัส', ord65b.items[2].name, 'ของซื้อมาขายไปที่อยู่เลยขอบ');
+
+var rec65 = api65.issueDoc({ type: 'rec', orderNo: o65.no,
+  cust: { name: 'บริษัท ช้อยส์ อินทีเรียส จำกัด' }, by: 'AEY', clientKey: 'dk-65-2' });
+truthy2('ออกใบกำกับภาษีได้แล้ว', !!rec65.no);
+var got65 = api65.getDoc(rec65.no);
+truthy2('ช่องรายการบนใบเป็นชื่อสินค้า ไม่ใช่รหัส',
+  got65.doc.lines.filter(function (l) { return /^SKU-/.test(l.name) }).length === 0);
+
+console.log('\n   ตรวจซ้ำต้องสะอาด');
+truthy2('ไม่เหลือคอลัมน์ที่มองสั้นไป', /ครบแล้ว/.test(api65.checkProductLinks()));
+
+console.log('\n   growProducts ต้องเตือนเรื่องนี้เอง ไม่ปล่อยให้ไปเจอบนใบภาษี');
+/* รอบแรกที่เจ้าของร้านสั่ง growProducts มันขยายฐานสินค้าให้แล้วบอกว่าเสร็จ
+   ทั้งที่งานยังไม่จบ — สูตรของชีทอื่นยังมองไม่ถึงแถวใหม่ อีกไม่กี่ชั่วโมงต่อมา
+   "SKU-X020" ก็ไปนั่งอยู่บนใบกำกับภาษีที่ส่งลูกค้า */
+var fx66 = FS.build({ nameLookupLast: 8 });
+var prod66 = fx66.sheets['ฐานสินค้า'];
+/* ฐานสินค้ามีสูตรแค่ถึงแถว 20 ส่วน สต๊อกคงเหลือ ถึง 150 — สภาพเดียวกับชีทจริง
+   ตอนเช้าวันที่ 17 ก.ย. ที่ทำให้ growProducts มีงานให้ทำ */
+[1, 11, 12, 13].forEach(function (c) {
+  for (var rr = 21; rr <= 150; rr++) prod66.cell(rr, c).f = null;
+});
+var api66 = FS.load(fx66);
+var grow66 = api66.growProducts();
+truthy2('บอกว่ายังไม่จบ ต้องสั่ง fixProductLinks ต่อ', /fixProductLinks/.test(grow66));
+truthy2('บอกเหตุผลว่าจะเกิดอะไรถ้าไม่ทำ', /ไม่มีชื่อ/.test(grow66));
+
+console.log('\n   ไม่มีช่องสูตรถูกเขียนทับ');
+var over65 = [];
+for (var nm65 in fx65.sheets) over65 = over65.concat(fx65.sheets[nm65].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกแตะ', over65, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

@@ -232,6 +232,12 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
   [1, 3, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16, 17].forEach(function (c) {
     item.setFormulaDown(c, DATA_ROW, itemLimit, '=itemcalc');
   });
+  /* ช่องชื่อสินค้าเป็น VLOOKUP ของจริง ไม่ใช่ป้ายหลอก
+     เพราะจุดที่พังคือ "ช่วงที่ VLOOKUP มองไปถึง" ไม่ใช่ตัวการคำนวณ
+     ป้ายหลอกทำให้ข้อสอบมองไม่เห็นความพังนี้เลยแม้แต่ข้อเดียว */
+  item.setFormulaDown(5, DATA_ROW, itemLimit,
+    '=IF($D6="","",IFERROR(VLOOKUP($D6,\'ฐานสินค้า\'!$B$6:$D$' +
+    (opts.nameLookupLast || 150) + ',3,FALSE),"ไม่พบ SKU"))');
 
   /* รับเข้า / Log */
   var recv = mk('รับเข้า', 13, 401);
@@ -265,11 +271,17 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
        เพราะแอปเพิ่มสินค้าเข้าฐานเองได้ (ของซื้อมาขายไปที่พิมพ์ชื่อเอง)
        ถ้าอ่านจากรายการตั้งต้น สินค้าที่เพิ่งเพิ่มจะหายไปจากสูตรของชีทจำลอง */
     var std = {}, pname = {};
+    /* ชื่อสินค้าอ่านได้แค่ในช่วงที่สูตรมองถึงจริง ๆ — อ่านช่วงนั้นจากตัวสูตรเอง
+       เพื่อให้ fixProductLinks ที่ไปขยายช่วง มีผลกับชีทจำลองทันทีเหมือนของจริง */
+    var nameLast = 150;
+    var nameM = /ฐานสินค้า'?!\$?[A-Z]+\$?\d+:\$?[A-Z]+\$?(\d+)/
+      .exec(String(item.cell(DATA_ROW, 5).f || ''));
+    if (nameM) nameLast = Number(nameM[1]);
     for (var pr = DATA_ROW; pr <= 150; pr++) {
       var psku = prod.cell(pr, 2).v;
       if (psku) {
         std[psku] = Number(prod.cell(pr, 8).v || 0);
-        pname[psku] = String(prod.cell(pr, 4).v || '');
+        if (pr <= nameLast) pname[psku] = String(prod.cell(pr, 4).v || '');
       }
     }
 

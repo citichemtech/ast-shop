@@ -4348,6 +4348,85 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.fill('#f-paid', '');
   await page.fill('#f-paid-ship', '');
 
+  /* --------------- แก้ชื่อ/ที่อยู่บนใบที่ยังไม่ได้ส่ง โดยไม่ต้องเผาเลขใบทิ้ง */
+  console.log('\n20.5 แก้ชื่อที่อยู่ผู้ซื้อบนใบเดิม ต้องทำได้จากกล่องแก้ใบเลย');
+  /* เจ้าของร้าน 17 ก.ย. 69: "ชื่อที่อยู่ก็แก้ไม่ได้ จะล็อกทำไม เปิดให้แก้ได้ก่อนส่ง
+     จะได้ไม่มีใบเสีย ถ้าพนักงานเทรนใหม่ ไม่ใช่ต้องแก้กันเป็น 100 เลขหรือ"
+     ของเดิมกล่องแก้ใบมีแต่ช่องเหตุผล แล้วไปหยิบชื่อจาก #dc-name ของหน้าออกเอกสาร
+     ซึ่งเปิดค้างอยู่เฉพาะตอนเพิ่งออกใบ เปิดจากแฟ้มเอกสารเมื่อไรจะแก้ชื่อไม่ได้เลย */
+  await page.evaluate(function () {
+    if (typeof closeModal === 'function') closeModal();
+    go('file');
+    FILE_TAB = 'doc';
+    fileDraw();
+    FILE_KIND = 'ใบเสร็จรับเงิน';
+    drawFileDocs();
+  });
+  await page.waitForTimeout(1200);
+  truthy('หน้าแฟ้มเอกสารเปิดอยู่จริง', await page.isVisible('#fl-docs'));
+  /* ออกใบใหม่หนึ่งใบให้แน่ใจว่ามีใบที่ยังแก้ได้จริง ๆ อยู่ในแฟ้ม
+     ใบที่ข้อสอบข้อก่อน ๆ ทิ้งไว้ ถูกกดส่งแล้วบ้าง ยกเลิกแล้วบ้าง ไม่เหลือให้แก้แน่นอน */
+  var fresh = await page.evaluate(async function () {
+    var o = (MOCK_ORDERS || [])[0];
+    var r = await new Promise(function (res) {
+      google.script.run.withSuccessHandler(res)
+        .withFailureHandler(function (e) { res({ err: String(e) }) })
+        .issueDoc({ type: 'rec', orderNo: o.no, cust: { name: 'บริษัท ก่อนแก้ชื่อ จำกัด' },
+                    by: 'test', clientKey: 'ui-205-' + Date.now() });
+    });
+    return r && r.no ? r.no : String((r && r.err) || 'ออกใบไม่ได้');
+  });
+  truthy('ออกใบสำหรับทดสอบได้', /^ONIV/.test(fresh));
+  await page.evaluate(function () { drawFileDocs() });
+  await page.waitForTimeout(900);
+
+  var target = await page.evaluate(function () {
+    var ok = {};
+    (MOCK_ORDERS || []).forEach(function (o) { ok[o.no] = true });
+    var bs = Array.prototype.slice.call(document.querySelectorAll('#fl-docs [data-rv]'));
+    for (var i = 0; i < bs.length; i++) {
+      var no = bs[i].getAttribute('data-rv');
+      var d = MOCK_DOCS.filter(function (x) { return x.no === no })[0];
+      if (d && d.orderNo && ok[d.orderNo]) return no;
+    }
+    return '';
+  });
+  truthy('มีใบที่ยังแก้ได้ให้ทดสอบ', !!target);
+
+  await page.evaluate(function (no) {
+    document.querySelector('#fl-docs [data-rv="' + no + '"]').click();
+  }, target);
+  /* ปุ่มยืนยันต้องกดไม่ได้จนกว่าของเดิมจะถูกเติมลงช่อง
+     กดตอนช่องยังว่าง = ลบชื่อลูกค้าออกจากใบ ซึ่งแย่กว่าไม่ได้แก้ */
+  await page.waitForFunction(function () {
+    var g = document.querySelector('.rvbox .rv-go');
+    return g && !g.disabled;
+  }, null, { timeout: 15000 });
+
+  var pre = await page.evaluate(function () {
+    return {
+      name: document.querySelector('.rvbox .rv-name').value,
+      addr: document.querySelector('.rvbox .rv-addr').value
+    };
+  });
+  truthy('ช่องชื่อผู้ซื้อถูกเติมของเดิมไว้ให้แล้ว', pre.name.length > 0);
+
+  await page.fill('.rvbox .rv-name', 'บริษัท แก้ชื่อถูกแล้ว จำกัด');
+  await page.fill('.rvbox .rv-addr', '99/9 ถนนแก้ใหม่ กรุงเทพฯ 10240');
+  await page.fill('.rvbox .rv-why', 'พนักงานพิมพ์ชื่อลูกค้าผิด');
+  page.once('dialog', function (d) { d.accept() });
+  await page.click('.rvbox .rv-go');
+  await page.waitForTimeout(1200);
+
+  var after = await page.evaluate(function (no) {
+    var f = MOCK_DOCS.filter(function (d) { return d.no === no })[0];
+    return { name: f.cust.name, addr: f.cust.addr, no: f.no, times: f.times || 0 };
+  }, target);
+  eq('ชื่อผู้ซื้อบนใบถูกแก้จริง', after.name, 'บริษัท แก้ชื่อถูกแล้ว จำกัด');
+  eq('ที่อยู่ก็ถูกแก้ด้วย', after.addr, '99/9 ถนนแก้ใหม่ กรุงเทพฯ 10240');
+  eq('เลขใบยังเป็นเลขเดิม ไม่กินเลขใหม่', after.no, target);
+  truthy('จดไว้ว่าแก้ไปแล้วกี่ครั้ง', after.times >= 1);
+
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 

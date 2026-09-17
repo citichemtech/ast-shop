@@ -1716,11 +1716,26 @@ function askRevise(no, btn, redraw){
   box.className = "rvbox";
   box.innerHTML =
     '<div class="hint" style="margin-bottom:6px">แก้ใบ <b>'+esc(no)+'</b> โดยใช้เลขเดิม — '
-      +'ระบบจะประกอบใบใหม่จากออเดอร์ตอนนี้ทั้งใบ (ยอด ข้อมูลผู้ซื้อ และตัวกระดาษ)<br>'
+      +'ยอดคิดใหม่จากออเดอร์ตอนนี้ ส่วนชื่อและที่อยู่ผู้ซื้อแก้ได้ในช่องข้างล่างนี้เลย<br>'
       +'<b>วันที่กับชนิดเอกสารไม่เปลี่ยน</b> · ยอดเดิมถูกจดไว้ในหมายเหตุของใบทุกครั้ง<br>'
       +'<b style="color:var(--red)">แก้ได้จนกว่าจะกดปุ่ม "ส่งแล้ว"</b> — '
       +'พอกดส่งแล้ว ใบนี้จะแก้ไม่ได้อีก ต้องยกเลิกแล้วออกใบใหม่แทน</div>'
-    +'<input class="rv-why" placeholder="เหตุผล เช่น ยอดผิด แก้ราคาแล้วออกใหม่">'
+    /* ชื่อกับที่อยู่ผู้ซื้ออยู่ตรงนี้เลย ไม่ใช่ต้องไปเปิดหน้าออกเอกสารค้างไว้ก่อน
+       พิมพ์ชื่อลูกค้าผิดคือความผิดพลาดที่พนักงานใหม่ทำบ่อยที่สุด และเป็นข้อมูล
+       ที่แก้แล้วยอดเงินไม่เปลี่ยนสักบาท — ไม่มีเหตุผลให้ต้องเผาเลขใบทิ้งเพราะเรื่องนี้ */
+    +'<div class="rv-cust" style="margin:8px 0;display:grid;gap:6px">'
+      +'<input class="rv-name" placeholder="ชื่อผู้ซื้อ">'
+      +'<div style="display:flex;gap:6px">'
+        +'<input class="rv-tax" placeholder="เลขผู้เสียภาษี 13 หลัก" style="flex:2">'
+        +'<input class="rv-branch" placeholder="สาขา" style="flex:1">'
+      +'</div>'
+      +'<textarea class="rv-addr" rows="2" placeholder="ที่อยู่ตามใบกำกับภาษี"></textarea>'
+      +'<div style="display:flex;gap:6px">'
+        +'<input class="rv-tel" placeholder="โทร" style="flex:1">'
+        +'<input class="rv-email" placeholder="อีเมล" style="flex:2">'
+      +'</div>'
+    +'</div>'
+    +'<input class="rv-why" placeholder="เหตุผล เช่น ชื่อลูกค้าผิด / ยอดผิด">'
     +'<div style="display:flex;gap:8px;margin-top:8px">'
     +'<button class="mini rv-go">ยืนยันแก้ใบนี้</button>'
     +'<button class="mini rv-no">ไม่แก้</button></div>'
@@ -1729,6 +1744,32 @@ function askRevise(no, btn, redraw){
 
   var why = box.querySelector(".rv-why");
   var msg = box.querySelector(".rv-msg");
+
+  /* เติมของเดิมลงช่องให้ก่อน ไม่งั้นกดยืนยันทีชื่อลูกค้าจะถูกล้างทิ้งทั้งชุด
+     ระหว่างที่ยังโหลดไม่เสร็จ ปุ่มยืนยันต้องกดไม่ได้ — กดตอนช่องยังว่างคือลบของเดิม */
+  var go = box.querySelector(".rv-go");
+  go.disabled = true;
+  var custReady = false;
+  api("getDoc", no).then(function(res){
+    var c = (res && res.meta && res.meta.cust) || {};
+    box.querySelector(".rv-name").value = c.name || "";
+    box.querySelector(".rv-tax").value = c.taxId || "";
+    box.querySelector(".rv-branch").value = c.branch || "";
+    box.querySelector(".rv-addr").value = c.addr || "";
+    box.querySelector(".rv-tel").value = c.tel || "";
+    box.querySelector(".rv-email").value = c.email || "";
+    custReady = true;
+    go.disabled = false;
+  }, function(e){
+    /* อ่านของเดิมไม่ได้ ก็ยังแก้ยอดได้ แต่ต้องไม่แตะข้อมูลผู้ซื้อเลย
+       ส่งช่องว่างขึ้นไปคือลบชื่อลูกค้าออกจากใบ ซึ่งแย่กว่าไม่ได้แก้ */
+    box.querySelector(".rv-cust").innerHTML =
+      '<div class="hint" style="color:var(--red)">อ่านข้อมูลผู้ซื้อของใบเดิมไม่ได้ ('
+      + esc(e && e.message ? e.message : e) + ') — รอบนี้แก้ได้เฉพาะยอด '
+      + 'ข้อมูลผู้ซื้อจะคงไว้ตามเดิม</div>';
+    custReady = false;
+    go.disabled = false;
+  });
   why.focus();
   box.querySelector(".rv-no").onclick = function(){ box.remove() };
   why.onkeydown = function(e){ if (e.key === "Enter") box.querySelector(".rv-go").click() };
@@ -1747,15 +1788,20 @@ function askRevise(no, btn, redraw){
     if (!confirm("แก้ใบ " + no + " โดยใช้เลขเดิม?\n\n"
                + "ยืนยันว่าใบนี้ยังไม่ได้ส่งให้ลูกค้า")) return;
 
-    var go = box.querySelector(".rv-go");
     go.disabled = true; go.textContent = "กำลังแก้…";
     msg.style.color = ""; msg.textContent = "";
-    /* ข้อมูลผู้ซื้อใช้ของที่กรอกไว้บนหน้าจอตอนนี้ ถ้ายังเปิดหน้าออกเอกสารค้างอยู่
-       ไม่งั้นการแก้ยอดจะล้างชื่อผู้เสียภาษีของใบเดิมทิ้งไปโดยไม่ตั้งใจ */
-    var cust = $("#dc-name") ? {
-      name: $("#dc-name").value.trim(), taxId: $("#dc-tax").value.replace(/[^\d]/g,""),
-      branch: $("#dc-branch").value, addr: $("#dc-addr").value.trim(),
-      tel: $("#dc-tel").value.trim(), email: $("#dc-email").value.trim()
+    /* ข้อมูลผู้ซื้อใช้ช่องในกล่องนี้ ซึ่งเติมของเดิมไว้ให้แล้ว
+       ของเดิมดึงจากหน้าออกเอกสารที่ต้องเปิดค้างไว้ ถ้าไม่ได้เปิดก็แก้ชื่อที่อยู่ไม่ได้เลย
+       ทั้งที่ชื่อผิดคือสาเหตุที่ต้องออกใบใหม่บ่อยที่สุด
+
+       ส่ง null เมื่ออ่านของเดิมไม่สำเร็จเท่านั้น — ฝั่งหลังบ้านจะคงของเดิมไว้ให้ */
+    var cust = custReady ? {
+      name: box.querySelector(".rv-name").value.trim(),
+      taxId: box.querySelector(".rv-tax").value.replace(/[^\d]/g,""),
+      branch: box.querySelector(".rv-branch").value.trim(),
+      addr: box.querySelector(".rv-addr").value.trim(),
+      tel: box.querySelector(".rv-tel").value.trim(),
+      email: box.querySelector(".rv-email").value.trim()
     } : null;
     var vatSel = $("#dc-vat") ? $("#dc-vat").value : "excl";
 

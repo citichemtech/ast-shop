@@ -2454,6 +2454,192 @@ function growProducts() {
   if (now < want) {
     msg += '\n⚠ ได้ไม่ถึงแถว ' + want + ' ที่ตั้งใจไว้ — เปิดชีทดูว่าแถวท้าย ๆ ติดอะไรอยู่';
   }
+
+  /* ขยายฐานสินค้าอย่างเดียวไม่พอ สูตรของชีทอื่นที่ชี้กลับมาหาฐานสินค้ายังมองช่วงเดิม
+     สินค้าที่ลงแถวใหม่จึงมีตัวตน แต่ชีทอื่นหาชื่อไม่เจอ แล้วรหัสก็ไปโผล่บนใบกำกับภาษี
+     — เกิดขึ้นจริงกับใบ ONIV26-00296 หลังสั่ง growProducts รอบแรก
+     ไม่แก้ให้เองเพราะเป็นสูตรของเจ้าของชีท แต่ต้องบอกให้รู้ตัวตรงนี้ ไม่ใช่รู้ตอนใบออกไปแล้ว */
+  var links = productLinks_(false, '');
+  if (links.indexOf('ครบแล้ว') < 0) {
+    msg += '\n\n⚠ ยังไม่จบแค่นี้ — สูตรของชีทอื่นที่ชี้มาที่ ' + cfg.name +
+      ' ยังมองไม่ถึงแถวใหม่\n' +
+      'ต้องสั่ง fixProductLinks ต่ออีกหนึ่งครั้ง ไม่งั้นสินค้าที่เพิ่มใหม่จะไม่มีชื่อ ' +
+      'แล้วรหัสจะไปพิมพ์แทนชื่อสินค้าบนใบกำกับภาษี\n\n' + links;
+  }
   Logger.log(msg);
   return msg;
+}
+
+/* ------------------------- สูตรที่มองมาที่ ฐานสินค้า ต้องมองให้ถึงแถวสุดท้าย */
+
+/**
+ * ชีทอื่นที่ดึงข้อมูลจาก ฐานสินค้า มองไปถึงแถวไหน
+ *
+ * ทำไมต้องมี: growProducts() ลากสูตรของ ฐานสินค้า ลงไปได้ถึงแถว 150 ก็จริง
+ * แต่สูตร VLOOKUP ในชีทอื่นที่ชี้กลับมาหาฐานสินค้า ยังมองอยู่แค่ช่วงเดิม
+ * สินค้าที่ลงแถวเลยขอบนั้นจึงมีตัวตนในฐานสินค้า แต่ชีทอื่นหาไม่เจอ
+ *
+ * อาการที่เจอจริง: ช่องชื่อสินค้าใน ออเดอร์_รายการ ว่างเปล่า ระบบเลยหยิบรหัส
+ * มาพิมพ์แทน แล้ว "SKU-X020" ก็ไปนั่งอยู่ในช่องรายการของใบกำกับภาษี ONIV26-00296
+ * ที่ส่งถึงมือลูกค้าไปแล้ว — ใบนั้นใช้ไม่ได้ ต้องออกใหม่ทั้งใบ
+ *
+ * เงียบสนิทเป็นปัญหาหลัก ไม่มีอะไรขึ้นเตือนสักอย่าง ยอดเงินก็ถูกทุกบาท
+ * ผิดแค่ช่องเดียวคือช่องที่ลูกค้าอ่าน
+ */
+function checkProductLinks() { return productLinks_(false, requireStaff_()); }
+
+/** ซ่อมจริง — ขยายเฉพาะเลขแถวท้ายช่วง ส่วนอื่นของสูตรไม่แตะสักตัวอักษร */
+function fixProductLinks() { return productLinks_(true, requireStaff_()); }
+
+/** ช่วงที่ชี้มาที่ชีทหนึ่ง พร้อมเลขแถวท้ายช่วง — ใช้หาสูตรที่มองไม่ถึงแถวล่าง ๆ */
+function prodRefRe_(sheetName) {
+  var esc = String(sheetName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  /* ชื่อชีทในสูตรมีทั้งแบบมีเครื่องหมายคำพูดและไม่มี แล้วแต่ Google จะใส่ให้
+     จับทั้งสองแบบ ไม่งั้นชีทที่เขียนอีกแบบจะรอดด่านไปเงียบ ๆ */
+  return new RegExp("(?:'" + esc + "'|" + esc + ")!\\$?[A-Za-z]{1,3}\\$?(\\d+)" +
+    ":\\$?[A-Za-z]{1,3}\\$?(\\d+)", 'g');
+}
+
+function productLinks_(doFix, email) {
+  var ss = ss_();
+  var prodName = findSheet_(ss, SH.prod.name);
+  prodName = prodName ? prodName.getName() : SH.prod.name;
+
+  /* ต้องมองให้ถึงแถวที่ ฐานสินค้า มีสูตรถึง ไม่ใช่แค่แถวที่มีของอยู่ตอนนี้
+     เพราะแถวว่างที่มีสูตรรออยู่ คือแถวที่สินค้าตัวถัดไปจะไปลง */
+  var need = formulaLimit_('prod');
+  var out = [], short = 0, changed = 0;
+  out.push('ชีท ' + prodName + ' มีสูตรถึงแถว ' + need +
+    ' — ชีทอื่นต้องมองมาถึงแถวนี้ให้ครบทุกสูตร');
+
+  var keys = ['item', 'head', 'recv', 'lot', 'cut', 'stock', 'doc', 'month'];
+  for (var k = 0; k < keys.length; k++) {
+    var cfg = SH[keys[k]];
+    if (!cfg || !cfg.name) continue;
+    var sh = findSheet_(ss, cfg.name);
+    if (!sh) continue;
+
+    var wide = sh.getMaxColumns();
+    var cols = (cfg.CALC && cfg.CALC.length) ? cfg.CALC.slice() : [];
+    if (!cols.length && cfg.CALC_ALL) {
+      for (var w = 1; w <= wide; w++) cols.push(w);
+    }
+    if (!cols.length) continue;
+
+    var lim = formulaLimit_(keys[k]);
+    for (var c = 0; c < cols.length; c++) {
+      if (cols[c] > wide) continue;
+      var f = sh.getRange(DATA_ROW, cols[c]).getFormula();
+      if (!f || f.indexOf(prodName) < 0) continue;
+
+      var re = prodRefRe_(prodName), m, worst = 0;
+      while ((m = re.exec(f)) !== null) {
+        var end = Number(m[2]);
+        if (end < need && (!worst || end < worst)) worst = end;
+      }
+      if (!worst) continue;
+
+      short++;
+      var where = cfg.name + ' คอลัมน์ ' + colLetter_(cols[c]);
+      out.push('✗ ' + where + ' มองมาที่ ' + prodName + ' แค่ถึงแถว ' + worst +
+        ' (ขาดไป ' + (need - worst) + ' แถว)');
+
+      if (!doFix) continue;
+
+      var fixed = f.replace(prodRefRe_(prodName), function (whole, a, b) {
+        return Number(b) < need
+          ? whole.slice(0, whole.length - String(b).length) + need
+          : whole;
+      });
+      /* เปลี่ยนได้เฉพาะตัวเลข ถ้ารูปสูตรขยับแม้แต่ตัวอักษรเดียวแปลว่าตัวแทนที่พลาด
+         สูตรของชีทนี้เคยพังยกคอลัมน์มาแล้ว ยอมไม่ซ่อมดีกว่าซ่อมแล้วพัง */
+      if (fixed.replace(/\d+/g, '#') !== f.replace(/\d+/g, '#')) {
+        out.push('  … ไม่กล้าแก้ให้ รูปสูตรเปลี่ยนไปจากเดิม — ต้องดูด้วยตา');
+        continue;
+      }
+      if (fixed === f) continue;
+
+      var rows = Math.max(1, lim - DATA_ROW + 1);
+      fillFormula_(sh, cols[c], rows, fixed);
+      changed++;
+      out.push('  → แก้เป็นถึงแถว ' + need + ' แล้ว ลากลงครบถึงแถว ' + lim);
+      writeLog_(email || 'ระบบ', 'แก้สูตร', cfg.name, colLetter_(cols[c]),
+        'ขยายช่วงที่มองมาที่ ' + prodName, f, fixed);
+    }
+  }
+
+  /* ต้องให้ชีทคิดสูตรใหม่ก่อน ไม่งั้นรายชื่อแถวที่ไม่มีชื่อสินค้าข้างล่างนี้
+     จะเป็นภาพก่อนซ่อม แล้วรายงานจะบอกว่ายังพังทั้งที่เพิ่งแก้ไปเอง */
+  if (changed) SpreadsheetApp.flush();
+  out.push('');
+  out.push(namelessRows_(ss, need));
+
+  var tail = short
+    ? (doFix
+      ? (changed ? '── สรุป ── แก้ให้แล้ว ' + changed + ' คอลัมน์ ' +
+          '— ลองสั่ง checkProductLinks ซ้ำอีกรอบเพื่อยืนยันว่าเหลือ 0'
+        : '── สรุป ── เจอ ' + short + ' คอลัมน์ที่สั้นไป แต่แก้ให้อัตโนมัติไม่ได้')
+      : '── สรุป ── มี ' + short + ' คอลัมน์ที่มองมาไม่ถึงแถวล่างของ ' + prodName + '\n' +
+        'สินค้าที่ลงแถวเลยขอบนั้นจะไม่มีชื่อบนใบที่ส่งลูกค้า — สั่ง fixProductLinks หนึ่งครั้ง')
+    : '── สรุป ── ทุกสูตรที่มองมาที่ ' + prodName + ' มองถึงแถว ' + need + ' ครบแล้ว';
+  out.push('');
+  out.push(tail);
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * แถวไหนในชีทรายการที่ช่องชื่อสินค้าไม่มีชื่อ — และใบไหนที่ออกไปแล้วโดนด้วย
+ *
+ * ยอดเงินของแถวพวกนี้ถูกทุกบาท ผิดแค่ช่องเดียวคือช่องที่ลูกค้าอ่าน
+ * จึงไม่มีทางรู้ตัวจากยอดขายหรือกำไร ต้องไล่ดูช่องนั้นตรง ๆ เท่านั้น
+ */
+function namelessRows_(ss, need) {
+  var sh = findSheet_(ss, SH.item.name);
+  if (!sh) return 'ไม่มีชีท ' + SH.item.name;
+  var lim = formulaLimit_('item');
+  if (lim < DATA_ROW) return 'ชีท ' + SH.item.name + ' ยังไม่มีข้อมูล';
+
+  var v = sh.getRange(DATA_ROW, 1, lim - DATA_ROW + 1, Math.max(5, SH.item.IN.sku)).getValues();
+  var hitOrders = {}, hits = [];
+  for (var i = 0; i < v.length; i++) {
+    var no = String(v[i][SH.item.IN.no - 1] || '').trim();
+    if (!no) continue;
+    var sku = v[i][SH.item.IN.sku - 1];
+    if (!nameBroken_(v[i][4], sku)) continue;
+    hits.push('แถว ' + (DATA_ROW + i) + ' · ' + no + ' · ' + String(sku || '(ไม่มีรหัส)'));
+    hitOrders[no] = true;
+  }
+  if (!hits.length) return 'ชีท ' + SH.item.name + ': ทุกแถวมีชื่อสินค้าครบ';
+
+  var lines = ['ชีท ' + SH.item.name + ': ' + hits.length + ' แถวไม่มีชื่อสินค้า ' +
+    '(ระบบจะพิมพ์รหัสแทนชื่อ ซึ่งใช้บนใบกำกับภาษีไม่ได้)'];
+  lines = lines.concat(hits.slice(0, 20).map(function (h) { return '  · ' + h; }));
+  if (hits.length > 20) lines.push('  … อีก ' + (hits.length - 20) + ' แถว');
+
+  /* ใบที่ออกไปแล้วสำคัญกว่าแถวในชีท เพราะใบพวกนั้นอยู่ในมือลูกค้าแล้ว
+     และการแก้สูตรทีหลังไม่ได้ทำให้กระดาษที่ส่งไปแล้วถูกขึ้นมาเอง */
+  var ds = findSheet_(ss, SH.doc.name);
+  if (ds) {
+    var dlim = formulaLimit_('doc');
+    if (dlim >= DATA_ROW) {
+      var dv = ds.getRange(DATA_ROW, 1, dlim - DATA_ROW + 1,
+        Math.max(SH.doc.IN.no, SH.doc.IN.orderNo)).getValues();
+      var docs = [];
+      for (var d = 0; d < dv.length; d++) {
+        var ono = String(dv[d][SH.doc.IN.orderNo - 1] || '').trim();
+        if (ono && hitOrders[ono]) {
+          docs.push(String(dv[d][SH.doc.IN.no - 1] || '') + ' (ออเดอร์ ' + ono + ')');
+        }
+      }
+      if (docs.length) {
+        lines.push('⚠ ใบที่ออกให้ลูกค้าไปแล้วและติดปัญหานี้ ' + docs.length + ' ใบ: ' +
+          docs.slice(0, 10).join(' · ') + (docs.length > 10 ? ' …' : ''));
+        lines.push('  ใบพวกนี้ต้องยกเลิกแล้วออกใหม่ — แก้สูตรอย่างเดียวไม่ทำให้ใบเก่าถูกขึ้นมา');
+      }
+    }
+  }
+  return lines.join('\n');
 }
