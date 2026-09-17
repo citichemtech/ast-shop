@@ -121,7 +121,7 @@ function bahtText_(amount) {
  * ปัดฐานภาษีเป็นทศนิยมสองตำแหน่ง แล้วให้ภาษีเป็นเศษที่เหลือ
  * เพื่อให้ ฐาน + ภาษี = ยอดรวม เป๊ะเสมอ ไม่มีบาทหายไปจากการปัดคนละที
  */
-function vatSplit_(amount, rate, mode) {
+function vatSplit_(amount, rate, mode, lines) {
   var a = Number(amount) || 0;
   var r = Number(rate) || 0;
   if (r > 1) r = r / 100;           // รับได้ทั้ง 0.07 และ 7
@@ -132,7 +132,24 @@ function vatSplit_(amount, rate, mode) {
     return { base: base, vat: round2_(gross - base), gross: gross, rate: r };
   }
   var g = round2_(a);
-  var b = round2_(g / (1 + r));
+  /* ถอด VAT ทีละบรรทัดแล้วค่อยรวม ไม่ใช่ถอดจากยอดรวมทีเดียว
+
+     ลูกค้าที่ถือใบอยู่คิดแบบนี้เสมอ เพราะเขาเห็นราคาต่อบรรทัดที่จ่ายไปจริง
+       สินค้า 480 ÷ 1.07 = 448.60   ค่าส่ง 91 ÷ 1.07 = 85.05   รวมฐาน 533.65
+     ถอดจากยอดรวมทีเดียวจะได้ 571 ÷ 1.07 = 533.64 ต่างกันหนึ่งสตางค์
+     ถูกทั้งคู่ตามกฎหมาย แต่ใบที่ตัวเลขไม่ตรงกับที่ลูกค้าคิดเอง คือใบที่ถูกตีกลับ
+     ของจริง: ใบ ONIV26-00300 ถูกส่งกลับมาสองรอบเพราะสตางค์เดียวนี้
+
+     ภาษีคิดจากส่วนต่าง ฐาน + ภาษี จึงเท่ายอดที่ลูกค้าจ่ายเป๊ะทุกครั้ง */
+  var b;
+  if (lines && lines.length) {
+    b = 0;
+    for (var i = 0; i < lines.length; i++) {
+      b = round2_(b + round2_((Number(lines[i].amount) || 0) / (1 + r)));
+    }
+  } else {
+    b = round2_(g / (1 + r));
+  }
   return { base: b, vat: round2_(g - b), gross: g, rate: r };
 }
 
@@ -322,7 +339,7 @@ function buildDoc_(type, src, cfg) {
     lines.push({ name: 'ส่วนลด', po: '', qty: 1, unit: '-', price: -discount, amount: -discount });
   }
 
-  var v = vatSplit_(gross, rate, mode);
+  var v = vatSplit_(gross, rate, mode, lines);
   return {
     type: t.key, typeTh: t.th, typeEn: t.en,
     lines: lines,
