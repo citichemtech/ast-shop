@@ -4468,6 +4468,72 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.evaluate(function () { closeModal() });
   await page.waitForTimeout(300);
 
+  /* --------------- ส่งใบทางอีเมล พร้อมตราประทับบริษัท */
+  console.log('\n20.45 ส่งใบทางอีเมล — ฉบับนี้ฉบับเดียวที่ต้องมีตราบริษัท');
+  /* เจ้าของร้าน 17 ก.ย. 69: "น่าประทับตราบริษัท ... ในกรณีส่งอีเมลเท่านั้น"
+     ใบที่พิมพ์ลงกระดาษ ร้านปั๊มตรายางเอง แต่ไฟล์ที่ส่งอีเมลปั๊มมือไม่ได้
+     ถ้าวาดตราให้ทุกใบ ใบที่พิมพ์ออกมาจะมีตราสองอัน และอันที่พิมพ์ไม่ใช่ตราจริง */
+  await page.evaluate(function () {
+    if (typeof closeModal === 'function') closeModal();
+    go('list');
+  });
+  await page.waitForTimeout(500);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec') });
+  await page.waitForTimeout(500);
+  await page.fill('#dc-email', 'buyer@example.com');
+  var nMail = await page.evaluate(function () { return MOCK_DOCS.length });
+  await page.click('#dc-make');
+  await page.waitForFunction(function (n) { return MOCK_DOCS.length > n }, nMail,
+    { timeout: 25000 });
+  await page.waitForSelector('#dc-out #dc-mail', { timeout: 25000 });
+
+  page.once('dialog', function (d) { d.accept() });
+  await page.click('#dc-out #dc-mail');
+  await page.waitForFunction(function () {
+    return MOCK_DOCS.some(function (d) { return !!d.mailedTo });
+  }, null, { timeout: 25000 });
+
+  var mailed = await page.evaluate(async function () {
+    var d = MOCK_DOCS.filter(function (x) { return !!x.mailedTo })[0];
+    /* วาดใบเดิมอีกครั้งแบบ "ไม่สั่งตรา" — ถ้าสองรูปนี้เหมือนกันเป๊ะ
+       แปลว่าตราไม่เคยถูกวาดเลย และข้อสอบข้อนี้ก็ไม่ได้ตรวจอะไรทั้งนั้น */
+    var m = { no: d.no, date: d.date, cust: d.cust, po: d.po || '',
+              terms: d.terms || '', seller: CFG.docSeller || '',
+              sellerEmail: CFG.docSellerEmail || '', note: '', form: d.form || [] };
+    var plain = await buildDocPage(d.doc, m, CFG.doc || {}, 'ต้นฉบับ');
+    var m2 = {}; for (var k in m) m2[k] = m[k];
+    m2.stamp = true;
+    var stamped = await buildDocPage(d.doc, m2, CFG.doc || {}, 'ต้นฉบับ');
+    return { to: d.mailedTo, png: d.mailedPng, plain: plain, stamped: stamped,
+             hasStampAsset: !!(CFG.doc && CFG.doc.stamp) };
+  });
+  eq('ส่งไปที่อีเมลที่กรอกไว้ในใบ', mailed.to, 'buyer@example.com');
+  truthy('มีรูปตราอยู่ในระบบจริง', mailed.hasStampAsset);
+  truthy('ใบที่ส่งอีเมลต่างจากใบเปล่า = ตราถูกวาดจริง',
+    mailed.stamped !== mailed.plain);
+  truthy('รูปที่ส่งไปคือฉบับที่มีตรา', mailed.png === mailed.stamped);
+  truthy('ฉบับที่พิมพ์กระดาษไม่มีตรา (ปั๊มตรายางเอง)',
+    mailed.png !== mailed.plain);
+
+  console.log('\n   ไม่มีอีเมลลูกค้า ต้องไม่ส่งมั่ว');
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
+  await page.evaluate(function () { openDoc((ORDERS || [])[0], 'inv') });
+  await page.waitForTimeout(500);
+  await page.fill('#dc-email', '');
+  var nMail2 = await page.evaluate(function () { return MOCK_DOCS.length });
+  await page.click('#dc-make');
+  await page.waitForFunction(function (n) { return MOCK_DOCS.length > n }, nMail2,
+    { timeout: 25000 });
+  await page.waitForSelector('#dc-out #dc-mail', { timeout: 25000 });
+  var sentBefore = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#dc-out #dc-mail');
+  await page.waitForTimeout(600);
+  eq('ไม่ได้ยิงอะไรขึ้นไปเลย',
+    await page.evaluate(function () { return window.SENT.length }), sentBefore);
+  await page.evaluate(function () { closeModal() });
+  await page.waitForTimeout(300);
+
   /* --------------- แก้ชื่อ/ที่อยู่บนใบที่ยังไม่ได้ส่ง โดยไม่ต้องเผาเลขใบทิ้ง */
   console.log('\n20.5 แก้ชื่อที่อยู่ผู้ซื้อบนใบเดิม ต้องทำได้จากกล่องแก้ใบเลย');
   /* เจ้าของร้าน 17 ก.ย. 69: "ชื่อที่อยู่ก็แก้ไม่ได้ จะล็อกทำไม เปิดให้แก้ได้ก่อนส่ง
@@ -4492,6 +4558,7 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       google.script.run.withSuccessHandler(res)
         .withFailureHandler(function (e) { res({ err: String(e) }) })
         .issueDoc({ type: 'rec', orderNo: o.no, cust: { name: 'บริษัท ก่อนแก้ชื่อ จำกัด' },
+                    po: '2609166NTXCD3D', terms: 'เงินสด',
                     by: 'test', clientKey: 'ui-205-' + Date.now() });
     });
     return r && r.no ? r.no : String((r && r.err) || 'ออกใบไม่ได้');
@@ -4540,12 +4607,19 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
 
   var after = await page.evaluate(function (no) {
     var f = MOCK_DOCS.filter(function (d) { return d.no === no })[0];
-    return { name: f.cust.name, addr: f.cust.addr, no: f.no, times: f.times || 0 };
+    return { name: f.cust.name, addr: f.cust.addr, no: f.no, times: f.times || 0,
+             po: f.po || '', terms: f.terms || '' };
   }, target);
   eq('ชื่อผู้ซื้อบนใบถูกแก้จริง', after.name, 'บริษัท แก้ชื่อถูกแล้ว จำกัด');
   eq('ที่อยู่ก็ถูกแก้ด้วย', after.addr, '99/9 ถนนแก้ใหม่ กรุงเทพฯ 10240');
   eq('เลขใบยังเป็นเลขเดิม ไม่กินเลขใหม่', after.no, target);
   truthy('จดไว้ว่าแก้ไปแล้วกี่ครั้ง', after.times >= 1);
+
+  console.log('\n   เลข PO กับเงื่อนไขชำระเงินต้องไม่ถูกล้างทิ้ง');
+  /* ใบ ONIV26-00300 เสียเลข PO 2609166NTXCD3D ไปเพราะกล่องนี้ส่ง "" ขึ้นไปทุกครั้ง
+     กันไม่ให้ล้างอย่างเดียวไม่พอ ต้องพิมพ์คืนได้ด้วย ไม่งั้นต้องไปแก้ในชีทเอง */
+  eq('เลข PO ของใบเดิมยังอยู่', after.po, '2609166NTXCD3D');
+  eq('เงื่อนไขชำระเงินก็ยังอยู่', after.terms, 'เงินสด');
 
   console.log('\n   กดแก้ใบต้องไม่เปลี่ยนวิธีคิด VAT ของใบเดิมเอง');
   /* ของจริง 17 ก.ย. 69: ใบ ONIV26-00300 ยอด 571.00 (ราคารวม VAT แล้ว)

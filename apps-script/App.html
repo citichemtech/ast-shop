@@ -106,6 +106,9 @@ function boot(){
     CFG.doc = { co: APP.co || {}, bank: APP.bank || "", thanks: APP.thanks || "",
                 terms: APP.docTerms || "", website: APP.website || "",
                 logo: (typeof DOC_LOGO !== "undefined") ? DOC_LOGO : CFG.logo,
+                /* ตราประทับบริษัท — ส่งไปกับ cfg แต่จะวาดก็ต่อเมื่อใบนั้นสั่งมา
+                   (m.stamp) ใบที่พิมพ์กระดาษยังปั๊มตรายางเองเหมือนเดิม */
+                stamp: (typeof DOC_STAMP !== "undefined") ? DOC_STAMP : "",
                 /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ครั้งเดียว — ประทับให้ทุกใบเอง
                    ยังไม่ได้เซ็นก็ออกใบได้ตามปกติ ช่องนั้นจะว่างไว้ให้เซ็นมือเหมือนเดิม */
                 sign: (APP.sign || {}) };
@@ -1427,7 +1430,7 @@ function qMake(){
         +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
         +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
         +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
-        +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
+      +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
         +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
         +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
         /* ลูกค้าตอบตกลงตอนไหนก็ได้ ทั้งตอนนี้เลยหรืออีกสามวัน ปุ่มนี้จึงต้องอยู่
@@ -1782,6 +1785,14 @@ function askRevise(no, btn, redraw){
          ซึ่งไม่มีตัวตนเมื่อเปิดจากแฟ้มเอกสาร จึงส่ง "excl" ขึ้นไปทุกครั้ง
          ใบที่ออกแบบราคารวม VAT ไว้แล้ว พอกดแก้ทีจะกลายเป็นบวก VAT ซ้ำเงียบ ๆ
          ของจริง: ใบ ONIV26-00300 ยอด 571.00 กลายเป็น 571.01 หลังกดแก้ */
+      /* เลข PO กับเงื่อนไขชำระเงินก็ต้องแก้ได้ตรงนี้
+         ของเดิมกล่องนี้ไม่มีช่อง แล้วโค้ดส่ง "" ขึ้นไปทุกครั้ง = ล้างของเดิมทิ้ง
+         ใบ ONIV26-00300 เสียเลข PO 2609166NTXCD3D ไปแบบนั้น
+         กันไม่ให้ล้างแล้วยังไม่พอ ต้องพิมพ์คืนได้ด้วย ไม่งั้นต้องไปแก้ในชีทเอง */
+      +'<div style="display:flex;gap:6px">'
+        +'<input class="rv-po" placeholder="หมายเลขคำสั่งซื้อ (PO)" style="flex:2">'
+        +'<input class="rv-terms" placeholder="เงื่อนไขชำระเงิน" style="flex:1">'
+      +'</div>'
       +'<select class="rv-vat">'
         +'<option value="excl">บวก VAT 7% จากราคา</option>'
         +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
@@ -1811,6 +1822,8 @@ function askRevise(no, btn, redraw){
     box.querySelector(".rv-addr").value = c.addr || "";
     box.querySelector(".rv-tel").value = c.tel || "";
     box.querySelector(".rv-email").value = c.email || "";
+    box.querySelector(".rv-po").value = res.meta.po || "";
+    box.querySelector(".rv-terms").value = res.meta.terms || "";
     box.querySelector(".rv-vat").value =
       res.meta.novat ? "none" : (res.meta.vatMode === "incl" ? "incl" : "excl");
     custReady = true;
@@ -1869,8 +1882,8 @@ function askRevise(no, btn, redraw){
       /* ใส่เฉพาะที่มีช่องอยู่จริง — ของเดิมส่ง "" ขึ้นไปเมื่อไม่มีช่อง
          ซึ่งฝั่งหลังบ้านนับว่า "สั่งให้เป็นค่าว่าง" แล้วล้างเลข PO กับเงื่อนไข
          ชำระเงินของใบเดิมทิ้งทุกครั้งที่กดแก้จากแฟ้มเอกสาร */
-      if ($("#dc-po")) send.po = $("#dc-po").value.trim();
-      if ($("#dc-terms")) send.terms = $("#dc-terms").value;
+      send.po = box.querySelector(".rv-po").value.trim();
+      send.terms = box.querySelector(".rv-terms").value.trim();
     }
 
     api("reviseDoc", send).then(function(res){
@@ -1957,6 +1970,7 @@ function reprint(no, btn, outSel){
         +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
         +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
         +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+        + (m.voidWhy ? '' : '<button class="btn ghost" id="dc-mail" style="margin-top:9px">📧 ส่งอีเมลให้ลูกค้า (ปั๊มตราให้)</button>')
         +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
         +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
         +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
@@ -1964,6 +1978,7 @@ function reprint(no, btn, outSel){
         +'<div class="hint" style="text-align:center;margin-top:10px">'
         +'พิมพ์ซ้ำใบเดิม เลขที่เอกสารยังเป็น '+esc(no)+' · ไม่ได้ออกใบใหม่ ไม่ตัดสต๊อกซ้ำ</div>';
       bindLabelButtons(url, no+".png", "a4");
+      bindDocMail(outSel || "#rp-out", r, m, no, m.cust);
       bindDocCopy(outSel || "#rp-out", r, m, no);
       bindDocSign(outSel || "#rp-out", r, m, no);
       if (btn) { btn.disabled = false; btn.textContent = "พิมพ์ซ้ำ" }
@@ -2341,6 +2356,7 @@ function drawDoc(r, o, cust, type, form){
       +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
       +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
       +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+      +'<button class="btn ghost" id="dc-mail" style="margin-top:9px">📧 ส่งอีเมลให้ลูกค้า (ปั๊มตราให้)</button>'
       +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
       +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
       +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
@@ -2348,12 +2364,47 @@ function drawDoc(r, o, cust, type, form){
       +'<div class="hint" style="text-align:center;margin-top:10px">A4 · พิมพ์ได้ · ส่งเป็นรูปในแชทได้<br>'
       +'พิมพ์ต้นฉบับให้ลูกค้า แล้วกด “ดูสำเนา” พิมพ์อีกใบเก็บส่งบัญชี</div>';
     bindLabelButtons(url, r.no+".png", "a4");
+    bindDocMail("#dc-out", r, m, r.no, cust);
     bindDocCopy("#dc-out", r, m, r.no);
     bindDocSign("#dc-out", r, m, r.no);
   }, function(e){
     $("#dc-out").innerHTML='<div style="color:var(--red)">ใบลงชีทแล้ว (เลข '+esc(r.no)
       +') แต่วาดรูปไม่สำเร็จ: '+esc(e&&e.message?e.message:e)+'</div>';
   });
+}
+
+/* ส่งใบทางอีเมล — ฉบับนี้ฉบับเดียวที่มีตราบริษัทปั๊มให้
+
+   ใบที่พิมพ์ลงกระดาษ ร้านปั๊มตรายางเองอยู่แล้ว แต่ไฟล์ที่ส่งอีเมลปั๊มมือไม่ได้
+   จึงวาดตราให้เฉพาะฉบับนี้ ไม่ใช่ทุกใบ ไม่งั้นใบที่พิมพ์จะมีตราสองอัน
+
+   วาดใหม่ทั้งใบตรงนี้ ไม่เอารูปที่โชว์อยู่บนจอไปใช้ เพราะรูปบนจอไม่มีตรา */
+function bindDocMail(sel, r, m, no, cust){
+  var btn = document.querySelector(sel + " #dc-mail");
+  if(!btn) return;
+  btn.onclick = function(){
+    var to = ((cust && cust.email) || (m && m.cust && m.cust.email) || "").trim();
+    if(!to){
+      toast("ใบนี้ยังไม่มีอีเมลลูกค้า — ใส่ในช่องอีเมลก่อนแล้วออกใบใหม่");
+      return;
+    }
+    if(!confirm("ส่งใบ " + no + " ไปที่\n" + to + " ?\n\n"
+              + "ฉบับที่ส่งจะมีตราประทับบริษัทให้เรียบร้อย")) return;
+
+    btn.disabled = true; btn.textContent = "กำลังปั๊มตราและส่ง…";
+    /* m.stamp บอกตัววาดว่าใบนี้ต้องมีตรา — ใบอื่นไม่ส่งค่านี้จึงไม่มีตรา */
+    var mm = {}; for(var k in m) mm[k] = m[k];
+    mm.stamp = true;
+    buildDocPage(r.doc, mm, CFG.doc||{}, "ต้นฉบับ").then(function(png){
+      return api("emailDoc", { no: no, to: to, png: png, by: byName() });
+    }).then(function(res){
+      btn.textContent = "✅ ส่งแล้ว → " + res.to;
+      toast("ส่งใบ " + no + " ไปที่ " + res.to + " แล้ว");
+    }, function(e){
+      btn.disabled = false; btn.textContent = "📧 ส่งอีเมลให้ลูกค้า (ปั๊มตราให้)";
+      toast("ส่งไม่สำเร็จ: " + (e && e.message ? e.message : e));
+    });
+  };
 }
 
 /* ตรวจเลขผู้เสียภาษี 13 หลักด้วยหลักตรวจสอบ mod 11 — ตรรกะเดียวกับ taxIdValid_ ฝั่งชีท */

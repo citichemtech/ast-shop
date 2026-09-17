@@ -547,6 +547,25 @@ window.google = { script: { run: (function(){
         return { ok:true, no:f.no, doc:d, times:f.times, before:f.before };
       });
     },
+    /* ส่งใบทางอีเมล — ของจริงแปลงเป็น PDF แล้ว MailApp.sendEmail
+       ที่นี่จดไว้ว่าถูกเรียกด้วยอะไร ข้อสอบจะได้ตรวจได้ว่ารูปที่ส่งมี "ตรา" จริงไหม */
+    emailDoc: function(p){
+      window.SENT.push(p);
+      reply(function(){
+        var f = MOCK_DOCS.filter(function(d){ return d.no === String(p.no) })[0];
+        if(!f) throw new Error("ไม่พบใบเลขที่ " + p.no + " ในชีท เอกสาร");
+        if(f.voidWhy) throw new Error("ใบ " + p.no + " ถูกยกเลิกไปแล้ว — ส่งให้ลูกค้าไม่ได้");
+        var to = String(p.to||"").trim();
+        if(!to) throw new Error("ใบนี้ไม่มีอีเมลลูกค้า");
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to))
+          throw new Error('อีเมล "' + to + '" ไม่ถูกต้อง ตรวจอีกครั้งก่อนส่ง');
+        if(!/^data:image\/png;base64,/.test(String(p.png||"")))
+          throw new Error("ไม่มีไฟล์ใบที่จะส่ง");
+        f.mailedTo = to;
+        f.mailedPng = String(p.png||"");
+        return { ok:true, no:f.no, to:to, at:"17/09/2026 22:00" };
+      });
+    },
     /* ทำเครื่องหมายว่าส่งให้ลูกค้าแล้ว — ปิดประตูการแก้ใบเดิม */
     markSent: function(no, by){
       reply(function(){
