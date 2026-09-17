@@ -209,7 +209,9 @@ function addItem(v){
    +'<div class="cost-cell" style="display:none"><label style="font-size:13px;color:var(--gray)">ต้นทุน/หน่วย</label>'
    +'<input class="i-cost" type="number" inputmode="decimal" min="0" placeholder="ไม่ใส่ก็ได้" value="'+(v.cost||"")+'"></div>'
    +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
-   +'<input class="i-price" type="number" inputmode="decimal" min="0" placeholder="ปล่อยว่าง" value="'+(v.price||"")+'"></div>'
+   /* ต้องบอก step เป็นสตางค์ ไม่งั้นเบราว์เซอร์ถือว่าราคาต้องเป็นจำนวนเต็ม
+      ปุ่มลูกศรขึ้น-ลงจะปัดทศนิยมทิ้ง และช่องจะขึ้นว่าไม่ถูกต้องทั้งที่ 89.72 ถูกแล้ว */
+   +'<input class="i-price" type="number" inputmode="decimal" min="0" step="0.01" placeholder="ปล่อยว่าง" value="'+(v.price||"")+'"></div>'
    +'</div>'
    +'<label class="giftck"><input type="checkbox" class="i-free"'+(v.free?" checked":"")+'> ซื้อมาขายไป — พิมพ์ชื่อและราคาเอง ไม่ต้องมีรหัสสินค้า</label>'
    /* ของแถมต้องเป็นรายการสินค้าจริง ไม่ใช่ข้อความลอย ๆ สต๊อกจะได้ถูกตัดตามไปด้วย
@@ -2403,7 +2405,7 @@ function edRow(v){
     +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
     +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||1)+'"></div>'
     +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
-    +'<input class="i-price" type="number" inputmode="decimal" min="0" '
+    +'<input class="i-price" type="number" inputmode="decimal" min="0" step="0.01" '
     +'placeholder="ปล่อยว่าง = ราคามาตรฐาน" value="'+(v.price===""||v.price===undefined?"":v.price)+'"></div>'
     +'<div></div></div>'
     +'<label class="giftck"><input type="checkbox" class="i-free"'+(v.free?" checked":"")+'>'
