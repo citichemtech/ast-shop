@@ -243,7 +243,9 @@ var allCode = files.map(function (f) {
 }).join('\n');
 
 var NEEDS = [
-  { re: /\bMailApp\.|\bGmailApp\./, scope: 'https://www.googleapis.com/auth/script.send_mail', why: 'ส่งอีเมล' },
+  /* GmailApp ส่งผ่านกล่องจดหมายจริงจึงมีสำเนาใน "ส่งแล้ว" — คนละสิทธิ์กับ MailApp */
+  { re: /\bGmailApp\./, scope: 'https://www.googleapis.com/auth/gmail.send', why: 'ส่งอีเมลผ่าน Gmail' },
+  { re: /\bMailApp\./, scope: 'https://www.googleapis.com/auth/script.send_mail', why: 'ส่งอีเมลผ่าน MailApp' },
   { re: /\bDriveApp\./, scope: 'https://www.googleapis.com/auth/drive', why: 'อ่าน/เขียนไดรฟ์' },
   { re: /\bSpreadsheetApp\./, scope: 'https://www.googleapis.com/auth/spreadsheets', why: 'อ่าน/เขียนชีท' },
   { re: /Session\.getActiveUser|Session\.getEffectiveUser/, scope: 'https://www.googleapis.com/auth/userinfo.email', why: 'รู้ว่าใครกด' }

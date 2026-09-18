@@ -4487,11 +4487,35 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     { timeout: 25000 });
   await page.waitForSelector('#dc-out #dc-mail', { timeout: 25000 });
 
-  page.once('dialog', function (d) { d.accept() });
   await page.click('#dc-out #dc-mail');
+  await page.waitForSelector('#dc-out .mlbox', { timeout: 15000 });
+
+  /* ต้องเห็นข้อความเต็ม ๆ ก่อนส่ง ไม่ใช่กล่อง confirm ที่บอกแค่ "ส่งไหม"
+     เจ้าของร้าน: "ต้องเห็นข้อความก่อนส่ง ควรมีรายละเอียดก่อนส่ง" */
+  var draft = await page.evaluate(function () {
+    return { to: $('#dc-out .ml-to').value,
+             subj: $('#dc-out .ml-subj').value,
+             body: $('#dc-out .ml-body').value };
+  });
+  eq('ช่องถึงใคร เติมอีเมลลูกค้าไว้ให้', draft.to, 'buyer@example.com');
+  truthy('หัวข้อมีเลขใบ', draft.subj.indexOf('ONIV') > -1);
+  truthy('ข้อความขึ้นต้นด้วยเรียนลูกค้า', /^เรียน /.test(draft.body));
+  truthy('ข้อความบอกยอดรวมด้วย', /฿/.test(draft.body));
+
+  /* แก้ข้อความเองได้ แล้วของที่แก้ต้องไปถึงจริง ไม่ใช่โดนร่างเดิมทับ */
+  await page.fill('#dc-out .ml-subj', 'ใบกำกับภาษี ONIV26 ฉบับแก้ไข');
+  await page.fill('#dc-out .ml-body', 'เรียนคุณลูกค้า แนบใบที่แก้ยอดแล้วนะคะ');
+  await page.click('#dc-out .ml-go');
   await page.waitForFunction(function () {
     return MOCK_DOCS.some(function (d) { return !!d.mailedTo });
   }, null, { timeout: 25000 });
+  var sentMail = await page.evaluate(function () {
+    return window.SENT.filter(function (x) { return x && x.png })[0] || {};
+  });
+  eq('หัวข้อที่แก้เองถูกส่งขึ้นไป', sentMail.subject, 'ใบกำกับภาษี ONIV26 ฉบับแก้ไข');
+  eq('ข้อความที่แก้เองก็ถูกส่งขึ้นไป', sentMail.body, 'เรียนคุณลูกค้า แนบใบที่แก้ยอดแล้วนะคะ');
+  truthy('กล่องปิดไปหลังส่งสำเร็จ',
+    !(await page.evaluate(function () { return !!$('#dc-out .mlbox') })));
 
   var mailed = await page.evaluate(async function () {
     var d = MOCK_DOCS.filter(function (x) { return !!x.mailedTo })[0];
@@ -4528,7 +4552,12 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForSelector('#dc-out #dc-mail', { timeout: 25000 });
   var sentBefore = await page.evaluate(function () { return window.SENT.length });
   await page.click('#dc-out #dc-mail');
-  await page.waitForTimeout(600);
+  await page.waitForSelector('#dc-out .mlbox', { timeout: 15000 });
+  eq('ช่องถึงใครว่างเปล่า', await page.inputValue('#dc-out .ml-to'), '');
+  await page.click('#dc-out .ml-go');
+  await page.waitForTimeout(500);
+  truthy('เตือนว่ายังไม่ได้ใส่อีเมล',
+    /ยังไม่ได้ใส่อีเมล/.test(await page.textContent('#dc-out .ml-msg')));
   eq('ไม่ได้ยิงอะไรขึ้นไปเลย',
     await page.evaluate(function () { return window.SENT.length }), sentBefore);
   await page.evaluate(function () { closeModal() });

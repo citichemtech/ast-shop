@@ -2383,27 +2383,76 @@ function bindDocMail(sel, r, m, no, cust){
   var btn = document.querySelector(sel + " #dc-mail");
   if(!btn) return;
   btn.onclick = function(){
-    var to = ((cust && cust.email) || (m && m.cust && m.cust.email) || "").trim();
-    if(!to){
-      toast("ใบนี้ยังไม่มีอีเมลลูกค้า — ใส่ในช่องอีเมลก่อนแล้วออกใบใหม่");
-      return;
-    }
-    if(!confirm("ส่งใบ " + no + " ไปที่\n" + to + " ?\n\n"
-              + "ฉบับที่ส่งจะมีตราประทับบริษัทให้เรียบร้อย")) return;
+    var host = btn.closest("#dc-out, #rp-out") || btn.parentNode;
+    if(host.querySelector(".mlbox")){ host.querySelector(".ml-body").focus(); return }
 
-    btn.disabled = true; btn.textContent = "กำลังปั๊มตราและส่ง…";
-    /* m.stamp บอกตัววาดว่าใบนี้ต้องมีตรา — ใบอื่นไม่ส่งค่านี้จึงไม่มีตรา */
-    var mm = {}; for(var k in m) mm[k] = m[k];
-    mm.stamp = true;
-    buildDocPage(r.doc, mm, CFG.doc||{}, "ต้นฉบับ").then(function(png){
-      return api("emailDoc", { no: no, to: to, png: png, by: byName() });
-    }).then(function(res){
-      btn.textContent = "✅ ส่งแล้ว → " + res.to;
-      toast("ส่งใบ " + no + " ไปที่ " + res.to + " แล้ว");
-    }, function(e){
-      btn.disabled = false; btn.textContent = "📧 ส่งอีเมลให้ลูกค้า (ปั๊มตราให้)";
-      toast("ส่งไม่สำเร็จ: " + (e && e.message ? e.message : e));
-    });
+    var to = ((cust && cust.email) || (m && m.cust && m.cust.email) || "").trim();
+    var who = ((cust && cust.name) || (m && m.cust && m.cust.name) || "").trim();
+    var th  = (m && m.type) || (r.doc && r.doc.typeTh) || "เอกสาร";
+    var shop = ((CFG.doc && CFG.doc.co && CFG.doc.co.name) || CFG.brand || "").trim();
+    var total = baht(r.doc ? r.doc.total : 0);
+
+    /* ร่างข้อความไว้ให้ครบ แก้ได้ทุกช่อง — ใบส่วนใหญ่ใช้ร่างนี้ได้เลยไม่ต้องพิมพ์
+       แต่ใบที่ต้องอธิบายอะไรเพิ่ม (เช่นใบที่ออกแทนใบเดิม) ต้องเขียนเองได้ */
+    var subj = th + " เลขที่ " + no + (shop ? " จาก " + shop : "");
+    var body = "เรียน " + (who || "ลูกค้าผู้มีอุปการคุณ") + "\n\n"
+      + "แนบ" + th + " เลขที่ " + no + " ยอดรวม " + total + " มาพร้อมอีเมลฉบับนี้ค่ะ\n\n"
+      + "หากมีข้อสงสัยกรุณาแจ้งกลับได้เลยนะคะ\n\n"
+      + "ขอบคุณค่ะ\n" + (shop || "");
+
+    var box = document.createElement("div");
+    box.className = "mlbox";
+    box.style.cssText = "margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px";
+    box.innerHTML =
+       '<div class="subhd" style="margin-top:0">ตรวจข้อความก่อนส่ง</div>'
+      +'<div class="fld"><label>ส่งถึง</label>'
+      +'<input class="ml-to" value="'+esc(to)+'" placeholder="อีเมลลูกค้า"></div>'
+      +'<div class="fld"><label>หัวข้อ</label>'
+      +'<input class="ml-subj" value="'+esc(subj)+'"></div>'
+      +'<div class="fld"><label>ข้อความ</label>'
+      +'<textarea class="ml-body" rows="7">'+esc(body)+'</textarea></div>'
+      +'<div class="hint">แนบไฟล์ <b>'+esc(no)+'.pdf</b> พร้อมตราประทับบริษัทให้อัตโนมัติ · '
+      +'ส่งจากบัญชีที่กำลังเปิดแอปอยู่ตอนนี้</div>'
+      +'<div style="display:flex;gap:8px;margin-top:10px">'
+      +'<button class="mini ml-go">ส่งอีเมล</button>'
+      +'<button class="mini ml-no">ยกเลิก</button></div>'
+      +'<div class="ml-msg hint" style="margin-top:8px"></div>';
+    btn.insertAdjacentElement("afterend", box);
+
+    var msg = box.querySelector(".ml-msg");
+    box.querySelector(".ml-no").onclick = function(){ box.remove() };
+    box.querySelector(".ml-body").focus();
+
+    box.querySelector(".ml-go").onclick = function(){
+      var t = box.querySelector(".ml-to").value.trim();
+      if(!t){
+        msg.style.color = "var(--red)";
+        msg.textContent = "ยังไม่ได้ใส่อีเมลลูกค้า";
+        box.querySelector(".ml-to").focus();
+        return;
+      }
+      var go = this;
+      go.disabled = true; go.textContent = "กำลังปั๊มตราและส่ง…";
+      msg.style.color = ""; msg.textContent = "";
+      /* วาดใบใหม่ตรงนี้ ไม่เอารูปที่โชว์อยู่บนจอไปใช้ เพราะรูปบนจอไม่มีตรา
+         m.stamp บอกตัววาดว่าใบนี้ต้องมีตรา ใบอื่นไม่ส่งค่านี้จึงไม่มี */
+      var mm = {}; for(var k in m) mm[k] = m[k];
+      mm.stamp = true;
+      buildDocPage(r.doc, mm, CFG.doc||{}, "ต้นฉบับ").then(function(png){
+        return api("emailDoc", { no: no, to: t, png: png, by: byName(),
+                                 subject: box.querySelector(".ml-subj").value.trim(),
+                                 body: box.querySelector(".ml-body").value });
+      }).then(function(res){
+        box.remove();
+        btn.disabled = true;
+        btn.textContent = "✅ ส่งแล้ว → " + res.to;
+        toast("ส่งใบ " + no + " ไปที่ " + res.to + " แล้ว");
+      }, function(e){
+        go.disabled = false; go.textContent = "ส่งอีเมล";
+        msg.style.color = "var(--red)";
+        msg.textContent = "ส่งไม่สำเร็จ: " + (e && e.message ? e.message : e);
+      });
+    };
   };
 }
 
