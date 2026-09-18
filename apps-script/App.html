@@ -2413,6 +2413,11 @@ function bindDocMail(sel, r, m, no, cust){
       +'<textarea class="ml-body" rows="7">'+esc(body)+'</textarea></div>'
       +'<div class="hint">แนบไฟล์ <b>'+esc(no)+'.pdf</b> พร้อมตราประทับบริษัทให้อัตโนมัติ · '
       +'ส่งจากบัญชีที่กำลังเปิดแอปอยู่ตอนนี้</div>'
+      /* ต้องเห็นไฟล์ที่จะแนบก่อนส่ง ไม่ใช่เชื่อคำบรรยาย
+         ใบที่ส่งอีเมลเป็นใบเดียวที่มีตราให้ ซึ่งแปลว่ามันคือใบที่ไม่เหมือน
+         ใบที่พิมพ์ออกมาดูเมื่อกี้ ถ้าดูไม่ได้ก็ไม่มีทางรู้ว่าตราไปทับอะไรหรือเปล่า */
+      +'<button class="mini ml-see" style="margin-top:8px">👁 ดูไฟล์แนบก่อน</button>'
+      +'<div class="ml-prev" style="margin-top:8px"></div>'
       +'<div style="display:flex;gap:8px;margin-top:10px">'
       +'<button class="mini ml-go">ส่งอีเมล</button>'
       +'<button class="mini ml-no">ยกเลิก</button></div>'
@@ -2420,8 +2425,34 @@ function bindDocMail(sel, r, m, no, cust){
     btn.insertAdjacentElement("afterend", box);
 
     var msg = box.querySelector(".ml-msg");
+    var prev = box.querySelector(".ml-prev");
     box.querySelector(".ml-no").onclick = function(){ box.remove() };
     box.querySelector(".ml-body").focus();
+
+    /* วาดด้วยทางเดินเดียวกับตอนส่งจริงเป๊ะ ๆ ไม่ใช่วาดอีกแบบให้ดูเฉย ๆ
+       ถ้าคนละทาง สิ่งที่เห็นกับสิ่งที่ลูกค้าได้รับจะต่างกันโดยไม่มีใครรู้ */
+    function stampedPage(){
+      var mm = {}; for(var k in m) mm[k] = m[k];
+      mm.stamp = true;
+      return buildDocPage(r.doc, mm, CFG.doc||{}, "ต้นฉบับ");
+    }
+
+    box.querySelector(".ml-see").onclick = function(){
+      var see = this;
+      if(prev.innerHTML){ prev.innerHTML = ""; see.textContent = "👁 ดูไฟล์แนบก่อน"; return }
+      see.disabled = true; see.textContent = "กำลังวาด…";
+      stampedPage().then(function(url){
+        see.disabled = false; see.textContent = "ซ่อนไฟล์แนบ";
+        prev.innerHTML =
+           '<img src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:8px">'
+          +'<div class="hint" style="text-align:center;margin-top:6px">'
+          +'นี่คือไฟล์ที่ลูกค้าจะได้รับ — ตราบริษัทอยู่เหนือช่องลายเซ็น</div>';
+      }, function(e){
+        see.disabled = false; see.textContent = "👁 ดูไฟล์แนบก่อน";
+        msg.style.color = "var(--red)";
+        msg.textContent = "วาดไฟล์แนบไม่สำเร็จ: " + (e && e.message ? e.message : e);
+      });
+    };
 
     box.querySelector(".ml-go").onclick = function(){
       var t = box.querySelector(".ml-to").value.trim();
@@ -2436,9 +2467,7 @@ function bindDocMail(sel, r, m, no, cust){
       msg.style.color = ""; msg.textContent = "";
       /* วาดใบใหม่ตรงนี้ ไม่เอารูปที่โชว์อยู่บนจอไปใช้ เพราะรูปบนจอไม่มีตรา
          m.stamp บอกตัววาดว่าใบนี้ต้องมีตรา ใบอื่นไม่ส่งค่านี้จึงไม่มี */
-      var mm = {}; for(var k in m) mm[k] = m[k];
-      mm.stamp = true;
-      buildDocPage(r.doc, mm, CFG.doc||{}, "ต้นฉบับ").then(function(png){
+      stampedPage().then(function(png){
         return api("emailDoc", { no: no, to: t, png: png, by: byName(),
                                  subject: box.querySelector(".ml-subj").value.trim(),
                                  body: box.querySelector(".ml-body").value });

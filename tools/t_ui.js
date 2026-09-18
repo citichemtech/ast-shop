@@ -4502,6 +4502,23 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ข้อความขึ้นต้นด้วยเรียนลูกค้า', /^เรียน /.test(draft.body));
   truthy('ข้อความบอกยอดรวมด้วย', /฿/.test(draft.body));
 
+  /* ต้องดูไฟล์ที่จะแนบได้ก่อนส่ง — ใบที่ส่งอีเมลเป็นใบเดียวที่มีตรา
+     ซึ่งแปลว่าไม่เหมือนใบที่พิมพ์ออกมาดู ถ้าดูไม่ได้ก็ไม่รู้ว่าตราทับอะไรหรือเปล่า */
+  await page.click('#dc-out .ml-see');
+  await page.waitForSelector('#dc-out .ml-prev img', { timeout: 25000 });
+  var seen = await page.evaluate(function () {
+    return { src: $('#dc-out .ml-prev img').getAttribute('src').slice(0, 22),
+             say: $('#dc-out .ml-prev').textContent,
+             btn: $('#dc-out .ml-see').textContent };
+  });
+  eq('ไฟล์แนบขึ้นเป็นรูปให้ดูจริง', seen.src, 'data:image/png;base64,');
+  truthy('บอกว่านี่คือไฟล์ที่ลูกค้าจะได้รับ', /ลูกค้าจะได้รับ/.test(seen.say));
+  truthy('ปุ่มเปลี่ยนเป็นซ่อน', /ซ่อน/.test(seen.btn));
+  await page.click('#dc-out .ml-see');
+  await page.waitForTimeout(200);
+  truthy('กดอีกทีซ่อนได้',
+    !(await page.evaluate(function () { return !!$('#dc-out .ml-prev img') })));
+
   /* แก้ข้อความเองได้ แล้วของที่แก้ต้องไปถึงจริง ไม่ใช่โดนร่างเดิมทับ */
   await page.fill('#dc-out .ml-subj', 'ใบกำกับภาษี ONIV26 ฉบับแก้ไข');
   await page.fill('#dc-out .ml-body', 'เรียนคุณลูกค้า แนบใบที่แก้ยอดแล้วนะคะ');
