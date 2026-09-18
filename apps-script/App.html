@@ -2486,8 +2486,23 @@ function bindDocMail(sel, r, m, no, cust){
       msg.style.color = ""; msg.textContent = "";
       /* วาดใบใหม่ตรงนี้ ไม่เอารูปที่โชว์อยู่บนจอไปใช้ เพราะรูปบนจอไม่มีตรา
          m.stamp บอกตัววาดว่าใบนี้ต้องมีตรา ใบอื่นไม่ส่งค่านี้จึงไม่มี */
+      /* ทำ PDF ในเบราว์เซอร์ ไม่ใช่ฝั่งชีท
+
+         ของเดิมส่งรูป PNG ขึ้นไปแล้วให้ Apps Script แปลงเป็น PDF ด้วย getAs()
+         ซึ่งแปลง image/png เป็น application/pdf ไม่ได้ ("ระบบยังไม่สนับสนุนการแปลง")
+         แต่แอปนี้มีตัวทำ PDF ของตัวเองอยู่แล้ว (pdfFromDataURL ที่ปุ่มบันทึก PDF ใช้)
+         ใช้ตัวเดียวกันเลย ได้ไฟล์หน้าตาเหมือนที่กดบันทึกเองเป๊ะ */
       stampedPage().then(function(png){
-        return api("emailDoc", { no: no, to: t, png: png, by: byName(),
+        return pdfFromDataURL(png, 210, 297, no).then(function(blob){
+          return new Promise(function(res, rej){
+            var fr = new FileReader();
+            fr.onload = function(){ res(fr.result) };
+            fr.onerror = function(){ rej(new Error("อ่านไฟล์ PDF ที่ทำขึ้นไม่ได้")) };
+            fr.readAsDataURL(blob);
+          });
+        });
+      }).then(function(pdf){
+        return api("emailDoc", { no: no, to: t, pdf: pdf, by: byName(),
                                  subject: box.querySelector(".ml-subj").value.trim(),
                                  body: box.querySelector(".ml-body").value });
       }).then(function(res){

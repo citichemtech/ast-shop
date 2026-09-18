@@ -4532,8 +4532,13 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     return MOCK_DOCS.some(function (d) { return !!d.mailedTo });
   }, null, { timeout: 25000 });
   var sentMail = await page.evaluate(function () {
-    return window.SENT.filter(function (x) { return x && x.png })[0] || {};
+    return window.SENT.filter(function (x) { return x && (x.pdf || x.png) })[0] || {};
   });
+  /* ต้องแนบเป็น PDF จริง ไม่ใช่รูป — Apps Script แปลงรูปเป็น PDF ให้ไม่ได้
+     ("ระบบยังไม่สนับสนุนการแปลงจาก image/png เป็น application/pdf")
+     หน้าจอจึงต้องทำ PDF มาเองด้วยตัวทำ PDF ที่ปุ่มบันทึกใช้อยู่แล้ว */
+  truthy('แนบเป็นไฟล์ PDF จริง',
+    /^data:application\/pdf;base64,/.test(String(sentMail.pdf || '')));
   eq('หัวข้อที่แก้เองถูกส่งขึ้นไป', sentMail.subject, 'ใบกำกับภาษี ONIV26 ฉบับแก้ไข');
   eq('ข้อความที่แก้เองก็ถูกส่งขึ้นไป', sentMail.body, 'เรียนคุณลูกค้า แนบใบที่แก้ยอดแล้วนะคะ');
   truthy('กล่องปิดไปหลังส่งสำเร็จ',
@@ -4550,16 +4555,16 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     var m2 = {}; for (var k in m) m2[k] = m[k];
     m2.stamp = true;
     var stamped = await buildDocPage(d.doc, m2, CFG.doc || {}, 'ต้นฉบับ');
-    return { to: d.mailedTo, png: d.mailedPng, plain: plain, stamped: stamped,
+    return { to: d.mailedTo, pdf: d.mailedPdf, plain: plain, stamped: stamped,
              hasStampAsset: !!(CFG.doc && CFG.doc.stamp) };
   });
   eq('ส่งไปที่อีเมลที่กรอกไว้ในใบ', mailed.to, 'buyer@example.com');
   truthy('มีรูปตราอยู่ในระบบจริง', mailed.hasStampAsset);
   truthy('ใบที่ส่งอีเมลต่างจากใบเปล่า = ตราถูกวาดจริง',
     mailed.stamped !== mailed.plain);
-  truthy('รูปที่ส่งไปคือฉบับที่มีตรา', mailed.png === mailed.stamped);
+  truthy('ไฟล์ที่ส่งเป็น PDF', /^data:application\/pdf/.test(mailed.pdf || ''));
   truthy('ฉบับที่พิมพ์กระดาษไม่มีตรา (ปั๊มตรายางเอง)',
-    mailed.png !== mailed.plain);
+    mailed.stamped !== mailed.plain);
 
   console.log('\n   ไม่มีอีเมลลูกค้า ต้องไม่ส่งมั่ว');
   await page.evaluate(function () { closeModal() });

@@ -1199,9 +1199,16 @@ function emailDoc(payload) {
     throw new Error('อีเมล "' + to + '" ไม่ถูกต้อง ตรวจอีกครั้งก่อนส่ง');
   }
 
-  var png = String(p.png || '');
-  var m = /^data:image\/png;base64,([\s\S]+)$/.exec(png);
-  if (!m) throw new Error('ไม่มีไฟล์ใบที่จะส่ง — ลองกดใหม่อีกครั้ง');
+  /* หน้าจอทำ PDF มาให้เสร็จแล้ว ฝั่งนี้แค่แนบ
+
+     ของเดิมรับ PNG แล้วสั่ง getAs('application/pdf') ซึ่ง Apps Script ทำไม่ได้
+     ("ระบบยังไม่สนับสนุนการแปลงจาก image/png เป็น application/pdf")
+     แต่แอปมีตัวทำ PDF ในเบราว์เซอร์อยู่แล้ว จึงให้ฝั่งนั้นทำมาเลย
+     รับ PNG ไว้ด้วยเผื่อหน้าจอรุ่นเก่ายังส่งแบบเดิมมา — แนบเป็นรูปไปก่อน
+     ดีกว่าอีเมลไม่ออกเลย */
+  var pdf = /^data:application\/pdf;base64,([\s\S]+)$/.exec(String(p.pdf || ''));
+  var png = /^data:image\/png;base64,([\s\S]+)$/.exec(String(p.png || ''));
+  if (!pdf && !png) throw new Error('ไม่มีไฟล์ใบที่จะส่ง — ลองกดใหม่อีกครั้ง');
 
   var row = docRow_(want);
   if (!row) throw new Error('ไม่พบใบเลขที่ ' + want + ' ในชีท ' + SH.doc.name);
@@ -1214,8 +1221,9 @@ function emailDoc(payload) {
     throw new Error('ใบ ' + want + ' ถูกยกเลิกไปแล้ว (' + voided + ') — ส่งให้ลูกค้าไม่ได้');
   }
 
-  var pdf = Utilities.newBlob(Utilities.base64Decode(m[1]), 'image/png', want + '.png')
-    .getAs('application/pdf').setName(want + '.pdf');
+  var file = pdf
+    ? Utilities.newBlob(Utilities.base64Decode(pdf[1]), 'application/pdf', want + '.pdf')
+    : Utilities.newBlob(Utilities.base64Decode(png[1]), 'image/png', want + '.png');
 
   var cfg = appCfg_();
   var co = (cfg.co || {});
@@ -1241,7 +1249,7 @@ function emailDoc(payload) {
 
      ชื่อผู้ส่งใช้ชื่อบริษัท ไม่ใช่ชื่อบัญชี ลูกค้าจะได้รู้ว่าใครส่งมาตั้งแต่ยังไม่เปิดอ่าน */
   GmailApp.sendEmail(to, subject, body,
-    { name: shop, attachments: [pdf] });
+    { name: shop, attachments: [file] });
 
   /* จดในช่องร่องรอยการแก้ใบ ซึ่งเป็นช่องหลังบ้านล้วน ไม่ถูกพิมพ์ลงกระดาษ
      ไม่เพิ่มคอลัมน์ใหม่โดยตั้งใจ เพราะการเพิ่มคอลัมน์ต้องสั่ง setup ซ้ำ
@@ -1253,7 +1261,7 @@ function emailDoc(payload) {
   });
   SpreadsheetApp.flush();
   writeLog_(email, 'ส่งอีเมล', SH.doc.name, want, 'อีเมลลูกค้า', '', to,
-    'แนบ ' + want + '.pdf พร้อมตราประทับบริษัท');
+    'แนบ ' + file.getName() + ' พร้อมตราประทับบริษัท');
 
   return { ok: true, no: want, to: to, at: at };
 }

@@ -559,9 +559,13 @@ window.google = { script: { run: (function(){
         if(!to) throw new Error("ใบนี้ไม่มีอีเมลลูกค้า");
         if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to))
           throw new Error('อีเมล "' + to + '" ไม่ถูกต้อง ตรวจอีกครั้งก่อนส่ง');
-        if(!/^data:image\/png;base64,/.test(String(p.png||"")))
-          throw new Error("ไม่มีไฟล์ใบที่จะส่ง");
+        /* ของจริงรับ PDF ที่หน้าจอทำมาให้ (รับ PNG ไว้เผื่อหน้าจอรุ่นเก่า)
+           ถ้าที่นี่ยังรับแต่ PNG ข้อสอบจะผ่านทั้งที่ของจริงส่งคนละอย่าง */
+        var isPdf = /^data:application\/pdf;base64,/.test(String(p.pdf||""));
+        var isPng = /^data:image\/png;base64,/.test(String(p.png||""));
+        if(!isPdf && !isPng) throw new Error("ไม่มีไฟล์ใบที่จะส่ง");
         f.mailedTo = to;
+        f.mailedPdf = String(p.pdf||"");
         f.mailedPng = String(p.png||"");
         return { ok:true, no:f.no, to:to, at:"17/09/2026 22:00" };
       });
