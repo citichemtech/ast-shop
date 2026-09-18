@@ -1,4 +1,4 @@
-var CACHE = 'ast-admin-v2';   // ขึ้นเวอร์ชันใหม่ ให้เครื่องที่เคยแคชหน้าร้านไว้ทิ้งของเก่า
+var CACHE = 'ast-admin-v3';   // ขึ้นเวอร์ชันใหม่ ให้เครื่องที่เคยแคชหน้าร้านไว้ทิ้งของเก่า
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
