@@ -19,6 +19,7 @@ import json, re, os, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "admin.html")
 OUT = os.path.join(ROOT, "index.html")
+CUST = os.path.join(ROOT, "catalog.html")   # ลิงก์ที่ส่งให้ลูกค้า
 
 DATA_RE = re.compile(r'(<script id="DATA" type="application/json">)(.*?)(</script>)', re.S)
 
@@ -108,6 +109,33 @@ def scrub(html, label):
     return out
 
 
+def customer_page(html):
+    """ไฟล์สำหรับส่งลิงก์ให้ลูกค้า — เหมือนกันทุกอย่าง ยกเว้นทางเข้าของพนักงาน
+
+    เอาออกสองปุ่ม: ปุ่มเข้าระบบคีย์ออเดอร์ (#go-stock) กับปุ่มเฟืองเข้าโหมดแก้ไข (#gear)
+    ลูกค้าเห็นแค่แบนเนอร์ หมวดหมู่ สินค้า ราคา และปุ่มทักไลน์ ตามที่เจ้าของร้านสั่งไว้ว่า
+    "ลูกค้าดูแค่สินค้าที่อยากให้เห็นเท่านั้น"
+    """
+    # ปุ่มเข้าระบบคีย์ออเดอร์ — ตัดทั้ง <section> ที่ห่อมันอยู่
+    k = html.index('<button class="gateway" id="go-stock">')
+    i = html.rindex('<section class="sec">', 0, k)
+    j = html.index("</section>", k) + len("</section>")
+    html = html[:i] + html[j:]
+
+    # ปุ่มเฟือง
+    i = html.index('<button class="gear" id="gear">')
+    j = html.index("</button>", i) + len("</button>")
+    html = html[:i] + html[j:]
+
+    # ติดตั้งเป็นแอปแล้วต้องขึ้นชื่อร้าน ไม่ใช่ "AST หลังร้าน" และต้องเปิดมาที่หน้านี้
+    html = html.replace('<link rel="manifest" href="./manifest.json">',
+                        '<link rel="manifest" href="./manifest-shop.json">', 1)
+
+    assert 'id="go-stock"' not in html, "ยังมีปุ่มเข้าระบบคีย์ออเดอร์ค้างอยู่ในไฟล์ลูกค้า"
+    assert 'id="gear"' not in html, "ยังมีปุ่มเฟืองค้างอยู่ในไฟล์ลูกค้า"
+    return html
+
+
 def main():
     src = open(SRC, encoding="utf-8").read()
 
@@ -121,8 +149,11 @@ def main():
     open(OUT, "w", encoding="utf-8").write(src)
     assert 'id="gear"' in src, "ไม่เจอปุ่มเข้าหลังร้าน — พนักงานจะเข้าไม่ได้"
 
-    # 3) ตรวจซ้ำว่าไม่มีข้อมูลลับหลงอยู่ในไฟล์ไหน — ล้มทันทีถ้าเจอ ไม่ปล่อยผ่าน
-    for path, label in ((SRC, "admin.html"), (OUT, "index.html")):
+    # 3) ไฟล์ที่ส่งลิงก์ให้ลูกค้า: ตัดทางเข้าของพนักงานออก
+    open(CUST, "w", encoding="utf-8").write(customer_page(src))
+
+    # 4) ตรวจซ้ำว่าไม่มีข้อมูลลับหลงอยู่ในไฟล์ไหน — ล้มทันทีถ้าเจอ ไม่ปล่อยผ่าน
+    for path, label in ((SRC, "admin.html"), (OUT, "index.html"), (CUST, "catalog.html")):
         txt = open(path, encoding="utf-8").read()
         cfg = json.loads(DATA_RE.search(txt).group(2))
         for k, empty in SECRET_FIELDS.items():
@@ -134,8 +165,9 @@ def main():
               % (label, len(cfg.get("products", [])), len(cfg.get("cats", [])),
                  len(cfg.get("orders", [])), cfg.get("pin")))
 
-    print("เผยแพร่แล้ว: index.html %d KB · admin.html %d KB"
-          % (os.path.getsize(OUT) // 1024, os.path.getsize(SRC) // 1024))
+    print("เผยแพร่แล้ว: index.html %d KB · admin.html %d KB · catalog.html %d KB"
+          % (os.path.getsize(OUT) // 1024, os.path.getsize(SRC) // 1024,
+             os.path.getsize(CUST) // 1024))
 
 
 if __name__ == "__main__":

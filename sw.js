@@ -1,10 +1,10 @@
-var CACHE = 'ast-admin-v3';   // ขึ้นเวอร์ชันใหม่ ให้เครื่องที่เคยแคชหน้าร้านไว้ทิ้งของเก่า
+var CACHE = 'ast-admin-v4';   // ขึ้นเวอร์ชันใหม่ ให้เครื่องที่เคยแคชหน้าร้านไว้ทิ้งของเก่า
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE).then(function (c) {
-      return c.addAll(['./', './index.html', './admin.html', './manifest.json', './icon-192.png']).catch(function () {});
+      return c.addAll(['./', './index.html', './catalog.html', './admin.html', './manifest.json', './manifest-shop.json', './icon-192.png']).catch(function () {});
     })
   );
 });
