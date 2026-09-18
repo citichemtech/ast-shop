@@ -227,5 +227,30 @@ eq('ทุกตัวเขียนผลลง Log ไม่มีตัว�
 eq('ชื่อในรายการยกเว้นยังมีอยู่จริงทุกตัว',
   Object.keys(WEB_ONLY).filter(function (n) { return !byName[n]; }), []);
 
+/* ------------- สิทธิ์ที่โค้ดใช้จริง ต้องประกาศไว้ใน appsscript.json ครบ
+
+   appsscript.json ของโปรเจกต์นี้ประกาศ oauthScopes เป็นรายการตายตัว
+   ซึ่งแปลว่า Apps Script จะให้สิทธิ์ "เท่าที่ประกาศไว้เท่านั้น" ไม่ได้เดาให้เอง
+   เขียนโค้ดเรียกของใหม่แล้วลืมเติมสิทธิ์ = ปุ่มนั้นพังตอนผู้ใช้กด ไม่ใช่ตอนเราทดสอบ
+
+   ของจริง 18 ก.ย. 69: เพิ่มปุ่มส่งอีเมลแล้วลืมเติม script.send_mail
+   เจ้าของร้านกดปุ่มถึงจะรู้ ซึ่งเป็นเวลาที่ลูกค้ากำลังรอใบอยู่ */
+console.log('\nสิทธิ์ใน appsscript.json');
+var manifest = JSON.parse(fs.readFileSync(path.join(dir, 'appsscript.json'), 'utf8'));
+var scopes = manifest.oauthScopes || [];
+var allCode = files.map(function (f) {
+  return fs.readFileSync(path.join(dir, f), 'utf8');
+}).join('\n');
+
+var NEEDS = [
+  { re: /\bMailApp\.|\bGmailApp\./, scope: 'https://www.googleapis.com/auth/script.send_mail', why: 'ส่งอีเมล' },
+  { re: /\bDriveApp\./, scope: 'https://www.googleapis.com/auth/drive', why: 'อ่าน/เขียนไดรฟ์' },
+  { re: /\bSpreadsheetApp\./, scope: 'https://www.googleapis.com/auth/spreadsheets', why: 'อ่าน/เขียนชีท' },
+  { re: /Session\.getActiveUser|Session\.getEffectiveUser/, scope: 'https://www.googleapis.com/auth/userinfo.email', why: 'รู้ว่าใครกด' }
+];
+eq('ทุกอย่างที่โค้ดเรียกใช้ มีสิทธิ์ประกาศไว้ครบ',
+  NEEDS.filter(function (n) { return n.re.test(allCode) && scopes.indexOf(n.scope) < 0; })
+    .map(function (n) { return n.why + ' → ขาด ' + n.scope; }), []);
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);
