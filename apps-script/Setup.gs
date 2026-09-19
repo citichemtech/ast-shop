@@ -2643,3 +2643,71 @@ function namelessRows_(ss, need) {
   }
   return lines.join('\n');
 }
+
+
+/**
+ * เตรียมชีทให้พร้อมสำหรับหน้าร้านที่ลูกค้าเปิดเอง — สั่งครั้งเดียวพอ สั่งซ้ำได้ไม่พัง
+ *
+ * เพิ่มสองคอลัมน์ท้าย ฐานสินค้า (ต่อท้ายช่องสูตร ไม่แทรกกลาง ไม่งั้นสูตรของชีทอื่น
+ * ที่ชี้มาที่คอลัมน์ K L M จะเลื่อนพังหมด แบบเดียวกับที่เคยเกิดตอนลบแถวทิ้ง)
+ *
+ *   N  ขายหน้าเว็บ   เว้นว่าง = ขาย · พิมพ์ "ไม่" = ซ่อนจากหน้าร้าน
+ *   O  ลิงก์รูป      วางลิงก์รูปตรง ๆ เว้นว่างได้ หน้าร้านจะขึ้นกรอบชื่อสินค้าแทน
+ *
+ * และเพิ่มสวิตช์ "เปิดรับออเดอร์หน้าเว็บ" ในชีท ตั้งค่าแอป ถ้ายังไม่มี
+ */
+function setupShopColumns() {
+  var email = requireStaff_();
+  var ss = ss_();
+  var out = [];
+
+  var s = findSheet_(ss, SH.prod.name);
+  if (!s) throw new Error('ไม่เจอชีท ' + SH.prod.name);
+
+  var need = SH.prod.IN.img;                       // O = 15
+  if (s.getMaxColumns() < need) s.insertColumnsAfter(s.getMaxColumns(), need - s.getMaxColumns());
+
+  var head = s.getRange(HEAD_ROW, SH.prod.IN.web, 1, 2).getValues()[0];
+  if (String(head[0] || '').trim() && String(head[1] || '').trim()) {
+    out.push('ฐานสินค้า มีคอลัมน์ ขายหน้าเว็บ กับ ลิงก์รูป อยู่แล้ว — ไม่ต้องทำอะไร');
+  } else {
+    s.getRange(HEAD_ROW, SH.prod.IN.web, 1, 2)
+      .setValues([['ขายหน้าเว็บ', 'ลิงก์รูป']])
+      .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold');
+    s.getRange(HEAD_ROW + 1, SH.prod.IN.web).setNote(
+      'เว้นว่าง = ขายบนหน้าร้าน\n' +
+      'พิมพ์ "ไม่" = ซ่อนจากหน้าร้าน (พนักงานยังคีย์ขายได้ตามปกติ)');
+    out.push('เพิ่มคอลัมน์ ' + colLetter_(SH.prod.IN.web) + ' ขายหน้าเว็บ และ ' +
+      colLetter_(SH.prod.IN.img) + ' ลิงก์รูป ให้ ฐานสินค้า แล้ว');
+    out.push('  ทุกตัวเริ่มต้นเป็น "ขาย" เหมือนหน้าร้านชุดเดิม ตัวไหนไม่อยากให้ลูกค้าเห็น');
+    out.push('  ให้พิมพ์คำว่า ไม่ ลงในคอลัมน์ ' + colLetter_(SH.prod.IN.web) + ' ของแถวนั้น');
+  }
+
+  out.push(shopSwitchRow_(ss));
+  out.push('');
+  out.push('สินค้าที่ลูกค้าจะเห็นตอนนี้: ' + shopItems_().length + ' รายการ');
+
+  writeLog_(email, 'ตั้งค่า', SH.prod.name, '', 'เตรียมคอลัมน์หน้าร้าน', '', '');
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/** สวิตช์เปิด/ปิดรับออเดอร์หน้าเว็บ ในชีท ตั้งค่าแอป — เติมให้ถ้ายังไม่มี */
+function shopSwitchRow_(ss) {
+  var key = 'เปิดรับออเดอร์หน้าเว็บ';
+  var s = findSheet_(ss, SH.app.name);
+  if (!s) return 'ยังไม่มีชีท ' + SH.app.name + ' — สั่ง setup ก่อนแล้วค่อยสั่งตัวนี้ซ้ำ';
+
+  var last = s.getLastRow();
+  if (last >= DATA_ROW) {
+    var v = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, 1).getValues();
+    for (var i = 0; i < v.length; i++) {
+      if (String(v[i][0] || '').trim() === key) return 'ตั้งค่าแอป มีสวิตช์ "' + key + '" อยู่แล้ว';
+    }
+  }
+  var row = Math.max(DATA_ROW, last + 1);
+  s.getRange(row, 1, 1, 2).setValues([[key, 'เปิด']]);
+  s.getRange(row, 2).setNote('พิมพ์ "ปิด" เมื่อไม่อยากให้ลูกค้าสั่งของจากหน้าเว็บชั่วคราว');
+  return 'เพิ่มสวิตช์ "' + key + '" ในชีท ' + SH.app.name + ' แล้ว (ตอนนี้เปิดอยู่)';
+}

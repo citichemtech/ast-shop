@@ -87,6 +87,11 @@ function doGet(e) {
   var key = (e && e.parameter && e.parameter.p) ? String(e.parameter.p) : '';
   if (key) return pubPage_(key);
 
+  /* ?shop=1 = หน้าร้านที่ลูกค้าเปิดเอง — ไม่ต้องล็อกอิน ไม่ต้องมีกุญแจ
+     ต้องมาก่อนด่าน requireStaff_ ข้างล่าง ไม่งั้นลูกค้าจะเจอหน้าให้ล็อกอิน
+     แล้วรู้ว่ามีระบบหลังร้านซ่อนอยู่ที่ลิงก์นี้ */
+  if (e && e.parameter && e.parameter.shop) return shopPage_();
+
   var email;
   try {
     email = requireStaff_();
@@ -172,7 +177,10 @@ function readProducts_() {
                 rows[i][SH.prod.IN.reorder - 1] === null ||
                 rows[i][SH.prod.IN.reorder - 1] === undefined)
                  ? null : Number(rows[i][SH.prod.IN.reorder - 1] || 0),
-      remain: stock[sku] === undefined ? null : stock[sku]
+      remain: stock[sku] === undefined ? null : stock[sku],
+      /* สองช่องนี้ใช้เฉพาะหน้าร้านที่ลูกค้าเปิดเอง ชีทเก่าที่ยังไม่มีคอลัมน์จะได้ค่าว่าง */
+      web: rows[i][SH.prod.IN.web - 1],
+      img: String(rows[i][SH.prod.IN.img - 1] || '')
     });
   }
   return out;

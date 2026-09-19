@@ -164,7 +164,7 @@ Range.prototype.setNumberFormat = function (f) {
   return this;
 };
 ['setBackground', 'setFontColor', 'setFontWeight', 'setFontSize', 'setVerticalAlignment',
-  'setHorizontalAlignment', 'setWrap', 'setDataValidation'
+  'setHorizontalAlignment', 'setWrap', 'setDataValidation', 'setNote'
 ].forEach(function (m) { Range.prototype[m] = function () { return this; }; });
 
 /* ------------------------------------------------------------ สร้างชีทตัวอย่าง */
@@ -631,7 +631,7 @@ function load(fixture, opts) {
   var dir = path.join(__dirname, '..', 'apps-script');
   /* Doc.gs ต้องโหลดด้วย ไม่งั้น issueDoc/voidDoc เรียก docType_ ไม่เจอ
      ทะเบียนเอกสารเป็นของที่แก้ทีหลังไม่ได้ จึงต้องมีข้อสอบคุมเหมือนส่วนอื่น */
-  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs', 'Pay.gs',
+  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs', 'Pay.gs', 'Shop.gs',
     'Pub.gs'];
   /* BUNDLE=1 = สอบไฟล์ที่รวมแล้วแทนไฟล์ต้นฉบับ
      ไฟล์ที่เอาไปวางใน Apps Script จริงคือไฟล์ที่รวมแล้ว ถ้าตัวรวมทำอะไรพัง

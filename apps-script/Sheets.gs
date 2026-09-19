@@ -73,7 +73,10 @@ var SH = {
 
   prod: {
     name: 'ฐานสินค้า',
-    IN: { sku: 2, group: 3, name: 4, perPack: 5, unit: 6, cost: 7, price: 8, opening: 9, reorder: 10 },
+    /* N กับ O เติมทีหลังด้วย setupShopColumns() สำหรับหน้าร้านที่ลูกค้าเปิดเอง
+       ต่อท้ายช่องสูตร (K L M) ไม่แทรกกลาง ไม่งั้นสูตรของชีทอื่นที่ชี้มาจะเลื่อนหมด */
+    IN: { sku: 2, group: 3, name: 4, perPack: 5, unit: 6, cost: 7, price: 8, opening: 9, reorder: 10,
+          web: 14, img: 15 },
     CALC: [1, 11, 12, 13],
     probe: 1
   },
@@ -789,7 +792,10 @@ function appCfg_() {
       vat: { bank: '', name: '', acct: '', pp: '', link: '' },
       novat: { bank: '', name: '', acct: '', pp: '', link: '' }
     },
-    quoteDays: 7
+    quoteDays: 7,
+    /* สวิตช์ปิดรับออเดอร์จากหน้าเว็บ — ของหมดยกร้านหรือช่วงหยุดยาวจะได้ปิดได้ทันที
+       ค่าเริ่มต้นคือเปิด เพราะคนที่ยังไม่เคยตั้งค่าย่อมไม่ได้ตั้งใจจะปิดร้าน */
+    shopOpen: true
   };
   if (!s) return out;
   var v = s.getRange(DATA_ROW, 1, Math.max(1, s.getLastRow() - DATA_ROW + 1), 5).getValues();
@@ -805,6 +811,7 @@ function appCfg_() {
     else if (k === 'ส่งฟรีเมื่อยอดถึง') out.freeOver = Number(val || 0);
     else if (k === 'ค่าธรรมเนียมเก็บปลายทาง') out.codFee = Number(val || 0);
     else if (k === 'ลิงก์ LINE ของร้าน') out.line = String(val || '');
+    else if (k === 'เปิดรับออเดอร์หน้าเว็บ') out.shopOpen = !shopHidden_(val);
     /* ใช้บัญชี Google เดียวกันทุกเครื่อง จึงแยกไม่ออกว่าใครเป็นคนคีย์
        รายชื่อนี้ทำให้เลือกชื่อตัวเองได้ตอนคีย์ แล้วชื่อจะไปอยู่ในช่องพนักงานของออเดอร์ */
     else if (k === 'ชื่อบริษัท (ใบกำกับภาษี)') out.co.name = String(val || '');
