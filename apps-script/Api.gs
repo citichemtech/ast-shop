@@ -198,10 +198,11 @@ function readProducts_() {
                 rows[i][SH.prod.IN.reorder - 1] === undefined)
                  ? null : Number(rows[i][SH.prod.IN.reorder - 1] || 0),
       remain: stock[sku] === undefined ? null : stock[sku],
-      /* สามช่องนี้ใช้เฉพาะหน้าร้านที่ลูกค้าเปิดเอง ชีทเก่าที่ยังไม่มีคอลัมน์จะได้ค่าว่าง */
+      /* สี่ช่องนี้ใช้เฉพาะหน้าร้านที่ลูกค้าเปิดเอง ชีทเก่าที่ยังไม่มีคอลัมน์จะได้ค่าว่าง */
       web: rows[i][SH.prod.IN.web - 1],
       img: String(rows[i][SH.prod.IN.img - 1] || ''),
-      img2: String(rows[i][SH.prod.IN.img2 - 1] || '')
+      img2: String(rows[i][SH.prod.IN.img2 - 1] || ''),
+      tag: String(rows[i][SH.prod.IN.tag - 1] || '')
     });
   }
   return out;

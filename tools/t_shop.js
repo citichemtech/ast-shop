@@ -73,7 +73,7 @@ console.log('\n2. ข้อมูลที่ห้ามหลุดไปถ�
 var raw2 = JSON.stringify(d1);
 var it2 = d1.items[0];
 eq('ช่องในรายการสินค้ามีเท่าที่ตั้งใจ', Object.keys(it2).sort(),
-   ['group', 'img', 'imgs', 'name', 'out', 'perPack', 'price', 'sku', 'unit']);
+   ['group', 'img', 'imgs', 'name', 'out', 'perPack', 'price', 'sku', 'tags', 'unit']);
 truthy('ไม่มีคำว่า cost ในคำตอบ', raw2.indexOf('"cost"') < 0);
 truthy('ไม่มีคำว่า remain ในคำตอบ', raw2.indexOf('"remain"') < 0);
 truthy('ไม่มีเลขแถวของชีทติดไปด้วย', raw2.indexOf('"row"') < 0);
@@ -438,6 +438,122 @@ prod21.cell(row21, 16).v = '';
 var got22e = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
 eq('ไม่ใส่รูปเลยได้ชุดว่าง หน้าร้านขึ้นกรอบชื่อสินค้าแทน', got22e.imgs, []);
 eq('ไม่ใส่รูปเลย img ก็ว่าง', got22e.img, '');
+
+/* ============================================ 23. หน้าร้านแบบใหม่ */
+console.log('\n23. แบนเนอร์ · หมวดมีรูป · ป้ายสินค้า · ขายดี');
+var s23 = shopFixture();
+var fx23 = s23.fx;
+var IMG_A = 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view';
+var THUMB_A = 'https://drive.google.com/thumbnail?id=1AbCdEfGhIjKlMnOpQrStUv&sz=w1000';
+
+var ban23 = fx23.sheets['แบนเนอร์หน้าร้าน'];
+truthy('setup สร้างชีท แบนเนอร์หน้าร้าน ให้', !!ban23);
+var scat23 = fx23.sheets['หมวดหน้าร้าน'];
+truthy('setup สร้างชีท หมวดหน้าร้าน ให้', !!scat23);
+
+eq('ยังไม่กรอกอะไร แบนเนอร์เป็นก้อนว่าง หน้าร้านไม่พัง',
+   s23.guest.shopData().banners, {});
+
+/* แถวที่ยังไม่เปิดใช้ ต้องไม่โผล่ */
+ban23.cell(DATA_ROW, 2).v = 'โปรโมชั่นเด่น';
+ban23.cell(DATA_ROW, 3).v = 'โปรกันยา';
+ban23.cell(DATA_ROW, 4).v = IMG_A;
+ban23.cell(DATA_ROW, 5).v = 'Buy Now';
+ban23.cell(DATA_ROW, 6).v = 'หมวด:TOOLING';
+eq('ยังไม่พิมพ์ เปิด แบนเนอร์ไม่ขึ้น', s23.guest.shopData().banners, {});
+
+ban23.cell(DATA_ROW, 7).v = 'เปิด';
+var b23 = s23.guest.shopData().banners;
+eq('พิมพ์ เปิด แล้วขึ้นในแถบที่ตั้งไว้', (b23['โปรโมชั่นเด่น'] || []).length, 1);
+eq('ลิงก์รูปถูกแปลงเป็นที่อยู่รูปจริง', b23['โปรโมชั่นเด่น'][0].img, THUMB_A);
+eq('ลิงก์ปุ่มแบบหมวด แปลงเป็นคำสั่งเข้าหน้าหมวด',
+   b23['โปรโมชั่นเด่น'][0].go, { kind: 'cat', v: 'TOOLING' });
+
+ban23.cell(DATA_ROW + 1, 2).v = 'ติดต่อเรา';
+ban23.cell(DATA_ROW + 1, 4).v = 'ยังไม่ได้อัปโหลด';
+ban23.cell(DATA_ROW + 1, 7).v = 'เปิด';
+eq('เปิดใช้แต่ลิงก์รูปมั่ว ตกไปเงียบ ๆ ไม่เหลือกรอบเปล่า',
+   (s23.guest.shopData().banners['ติดต่อเรา'] || []).length, 0);
+
+eq('ลิงก์ปุ่มเป็นที่อยู่เว็บ', s23.guest.shopHref_('https://ast.example/promo'),
+   { kind: 'url', v: 'https://ast.example/promo' });
+eq('ลิงก์ปุ่มเป็นรหัสสินค้า', s23.guest.shopHref_('สินค้า: SKU-141'),
+   { kind: 'sku', v: 'SKU-141' });
+eq('ลิงก์ปุ่มว่าง = ไม่มีปุ่ม', s23.guest.shopHref_(''), null);
+eq('ลิงก์ปุ่มมั่ว = ไม่มีปุ่ม ไม่ใช่ลิงก์เสีย', s23.guest.shopHref_('กดตรงนี้'), null);
+eq('ไม่รับ http ธรรมดา', s23.guest.shopHref_('http://ast.example'), null);
+
+/* หมวด — setup เติมชื่อหมวดจาก ฐานสินค้า ให้แล้ว */
+var cc23 = s23.guest.shopData().catCards;
+truthy('มีการ์ดหมวดอย่างน้อยหนึ่งใบ', cc23.length > 0);
+truthy('การ์ดหมวดมีจำนวนสินค้าติดมาด้วย', cc23[0].n > 0);
+eq('ยังไม่ใส่รูป ไอคอนเป็นค่าว่าง ไม่ใช่ลิงก์เสีย', cc23[0].icon, '');
+
+var g23 = cc23[0].group, row23 = 0;
+for (var r23 = DATA_ROW; r23 <= scat23.getMaxRows(); r23++) {
+  if (String(scat23.cell(r23, 2).v || '').trim() === g23) { row23 = r23; break; }
+}
+truthy('setup เติมชื่อหมวดลงชีท หมวดหน้าร้าน ให้แล้ว', row23 > 0);
+scat23.cell(row23, 3).v = 'เครื่องมือตัด';
+scat23.cell(row23, 4).v = IMG_A;
+scat23.cell(row23, 5).v = IMG_A;
+var cc23b = s23.guest.shopData().catCards.filter(function (c) { return c.group === g23 })[0];
+eq('ตั้งชื่อที่โชว์เองได้ ไม่ต้องแก้ชื่อหมวดในฐานสินค้า', cc23b.label, 'เครื่องมือตัด');
+eq('รูปไอคอนแปลงให้แล้ว', cc23b.icon, THUMB_A);
+eq('รูปปกแปลงให้แล้ว', cc23b.cover, THUMB_A);
+
+scat23.cell(row23, 6).v = 'ซ่อน';
+eq('พิมพ์ ซ่อน แล้วการ์ดหมวดหาย',
+   s23.guest.shopData().catCards.filter(function (c) { return c.group === g23 }).length, 0);
+truthy('แต่สินค้าในหมวดนั้นยังขายอยู่ ไม่ได้หายไปจากหน้าร้าน',
+   s23.guest.shopData().items.some(function (p) { return p.group === g23 }));
+scat23.cell(row23, 6).v = 'โชว์';
+
+/* ป้ายหน้าร้าน */
+var prod23 = fx23.sheets['ฐานสินค้า'];
+var sku23 = s23.guest.shopData().items[0].sku, prow23 = 0;
+for (var q23 = DATA_ROW; q23 <= prod23.getMaxRows(); q23++) {
+  if (String(prod23.cell(q23, 2).v || '').trim() === sku23) { prow23 = q23; break; }
+}
+eq('ไม่ติดป้าย ได้ชุดว่าง',
+   s23.guest.shopData().items.filter(function (p) { return p.sku === sku23 })[0].tags, []);
+prod23.cell(prow23, 17).v = 'ใหม่, โปรโมชั่น';
+eq('ติดสองป้ายคั่นด้วยจุลภาค แยกให้ถูกและตัดช่องว่างให้',
+   s23.guest.shopData().items.filter(function (p) { return p.sku === sku23 })[0].tags,
+   ['ใหม่', 'โปรโมชั่น']);
+
+/* ขายดี — ต้องมาจากยอดขายจริง ไม่ใช่ลำดับในชีท และห้ามบอกจำนวนที่ขายได้ */
+var best23 = s23.guest.shopData().best;
+truthy('ขายดีเป็นรายการรหัสสินค้า', Array.isArray(best23));
+truthy('ขายดีไม่เกินจำนวนที่ตั้งไว้', best23.length <= 8);
+truthy('ขายดีมีแต่ของที่ยังขายอยู่', best23.every(function (sku) {
+  return s23.guest.shopData().items.some(function (p) { return p.sku === sku });
+}));
+truthy('คำตอบทั้งก้อนไม่มีจำนวนที่ขายได้ติดไปด้วย',
+   JSON.stringify(s23.guest.shopData()).indexOf('"sold"') < 0);
+
+/* แผนที่ — ไม่ได้ใส่ลิงก์เอง ต้องได้ลิงก์ค้นหาจากที่อยู่ */
+var app23 = fx23.sheets['ตั้งค่าแอป'];
+for (var a23 = DATA_ROW; a23 <= app23.getMaxRows(); a23++) {
+  if (String(app23.cell(a23, 1).v || '').trim() === 'ที่อยู่ผู้ส่ง') {
+    app23.cell(a23, 2).v = '2/1 ซ.ตัวอย่าง\nแขวงตัวอย่าง เขตตัวอย่าง กรุงเทพฯ 10000';
+    break;
+  }
+}
+var m23 = s23.guest.shopData().map;
+truthy('ได้ลิงก์แผนที่จากที่อยู่ผู้ส่ง', /^https:\/\/www\.google\.com\/maps/.test(m23.url));
+eq('ป้ายบนแถบเอาแค่บรรทัดแรก ที่อยู่เต็มยาวเกินกว่าจะอ่านบนแถบเตี้ย ๆ',
+   m23.label, '2/1 ซ.ตัวอย่าง');
+
+/* ใส่ลิงก์แผนที่เองแล้วต้องใช้ตัวนั้น ไม่ใช่ไปค้นที่อยู่เอง */
+for (var a24 = DATA_ROW; a24 <= app23.getMaxRows(); a24++) {
+  if (String(app23.cell(a24, 1).v || '').trim() === 'ลิงก์แผนที่ร้าน') {
+    app23.cell(a24, 2).v = 'https://maps.app.goo.gl/abcdef';
+    break;
+  }
+}
+eq('ใส่ลิงก์แผนที่เองแล้วใช้ตัวนั้น',
+   s23.guest.shopData().map.url, 'https://maps.app.goo.gl/abcdef');
 
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

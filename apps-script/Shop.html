@@ -13,35 +13,119 @@
 body{font-family:'Prompt',system-ui,-apple-system,"Noto Sans Thai",sans-serif;
   color:var(--ink);background:#EEF1F4;font-size:15px;line-height:1.6}
 #app{max-width:var(--appw);margin:0 auto;background:#fff;min-height:100vh;
-  position:relative;padding-bottom:26px;overflow:hidden}
+  position:relative;overflow:hidden}
 @media (min-width:600px){ :root{--appw:100%} }
 button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
 input{font-family:inherit;font-size:16px}
 img{display:block;max-width:100%}
 
-.hdr{background:var(--blue);color:#fff;padding:18px 20px 26px;border-radius:0 0 26px 26px}
-.hdr h1{font-size:22px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
-.hdr .sub{font-size:13px;opacity:.92;margin-top:4px}
-.search{margin-top:16px;background:#fff;border-radius:14px;display:flex;
-  align-items:center;gap:10px;padding:0 16px;height:50px}
-.search svg{width:20px;height:20px;stroke:var(--ink);fill:none;stroke-width:2.2;flex:none}
-.search input{border:0;outline:0;flex:1;color:var(--ink);background:none}
+/* ---------- หัวหน้าร้าน ----------
+   พื้นหลังเป็นรูปที่เจ้าของร้านใส่เองได้ ถ้าไม่ใส่ใช้ไล่สีฟ้าแทน
+   ไม่ปล่อยให้เป็นช่องขาวรอรูป เพราะร้านที่ยังไม่ได้ใส่รูปจะดูเหมือนเว็บพัง */
+.hdr{position:relative;color:#fff;padding:16px 16px 22px;overflow:hidden;
+  background:linear-gradient(160deg,#5FA8FF 0%,var(--blue) 46%,#2C6FD1 100%)}
+.hdr .cover{position:absolute;inset:0;z-index:0}
+.hdr .cover img{width:100%;height:100%;object-fit:cover}
+.hdr .cover::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(10,30,60,.30),rgba(10,30,60,.52))}
+.hdr>*{position:relative;z-index:1}
+.hdr-top{display:flex;align-items:center;gap:12px}
+.logo{width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.22);flex:none;
+  overflow:hidden;display:flex;align-items:center;justify-content:center;
+  font-size:15px;font-weight:800;letter-spacing:.02em;border:2px solid rgba(255,255,255,.5)}
+.logo img{width:100%;height:100%;object-fit:cover}
+.hdr-t{flex:1;min-width:0}
+.hdr h1{font-size:20px;font-weight:800;letter-spacing:-.01em;line-height:1.2;
+  text-shadow:0 1px 8px rgba(10,30,60,.35)}
+.hdr .sub{font-size:12.5px;opacity:.94;margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.round{width:44px;height:44px;border-radius:14px;background:#fff;flex:none;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(10,30,60,.18)}
+.round svg{width:22px;height:22px;stroke:var(--blue);fill:none;stroke-width:2}
 
-#app.inner .search{display:none}
-#app.inner .hdr{padding-bottom:18px}
-.closed{margin:16px 20px 0;background:#FFF3E0;border:1px solid #F0D3A0;color:#8A5A12;
+.searchrow{display:flex;gap:10px;margin-top:15px}
+.search{flex:1;min-width:0;background:#fff;border-radius:15px;display:flex;
+  align-items:center;gap:10px;padding:0 15px;height:50px;box-shadow:0 2px 10px rgba(10,30,60,.14)}
+.search svg{width:20px;height:20px;stroke:var(--gray);fill:none;stroke-width:2.2;flex:none}
+.search input{border:0;outline:0;flex:1;min-width:0;color:var(--ink);background:none}
+.filt{width:50px;height:50px;border-radius:15px;background:#fff;flex:none;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(10,30,60,.14)}
+.filt svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:2}
+.filt.on{background:var(--blue)}
+.filt.on svg{stroke:#fff}
+
+/* แถบแผนที่ — กดแล้วเปิด Google Maps ของร้าน */
+.maprow{display:flex;align-items:center;gap:11px;width:100%;margin-top:13px;
+  background:rgba(255,255,255,.93);border-radius:14px;padding:11px 14px;color:var(--ink);
+  text-align:left;box-shadow:0 2px 10px rgba(10,30,60,.14)}
+.maprow .pin{font-size:19px;flex:none;line-height:1}
+.maprow span{flex:1;min-width:0;font-size:13.5px;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.maprow .go-ico{color:var(--gray);font-size:17px;flex:none}
+
+#app.inner .searchrow,#app.inner .maprow{display:none}
+#app.inner .hdr{padding-bottom:16px}
+.closed{margin:16px 16px 0;background:#FFF3E0;border:1px solid #F0D3A0;color:#8A5A12;
   border-radius:14px;padding:13px 15px;font-size:14px;line-height:1.55}
 
-.cats{display:flex;gap:9px;overflow-x:auto;padding:18px 20px 2px;scrollbar-width:none}
+/* ---------- หัวข้อแต่ละแถบ ---------- */
+.sec-hd{display:flex;align-items:baseline;gap:10px;padding:24px 16px 0}
+.sec-hd h2{flex:1;font-size:21px;font-weight:800;letter-spacing:-.01em}
+.sec-hd button{font-size:13.5px;color:var(--gray);font-weight:600;flex:none}
+
+/* ---------- แบนเนอร์ ---------- */
+.bans{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;
+  padding:12px 16px 4px;scrollbar-width:none}
+.bans::-webkit-scrollbar{display:none}
+.ban{position:relative;flex:0 0 100%;scroll-snap-align:center;border-radius:18px;
+  overflow:hidden;background:var(--soft);box-shadow:0 2px 12px rgba(20,24,33,.10)}
+.ban img{width:100%;height:auto;display:block}
+.ban .bbtn{position:absolute;right:14px;bottom:14px;background:var(--red);color:#fff;
+  padding:10px 22px;border-radius:999px;font-size:14.5px;font-weight:700;
+  box-shadow:0 3px 12px rgba(0,0,0,.28)}
+.bdots{display:flex;gap:6px;justify-content:center;padding:10px 0 0}
+.bdots i{width:7px;height:7px;border-radius:50%;background:#CDD4DC}
+.bdots i.on{background:var(--blue);width:20px;border-radius:999px}
+
+/* ---------- แถวหมวด ---------- */
+.catrow{display:flex;gap:16px;overflow-x:auto;padding:16px 16px 4px;scrollbar-width:none}
+.catrow::-webkit-scrollbar{display:none}
+.catrow button{flex:none;width:86px;display:flex;flex-direction:column;
+  align-items:center;gap:8px;text-align:center}
+.catrow .cimg{width:86px;height:86px;border-radius:18px;background:var(--soft);
+  overflow:hidden;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--line)}
+.catrow .cimg img{width:100%;height:100%;object-fit:contain;padding:6px}
+.catrow .cimg .ini{font-size:26px;font-weight:800;color:#B9C3CE}
+.catrow em{font-size:12px;font-style:normal;line-height:1.35;color:var(--ink);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+.cats{display:flex;gap:9px;overflow-x:auto;padding:14px 16px 2px;scrollbar-width:none}
 .cats::-webkit-scrollbar{display:none}
 .cats button{flex:none;padding:9px 16px;border-radius:999px;background:var(--soft);
   color:var(--gray);font-size:13.5px;font-weight:500;white-space:nowrap;border:1px solid transparent}
 .cats button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
 
-.count{padding:16px 20px 0;font-size:13px;color:var(--gray)}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:12px 20px 0}
+.count{padding:14px 16px 0;font-size:13px;color:var(--gray)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:12px 16px 0}
 @media (max-width:359px){.grid{grid-template-columns:1fr}}
 @media (min-width:600px){.grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}}
+
+/* แถวสินค้าแบบเลื่อนข้าง — ใช้กับแถบแนะนำและขายดี ไม่กินความสูงทั้งหน้า */
+.prow{display:flex;gap:14px;overflow-x:auto;padding:12px 16px 6px;scrollbar-width:none}
+.prow::-webkit-scrollbar{display:none}
+.prow .card{flex:0 0 165px}
+
+/* ---------- หน้าหมวด: รูปปกใหญ่ แล้วแผ่นขาวโค้งทับขึ้นมา ---------- */
+.hero{position:relative;height:230px;background:linear-gradient(160deg,#5FA8FF,#2C6FD1)}
+.hero img{width:100%;height:100%;object-fit:cover}
+.hero .htop{position:absolute;top:14px;left:14px;right:14px;display:flex;
+  justify-content:space-between;z-index:2}
+.sheet{position:relative;margin-top:-26px;background:#fff;border-radius:26px 26px 0 0;
+  padding-top:8px;z-index:1;min-height:60vh}
+.sheet h2{text-align:center;font-size:22px;font-weight:800;padding:18px 20px 0;
+  letter-spacing:-.01em}
+.sheet .tiny{text-align:center;font-size:12.5px;color:var(--gray);margin-top:4px}
 
 .card{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff;
   display:flex;flex-direction:column;box-shadow:0 1px 3px rgba(20,24,33,.05)}
@@ -93,6 +177,42 @@ button.card-img{width:100%;cursor:zoom-in;padding:0;border-radius:0;display:flex
   font-size:14px;font-weight:600;margin-top:9px}
 .ask:disabled{background:#D7DBE0;color:#8B939C;cursor:not-allowed}
 
+/* ปุ่มกลมแดงมุมขวาล่างของการ์ด — กดใส่ตะกร้าทีละชิ้นโดยไม่ต้องอ่านอะไร */
+.priceline{display:flex;align-items:flex-end;gap:8px;margin-top:auto;padding-top:6px}
+.priceline .price{flex:1;min-width:0;margin:0;padding:0}
+.plus{width:38px;height:38px;border-radius:50%;background:var(--red);color:#fff;flex:none;
+  font-size:23px;line-height:1;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(190,75,72,.35)}
+.plus:disabled{background:#D7DBE0;color:#8B939C;box-shadow:none;cursor:not-allowed}
+.plus.inbag{background:var(--blue);font-size:13.5px;font-weight:700;
+  box-shadow:0 2px 8px rgba(61,139,255,.35)}
+
+.fav{position:absolute;top:8px;left:8px;width:32px;height:32px;border-radius:50%;
+  background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;
+  z-index:2;box-shadow:0 1px 5px rgba(20,24,33,.18)}
+.fav svg{width:17px;height:17px;stroke:var(--gray);fill:none;stroke-width:2}
+.fav.on svg{stroke:var(--red);fill:var(--red)}
+
+.tagrow{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;
+  gap:4px;align-items:flex-end;z-index:2}
+.tagrow span{background:var(--red);color:#fff;font-size:10px;font-weight:700;
+  padding:3px 9px;border-radius:999px;box-shadow:0 1px 5px rgba(20,24,33,.2)}
+.tagrow span.b{background:var(--blue)}
+
+/* ---------- แถบล่าง ---------- */
+.nav{position:fixed;left:0;right:0;bottom:0;max-width:var(--appw);margin:0 auto;z-index:45;
+  background:#fff;border-top:1px solid var(--line);display:flex;
+  padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+  box-shadow:0 -3px 16px rgba(20,24,33,.07)}
+.nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 2px;color:var(--gray);font-size:10.5px;font-weight:600;position:relative}
+.nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2}
+.nav button.on{color:var(--blue)}
+.nav .dot{position:absolute;top:2px;right:50%;margin-right:-22px;background:var(--red);
+  color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:999px;
+  display:none;align-items:center;justify-content:center;padding:0 5px}
+.nav .dot.on{display:flex}
+
 .line-card{margin:24px 20px 0;background:linear-gradient(135deg,#00B900,#00A000);
   border-radius:18px;padding:20px;color:#fff;box-shadow:0 4px 16px rgba(0,185,0,.25)}
 .line-card h3{font-size:18px;font-weight:700;margin-bottom:6px}
@@ -111,10 +231,13 @@ button.card-img{width:100%;cursor:zoom-in;padding:0;border-radius:0;display:flex
 
 /* ---------- ตะกร้าและหน้าสั่งซื้อ ---------- */
 .page{display:none}.page.on{display:block}
-#app.has-bar{padding-bottom:88px}
+#app{padding-bottom:calc(74px + env(safe-area-inset-bottom))}
+#app.has-bar{padding-bottom:calc(148px + env(safe-area-inset-bottom))}
 
-.bar{position:fixed;left:0;right:0;bottom:0;max-width:var(--appw);margin:0 auto;
-  background:#fff;border-top:1px solid var(--line);padding:12px 20px calc(12px + env(safe-area-inset-bottom));
+/* แถบยอดรวมนั่งทับแถบล่างอีกที — ต้องเผื่อความสูงแถบล่างไว้ ไม่งั้นบังกัน */
+.bar{position:fixed;left:0;right:0;bottom:calc(62px + env(safe-area-inset-bottom));
+  max-width:var(--appw);margin:0 auto;
+  background:#fff;border-top:1px solid var(--line);padding:12px 16px;
   display:none;align-items:center;gap:14px;z-index:40;box-shadow:0 -4px 18px rgba(20,24,33,.08)}
 .bar.on{display:flex}
 .bar .sum{flex:1;min-width:0}
@@ -191,12 +314,29 @@ button.card-img{width:100%;cursor:zoom-in;padding:0;border-radius:0;display:flex
 <body>
 <div id="app">
   <header class="hdr">
-    <h1 id="shop-name">AST Chem-Tooling</h1>
-    <div class="sub" id="shop-sub">ร้านเครื่องมือช่างและเคมีภัณฑ์</div>
-    <label class="search">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
-      <input id="q" type="search" placeholder="ค้นหาสินค้า หรือรหัส SKU...">
-    </label>
+    <div class="cover" id="cover"></div>
+    <div class="hdr-top">
+      <div class="logo" id="logo">AST</div>
+      <div class="hdr-t">
+        <h1 id="shop-name">AST Chem-Tooling</h1>
+        <div class="sub" id="shop-sub">ร้านเครื่องมือช่างและเคมีภัณฑ์</div>
+      </div>
+      <button class="round" id="btn-bell" aria-label="ทักไลน์ร้าน">
+        <svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3l-5 2 1.4-4A8.3 8.3 0 1 1 21 11.5z"/></svg>
+      </button>
+    </div>
+    <div class="searchrow">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+        <input id="q" type="search" placeholder="ค้นหาสินค้า หรือรหัส SKU...">
+      </label>
+      <button class="filt" id="btn-filt" aria-label="กรองตามหมวด">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M7 12h10M10 17h4"/></svg>
+      </button>
+    </div>
+    <button class="maprow" id="btn-map" style="display:none">
+      <span class="pin">📍</span><span id="map-txt"></span><span class="go-ico">›</span>
+    </button>
   </header>
 
   <div id="closed" class="closed" style="display:none">
@@ -245,8 +385,36 @@ button.card-img{width:100%;cursor:zoom-in;padding:0;border-radius:0;display:flex
     </div>
   </div>
 
+  <div class="page" id="pg-cat">
+    <div class="hero" id="cat-hero">
+      <div class="htop">
+        <button class="round" data-go="shop" aria-label="ย้อนกลับ">
+          <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <button class="round" id="cat-bell" aria-label="ทักไลน์ร้าน">
+          <svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3l-5 2 1.4-4A8.3 8.3 0 1 1 21 11.5z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="sheet" id="cat-body"></div>
+  </div>
+
   <div class="page" id="pg-done"><div class="done" id="done-body"></div></div>
 </div>
+
+<nav class="nav" id="nav">
+  <button data-nav="shop" id="nav-shop">
+    <svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>
+    หน้าแรก</button>
+  <button data-nav="cats" id="nav-cats">
+    <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>
+    หมวดหมู่</button>
+  <button data-nav="line" id="nav-line">
+    <svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3l-5 2 1.4-4A8.3 8.3 0 1 1 21 11.5z"/></svg>
+    ติดต่อร้าน</button>
+  <button data-nav="cart" id="nav-cart">
+    <svg viewBox="0 0 24 24"><path d="M5 7h14l-1.2 11.1a2 2 0 0 1-2 1.9H8.2a2 2 0 0 1-2-1.9z"/><path d="M9 7V5.5a3 3 0 0 1 6 0V7"/></svg>
+    ตะกร้า<i class="dot" id="nav-dot"></i></button>
+</nav>
 
 <div class="bar" id="bar">
   <div class="sum"><b id="bar-total">฿0.00</b><span id="bar-n">0 ชิ้น</span></div>
@@ -268,6 +436,7 @@ button.card-img{width:100%;cursor:zoom-in;padding:0;border-radius:0;display:flex
 <script>
 var $ = function (s) { return document.querySelector(s) };
 var DATA = null, curCat = '', curQ = '', CART = {}, PAGE = 'shop', SENDING = false;
+var SHOWFILT = false;
 
 /* ตะกร้าเก็บไว้ในเครื่องลูกค้า เผลอรีเฟรชหรือปิดแท็บแล้วของยังอยู่
    เก็บแค่รหัสกับจำนวน ไม่เก็บราคา ราคาถามจากชีทใหม่ทุกครั้งที่เปิดหน้า */
@@ -337,11 +506,28 @@ function pics(p) {
   return (p && p.img) ? [p.img] : [];
 }
 
+function heartBtn(p) {
+  return '<button class="fav' + (FAV[p.sku] ? ' on' : '') + '" data-fav="' + esc(p.sku) + '"'
+    + ' aria-label="' + (FAV[p.sku] ? 'เอาออกจากถูกใจ' : 'ถูกใจ') + '">'
+    + '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.6-7-9.3A4 4 0 0 1 12 8a4 4 0 0 1 7 2.7C19 15.4 12 20 12 20z"/></svg>'
+    + '</button>';
+}
+
+/* ป้ายมุมขวาบน — ป้ายแรกเป็นแดง ที่เหลือฟ้า มากสุดสองป้ายต่อการ์ด
+   ติดครบสี่ป้ายแล้วรูปสินค้าจะโดนบังจนดูไม่ออกว่าเป็นของอะไร */
+function tagBadges(p) {
+  var t = (p.tags || []).slice(0, 2);
+  if (!t.length) return '';
+  return '<div class="tagrow">' + t.map(function (x, i) {
+    return '<span' + (i ? ' class="b"' : '') + '>' + esc(x) + '</span>';
+  }).join('') + '</div>';
+}
+
 function card(p) {
   var out = !!p.out;
   var im = pics(p);
   var tag = out ? '<div class="out-tag"><span>สินค้าหมด</span></div>' : '';
-  return '<article class="card' + (out ? ' is-out' : '') + '">'
+  return '<article class="card' + (out ? ' is-out' : '') + '" style="position:relative">'
     + (im.length
         /* กดที่รูปแล้วเปิดดูเต็มจอ ใช้ปุ่มจริงเพื่อให้กดด้วยคีย์บอร์ดได้
            ตัวที่ไม่มีรูปคงเป็น div เฉย ๆ กดแล้วไม่มีอะไรให้ดู จะกดได้ก็หลอกลูกค้า */
@@ -352,20 +538,44 @@ function card(p) {
             + (im.length > 1 ? '<span class="npic">' + im.length + ' รูป</span>' : '')
           + '</button>'
         : '<div class="card-img"><div class="ph">' + esc(p.name) + '</div>' + tag + '</div>')
+    + heartBtn(p) + tagBadges(p)
     + '<div class="card-bd">'
       + '<h3>' + esc(p.name) + '</h3>'
       + (p.sku ? '<div class="sku">' + esc(p.sku) + '</div>' : '')
       + '<div class="meta">' + esc(p.unit || 'ชิ้น')
         + (Number(p.perPack) > 1 ? ' · แพ็ก ' + p.perPack : '')
         + ' · ' + (out ? 'สินค้าหมด' : 'พร้อมส่ง') + '</div>'
-      + '<div class="price">' + baht(p.price) + '</div>'
+      + '<div class="priceline"><div class="price">' + baht(p.price) + '</div>'
       + (DATA.open
-          ? '<button class="ask" data-add="' + esc(p.sku) + '"' + (out ? ' disabled' : '') + '>'
-              + (out ? 'สินค้าหมด' : (CART[p.sku] ? 'ในตะกร้า ' + CART[p.sku] + ' ชิ้น' : 'ใส่ตะกร้า'))
-              + '</button>'
-          : '<button class="ask" data-ask="' + esc(p.sku) + '"' + (out ? ' disabled' : '') + '>'
-              + (out ? 'สินค้าหมด' : 'สอบถามทางไลน์') + '</button>')
+          /* ปุ่มกลม ไม่มีตัวหนังสือ เพราะชื่อสินค้ายาวจนการ์ดไม่เหลือที่ให้ปุ่มเต็มแถว
+             ใส่ไปแล้วเปลี่ยนเป็นเลขจำนวน ลูกค้าจะได้รู้ว่ากดติดแล้วโดยไม่ต้องเปิดตะกร้า */
+          ? '<button class="plus' + (CART[p.sku] ? ' inbag' : '') + '" data-add="' + esc(p.sku)
+              + '"' + (out ? ' disabled' : '')
+              + ' aria-label="ใส่ตะกร้า ' + esc(p.name) + '">'
+              + (out ? '×' : (CART[p.sku] ? CART[p.sku] : '+')) + '</button>'
+          : '<button class="plus" data-ask="' + esc(p.sku) + '"' + (out ? ' disabled' : '')
+              + ' aria-label="สอบถามทางไลน์">' + (out ? '×' : '💬') + '</button>')
+      + '</div>'
     + '</div></article>';
+}
+
+/* ---------- ถูกใจ ----------
+   เก็บไว้ในเครื่องลูกค้าเท่านั้น ไม่ส่งกลับมาที่ร้านและไม่เขียนลงชีท
+   ของถูกใจคือรสนิยมของคนซื้อ ร้านไม่มีเหตุผลต้องรู้ และไม่อยากถือข้อมูลนั้นไว้ด้วย */
+var FAV = {};
+function favLoad() {
+  try { FAV = JSON.parse(localStorage.getItem('ast-shop-fav') || '{}') || {} } catch (e) { FAV = {} }
+}
+function favSave() {
+  try { localStorage.setItem('ast-shop-fav', JSON.stringify(FAV)) } catch (e) {}
+}
+function favToggle(sku) {
+  if (FAV[sku]) delete FAV[sku]; else FAV[sku] = 1;
+  favSave();
+  if (PAGE === 'cat') drawCat(); else draw();
+}
+function favList() {
+  return DATA.items.filter(function (p) { return FAV[p.sku] });
 }
 
 /* ---------- ตะกร้า ---------- */
@@ -402,7 +612,8 @@ function addToCart(sku, n) {
 function syncBar() {
   var n = cartCount(), sub = cartSub();
   var bar = $('#bar');
-  var show = n > 0 && PAGE === 'shop' && DATA && DATA.open;
+  var show = n > 0 && (PAGE === 'shop' || PAGE === 'cat') && DATA && DATA.open;
+  syncNav();
   bar.classList.toggle('on', show);
   $('#app').classList.toggle('has-bar', show);
   $('#bar-total').textContent = baht(sub + shipOf(sub));
@@ -452,14 +663,30 @@ function drawPaySums() { $('#pay-sums').innerHTML = sumRows(cartSub()) }
 
 function go(page) {
   PAGE = page;
+  /* หน้าหมวดมีรูปปกของตัวเอง ไม่ต้องมีหัวฟ้าของหน้าแรกซ้อนอยู่ข้างบนอีกชั้น */
+  $('.hdr').style.display = (page === 'cat') ? 'none' : '';
   $('#app').classList.toggle('inner', page !== 'shop');
-  ['shop', 'cart', 'pay', 'done'].forEach(function (x) {
+  ['shop', 'cat', 'cart', 'pay', 'done'].forEach(function (x) {
     $('#pg-' + x).classList.toggle('on', x === page);
   });
+  if (page === 'cat') drawCat();
   if (page === 'cart') drawCart();
   if (page === 'pay') drawPaySums();
   syncBar();
+  syncNav();
   window.scrollTo(0, 0);
+}
+
+/* แถบล่าง — บอกว่าอยู่หน้าไหน และมีของในตะกร้ากี่ชิ้น */
+function syncNav() {
+  var at = (PAGE === 'cart' || PAGE === 'pay') ? 'cart' : (PAGE === 'cat' ? 'cats' : 'shop');
+  ['shop', 'cats', 'line', 'cart'].forEach(function (k) {
+    $('#nav-' + k).classList.toggle('on', k === at);
+  });
+  var n = DATA ? cartCount() : 0;
+  var dot = $('#nav-dot');
+  dot.textContent = n > 99 ? '99+' : n;
+  dot.classList.toggle('on', n > 0);
 }
 
 /* ---------- ส่งออเดอร์ ---------- */
@@ -543,31 +770,201 @@ function drawDone(r) {
     + '<button class="ghost" data-go="shop" style="margin-top:10px">เลือกซื้อต่อ</button>';
 }
 
-function draw() {
-  var list = shown();
-  var cats = '<button data-cat=""' + (curCat ? '' : ' class="on"') + '>ทั้งหมด</button>'
+/* ---------- ชิ้นส่วนของหน้าแรก ---------- */
+
+function secHd(title, seeCat) {
+  return '<div class="sec-hd"><h2>' + esc(title) + '</h2>'
+    + (seeCat === undefined ? ''
+        : '<button data-cat="' + esc(seeCat) + '">ดูทั้งหมด ›</button>') + '</div>';
+}
+
+/* แบนเนอร์หนึ่งแถบ — แถบไหนไม่มีรูปเลย คืนค่าว่าง แถบนั้นหายไปทั้งแถบ
+   ไม่เหลือหัวข้อลอยอยู่กับที่ว่างข้างล่าง ซึ่งทำให้ดูเหมือนรูปโหลดไม่ขึ้น */
+function banSec(slot, title, seeCat) {
+  var list = (DATA.banners || {})[slot] || [];
+  if (!list.length) return '';
+  var many = list.length > 1;
+  return (title ? secHd(title, seeCat) : '')
+    + '<div class="bans" data-bans="' + esc(slot) + '">'
+    + list.map(function (b, i) {
+        return '<div class="ban">'
+          + '<img src="' + esc(b.img) + '" alt="' + esc(b.title || title || '') + '" loading="lazy">'
+          + (b.btn ? '<button class="bbtn" data-ban="' + esc(slot) + ':' + i + '">'
+                       + esc(b.btn) + '</button>' : '')
+          + '</div>';
+      }).join('')
+    + '</div>'
+    + (many ? '<div class="bdots" data-dots="' + esc(slot) + '">'
+                + list.map(function (_, i) { return '<i' + (i ? '' : ' class="on"') + '></i>' }).join('')
+              + '</div>' : '');
+}
+
+function catRow() {
+  var cc = DATA.catCards || [];
+  if (!cc.length) return '';
+  return secHd('หมวดหมู่', '')
+    + '<div class="catrow">' + cc.map(function (c) {
+        return '<button data-cat="' + esc(c.group) + '">'
+          + '<span class="cimg">' + (c.icon
+              ? '<img src="' + esc(c.icon) + '" alt="" loading="lazy">'
+              : '<span class="ini">' + esc(String(c.label).trim().charAt(0) || '·') + '</span>')
+          + '</span><em>' + esc(c.label) + '</em></button>';
+      }).join('') + '</div>';
+}
+
+/* แถวสินค้าเลื่อนข้าง — ว่างแล้วไม่ขึ้นทั้งแถบ */
+function prodRow(title, list, seeCat) {
+  if (!list.length) return '';
+  return secHd(title, seeCat)
+    + '<div class="prow">' + list.slice(0, 12).map(card).join('') + '</div>';
+}
+
+function tagged() {
+  var want = { 'แนะนำ': 1, 'ใหม่': 1, 'โปรโมชั่น': 1 };
+  return DATA.items.filter(function (p) {
+    return (p.tags || []).some(function (t) { return want[t] });
+  });
+}
+
+function bestList() {
+  var by = {};
+  DATA.items.forEach(function (p) { by[p.sku] = p });
+  return (DATA.best || []).map(function (sku) { return by[sku] })
+    .filter(function (p) { return !!p });
+}
+
+function foot() {
+  return '<div class="foot">' + esc(DATA.shop.full || DATA.shop.name)
+    + (DATA.shop.tel ? '<br>โทร ' + esc(DATA.shop.tel) : '')
+    + (DATA.shop.addr ? '<br>' + esc(DATA.shop.addr) : '') + '</div>';
+}
+
+function lineCard() {
+  if (!DATA.shop.line) return '';
+  return '<div class="line-card"><h3>สั่งซื้อและสอบถามทางไลน์</h3>'
+    + '<p>แอดเป็นเพื่อนเพื่อสั่งซื้อ ขอใบเสนอราคา และติดตามพัสดุได้ในแชทเดียว</p>'
+    + '<button id="btn-line">แอดไลน์ร้าน</button></div>';
+}
+
+function catChips() {
+  return '<div class="cats"' + (SHOWFILT ? '' : ' style="display:none"') + '>'
+    + '<button data-cat=""' + (curCat ? '' : ' class="on"') + '>ทั้งหมด</button>'
     + DATA.cats.map(function (g) {
         return '<button data-cat="' + esc(g) + '"' + (curCat === g ? ' class="on"' : '') + '>'
           + esc(g) + '</button>';
-      }).join('');
+      }).join('')
+    + '</div>';
+}
 
-  var body = '<div class="cats">' + cats + '</div>'
-    + '<div class="count">' + list.length + ' รายการ</div>'
+/**
+ * หน้าแรก
+ *
+ * กำลังค้นหาหรือเลือกหมวดอยู่ → โชว์แต่ผลลัพธ์ ไม่ต้องมีแบนเนอร์มาคั่น
+ * คนที่พิมพ์ค้นหาแล้วต้องเลื่อนผ่านโปรโมชั่นสามแถบกว่าจะเจอของที่หา จะเลิกหาไปก่อน
+ */
+function draw() {
+  var list = shown();
+  var busy = !!(curQ.trim() || curCat);
+  var body = '';
+
+  if (busy) {
+    body = catChips()
+      + '<div class="count">' + list.length + ' รายการ'
+      + (curCat ? ' ในหมวด ' + esc(curCat) : '') + '</div>'
+      + (list.length
+          ? '<div class="grid">' + list.map(card).join('') + '</div>'
+          : '<div class="state"><b>ไม่พบสินค้า</b>ลองเปลี่ยนคำค้น หรือเลือกหมวดอื่น</div>');
+  } else {
+    body = banSec('ติดต่อเรา', 'ติดต่อร้าน')
+      + banSec('โปรโมชั่นเด่น', 'โปรโมชั่นพิเศษ')
+      + catRow()
+      + prodRow('สินค้าแนะนำ', tagged())
+      + prodRow('ขายดีประจำร้าน', bestList())
+      + prodRow('ถูกใจไว้', favList())
+      + banSec('โปรโมชั่นประจำเดือน', 'โปรโมชั่นประจำเดือน')
+      + secHd('สินค้าทั้งหมด')
+      + catChips()
+      + '<div class="count">' + list.length + ' รายการ</div>'
+      + '<div class="grid">' + list.map(card).join('') + '</div>';
+  }
+
+  body += lineCard() + foot();
+  $('#body').innerHTML = body;
+  bindBanDots();
+  syncBar();
+}
+
+/* หน้าหมวด — รูปปกใหญ่ แล้วแผ่นขาวโค้งทับขึ้นมา ตามแบบที่เจ้าของร้านวางไว้ */
+function drawCat() {
+  var c = (DATA.catCards || []).filter(function (x) { return x.group === curCat })[0]
+       || { group: curCat, label: curCat, cover: '' };
+  var list = DATA.items.filter(function (p) { return p.group === curCat });
+
+  var hero = $('#cat-hero');
+  var old = hero.querySelector('img');
+  if (old) old.remove();
+  if (c.cover) {
+    var im = document.createElement('img');
+    im.src = c.cover; im.alt = '';
+    hero.insertBefore(im, hero.firstChild);
+  }
+
+  $('#cat-body').innerHTML = '<h2>' + esc(c.label) + '</h2>'
+    + '<div class="tiny">' + list.length + ' รายการ</div>'
     + (list.length
         ? '<div class="grid">' + list.map(card).join('') + '</div>'
-        : '<div class="state"><b>ไม่พบสินค้า</b>ลองเปลี่ยนคำค้น หรือเลือกหมวดอื่น</div>');
+        : '<div class="state">หมวดนี้ยังไม่มีสินค้าให้สั่งตอนนี้</div>')
+    + foot();
+}
 
-  if (DATA.shop.line) {
-    body += '<div class="line-card"><h3>สั่งซื้อและสอบถามทางไลน์</h3>'
-      + '<p>แอดเป็นเพื่อนเพื่อสั่งซื้อ ขอใบเสนอราคา และติดตามพัสดุได้ในแชทเดียว</p>'
-      + '<button id="btn-line">แอดไลน์ร้าน</button></div>';
+/* จุดใต้แบนเนอร์ต้องขยับตามตอนปัดนิ้ว ไม่งั้นลูกค้าไม่รู้ว่ายังมีรูปถัดไป */
+function bindBanDots() {
+  Array.prototype.forEach.call(document.querySelectorAll('.bans'), function (tr) {
+    var dots = document.querySelector('.bdots[data-dots="' + tr.dataset.bans + '"]');
+    if (!dots) return;
+    tr.addEventListener('scroll', function () {
+      if (!tr.clientWidth) return;
+      var k = Math.round(tr.scrollLeft / tr.clientWidth);
+      for (var i = 0; i < dots.children.length; i++) {
+        dots.children[i].className = (i === k ? 'on' : '');
+      }
+    });
+  });
+}
+
+/* กดปุ่มบนแบนเนอร์ — พาไปหน้าในร้านถ้าทำได้ เด้งออกนอกเป็นทางสุดท้าย */
+function banGo(ref) {
+  var at = String(ref).lastIndexOf(':');
+  var list = (DATA.banners || {})[ref.slice(0, at)] || [];
+  var b = list[Number(ref.slice(at + 1))];
+  if (!b || !b.go) return;
+  if (b.go.kind === 'url') { openUrl(b.go.v); return; }
+  if (b.go.kind === 'cat') { curCat = b.go.v; go('cat'); return; }
+  if (b.go.kind === 'sku') {
+    var p = bySku(b.go.v);
+    if (!p) { toast('สินค้าตัวนี้ไม่มีขายแล้ว'); return; }
+    if (pics(p).length) openPics(p.sku); else { curCat = p.group; go('cat'); }
   }
-  body += '<div class="foot">' + esc(DATA.shop.full || DATA.shop.name)
-    + (DATA.shop.tel ? '<br>โทร ' + esc(DATA.shop.tel) : '')
-    + (DATA.shop.addr ? '<br>' + esc(DATA.shop.addr) : '') + '</div>';
+}
 
-  $('#body').innerHTML = body;
-  syncBar();
+/* ใส่โลโก้ ภาพหัว และแถบแผนที่ตามที่เจ้าของร้านกรอกไว้
+   ช่องไหนไม่ได้กรอก ส่วนนั้นหายไปเฉย ๆ ไม่เหลือกรอบเปล่าค้างไว้ */
+function dressHeader(d) {
+  if (d.logo) {
+    $('#logo').innerHTML = '<img src="' + esc(d.logo) + '" alt="">';
+  } else {
+    var nm = String(d.shop.name || 'AST').trim();
+    $('#logo').textContent = nm.slice(0, 3).toUpperCase();
+  }
+  $('#cover').innerHTML = d.cover ? '<img src="' + esc(d.cover) + '" alt="">' : '';
+
+  var m = d.map || {};
+  if (m.url && m.label) {
+    $('#map-txt').textContent = m.label;
+    $('#btn-map').style.display = '';
+  } else {
+    $('#btn-map').style.display = 'none';
+  }
 }
 
 function failed(msg) {
@@ -584,6 +981,7 @@ function load() {
       $('#shop-sub').textContent = d.shop.full || 'สินค้าและราคาล่าสุดจากระบบของร้าน';
       document.title = d.shop.name || 'ร้านของเรา';
       $('#closed').style.display = d.open ? 'none' : '';
+      dressHeader(d);
       draw();
     })
     .withFailureHandler(function (e) { failed(e && e.message ? e.message : String(e)) })
@@ -656,17 +1054,53 @@ document.addEventListener('keydown', function (e) {
 
 document.addEventListener('click', function (e) {
   var t = e.target.closest('[data-cat],[data-ask],[data-add],[data-inc],[data-dec],' +
-    '[data-go],[data-pay],[data-pic],#btn-line,#btn-cart,#btn-send,#done-line,#retry,' +
+    '[data-go],[data-pay],[data-pic],[data-fav],[data-ban],[data-nav],' +
+    '#btn-line,#btn-cart,#btn-send,#done-line,#retry,#btn-bell,#cat-bell,#btn-filt,#btn-map,' +
     '#lb-close,#lb-prev,#lb-next');
   if (!t) return;
   if (t.id === 'lb-close') { closePics(); return; }
   if (t.id === 'lb-prev') { jumpPic(LB.i - 1); return; }
   if (t.id === 'lb-next') { jumpPic(LB.i + 1); return; }
   if (t.dataset.pic) { openPics(t.dataset.pic); return; }
+  if (t.dataset.fav) { favToggle(t.dataset.fav); return; }
+  if (t.dataset.ban) { banGo(t.dataset.ban); return; }
+  if (t.id === 'btn-bell' || t.id === 'cat-bell' || t.dataset.nav === 'line') {
+    if (DATA && DATA.shop.line) openUrl(DATA.shop.line);
+    else toast('ร้านยังไม่ได้ใส่ลิงก์ไลน์');
+    return;
+  }
+  if (t.id === 'btn-map') { openUrl(DATA && DATA.map && DATA.map.url); return; }
+  if (t.id === 'btn-filt') {
+    SHOWFILT = !SHOWFILT;
+    t.classList.toggle('on', SHOWFILT);
+    if (DATA) draw();
+    return;
+  }
+  if (t.dataset.nav) {
+    var k = t.dataset.nav;
+    if (k === 'cart') { go('cart'); return; }
+    /* ปุ่มหมวดหมู่บนแถบล่าง = กลับหน้าแรกแล้วเปิดตัวกรองให้เลย
+       ทำหน้าหมวดหมู่แยกอีกหน้าจะกลายเป็นรายชื่อหมวดเปล่า ๆ ที่ต้องกดอีกทีอยู่ดี */
+    curCat = ''; curQ = ''; $('#q').value = '';
+    if (k === 'cats') SHOWFILT = true;
+    go('shop');
+    if (DATA) draw();
+    if (k === 'cats') {
+      var c = document.querySelector('.cats');
+      if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
   if (t.id === 'btn-cart') { go('cart'); return; }
   if (t.id === 'btn-send') { send(); return; }
   if (t.id === 'done-line') { openUrl(DATA && DATA.shop.line); return; }
-  if (t.dataset.go) { go(t.dataset.go); return; }
+  if (t.dataset.go) {
+    /* ออกจากหน้าหมวดแล้วต้องล้างหมวดที่ค้างอยู่ด้วย ไม่งั้นกลับมาหน้าแรกแล้วเจอ
+       สินค้าแค่หมวดเดียวโดยไม่มีอะไรบอกว่ากำลังกรองอยู่ — เหมือนของหายไปเฉย ๆ */
+    if (t.dataset.go === 'shop' && curCat) { curCat = ''; if (DATA) draw(); }
+    go(t.dataset.go);
+    return;
+  }
   if (t.dataset.pay) { openUrl(t.dataset.pay); return; }
   if (t.dataset.add) { addToCart(t.dataset.add, 1); return; }
   if (t.dataset.inc) { addToCart(t.dataset.inc, 1); return; }
@@ -676,7 +1110,15 @@ document.addEventListener('click', function (e) {
     load(); return;
   }
   if (t.id === 'btn-line') { openUrl(DATA && DATA.shop.line); return; }
-  if (t.dataset.cat !== undefined) { curCat = t.dataset.cat; draw(); return; }
+  if (t.dataset.cat !== undefined) {
+    curCat = t.dataset.cat;
+    /* ชิปในแถบตัวกรองกรองอยู่ในหน้าเดิม · การ์ดหมวดกับปุ่ม "ดูทั้งหมด" พาเข้าหน้าหมวด
+       ต่างกันเพราะชิปใช้ตอนกำลังไล่ดูของ ส่วนการ์ดคือตั้งใจเข้าไปดูหมวดนั้นจริง ๆ */
+    if (t.closest('.cats')) { draw(); if (PAGE !== 'shop') go('shop'); return; }
+    if (!curCat) { go('shop'); draw(); return; }
+    go('cat');
+    return;
+  }
   if (t.dataset.ask) {
     var p = DATA.items.find(function (x) { return x.sku === t.dataset.ask });
     if (p) askOnLine(p);
@@ -685,6 +1127,7 @@ document.addEventListener('click', function (e) {
 $('#q').addEventListener('input', function (e) { curQ = e.target.value; if (DATA) draw(); });
 
 cartLoad();
+favLoad();
 load();
 </script>
 </body></html>

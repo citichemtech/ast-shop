@@ -55,6 +55,7 @@ function shopItems_() {
          ส่ง img ตัวเดียวไปด้วย เพราะรูปเล็กในตะกร้าใช้แค่รูปแรกพอ */
       imgs: shopImgs_(p),
       img: shopImgs_(p)[0] || '',
+      tags: shopTags_(p.tag),
       /* บอกแค่ "มี" หรือ "หมด" ไม่บอกว่าเหลือกี่ชิ้น
          จำนวนคงเหลือคือข้อมูลภายใน คู่แข่งอ่านได้ว่าเดือนหนึ่งขายไปเท่าไร */
       out: p.remain !== null && Number(p.remain) <= 0
@@ -87,6 +88,13 @@ function shopItems_() {
  * ไม่งั้นลูกค้าจะเลื่อนไปเจอรูปแตก ซึ่งดูแย่กว่ามีรูปเดียว
  * และถ้าใส่ลิงก์เดียวกันสองช่อง ตัดตัวซ้ำทิ้ง คนเผลอก๊อปวางซ้ำกันบ่อย
  */
+/** ป้ายหน้าร้านของสินค้าหนึ่งตัว — คั่นด้วยจุลภาคหรือเว้นวรรค ตัดช่องว่างให้เอง */
+function shopTags_(v) {
+  return String(v == null ? '' : v).split(/[,·|\n]+/)
+    .map(function (t) { return t.trim() })
+    .filter(function (t) { return !!t });
+}
+
 function shopImgs_(p) {
   var out = [];
   [p && p.img, p && p.img2].forEach(function (v) {
@@ -153,9 +161,178 @@ function shopData() {
       addr: c.sender.addr || ''
     },
     ship: { fee: Number(c.shipFee) || 0, freeOver: Number(c.freeOver) || 0 },
+    logo: shopImg_(c.shopLogo),
+    cover: shopImg_(c.shopCover),
+    map: shopMap_(c),
+    banners: shopBanners_(),
     cats: shopCats_(items),
+    catCards: shopCatCards_(items),
+    best: shopBest_(items),
     items: items
   };
+}
+
+/**
+ * ลิงก์เปิดแผนที่ร้าน — แถบแผนที่บนหัวหน้าร้านกดแล้วเด้งไป Google Maps
+ *
+ * ถ้าเจ้าของร้านใส่ลิงก์แผนที่ไว้เองใน ตั้งค่าแอป ใช้ตัวนั้น
+ * ไม่งั้นเอาที่อยู่ผู้ส่งไปค้นใน Google Maps แทน ซึ่งพาไปถูกที่ในกรณีส่วนใหญ่
+ * ดีกว่าไม่มีปุ่มให้กดเลย
+ */
+function shopMap_(c) {
+  var url = String((c && c.shopMap) || '').trim();
+  var addr = String((c && c.sender && c.sender.addr) || '').trim();
+  if (!/^https:\/\//.test(url)) {
+    url = addr ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(addr) : '';
+  }
+  /* ป้ายบนแถบเอาแค่บรรทัดแรกของที่อยู่ ที่อยู่เต็มยาวเกินกว่าจะอ่านรู้เรื่องบนแถบเตี้ย ๆ */
+  var short = addr.split(/[\n,]/)[0].trim();
+  return { url: url, label: short || addr, addr: addr };
+}
+
+/**
+ * แบนเนอร์ที่เปิดใช้อยู่ แยกตามตำแหน่งบนหน้าแรก
+ *
+ * แถวที่ไม่มีรูป หรือรูปแปลงไม่ได้ ตกไปเงียบ ๆ — แบนเนอร์ที่เป็นกรอบเปล่า
+ * กินพื้นที่ครึ่งจอโดยไม่บอกอะไรลูกค้าเลย แย่กว่าไม่มีแบนเนอร์
+ */
+function shopBanners_() {
+  var out = {};
+  var rows = shopRows_('ban');
+  var IN = SH.ban.IN;
+  for (var i = 0; i < rows.length; i++) {
+    var img = shopImg_(rows[i][IN.img - 1]);
+    if (!img) continue;
+    if (String(rows[i][IN.on - 1] || '').trim() !== 'เปิด') continue;
+    var slot = String(rows[i][IN.slot - 1] || '').trim();
+    if (!slot) continue;
+    if (!out[slot]) out[slot] = [];
+    out[slot].push({
+      img: img,
+      title: String(rows[i][IN.title - 1] || ''),
+      btn: String(rows[i][IN.btn - 1] || '').trim(),
+      go: shopHref_(rows[i][IN.href - 1])
+    });
+  }
+  return out;
+}
+
+/**
+ * ลิงก์ปุ่มบนแบนเนอร์ — แปลงเป็นคำสั่งที่หน้าร้านเข้าใจ
+ *
+ * รับสามแบบ เพราะแบนเนอร์ส่วนใหญ่ควรพาไปหน้าในร้าน ไม่ใช่เด้งออกไปข้างนอก
+ *   https://...        → เปิดลิงก์นอก
+ *   หมวด:ชื่อหมวด       → เข้าหน้าหมวดนั้น
+ *   สินค้า:SKU          → เปิดรูปสินค้าตัวนั้น
+ * อย่างอื่นคืน null = ปุ่มไม่ขึ้น แบนเนอร์เป็นรูปเฉย ๆ กดไม่ได้
+ */
+function shopHref_(v) {
+  var t = String(v == null ? '' : v).trim();
+  if (!t) return null;
+  if (/^https:\/\//.test(t)) return { kind: 'url', v: t };
+  var m = /^(?:หมวด|cat)\s*[:：]\s*(.+)$/.exec(t);
+  if (m) return { kind: 'cat', v: m[1].trim() };
+  m = /^(?:สินค้า|sku)\s*[:：]\s*(.+)$/.exec(t);
+  if (m) return { kind: 'sku', v: m[1].trim() };
+  return null;
+}
+
+/**
+ * การ์ดหมวดบนหน้าแรก — ชื่อหมวดมาจาก ฐานสินค้า รูปมาจากชีท หมวดหน้าร้าน
+ *
+ * เรียงตามลำดับในชีท หมวดหน้าร้าน ก่อน แล้วค่อยต่อด้วยหมวดที่ยังไม่มีแถวในนั้น
+ * หมวดที่ไม่มีสินค้าขายอยู่เลยตัดทิ้ง กดเข้าไปแล้วเจอหน้าว่างทำให้ลูกค้าคิดว่าเว็บเสีย
+ */
+function shopCatCards_(items) {
+  var live = {};
+  for (var i = 0; i < items.length; i++) {
+    var g = String(items[i].group || '').trim();
+    if (g) live[g] = (live[g] || 0) + 1;
+  }
+
+  var out = [], done = {};
+  var rows = shopRows_('scat');
+  var IN = SH.scat.IN;
+  for (var r = 0; r < rows.length; r++) {
+    var grp = String(rows[r][IN.group - 1] || '').trim();
+    if (!grp || done[grp] || !live[grp]) continue;
+    /* ทำเครื่องหมายว่าเจอแล้วก่อนเช็ค ซ่อน ไม่งั้นลูปเก็บตกข้างล่างจะเติมกลับเข้ามาอีก
+       แล้วพิมพ์ ซ่อน ไปก็ไม่มีผล ซึ่งงงกว่าไม่มีช่องให้ซ่อนเสียอีก */
+    done[grp] = 1;
+    if (String(rows[r][IN.home - 1] || '').trim() === 'ซ่อน') continue;
+    out.push({
+      group: grp,
+      label: String(rows[r][IN.label - 1] || '').trim() || grp,
+      icon: shopImg_(rows[r][IN.icon - 1]),
+      cover: shopImg_(rows[r][IN.cover - 1]),
+      n: live[grp]
+    });
+  }
+  for (var k = 0; k < items.length; k++) {
+    var g2 = String(items[k].group || '').trim();
+    if (!g2 || done[g2]) continue;
+    done[g2] = 1;
+    out.push({ group: g2, label: g2, icon: '', cover: '', n: live[g2] });
+  }
+  return out;
+}
+
+/**
+ * สินค้าขายดี — เรียงจากจำนวนที่ขายได้จริงในชีท ออเดอร์_รายการ
+ *
+ * ไม่ให้เจ้าของร้านมานั่งเดาเอง เพราะของที่ "รู้สึกว่าขายดี" กับของที่ขายดีจริง
+ * มักไม่ใช่ตัวเดียวกัน — ชีทรู้คำตอบอยู่แล้ว เอามาใช้เลยดีกว่า
+ *
+ * คืนแค่รหัสสินค้ากับอันดับ ไม่คืนจำนวนที่ขายได้ นั่นคือข้อมูลภายใน
+ * คู่แข่งอ่านแล้วรู้ทันทีว่าเดือนหนึ่งร้านนี้ขายตัวไหนได้กี่ชิ้น
+ *
+ * อ่านทั้งชีททุกครั้งที่ลูกค้าเปิดหน้าร้านจะช้า เก็บคำตอบไว้ในแคชหกชั่วโมง
+ * อันดับขายดีไม่ใช่ของที่ต้องสด ๆ ทันทีอยู่แล้ว
+ */
+var BEST_N = 8;
+
+function shopBest_(items) {
+  var onShelf = {};
+  for (var i = 0; i < items.length; i++) onShelf[items[i].sku] = 1;
+
+  var cached = null;
+  try { cached = CacheService.getScriptCache().get('shopBest'); } catch (e) {}
+  if (cached) {
+    try {
+      return JSON.parse(cached).filter(function (sku) { return onShelf[sku] });
+    } catch (e2) {}
+  }
+
+  var qty = {};
+  var rows = shopRows_('item');
+  var IN = SH.item.IN;
+  for (var r = 0; r < rows.length; r++) {
+    var sku = String(rows[r][IN.sku - 1] || '').trim();
+    if (!sku) continue;
+    qty[sku] = (qty[sku] || 0) + (Number(rows[r][IN.qty - 1]) || 0);
+  }
+
+  var rank = Object.keys(qty).sort(function (a, b) { return qty[b] - qty[a] });
+  try {
+    CacheService.getScriptCache().put('shopBest', JSON.stringify(rank.slice(0, 40)), 21600);
+  } catch (e3) {}
+
+  return rank.filter(function (sku) { return onShelf[sku] }).slice(0, BEST_N);
+}
+
+/**
+ * อ่านทั้งชีทแบบไม่ล้มถ้าชีทยังไม่มี
+ *
+ * หน้าร้านต้องเปิดได้ตั้งแต่ก่อนเจ้าของร้านสั่ง setupShopPages() — คนที่เพิ่งวางโค้ดใหม่
+ * แล้วเจอหน้าร้านขาวโพลนเพราะยังไม่ได้สั่งฟังก์ชันตั้งค่า จะไม่รู้เลยว่าต้องทำอะไรต่อ
+ */
+function shopRows_(key) {
+  try {
+    if (!findSheet_(ss_(), SH[key].name)) return [];
+    return readAll_(key);
+  } catch (e) {
+    return [];
+  }
 }
 
 /**

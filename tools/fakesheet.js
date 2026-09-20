@@ -516,7 +516,7 @@ function load(fixture, opts) {
       },
       flush: function () { fixture.recalc(); },
       newDataValidation: function () {
-        var b = { requireValueInRange: function () { return b; }, setAllowInvalid: function () { return b; }, build: function () { return {}; } };
+        var b = { requireValueInRange: function () { return b; }, requireValueInList: function () { return b; }, setAllowInvalid: function () { return b; }, build: function () { return {}; } };
         return b;
       }
     },

@@ -34,22 +34,46 @@ DATA = {
         "addr": "ที่อยู่ตัวอย่าง เขตตัวอย่าง กรุงเทพมหานคร 10000",
     },
     "ship": {"fee": 50, "freeOver": 1000},
+    "logo": "",
+    "cover": "",
+    "map": {"url": "https://www.google.com/maps/search/?api=1&query=test",
+            "label": "2/1 ซ.ตัวอย่าง", "addr": "ที่อยู่ตัวอย่าง"},
+    "banners": {
+        "ติดต่อเรา": [{"img": pic("LINE", "#00B900"), "title": "แอดไลน์",
+                      "btn": "แอดไลน์ร้าน", "go": {"kind": "url", "v": "https://example.com/line"}}],
+        "โปรโมชั่นเด่น": [
+            {"img": pic("PROMO 1", "#1668D6"), "title": "โปร 1", "btn": "Buy Now",
+             "go": {"kind": "cat", "v": "เคมีภัณฑ์"}},
+            {"img": pic("PROMO 2", "#BE4B48"), "title": "โปร 2", "btn": "",
+             "go": None}],
+        "โปรโมชั่นประจำเดือน": [{"img": pic("MONTH", "#2C6FD1"), "title": "โปรเดือนนี้",
+                                 "btn": "", "go": None}],
+    },
+    "best": ["SKU-148", "SKU-Chem-102"],
     "cats": ["ดอกกัดคาร์ไบด์", "ดอกเจาะ", "เคมีภัณฑ์"],
+    "catCards": [
+        {"group": "ดอกกัดคาร์ไบด์", "label": "ดอกกัดคาร์ไบด์", "icon": pic("EM", "#3D8BFF"),
+         "cover": pic("END MILL", "#1668D6"), "n": 3},
+        {"group": "ดอกเจาะ", "label": "ดอกเจาะ", "icon": "", "cover": "", "n": 1},
+        {"group": "เคมีภัณฑ์", "label": "Chemical", "icon": pic("CH", "#BE4B48"),
+         "cover": pic("CHEMICAL", "#96302D"), "n": 2},
+    ],
     "items": [
         {"sku": "SKU-141", "name": "Single Flute Endmill 1F / 1.0*5.0*3.175*38L (1pcs)",
          "group": "ดอกกัดคาร์ไบด์", "unit": "ชิ้น", "perPack": 1, "price": 89, "out": False,
-         "img": pic("A1", "#3D8BFF"), "imgs": [pic("A1", "#3D8BFF"), pic("A2", "#1668D6")]},
+         "img": pic("A1", "#3D8BFF"), "imgs": [pic("A1", "#3D8BFF"), pic("A2", "#1668D6")],
+         "tags": ["แนะนำ", "ใหม่"]},
         {"sku": "SKU-148", "name": "Straight Endmill 2F 2.0-17", "group": "ดอกกัดคาร์ไบด์",
          "unit": "ชิ้น", "perPack": 1, "price": 96, "out": False,
-         "img": pic("B1", "#BE4B48"), "imgs": [pic("B1", "#BE4B48")]},
+         "img": pic("B1", "#BE4B48"), "imgs": [pic("B1", "#BE4B48")], "tags": []},
         {"sku": "SKU-181", "name": "Square Endmill 4F 2.5-7.5", "group": "ดอกกัดคาร์ไบด์",
-         "unit": "ชิ้น", "perPack": 1, "price": 225, "img": "", "imgs": [], "out": True},
+         "unit": "ชิ้น", "perPack": 1, "price": 225, "img": "", "imgs": [], "out": True, "tags": []},
         {"sku": "SKU-210", "name": "ดอกเจาะคาร์ไบด์ 3.0 มม.", "group": "ดอกเจาะ",
-         "unit": "ชิ้น", "perPack": 1, "price": 145, "img": "", "imgs": [], "out": False},
+         "unit": "ชิ้น", "perPack": 1, "price": 145, "img": "", "imgs": [], "out": False, "tags": []},
         {"sku": "SKU-Chem-102", "name": "Acetone 1000 ml", "group": "เคมีภัณฑ์",
-         "unit": "ขวด", "perPack": 12, "price": 120, "img": "", "imgs": [], "out": False},
+         "unit": "ขวด", "perPack": 12, "price": 120, "img": "", "imgs": [], "out": False, "tags": []},
         {"sku": "SKU-Chem-111", "name": "น้ำยาล้าง PCB 1000 ml", "group": "เคมีภัณฑ์",
-         "unit": "ขวด", "perPack": 12, "price": 160, "img": "", "imgs": [], "out": False},
+         "unit": "ขวด", "perPack": 12, "price": 160, "img": "", "imgs": [], "out": False, "tags": []},
     ],
 }
 
@@ -59,6 +83,7 @@ STUB = """
 var SHOP_DATA = %s;
 window.google = { script: { run: (function () {
   var ok = null, bad = null;
+  window.SENT_ORDERS = window.SENT_ORDERS || [];
   var api = {
     withSuccessHandler: function (f) { ok = f; return api },
     withFailureHandler: function (f) { bad = f; return api },
@@ -75,6 +100,7 @@ window.google = { script: { run: (function () {
         var ship = (SHOP_DATA.ship.freeOver && sub >= SHOP_DATA.ship.freeOver)
           ? 0 : SHOP_DATA.ship.fee;
         window.SHOP_SENT = p;
+        window.SENT_ORDERS.push(p);
         ok({ ok: true, no: 'AST-26-0042', duplicate: false, net: sub + ship,
              payUrl: 'https://example.invalid/pay?p=demo', why: '' });
       }, 250);

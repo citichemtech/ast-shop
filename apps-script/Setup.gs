@@ -44,6 +44,9 @@ function setup() {
   made.push(setupMonthSheet_(ss));
   made.push(setupSlipSheet_(ss));
   made.push(setupReqSheet_(ss));
+  made.push(setupBanSheet_(ss));
+  made.push(setupScatSheet_(ss));
+  made.push(setupProdTagCol_(ss));
   made.push(setupLinkSheet_(ss));
   made.push(setupItemLotColumn_(ss));
   made.push(setupAccounting_(ss));
@@ -2730,7 +2733,16 @@ function shopSwitchRow_(ss) {
     ['ออเดอร์จากเว็บ', 'เข้าคิวก่อน',
       'เข้าคิวก่อน = ไปรอในชีท คำขอสั่งซื้อ ให้พนักงานตรวจแล้วกด "รับเป็นออเดอร์"\n' +
       'เข้าชีทเลย   = เป็นออเดอร์จริงทันที ตัดสต๊อกทันที ไม่มีใครตรวจก่อน\n' +
-      'แนะนำให้ใช้ "เข้าคิวก่อน" เพราะพลาดแล้วแก้ง่ายกว่ามาก']
+      'แนะนำให้ใช้ "เข้าคิวก่อน" เพราะพลาดแล้วแก้ง่ายกว่ามาก'],
+    ['โลโก้ร้าน (ลิงก์รูป)', '',
+      'โลโก้กลม ๆ บนหัวหน้าร้าน เว้นว่างได้\n' +
+      'ลิงก์แชร์ไดรฟ์ใช้ได้ แต่ต้องตั้งเป็น "ทุกคนที่มีลิงก์"'],
+    ['ภาพหัวหน้าร้าน (ลิงก์รูป)', '',
+      'ภาพพื้นหลังด้านบนสุดของหน้าร้าน เว้นว่างได้\n' +
+      'เว้นว่าง = ใช้พื้นหลังไล่สีฟ้าของระบบแทน'],
+    ['ลิงก์แผนที่ร้าน', '',
+      'ลิงก์ Google Maps ของหน้าร้าน เว้นว่างได้\n' +
+      'เว้นว่าง = ระบบเอาที่อยู่ผู้ส่งไปค้นใน Google Maps ให้เอง']
   ];
 
   var last = s.getLastRow();
@@ -2811,4 +2823,197 @@ function setupReqSheet_(ss) {
   s.setColumnWidth(SH.req.IN.orderNo, 140);
 
   return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' คำขอ)';
+}
+
+
+/* ============================================================================
+   หน้าร้านแบบใหม่ — แบนเนอร์ · หมวดมีรูป · ป้ายสินค้าแนะนำ
+   ========================================================================== */
+
+var BAN_LAST = 105;    // แบนเนอร์หน้าร้าน รองรับ 100 แบนเนอร์
+var SCAT_LAST = 85;    // หมวดหน้าร้าน รองรับ 80 หมวด
+
+/** ตำแหน่งที่แบนเนอร์ไปโผล่บนหน้าแรก — ต้องตรงกับที่ Shop.gs อ่าน */
+var BAN_SLOTS = ['ติดต่อเรา', 'โปรโมชั่นเด่น', 'โปรโมชั่นประจำเดือน'];
+
+/** ป้ายที่ติดสินค้าได้ — ตัวที่ทำให้สินค้าไปขึ้นแถบพิเศษบนหน้าแรก */
+var PROD_TAGS = ['แนะนำ', 'ใหม่', 'ขายดี', 'โปรโมชั่น'];
+
+/**
+ * เตรียมชีทสำหรับหน้าร้านหน้าตาใหม่ — สั่งครั้งเดียวพอ สั่งซ้ำได้ไม่พัง
+ *
+ * ทำสามอย่าง
+ *   1. สร้างชีท แบนเนอร์หน้าร้าน  — รูปใหญ่สามแถบบนหน้าแรก
+ *   2. สร้างชีท หมวดหน้าร้าน      — รูปไอคอนกับรูปปกของแต่ละหมวด (เติมชื่อหมวดให้เอง)
+ *   3. เพิ่มคอลัมน์ Q "ป้ายหน้าร้าน" ที่ ฐานสินค้า — ติดป้าย แนะนำ/ใหม่/ขายดี/โปรโมชั่น
+ *
+ * ไม่มีอันไหนบังคับกรอก ปล่อยว่างทั้งหมดหน้าร้านก็ยังทำงานเหมือนเดิมทุกอย่าง
+ * แค่ไม่มีแบนเนอร์ ไม่มีรูปหมวด และไม่มีแถบสินค้าแนะนำ
+ */
+function setupShopPages() {
+  var email = requireStaff_();
+  var ss = ss_();
+  var out = [];
+
+  out.push(setupBanSheet_(ss));
+  out.push(setupScatSheet_(ss));
+  out.push(setupProdTagCol_(ss));
+
+  out.push('');
+  out.push('ต่อไปทำอะไร');
+  out.push('  1. ใส่ลิงก์รูปแบนเนอร์ในชีท ' + SH.ban.name + ' แล้วพิมพ์ เปิด ในช่องเปิดใช้');
+  out.push('  2. ใส่ลิงก์รูปหมวดในชีท ' + SH.scat.name + ' (ชื่อหมวดเติมมาให้แล้ว)');
+  out.push('  3. ติดป้าย แนะนำ หรือ ขายดี ในคอลัมน์ ' + colLetter_(SH.prod.IN.tag) +
+           ' ของ ฐานสินค้า ให้ตัวที่อยากดันขึ้นหน้าแรก');
+  out.push('  ทุกช่องเว้นว่างได้หมด หน้าร้านไม่พัง แค่แถบนั้นไม่ขึ้น');
+
+  writeLog_(email, 'ตั้งค่า', SH.ban.name, '', 'เตรียมหน้าร้านแบบใหม่', '', '');
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+function setupBanSheet_(ss) {
+  var name = SH.ban.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < BAN_LAST) s.insertRowsAfter(s.getMaxRows(), BAN_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 8) s.insertColumnsAfter(s.getMaxColumns(), 8 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('แบนเนอร์บนหน้าร้านที่ลูกค้าเปิด')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'รูปต้องเปิดดูได้จากข้างนอก — ลิงก์แชร์ไดรฟ์ใช้ได้ แต่ต้องตั้งเป็น "ทุกคนที่มีลิงก์"  |  ' +
+    'ช่องเปิดใช้ต้องพิมพ์ เปิด ถึงจะขึ้นหน้าร้าน  |  ' +
+    'ลิงก์ปุ่มใส่ได้สามแบบ: ที่อยู่เว็บ · หมวด:ชื่อหมวด · สินค้า:SKU'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'ตำแหน่ง', 'ชื่อแบนเนอร์\n(ไว้ดูเอง ลูกค้าไม่เห็น)', 'ลิงก์รูป',
+    'ข้อความบนปุ่ม', 'ลิงก์ปุ่ม', 'เปิดใช้', 'หมายเหตุ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = BAN_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($D6="","",COUNTA($D$6:$D6))');
+  paintCols_(s, n, [2, 3, 4, 5, 6, 7, 8], [1]);
+
+  s.getRange(DATA_ROW, SH.ban.IN.slot, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(BAN_SLOTS, true)
+      .setAllowInvalid(false).build());
+  s.getRange(DATA_ROW, SH.ban.IN.on, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(['เปิด', 'ปิด'], true)
+      .setAllowInvalid(false).build());
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.ban.IN.slot, 170);
+  s.setColumnWidth(SH.ban.IN.title, 200);
+  s.setColumnWidth(SH.ban.IN.img, 320);
+  s.setColumnWidth(SH.ban.IN.btn, 130);
+  s.setColumnWidth(SH.ban.IN.href, 260);
+  s.setColumnWidth(SH.ban.IN.note, 200);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' แบนเนอร์)';
+}
+
+/**
+ * ชีทหมวดหน้าร้าน — เติมชื่อหมวดที่มีอยู่จริงใน ฐานสินค้า ให้เลย
+ *
+ * เติมให้เพราะถ้าปล่อยว่าง เจ้าของร้านต้องพิมพ์ชื่อหมวดเองให้ตรงเป๊ะกับคอลัมน์ C
+ * พิมพ์ผิดตัวเดียวรูปก็ไม่ขึ้น โดยไม่มีอะไรบอกว่าผิดตรงไหน
+ * หมวดที่มีแถวอยู่แล้วไม่แตะ — สั่งซ้ำแล้วรูปที่ใส่ไว้ต้องไม่หาย
+ */
+function setupScatSheet_(ss) {
+  var name = SH.scat.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < SCAT_LAST) s.insertRowsAfter(s.getMaxRows(), SCAT_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 7) s.insertColumnsAfter(s.getMaxColumns(), 7 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('หมวดสินค้าบนหน้าร้าน — ใส่ไว้แต่งรูป ไม่ได้สร้างหมวดใหม่')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'ชื่อหมวดต้องตรงกับคอลัมน์ ' + colLetter_(SH.prod.IN.group) + ' ของ ฐานสินค้า เป๊ะ ๆ  |  ' +
+    'หมวดที่ไม่มีแถวในนี้ก็ยังขึ้นหน้าร้าน แค่ไม่มีรูป  |  ' +
+    'รูปไอคอนใช้บนหน้าแรก รูปปกใช้เป็นภาพใหญ่ด้านบนตอนกดเข้าไปในหมวด'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'หมวด\n(ตรงกับ ฐานสินค้า)', 'ชื่อที่โชว์ให้ลูกค้า\n(เว้นว่าง = ใช้ชื่อหมวด)',
+    'ลิงก์รูปไอคอน', 'ลิงก์รูปปก', 'โชว์หน้าแรก', 'หมายเหตุ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = SCAT_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+  paintCols_(s, n, [2, 3, 4, 5, 6, 7], [1]);
+
+  s.getRange(DATA_ROW, SH.scat.IN.home, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(['โชว์', 'ซ่อน'], true)
+      .setAllowInvalid(false).build());
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.scat.IN.group, 220);
+  s.setColumnWidth(SH.scat.IN.label, 200);
+  s.setColumnWidth(SH.scat.IN.icon, 300);
+  s.setColumnWidth(SH.scat.IN.cover, 300);
+  s.setColumnWidth(SH.scat.IN.note, 180);
+
+  var added = seedScatRows_(s);
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name +
+    (added ? ' — เติมชื่อหมวดให้ใหม่ ' + added + ' หมวด' : ' — ชื่อหมวดครบอยู่แล้ว');
+}
+
+function seedScatRows_(s) {
+  var have = {}, lastUsed = DATA_ROW - 1;
+  var vals = s.getRange(DATA_ROW, SH.scat.IN.group, SCAT_LAST - DATA_ROW + 1, 1).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    var g = String(vals[i][0] || '').trim();
+    if (g) { have[g] = 1; lastUsed = DATA_ROW + i; }
+  }
+
+  var seen = {}, want = [];
+  var prods = readProducts_();
+  for (var k = 0; k < prods.length; k++) {
+    var grp = String(prods[k].group || '').trim();
+    if (!grp || seen[grp] || have[grp]) continue;
+    seen[grp] = 1;
+    want.push([grp]);
+  }
+  if (!want.length) return 0;
+  if (lastUsed + want.length > SCAT_LAST) want = want.slice(0, SCAT_LAST - lastUsed);
+  s.getRange(lastUsed + 1, SH.scat.IN.group, want.length, 1).setValues(want);
+  /* หมวดที่เติมให้ใหม่ตั้งเป็น โชว์ ไว้ก่อน เจ้าของร้านค่อยไล่ปิดตัวที่ไม่อยากให้เห็น
+     ตรงข้ามกับตั้งเป็น ซ่อน ซึ่งจะทำให้กรอกรูปเสร็จแล้วงงว่าทำไมไม่ขึ้น */
+  var on = want.map(function () { return ['โชว์'] });
+  s.getRange(lastUsed + 1, SH.scat.IN.home, want.length, 1).setValues(on);
+  return want.length;
+}
+
+function setupProdTagCol_(ss) {
+  var s = findSheet_(ss, SH.prod.name);
+  if (!s) throw new Error('ไม่เจอชีท ' + SH.prod.name);
+
+  var need = SH.prod.IN.tag;                       // Q = 17
+  if (s.getMaxColumns() < need) s.insertColumnsAfter(s.getMaxColumns(), need - s.getMaxColumns());
+
+  var had = String(s.getRange(HEAD_ROW, need).getValue() || '').trim();
+  s.getRange(HEAD_ROW, need).setValue('ป้ายหน้าร้าน')
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold');
+  s.getRange(HEAD_ROW + 1, need).setNote(
+    'ติดป้ายให้สินค้าที่อยากดันขึ้นหน้าแรก เว้นว่างได้\n' +
+    'เลือกได้: ' + PROD_TAGS.join(' · ') + '\n' +
+    'ติดได้หลายป้าย คั่นด้วยเครื่องหมายจุลภาค เช่น  ใหม่, โปรโมชั่น\n' +
+    'ป้าย "ขายดี" ติดเองได้ แต่ถึงไม่ติด ระบบก็จัดอันดับจากยอดขายจริงให้อยู่แล้ว');
+
+  var last = s.getMaxRows();
+  s.getRange(DATA_ROW, need, last - DATA_ROW + 1, 1).setFontColor(C_IN_FG);
+
+  return had
+    ? 'ฐานสินค้า มีคอลัมน์ ' + colLetter_(need) + ' ป้ายหน้าร้าน อยู่แล้ว'
+    : 'เพิ่มคอลัมน์ ' + colLetter_(need) + ' ป้ายหน้าร้าน ให้ ฐานสินค้า แล้ว';
 }

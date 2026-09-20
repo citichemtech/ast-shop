@@ -27,30 +27,34 @@ function ok(label, cond, extra) {
   console.log('\n1. โหลดหน้าและวาดสินค้า');
   ok('เปิดหน้าไม่มี error', errs.length === 0, errs.join(' | '));
   ok('ขึ้นชื่อร้านจากชีท', (await pg.locator('#shop-name').innerText()) === 'AST CHEM-TOOLING SHOP');
-  var n = await pg.locator('.card').count();
+  var n = await pg.locator('#pg-shop .grid .card').count();
   ok('วาดการ์ดสินค้าครบ 6 ตัว', n === 6, 'ได้ ' + n);
-  ok('มีหมวดสินค้าให้เลือก', (await pg.locator('.cats button').count()) === 4);
+  ok('มีการ์ดหมวดให้กด', (await pg.locator('.catrow button').count()) === 3);
+  await pg.locator('#btn-filt').click();
+  await pg.waitForTimeout(250);
+  ok('กดปุ่มกรองแล้วมีชิปหมวดให้เลือก', (await pg.locator('.cats button').count()) === 4);
   await pg.screenshot({ path: OUT + '/S1-shop.png' });
 
   console.log('\n2. ของหมดต้องกดสั่งไม่ได้');
   ok('มีป้ายสินค้าหมด', (await pg.locator('.out-tag').count()) === 1);
-  ok('ปุ่มของตัวที่หมดถูกปิด', await pg.locator('.card.is-out .ask').isDisabled());
+  ok('ปุ่มของตัวที่หมดถูกปิด',
+     await pg.locator('#pg-shop .grid .card.is-out .plus').first().isDisabled());
 
   console.log('\n3. กรองตามหมวด');
   await pg.locator('.cats button', { hasText: 'เคมีภัณฑ์' }).click();
   await pg.waitForTimeout(200);
-  ok('เหลือแต่เคมีภัณฑ์ 2 ตัว', (await pg.locator('.card').count()) === 2);
+  ok('เหลือแต่เคมีภัณฑ์ 2 ตัว', (await pg.locator('#pg-shop .grid .card').count()) === 2);
   await pg.locator('.cats button', { hasText: 'ทั้งหมด' }).click();
   await pg.waitForTimeout(200);
-  ok('กดทั้งหมดแล้วกลับมาครบ', (await pg.locator('.card').count()) === 6);
+  ok('กดทั้งหมดแล้วกลับมาครบ', (await pg.locator('#pg-shop .grid .card').count()) === 6);
 
   console.log('\n4. ค้นหา');
   await pg.locator('#q').fill('Acetone');
   await pg.waitForTimeout(250);
-  ok('ค้นด้วยชื่อสินค้าเจอ', (await pg.locator('.card').count()) === 1);
+  ok('ค้นด้วยชื่อสินค้าเจอ', (await pg.locator('#pg-shop .grid .card').count()) === 1);
   await pg.locator('#q').fill('SKU-181');
   await pg.waitForTimeout(250);
-  ok('ค้นด้วยรหัส SKU ก็เจอ', (await pg.locator('.card').count()) === 1);
+  ok('ค้นด้วยรหัส SKU ก็เจอ', (await pg.locator('#pg-shop .grid .card').count()) === 1);
   await pg.locator('#q').fill('ไม่มีของนี้แน่นอน');
   await pg.waitForTimeout(250);
   ok('ไม่เจอแล้วขึ้นข้อความบอก', (await pg.locator('.state').count()) === 1);
@@ -58,18 +62,18 @@ function ok(label, cond, extra) {
   await pg.waitForTimeout(250);
 
   console.log('\n5. ใส่ตะกร้า');
-  await pg.locator('.card:not(.is-out) .ask').first().click();
+  await pg.locator('#pg-shop .grid .card:not(.is-out) .plus').first().click();
   await pg.waitForTimeout(250);
   ok('แถบล่างโผล่ขึ้นมา', await pg.locator('#bar').isVisible());
   ok('ปุ่มเปลี่ยนเป็นบอกจำนวนในตะกร้า',
-     /ในตะกร้า 1 ชิ้น/.test(await pg.locator('.card:not(.is-out) .ask').first().innerText()));
+     (await pg.locator('#pg-shop .grid .card:not(.is-out) .plus').first().innerText()).trim() === '1');
   /* 89 + ค่าส่ง 50 = 139 */
   ok('ยอดบนแถบรวมค่าส่งแล้ว', (await pg.locator('#bar-total').innerText()) === '฿139.00',
      await pg.locator('#bar-total').innerText());
   await pg.screenshot({ path: OUT + '/S3-bar.png' });
 
   console.log('\n6. หน้าตะกร้า');
-  await pg.locator('#btn-cart').click();
+  await pg.locator('#nav-cart').click();
   await pg.waitForTimeout(250);
   ok('เข้าหน้าตะกร้าได้', await pg.locator('#pg-cart').isVisible());
   ok('มีสินค้าหนึ่งบรรทัด', (await pg.locator('#cart-body .line').count()) === 1);
@@ -89,9 +93,9 @@ function ok(label, cond, extra) {
   console.log('\n6.5 ส่งฟรีเมื่อยอดถึง');
   await pg.locator('#cart-body button').click();     // ไปเลือกสินค้า
   await pg.waitForTimeout(200);
-  for (var i = 0; i < 12; i++) await pg.locator('.card:not(.is-out) .ask').first().click();
+  for (var i = 0; i < 12; i++) await pg.locator('#pg-shop .grid .card:not(.is-out) .plus').first().click();
   await pg.waitForTimeout(250);
-  await pg.locator('#btn-cart').click();
+  await pg.locator('#nav-cart').click();
   await pg.waitForTimeout(250);
   /* 89 x 12 = 1,068 เกิน 1,000 จึงส่งฟรี */
   ok('ยอดถึงแล้วค่าส่งเป็นฟรี',
@@ -132,8 +136,8 @@ function ok(label, cond, extra) {
   ok('ตะกร้าในเครื่องถูกล้างด้วย', stored === '{}' || stored === null, stored);
 
   console.log('\n6.8 ส่งไม่สำเร็จต้องบอกเหตุผล');
-  await pg.locator('.card:not(.is-out) .ask').first().click();
-  await pg.locator('#btn-cart').click();
+  await pg.locator('#pg-shop .grid .card:not(.is-out) .plus').first().click();
+  await pg.locator('#nav-cart').click();
   await pg.waitForTimeout(200);
   await pg.locator('[data-go="pay"]').click();
   await pg.waitForTimeout(200);
@@ -153,9 +157,10 @@ function ok(label, cond, extra) {
   await pg.evaluate(() => { SHOP_DATA.open = false; CART = {}; cartSave(); go('shop'); load(); });
   await pg.waitForTimeout(700);
   ok('ขึ้นแถบบอกว่าปิดรับออเดอร์', await pg.locator('#closed').isVisible());
-  ok('แต่ยังดูสินค้าได้', (await pg.locator('.card').count()) === 6);
+  ok('แต่ยังดูสินค้าได้', (await pg.locator('#pg-shop .grid .card').count()) === 6);
   ok('ปุ่มเปลี่ยนเป็นสอบถามทางไลน์',
-     /สอบถามทางไลน์/.test(await pg.locator('.card:not(.is-out) .ask').first().innerText()));
+     (await pg.locator('#pg-shop .grid .card:not(.is-out) .plus').first()
+        .getAttribute('data-ask')) !== null);
   ok('และไม่มีแถบตะกร้าให้กด', !(await pg.locator('#bar').isVisible()));
   await pg.screenshot({ path: OUT + '/S2-closed.png' });
 
@@ -163,13 +168,13 @@ function ok(label, cond, extra) {
   await pg.evaluate(() => { SHOP_DATA.open = true; CART = {}; cartSave(); go('shop'); load(); });
   await pg.waitForTimeout(700);
   ok('การ์ดที่มีสองรูปติดป้ายบอกจำนวน',
-     (await pg.locator('#pg-shop [data-pic="SKU-141"] .npic').innerText()).indexOf('2 รูป') > -1);
+     (await pg.locator('#pg-shop .grid [data-pic="SKU-141"] .npic').innerText()).indexOf('2 รูป') > -1);
   ok('การ์ดที่มีรูปเดียวไม่ติดป้าย',
-     (await pg.locator('#pg-shop [data-pic="SKU-148"] .npic').count()) === 0);
-  ok('การ์ดที่ไม่มีรูปกดไม่ได้', (await pg.locator('#pg-shop [data-pic="SKU-210"]').count()) === 0);
+     (await pg.locator('#pg-shop .grid [data-pic="SKU-148"] .npic').count()) === 0);
+  ok('การ์ดที่ไม่มีรูปกดไม่ได้', (await pg.locator('#pg-shop .grid [data-pic="SKU-210"]').count()) === 0);
 
   ok('ยังไม่กด กล่องดูรูปต้องปิดอยู่', !(await pg.locator('#lb').isVisible()));
-  await pg.locator('#pg-shop [data-pic="SKU-141"]').click();
+  await pg.locator('#pg-shop .grid [data-pic="SKU-141"]').click();
   await pg.waitForTimeout(350);
   ok('กดแล้วกล่องดูรูปเปิด', await pg.locator('#lb').isVisible());
   ok('ใส่รูปมาครบสองรูป', (await pg.locator('#lb-track img').count()) === 2);
@@ -199,7 +204,7 @@ function ok(label, cond, extra) {
   ok('ปิดแล้วเลื่อนหน้าร้านต่อได้',
      (await pg.evaluate(() => document.body.style.overflow)) === '');
 
-  await pg.locator('#pg-shop [data-pic="SKU-148"]').click();
+  await pg.locator('#pg-shop .grid [data-pic="SKU-148"]').click();
   await pg.waitForTimeout(350);
   ok('สินค้ารูปเดียวก็เปิดดูได้', await pg.locator('#lb').isVisible());
   ok('แต่ไม่มีจุดให้เลื่อน', (await pg.locator('#lb-dots i').count()) === 0);
@@ -210,6 +215,74 @@ function ok(label, cond, extra) {
 
   ok('กดที่รูปไม่ทำให้ของลงตะกร้าเอง',
      (await pg.evaluate(() => Object.keys(CART).length)) === 0);
+
+  console.log('\n9. หน้าแรกแบบใหม่ — แบนเนอร์ หมวดมีรูป แถบแนะนำ');
+  await pg.evaluate(() => { SHOWFILT = false; curCat = ''; curQ = ''; go('shop'); draw(); });
+  await pg.waitForTimeout(400);
+  ok('มีแบนเนอร์ครบสามแถบ', (await pg.locator('.bans').count()) === 3);
+  ok('แถบที่มีสองรูปมีจุดให้ดู', (await pg.locator('.bdots').count()) === 1);
+  ok('แบนเนอร์ที่ใส่ข้อความปุ่มไว้มีปุ่ม', (await pg.locator('.bbtn').count()) === 2);
+  ok('มีแถบสินค้าแนะนำ',
+     (await pg.locator('.sec-hd h2', { hasText: 'สินค้าแนะนำ' }).count()) === 1);
+  ok('มีแถบขายดี',
+     (await pg.locator('.sec-hd h2', { hasText: 'ขายดีประจำร้าน' }).count()) === 1);
+  ok('ป้ายบนการ์ดขึ้นตามที่ติดไว้ในชีท',
+     (await pg.locator('#pg-shop .grid [data-pic="SKU-141"]')
+        .locator('xpath=../..').locator('.tagrow span').count()) === 2);
+  await pg.screenshot({ path: OUT + '/S4-home.png', fullPage: true });
+
+  console.log('\n10. กดการ์ดหมวดแล้วเข้าหน้าหมวด');
+  await pg.locator('.catrow button', { hasText: 'Chemical' }).click();
+  await pg.waitForTimeout(400);
+  ok('เข้าหน้าหมวดแล้ว', await pg.locator('#pg-cat').isVisible());
+  ok('มีรูปปกหมวด', (await pg.locator('#cat-hero img').count()) === 1);
+  ok('ขึ้นชื่อที่ตั้งให้โชว์ ไม่ใช่ชื่อในชีท',
+     (await pg.locator('#cat-body h2').innerText()).trim() === 'Chemical');
+  ok('โชว์แต่สินค้าในหมวดนั้น', (await pg.locator('#cat-body .card').count()) === 2);
+  ok('หัวฟ้าของหน้าแรกถูกซ่อน', !(await pg.locator('.hdr').isVisible()));
+  ok('แถบล่างชี้ที่หมวดหมู่',
+     (await pg.locator('#nav-cats').getAttribute('class')).indexOf('on') > -1);
+  await pg.screenshot({ path: OUT + '/S5-cat.png', fullPage: true });
+
+  await pg.locator('#pg-cat [data-go="shop"]').click();
+  await pg.waitForTimeout(350);
+  ok('กดย้อนกลับแล้วกลับหน้าแรก', await pg.locator('#pg-shop').isVisible());
+  ok('และหัวฟ้ากลับมา', await pg.locator('.hdr').isVisible());
+
+  console.log('\n11. ปุ่มบนแบนเนอร์พาไปหน้าหมวดในร้าน ไม่เด้งออกนอก');
+  await pg.locator('.bbtn', { hasText: 'Buy Now' }).click();
+  await pg.waitForTimeout(400);
+  ok('กด Buy Now แล้วเข้าหน้าหมวดที่ผูกไว้', await pg.locator('#pg-cat').isVisible());
+  ok('เข้าหมวดถูกตัว',
+     (await pg.locator('#cat-body h2').innerText()).trim() === 'Chemical');
+  await pg.locator('#pg-cat [data-go="shop"]').click();
+  await pg.waitForTimeout(350);
+
+  console.log('\n12. หัวใจถูกใจ — เก็บในเครื่องลูกค้าเท่านั้น');
+  ok('ยังไม่มีแถบถูกใจ',
+     (await pg.locator('.sec-hd h2', { hasText: 'ถูกใจไว้' }).count()) === 0);
+  var sentBefore = await pg.evaluate(() => SENT_ORDERS.length);
+  await pg.locator('#pg-shop .grid [data-fav="SKU-210"]').click();
+  await pg.waitForTimeout(350);
+  ok('กดหัวใจแล้วติดสีแดง',
+     (await pg.locator('#pg-shop .grid [data-fav="SKU-210"]').getAttribute('class'))
+       .indexOf('on') > -1);
+  ok('แถบถูกใจโผล่ขึ้นมา',
+     (await pg.locator('.sec-hd h2', { hasText: 'ถูกใจไว้' }).count()) === 1);
+  ok('กดหัวใจไม่ทำให้ของลงตะกร้า',
+     (await pg.evaluate(() => Object.keys(CART).length)) === 0);
+  /* ก่อนหน้านี้มีการสั่งซื้อจริงไปแล้ว จึงเทียบกับจำนวนก่อนกดหัวใจ ไม่ใช่ศูนย์ */
+  ok('ถูกใจไม่ถูกส่งกลับไปที่ร้าน',
+     (await pg.evaluate(() => SENT_ORDERS.length)) === sentBefore);
+  await pg.locator('#pg-shop .grid [data-fav="SKU-210"]').click();
+  await pg.waitForTimeout(300);
+  ok('กดซ้ำแล้วเอาออก',
+     (await pg.locator('.sec-hd h2', { hasText: 'ถูกใจไว้' }).count()) === 0);
+
+  console.log('\n13. แถบแผนที่');
+  ok('มีแถบแผนที่ให้กด', await pg.locator('#btn-map').isVisible());
+  ok('ขึ้นที่อยู่แบบสั้น',
+     (await pg.locator('#map-txt').innerText()).trim() === '2/1 ซ.ตัวอย่าง');
 
   ok('ไม่มี error สะสมตลอดการทดสอบ', errs.length === 0, errs.join(' | '));
   await b.close();
