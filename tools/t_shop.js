@@ -358,5 +358,23 @@ var g19 = shopFixture().guest;
   throws('ลูกค้าเรียก ' + fn + ' ไม่ได้', function () { g19[fn]({}) }, 'ระบบไม่ทราบว่าคุณเป็นใคร');
 });
 
+/* ============================================ 20. ลิงก์หน้าร้านต้องไม่จู้จี้ */
+console.log('\n20. ?shop=1 ต้องรับได้ทุกแบบที่คนพิมพ์จริง');
+var g20 = shopFixture().guest;
+[['shop', '1'], ['Shop', '1'], ['SHOP', '1'], ['shop', 'true'], ['shop', 'yes'], ['ShOp', '']]
+  .forEach(function (pair) {
+    var e = { parameter: {} };
+    e.parameter[pair[0]] = pair[1];
+    truthy('?' + pair[0] + '=' + pair[1] + ' ได้หน้าร้าน', g20.wantShop_(e) === true);
+  });
+[['shop', '0'], ['shop', 'false'], ['shop', 'no']].forEach(function (pair) {
+  var e = { parameter: {} };
+  e.parameter[pair[0]] = pair[1];
+  truthy('?' + pair[0] + '=' + pair[1] + ' ไม่เอาหน้าร้าน', g20.wantShop_(e) === false);
+});
+truthy('ไม่มีพารามิเตอร์เลย = ไม่ใช่หน้าร้าน', g20.wantShop_({ parameter: {} }) === false);
+truthy('พารามิเตอร์อื่นไม่หลอกให้เปิดหน้าร้าน',
+  g20.wantShop_({ parameter: { p: 'abc', workshop: '1' } }) === false);
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);
