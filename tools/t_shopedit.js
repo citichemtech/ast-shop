@@ -209,5 +209,52 @@ Object.keys(f7.fx.sheets).forEach(function (n) {
 });
 eq('ทำครบทุกอย่างแล้วไม่มีช่องสูตรถูกเขียนทับ', broke7, []);
 
+/* ============================================ 8. อัปรูปจากเครื่อง */
+console.log('\n8. อัปรูปจากเครื่องขึ้นไดรฟ์ แล้วได้ลิงก์กลับมาเลย');
+var f8 = fixture();
+var PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+
+throws('ลูกค้าอัปรูปไม่ได้', function () { f8.guest.uploadShopImage({ data: PNG }) });
+
+var r8 = f8.staff.uploadShopImage({ data: PNG, kind: 'prod', tag: 'SKU-141' });
+truthy('อัปได้ ได้ลิงก์ไดรฟ์กลับมา', /^https:\/\/drive\.google\.com\/file\/d\//.test(r8.url));
+truthy('และได้ที่อยู่รูปจริงมาโชว์ตัวอย่างทันที',
+   /^https:\/\/drive\.google\.com\/thumbnail\?id=/.test(r8.show));
+truthy('ชื่อไฟล์บอกได้ว่าเป็นรูปของอะไร',
+   r8.name.indexOf('สินค้า') === 0 && r8.name.indexOf('SKU-141') > -1);
+
+/* ข้อสำคัญที่สุดของทั้งข้อ — ลืมตั้งแชร์แล้วลูกค้าเห็นกรอบเปล่า
+   และเจ้าของร้านจะไม่มีทางรู้ เพราะบนจอตัวเองรูปขึ้นปกติ */
+var up8 = f8.staff.__drive.live().filter(function (f) { return f._share })[0];
+truthy('ไฟล์ถูกตั้งแชร์ให้คนนอกดูได้ตั้งแต่ตอนอัป', !!up8);
+eq('ตั้งเป็น "ทุกคนที่มีลิงก์"', up8._share.access, 'ANYONE_WITH_LINK');
+eq('และดูได้อย่างเดียว แก้ไม่ได้', up8._share.perm, 'VIEW');
+
+/* เอาลิงก์ที่ได้ไปใส่สินค้าจริง แล้วหน้าร้านต้องเห็น */
+var sku8 = f8.staff.getShopEdit().products[0].sku;
+f8.staff.saveShopProduct({ sku: sku8, img: r8.url });
+eq('ลิงก์ที่อัปได้ ใส่เป็นรูปสินค้าแล้วหน้าร้านเห็นเลย',
+   f8.guest.shopData().items.filter(function (p) { return p.sku === sku8 })[0].img, r8.show);
+
+throws('ไฟล์ที่ไม่ใช่รูป ต้องฟ้อง',
+   function () { f8.staff.uploadShopImage({ data: 'data:application/pdf;base64,AAA' }) },
+   'รับเฉพาะรูป');
+throws('ไม่ได้เลือกไฟล์มา ต้องฟ้อง',
+   function () { f8.staff.uploadShopImage({ data: '' }) }, 'ยังไม่ได้เลือกรูป');
+throws('รูปใหญ่เกิน 8 MB ต้องฟ้องพร้อมบอกขนาดจริง',
+   function () {
+     var big = 'data:image/png;base64,' + new Array(13 * 1024 * 1024).join('A');
+     f8.staff.uploadShopImage({ data: big });
+   }, 'เกิน 8 MB');
+
+/* Workspace ที่ปิดการแชร์สาธารณะ — ต้องไม่ทิ้งไฟล์ที่คนนอกเปิดไม่ได้ค้างไว้ */
+var f8b = fixture();
+var before8b = f8b.staff.__drive.live().length;
+f8b.staff.__denyShare();
+throws('ตั้งแชร์ไม่ได้ ต้องบอกชัดว่าติดที่ผู้ดูแลระบบ',
+   function () { f8b.staff.uploadShopImage({ data: PNG, kind: 'logo' }) }, 'แชร์');
+eq('และต้องลบไฟล์ที่คนนอกเปิดไม่ได้ทิ้ง ไม่ปล่อยค้างไว้ให้เข้าใจผิด',
+   f8b.staff.__drive.live().length, before8b);
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

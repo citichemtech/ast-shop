@@ -6065,6 +6065,73 @@ function webReject(no){
    ========================================================================== */
 var ED = null, EDBUSY = false, EPMODE = "all";
 
+/**
+ * ช่องใส่รูปหนึ่งช่อง = ช่องลิงก์ + ปุ่มเลือกรูปจากเครื่อง + รูปตัวอย่าง
+ *
+ * ของเดิมมีแต่ช่องลิงก์ ซึ่งแปลว่าเจ้าของร้านต้องไปอัปขึ้นไดรฟ์เอง ตั้งแชร์เอง
+ * ก๊อปลิงก์มาวางเอง — สามขั้นที่ทำบนมือถือแทบไม่ได้ และขั้นตั้งแชร์คนลืมบ่อยที่สุด
+ * ปุ่มนี้ทำให้ครบสามขั้นในกดครั้งเดียว
+ */
+function imgField(id, label, kind, value, show, hint){
+  return '<div class="fld"><label>'+esc(label)+'</label>'
+    + '<div class="picrow">'
+      + '<input id="'+id+'" placeholder="วางลิงก์รูปก็ได้ หรือกดปุ่มเลือกรูป" value="'
+        + esc(value||"") + '">'
+      + '<button type="button" class="picbtn" data-pick="'+id+'" data-kind="'+esc(kind)+'">'
+        + '📷 เลือกรูป</button>'
+    + '</div>'
+    + '<input type="file" accept="image/*" id="'+id+'-file" style="display:none">'
+    + '<img class="mprev" id="'+id+'-prev" alt=""'
+      + (show ? ' src="'+esc(show)+'"' : ' style="display:none"') + '>'
+    + '<div class="hint" id="'+id+'-msg">' + (hint||IMG_HINT) + '</div>'
+    + '</div>';
+}
+
+/* ขนาดที่แนะนำ บอกไว้ทุกช่อง ไม่งั้นได้รูปแนวตั้งมาใส่ในกรอบแนวนอนแล้วโดนครอบตัด */
+var IMG_HINT = 'รูปสี่เหลี่ยมจัตุรัส 1000×1000 px · ไฟล์ไม่เกิน 8 MB · JPG หรือ PNG';
+var IMG_HINT_BAN = 'รูปแนวนอน 1200×600 px (กว้าง 2 ส่วน สูง 1 ส่วน) · ไม่เกิน 8 MB';
+var IMG_HINT_COVER = 'รูปแนวนอน 1200×500 px · ไม่เกิน 8 MB · ส่วนบนจะมีชื่อร้านทับ';
+var IMG_HINT_LOGO = 'รูปสี่เหลี่ยมจัตุรัส 400×400 px · ระบบตัดเป็นวงกลมให้เอง';
+
+/* ผูกปุ่มเลือกรูปของทุกช่องในกล่องที่เพิ่งเปิด */
+function bindPicks(tag){
+  $$("[data-pick]").forEach(function(btn){
+    if(btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+    var id = btn.dataset.pick, kind = btn.dataset.kind;
+    var file = $("#"+id+"-file");
+    btn.onclick = function(){ file.value = ""; file.click() };
+    file.onchange = function(){
+      var f = file.files && file.files[0];
+      if(!f) return;
+      var msg = $("#"+id+"-msg");
+      msg.textContent = "กำลังอัปรูป… อย่าเพิ่งปิดหน้านี้";
+      btn.disabled = true;
+      var fr = new FileReader();
+      fr.onerror = function(){
+        btn.disabled = false;
+        msg.textContent = "อ่านไฟล์ไม่ได้ ลองเลือกรูปอื่น";
+      };
+      fr.onload = function(){
+        google.script.run
+          .withSuccessHandler(function(r){
+            btn.disabled = false;
+            $("#"+id).value = r.url;
+            var pv = $("#"+id+"-prev");
+            pv.src = r.show; pv.style.display = "";
+            msg.textContent = "อัปแล้ว — อย่าลืมกดบันทึกข้างล่างด้วย";
+          })
+          .withFailureHandler(function(e){
+            btn.disabled = false;
+            msg.textContent = e.message;
+          })
+          .uploadShopImage({ data: fr.result, kind: kind, tag: tag || "" });
+      };
+      fr.readAsDataURL(f);
+    };
+  });
+}
+
 function edNote(idOk, idErr, ok, msg){
   $("#"+idErr).classList.remove("on");
   $("#"+idOk).classList.remove("on");
@@ -6158,17 +6225,9 @@ function eprodOpen(sku){
     + '<div class="fld"><label>ราคาขาย (บาท)</label>'
       + '<input id="epm-price" type="number" inputmode="decimal" step="0.01" min="0" value="'
         + Number(p.price) + '"></div>'
-    + '<div class="fld"><label>ลิงก์รูป 1 (รูปหลัก)</label>'
-      + '<input id="epm-img" placeholder="วางลิงก์แชร์จาก Google ไดรฟ์ได้เลย" value="'
-        + esc(p.img) + '">'
-      + (p.show[0] ? '<img class="mprev" src="'+esc(p.show[0])+'" alt="">' : "")
-      + '<div class="hint">รูปในไดรฟ์ต้องตั้งแชร์เป็น "ทุกคนที่มีลิงก์" '
-        + "ไม่งั้นลูกค้าเห็นกรอบเปล่า</div></div>"
-    + '<div class="fld"><label>ลิงก์รูป 2 (ลูกค้ากดดูเพิ่มได้)</label>'
-      + '<input id="epm-img2" placeholder="เว้นว่างได้ ถ้าเว้นก็มีรูปเดียว" value="'
-        + esc(p.img2) + '">'
-      + (p.show[1] ? '<img class="mprev" src="'+esc(p.show[1])+'" alt="">' : "")
-      + "</div>"
+    + imgField("epm-img", "รูปที่ 1 (รูปหลัก)", "prod", p.img, p.show[0])
+    + imgField("epm-img2", "รูปที่ 2 (ลูกค้ากดดูเพิ่มได้)", "prod", p.img2, p.show[1],
+        "เว้นว่างได้ ถ้าเว้นก็มีรูปเดียว · " + IMG_HINT)
     + '<div class="fld"><label>ป้ายหน้าร้าน</label><div class="tagpick" id="epm-tags">'
       + ED.tags.map(function(t){
           return '<button type="button" data-tag="'+esc(t)+'"'
@@ -6183,6 +6242,7 @@ function eprodOpen(sku){
     + '<div class="msg err" id="epm-err"></div>'
     + '<button class="btn" id="epm-save">บันทึก</button>');
 
+  bindPicks(p.sku);
   $$("#epm-tags button").forEach(function(b){
     b.onclick = function(){ b.classList.toggle("on") };
   });
@@ -6267,11 +6327,7 @@ function ebanOpen(row){
           return '<button type="button" data-slot="'+esc(sl)+'"'
             + (sl===b.slot ? ' class="on"' : "") + ">"+esc(sl)+"</button>";
         }).join("") + "</div></div>"
-    + '<div class="fld"><label>ลิงก์รูป *</label>'
-      + '<input id="ebm-img" placeholder="วางลิงก์แชร์จาก Google ไดรฟ์ได้เลย" value="'
-        + esc(b.img) + '">'
-      + (b.show ? '<img class="mprev" src="'+esc(b.show)+'" alt="">' : "")
-      + "</div>"
+    + imgField("ebm-img", "รูปแบนเนอร์ *", "ban", b.img, b.show, IMG_HINT_BAN)
     + '<div class="fld"><label>ชื่อแบนเนอร์ (ไว้ดูเอง ลูกค้าไม่เห็น)</label>'
       + '<input id="ebm-title" value="'+esc(b.title)+'"></div>'
     + '<div class="fld"><label>ข้อความบนปุ่ม</label>'
@@ -6291,6 +6347,7 @@ function ebanOpen(row){
     + (b.row ? '<button class="btn ghost" id="ebm-del" style="margin-top:8px;color:#8f1d1d">'
         + "ลบแบนเนอร์นี้</button>" : ""));
 
+  bindPicks(b.title || b.slot);
   ["ebm-slot","ebm-on"].forEach(function(g){
     $$("#"+g+" button").forEach(function(x){
       x.onclick = function(){
@@ -6387,14 +6444,9 @@ function ecatOpen(group){
     '<div class="fld"><label>ชื่อที่ลูกค้าเห็น</label>'
       + '<input id="ecm-label" placeholder="เว้นว่าง = ใช้ชื่อหมวดเดิม" value="'
         + esc(c.label) + '"></div>'
-    + '<div class="fld"><label>ลิงก์รูปไอคอน (บนหน้าแรก)</label>'
-      + '<input id="ecm-icon" value="'+esc(c.icon)+'">'
-      + (c.iconShow ? '<img class="mprev" src="'+esc(c.iconShow)+'" alt="">' : "")
-      + "</div>"
-    + '<div class="fld"><label>ลิงก์รูปปก (ภาพใหญ่ตอนกดเข้าหมวด)</label>'
-      + '<input id="ecm-cover" value="'+esc(c.cover)+'">'
-      + (c.coverShow ? '<img class="mprev" src="'+esc(c.coverShow)+'" alt="">' : "")
-      + "</div>"
+    + imgField("ecm-icon", "รูปไอคอน (บนหน้าแรก)", "icon", c.icon, c.iconShow)
+    + imgField("ecm-cover", "รูปปก (ภาพใหญ่ตอนกดเข้าหมวด)", "cat", c.cover, c.coverShow,
+        IMG_HINT_BAN)
     + '<div class="fld"><label>โชว์บนหน้าแรกไหม</label><div class="tagpick" id="ecm-home">'
       + '<button type="button" data-home="1"'+(c.home?' class="on"':"")+">โชว์</button>"
       + '<button type="button" data-home="0"'+(c.home?"":' class="on"')+">ซ่อน</button>"
@@ -6403,6 +6455,7 @@ function ecatOpen(group){
     + '<div class="msg err" id="ecm-err"></div>'
     + '<button class="btn" id="ecm-save">บันทึก</button>');
 
+  bindPicks(c.group);
   $$("#ecm-home button").forEach(function(x){
     x.onclick = function(){
       $$("#ecm-home button").forEach(function(y){ y.classList.remove("on") });
@@ -6443,21 +6496,16 @@ function elookDraw(){
   if(!ED) return;
   var l = ED.look || {};
   $("#el-form").innerHTML =
-    '<div class="fld"><label>โลโก้ร้าน (ลิงก์รูป)</label>'
-      + '<input id="elm-logo" placeholder="เว้นว่าง = ใช้ตัวอักษรย่อของชื่อร้าน" value="'
-        + esc(l.logo||"") + '">'
-      + (l.logoShow ? '<img class="mprev" src="'+esc(l.logoShow)+'" alt="">' : "")
-      + "</div>"
-    + '<div class="fld"><label>ภาพพื้นหลังหัวหน้าร้าน (ลิงก์รูป)</label>'
-      + '<input id="elm-cover" placeholder="เว้นว่าง = ใช้พื้นหลังไล่สีฟ้าของระบบ" value="'
-        + esc(l.cover||"") + '">'
-      + (l.coverShow ? '<img class="mprev" src="'+esc(l.coverShow)+'" alt="">' : "")
-      + "</div>"
+    imgField("elm-logo", "โลโก้ร้าน", "logo", l.logo, l.logoShow,
+      "เว้นว่าง = ใช้ตัวอักษรย่อของชื่อร้าน · " + IMG_HINT_LOGO)
+    + imgField("elm-cover", "ภาพพื้นหลังหัวหน้าร้าน", "cover", l.cover, l.coverShow,
+      "เว้นว่าง = ใช้พื้นหลังไล่สีฟ้าของระบบ · " + IMG_HINT_COVER)
     + '<div class="fld"><label>ลิงก์แผนที่ร้าน</label>'
       + '<input id="elm-map" placeholder="ลิงก์ Google Maps — เว้นว่าง = ค้นจากที่อยู่ผู้ส่งให้เอง" value="'
         + esc(l.map||"") + '"></div>'
     + '<button class="btn" id="elm-save">บันทึก</button>';
 
+  bindPicks("");
   $("#elm-save").onclick = function(){
     var btn = this;
     btn.disabled = true; btn.textContent = "กำลังบันทึก…";

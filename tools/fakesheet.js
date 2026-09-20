@@ -438,14 +438,25 @@ function fakeDrive(opts) {
         if (opts && opts.driveFail && files.length >= opts.driveFail) {
           throw new Error('ไดรฟ์เต็ม (จำลอง)');
         }
-        var fid = 'file-' + (++seq.n);
+        /* รหัสไฟล์ของไดรฟ์จริงยาว 33 ตัว โค้ดที่แปลงลิงก์แชร์เป็นที่อยู่รูป
+           ตรวจความยาวด้วย ของปลอมจึงต้องยาวใกล้เคียงกัน ไม่งั้นสอบผ่านทั้งที่ของจริงพัง */
+        var fid = '1FakeDriveFileId' + String(1000000 + (++seq.n)).slice(1) + 'AbCdEfGhIj';
         var file = {
           _folder: f, _blob: b, _trashed: false,
           getId: function () { return fid; },
           getUrl: function () { return 'https://drive.google.com/file/d/' + fid + '/view'; },
           getName: function () { return b.getName(); },
           getBlob: function () { return b; },
-          setTrashed: function (t) { file._trashed = !!t; return file; }
+          setTrashed: function (t) { file._trashed = !!t; return file; },
+          /* จำไว้ว่าถูกตั้งแชร์เป็นอะไร — ข้อสอบต้องพิสูจน์ได้ว่ารูปหน้าร้าน
+             ถูกตั้งให้คนนอกดูได้จริง ไม่ใช่แค่เรียกฟังก์ชันแล้วผ่าน */
+          setSharing: function (access, perm) {
+            if (opts && opts.shareDenied) {
+              throw new Error('ผู้ดูแลระบบปิดการแชร์นอกองค์กรไว้ (จำลอง)');
+            }
+            file._share = { access: access, perm: perm };
+            return file;
+          }
         };
         files.push(file);
         return file;
@@ -465,6 +476,8 @@ function fakeDrive(opts) {
         return folders[id];
       },
       createFolder: function (n) { return root.createFolder(n); },
+      Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK', ANYONE: 'ANYONE', PRIVATE: 'PRIVATE' },
+      Permission: { VIEW: 'VIEW', EDIT: 'EDIT', NONE: 'NONE' },
       getFileById: function () {
         return { getParents: function () {
           var done = false;
@@ -648,6 +661,12 @@ function load(fixture, opts) {
   /* ปิดสิทธิ์ไดรฟ์กลางคัน — ของจริงก็เป็นแบบนี้ คือคีย์ออเดอร์ได้ตามปกติ
      แล้วมาพังตอนแตะไฟล์ ไม่ได้พังตั้งแต่เปิดแอป */
   fixture.__denyDrive = function () { opts.driveDenied = true; };
+  /* Workspace บางที่ปิดการแชร์ลิงก์สาธารณะไว้ — อัปไฟล์ได้ แต่ตั้งแชร์ไม่ได้
+     ผูกไว้กับ ctx ด้วย เพราะแต่ละ load มีไดรฟ์ของตัวเอง
+     สั่งผ่าน fixture จะไปโดนตัวที่โหลดทีหลังเสมอ ซึ่งมักไม่ใช่ตัวที่กำลังสอบ */
+  fixture.__denyShare = function () { opts.shareDenied = true; };
+  ctx.__denyShare = function () { opts.shareDenied = true; };
+  ctx.__denyDrive = function () { opts.driveDenied = true; };
   return ctx;
 }
 

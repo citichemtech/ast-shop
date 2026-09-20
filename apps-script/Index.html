@@ -292,6 +292,16 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
 .mprev{width:100%;max-height:170px;object-fit:contain;border-radius:10px;
   background:#f1f4f8;margin:6px 0 2px;display:block}
 
+/* ช่องลิงก์รูป + ปุ่มเลือกรูปจากเครื่อง อยู่บรรทัดเดียวกัน
+   ปุ่มไม่ยุบตามช่อง เพราะข้อความ "เลือกรูป" หายไปแล้วไม่มีใครรู้ว่ากดอะไรได้ */
+.picrow{display:flex;gap:8px;align-items:stretch}
+.picrow input{flex:1;min-width:0}
+.picbtn{flex:none;white-space:nowrap;padding:0 14px;border-radius:10px;
+  border:1px solid var(--blue);background:#eef4ff;color:#1246ad;
+  font-size:0.84rem;font-weight:700}
+.picbtn:active{background:#dbe7ff}
+.picbtn[disabled]{opacity:.5}
+
 .msg{padding:11px 12px;border-radius:10px;font-size:0.8rem;line-height:1.6;margin-bottom:11px;display:none}
 .msg.on{display:block}
 .msg.err{background:#fbe9e9;color:#8f1d1d;border:1px solid #f0c9c9}

@@ -243,6 +243,16 @@ window.google = { script: { run: (function(){
         return { ok:true, row:hit.row, fresh:false };
       });
     },
+    uploadShopImage: function(p){
+      reply(function(){
+        if(!/^data:image\//.test(String(p.data||"")))
+          throw new Error("ยังไม่ได้เลือกรูป หรือไฟล์อ่านไม่ออก");
+        window.SENT.push({ fn:"uploadShopImage", kind:p.kind, tag:p.tag });
+        var id = "UPLOADED" + (window.SENT.length);
+        return { ok:true, url:"https://drive.google.com/file/d/"+id+"/view",
+                 show: edPic("UP","#0a6b3c"), name:"รูป.jpg" };
+      });
+    },
     saveShopLook: function(v){
       reply(function(){
         MOCK_ED.look.logo = v.logo || "";

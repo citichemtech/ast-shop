@@ -143,6 +143,85 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
   ok('กลับหน้าคีย์ออเดอร์ได้', await pg.locator('#pg-new').isVisible());
   ok('ฟอร์มออเดอร์ยังอยู่', await pg.locator('#form').isVisible());
 
+  console.log('\n9. ปุ่มเลือกรูปจากเครื่อง — ไม่ต้องไปหาลิงก์เอง');
+  await pg.locator('#fs-edit').click();
+  await pg.waitForTimeout(350);
+  await pg.locator('[data-edgo="eprod"]').click();
+  await pg.waitForTimeout(600);
+  await pg.locator('[data-eprod="SKU-181"]').click();
+  await pg.waitForTimeout(400);
+  ok('ช่องรูปที่ 1 มีปุ่มเลือกรูป',
+     (await pg.locator('[data-pick="epm-img"]').count()) === 1);
+  ok('ช่องรูปที่ 2 ก็มี',
+     (await pg.locator('[data-pick="epm-img2"]').count()) === 1);
+  ok('บอกขนาดรูปที่ควรใช้ไว้ใต้ช่อง',
+     /1000×1000/.test(await pg.locator('#epm-img-msg').innerText()));
+  ok('บอกขนาดไฟล์สูงสุดด้วย',
+     /8 MB/.test(await pg.locator('#epm-img-msg').innerText()));
+  ok('ยังไม่มีรูป ตัวอย่างต้องซ่อนอยู่',
+     !(await pg.locator('#epm-img-prev').isVisible()));
+  ok('ช่องลิงก์ยังว่าง', (await pg.locator('#epm-img').inputValue()) === '');
+
+  /* เลือกไฟล์จริงจากเครื่อง แล้วดูว่าลิงก์ถูกเติมให้เอง */
+  await pg.locator('#epm-img-file').setInputFiles({
+    name: 'endmill.png', mimeType: 'image/png',
+    buffer: Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a'
+      + '49444154789c6300010000050001od7ad40000000049454e44ae426082'.replace(/[^0-9a-f]/g,''),
+      'hex')
+  });
+  await pg.waitForTimeout(900);
+  ok('เลือกรูปแล้วลิงก์ถูกเติมให้เอง ไม่ต้องไปหาเอง',
+     /drive\.google\.com/.test(await pg.locator('#epm-img').inputValue()));
+  ok('รูปตัวอย่างโผล่ขึ้นมา', await pg.locator('#epm-img-prev').isVisible());
+  ok('บอกให้กดบันทึกต่อ ไม่ปล่อยให้คิดว่าจบแล้ว',
+     /บันทึก/.test(await pg.locator('#epm-img-msg').innerText()));
+  ok('ส่งชนิดรูปไปบอกฝั่งเซิร์ฟเวอร์ด้วย', await pg.evaluate(() => {
+    var u = SENT.filter(x => x.fn === 'uploadShopImage').pop();
+    return u && u.kind === 'prod' && u.tag === 'SKU-181';
+  }));
+  await pg.screenshot({ path: OUT + '/E5-upload.png', fullPage: true });
+
+  await pg.locator('#epm-save').click();
+  await pg.waitForTimeout(900);
+  ok('กดบันทึกแล้วลิงก์ลงไปถึงชีท', await pg.evaluate(() => {
+    var s = SENT.filter(x => x.fn === 'saveShopProduct').pop();
+    return s && /drive\.google\.com/.test(s.p.img);
+  }));
+
+  console.log('\n10. ช่องรูปที่เหลือก็ต้องมีปุ่มเหมือนกัน');
+  await pg.locator('#ep-back').click();
+  await pg.waitForTimeout(300);
+  await pg.locator('[data-edgo="eban"]').click();
+  await pg.waitForTimeout(600);
+  await pg.locator('#eb-add').click();
+  await pg.waitForTimeout(400);
+  ok('แบนเนอร์มีปุ่มเลือกรูป', (await pg.locator('[data-pick="ebm-img"]').count()) === 1);
+  ok('และบอกว่าควรใช้รูปแนวนอน',
+     /1200×600/.test(await pg.locator('#ebm-img-msg').innerText()));
+  await pg.locator('#m-close').click();
+  await pg.waitForTimeout(250);
+
+  await pg.locator('#eb-back').click();
+  await pg.waitForTimeout(300);
+  await pg.locator('[data-edgo="ecat"]').click();
+  await pg.waitForTimeout(600);
+  await pg.locator('[data-ecat="เคมีภัณฑ์"]').click();
+  await pg.waitForTimeout(400);
+  ok('หมวดมีปุ่มเลือกรูปไอคอน', (await pg.locator('[data-pick="ecm-icon"]').count()) === 1);
+  ok('และปุ่มเลือกรูปปก', (await pg.locator('[data-pick="ecm-cover"]').count()) === 1);
+  await pg.locator('#m-close').click();
+  await pg.waitForTimeout(250);
+
+  await pg.locator('#ec-back').click();
+  await pg.waitForTimeout(300);
+  await pg.locator('[data-edgo="elook"]').click();
+  await pg.waitForTimeout(600);
+  ok('โลโก้มีปุ่มเลือกรูป', (await pg.locator('[data-pick="elm-logo"]').count()) === 1);
+  ok('ภาพหัวร้านมีปุ่มเลือกรูป', (await pg.locator('[data-pick="elm-cover"]').count()) === 1);
+  ok('โลโก้บอกว่าจะถูกตัดเป็นวงกลม',
+     /วงกลม/.test(await pg.locator('#elm-logo-msg').innerText()));
+
   ok('ไม่มี error ตลอดการทดสอบ', jsErr.length === 0, jsErr.join(' | '));
   await b.close();
   console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');

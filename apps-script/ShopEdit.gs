@@ -344,3 +344,103 @@ function saveShopLook(v) {
   }
   return { ok: true, changed: n };
 }
+
+/* ------------------------------------------------------- อัปโหลดรูปจากเครื่อง */
+
+var SHOPIMG_FOLDER_PROP = 'SHOPIMG_FOLDER_ID';
+var SHOPIMG_FOLDER_NAME = 'AST_รูปหน้าร้าน';
+
+/** รับเฉพาะรูป — PDF ใส่เป็นรูปสินค้าไม่ได้ เบราว์เซอร์แสดงใน <img> ไม่ขึ้น */
+var SHOPIMG_MIME = {
+  'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+  'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif'
+};
+var SHOPIMG_MAX_BYTES = 8 * 1024 * 1024;
+
+/** ชื่อไฟล์ให้อ่านออกว่าเป็นรูปของอะไร เผื่อวันหลังต้องไปหาในไดรฟ์ */
+var SHOPIMG_KIND = {
+  logo: 'โลโก้', cover: 'ภาพหัวร้าน', prod: 'สินค้า',
+  ban: 'แบนเนอร์', icon: 'ไอคอนหมวด', cat: 'ปกหมวด'
+};
+
+/**
+ * อัปรูปจากเครื่องขึ้นไดรฟ์ แล้วคืนลิงก์ที่หน้าร้านใช้ได้ทันที
+ *
+ * ทำไมต้องมี: ของเดิมให้เจ้าของร้านไปอัปขึ้นไดรฟ์เอง → ตั้งแชร์เอง → ก๊อปลิงก์มาวางเอง
+ * สามขั้นนั้นทำบนคอมยังน่าเบื่อ ทำบนมือถือคือแทบเป็นไปไม่ได้
+ * และขั้น "ตั้งแชร์เป็นทุกคนที่มีลิงก์" คือขั้นที่คนลืมบ่อยที่สุด
+ * ลืมแล้วรูปไม่ขึ้นบนหน้าร้าน โดยไม่มีอะไรบอกว่าเพราะอะไร
+ *
+ * ตัวนี้ตั้งแชร์ให้เองตั้งแต่ตอนอัป จึงไม่มีทางลืม
+ */
+function uploadShopImage(p) {
+  var email = requireStaff_();
+  if (!p) throw new Error('ไม่มีไฟล์ส่งมา');
+
+  var m = /^data:([^;]+);base64,(.*)$/.exec(String(p.data || ''));
+  if (!m) throw new Error('ยังไม่ได้เลือกรูป หรือไฟล์อ่านไม่ออก');
+
+  var mime = String(m[1]).toLowerCase();
+  var ext = SHOPIMG_MIME[mime];
+  if (!ext) {
+    throw new Error('ไฟล์ชนิด ' + mime + ' ใส่เป็นรูปสินค้าไม่ได้ — ' +
+      'รับเฉพาะรูป JPG · PNG · WEBP · HEIC');
+  }
+
+  var bytes = Utilities.base64Decode(m[2]);
+  if (bytes.length > SHOPIMG_MAX_BYTES) {
+    throw new Error('รูปใหญ่ ' + Math.round(bytes.length / 1024 / 1024 * 10) / 10 +
+      ' MB เกิน 8 MB — ย่อรูปก่อนแล้วลองใหม่');
+  }
+
+  var kind = SHOPIMG_KIND[String(p.kind || '').trim()] || 'รูป';
+  var tag = String(p.tag || '').trim().replace(/[\\\/:*?"<>|]/g, ' ').slice(0, 40);
+  var stamp = Utilities.formatDate(new Date(), tz_(), 'yyyyMMdd-HHmmss');
+  var fname = kind + (tag ? ' ' + tag : '') + ' ' + stamp + '.' + ext;
+
+  var file = driveDo_('เก็บรูปหน้าร้าน', function () {
+    return shopImgFolder_().createFile(Utilities.newBlob(bytes, mime, fname));
+  });
+
+  /* ขั้นที่ขาดไม่ได้ — ลูกค้าเปิดหน้าร้านแบบไม่ล็อกอิน ไดรฟ์จะไม่ยอมให้ดู
+     ถ้าไม่ตั้งตรงนี้ รูปจะขึ้นเฉพาะบนจอของเจ้าของร้าน แล้วนึกว่าเรียบร้อยแล้ว */
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) {
+    /* บาง Workspace ปิดการแชร์ออกนอกองค์กรไว้ ลบไฟล์ทิ้งแล้วบอกให้ชัด
+       ปล่อยไฟล์ที่คนนอกเปิดไม่ได้ค้างไว้ = เจ้าของร้านเห็นรูปขึ้น ลูกค้าเห็นกรอบเปล่า */
+    try { file.setTrashed(true); } catch (e2) {}
+    throw new Error('อัปรูปได้ แต่ตั้งให้คนนอกดูไม่ได้ — ' +
+      'ผู้ดูแล Google Workspace ปิดการแชร์ลิงก์สาธารณะไว้\n' +
+      'ให้เปิดสิทธิ์แชร์ก่อน หรือเอารูปไปฝากที่อื่นแล้ววางลิงก์แทน\n' +
+      '(ข้อความจาก Google: ' + e.message + ')');
+  }
+
+  var url = 'https://drive.google.com/file/d/' + file.getId() + '/view';
+  writeLog_(email, 'เพิ่ม', 'ไดรฟ์', file.getId(), 'อัปรูปหน้าร้าน', '', fname, '');
+
+  /* คืนทั้งลิงก์ที่เก็บลงชีท และที่อยู่รูปจริงสำหรับโชว์ตัวอย่างทันที
+     จะได้ไม่ต้องรอบันทึกก่อนถึงจะรู้ว่ารูปขึ้นไหม */
+  return { ok: true, url: url, show: shopImg_(url), name: fname };
+}
+
+/** โฟลเดอร์เก็บรูปหน้าร้าน อยู่ที่เดียวกับไฟล์ชีท — หาครั้งเดียวแล้วจำไว้ */
+function shopImgFolder_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = String(props.getProperty(SHOPIMG_FOLDER_PROP) || '').trim();
+  if (id) {
+    try { return DriveApp.getFolderById(id); }
+    catch (e) { props.deleteProperty(SHOPIMG_FOLDER_PROP); }
+  }
+  var parent = null;
+  try {
+    var it = DriveApp.getFileById(SHEET_ID).getParents();
+    if (it.hasNext()) parent = it.next();
+  } catch (e2) { parent = null; }
+  var f = driveDo_('สร้างโฟลเดอร์เก็บรูปหน้าร้าน', function () {
+    return parent ? parent.createFolder(SHOPIMG_FOLDER_NAME)
+                  : DriveApp.createFolder(SHOPIMG_FOLDER_NAME);
+  });
+  props.setProperty(SHOPIMG_FOLDER_PROP, f.getId());
+  return f;
+}
