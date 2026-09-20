@@ -44,7 +44,7 @@ body{margin:0;background:var(--bg);color:var(--ink);
 
 /* ปุ่มมุมขวาบน — มีคำกำกับใต้ปุ่ม เพราะ "?" กับ "ก−" ลำพังเดาหน้าที่ไม่ออก
    คำกำกับวาดด้วย ::after จาก data-cap จึงไม่ต้องเพิ่ม element ให้ HTML รก */
-.fsz{margin-left:auto;display:flex;gap:7px;flex:none;align-items:flex-start}
+.fsz{margin-left:auto;display:flex;gap:9px;flex:none;align-items:flex-start}
 .fsz button{position:relative;width:40px;height:40px;border:1px solid rgba(255,255,255,.5);
   border-radius:11px;background:rgba(255,255,255,.16);color:#fff;font-weight:800;
   font-size:0.9rem;padding:0;line-height:1;display:block}
@@ -257,6 +257,40 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
 .pv .r b{flex:1;font-weight:600;word-break:break-word}
 .pv .r.miss b{color:var(--red);font-weight:500}
 .pv .r.opt i{opacity:.65}
+
+/* ---------- โหมดแก้ไขร้าน ---------- */
+.edmenu{display:flex;flex-direction:column;gap:10px}
+.edmenu button{display:block;width:100%;text-align:left;padding:15px 44px 15px 16px;
+  border:1px solid var(--line);border-radius:14px;background:#fff;position:relative}
+.edmenu button:active{background:#f3f7ff}
+.edmenu b{display:block;font-size:1.02rem;font-weight:800;color:#123a7a;line-height:1.3}
+.edmenu em{display:block;font-style:normal;font-size:0.76rem;color:#5a7196;margin-top:3px;
+  line-height:1.45}
+.edmenu button::after{content:"›";position:absolute;right:17px;top:50%;
+  transform:translateY(-50%);font-size:1.5rem;color:#8ba3c7;line-height:1}
+
+.edrow{display:flex;gap:11px;align-items:flex-start;padding:12px;border:1px solid var(--line);
+  border-radius:13px;background:#fff;margin-bottom:9px;width:100%;text-align:left}
+.edrow .th{width:56px;height:56px;border-radius:10px;background:#f1f4f8;flex:none;
+  overflow:hidden;display:flex;align-items:center;justify-content:center;
+  font-size:0.62rem;color:#9aa8b8;text-align:center;padding:3px}
+.edrow .th img{width:100%;height:100%;object-fit:cover}
+.edrow .bd{flex:1;min-width:0}
+.edrow .bd b{display:block;font-size:0.9rem;font-weight:700;line-height:1.35}
+.edrow .bd .sub{font-size:0.74rem;color:var(--gray);margin-top:2px}
+.edrow .bd .pills{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.edrow .bd .pills span{font-size:0.66rem;font-weight:700;padding:2px 8px;border-radius:999px;
+  background:#eaf1ff;color:#1e4f9c}
+.edrow .bd .pills span.off{background:#fbe9e9;color:#8f1d1d}
+.edrow .bd .pills span.on{background:#e6f5ec;color:#0a6b3c}
+
+.tagpick{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 2px}
+.tagpick button{padding:8px 15px;border-radius:999px;border:1px solid var(--line);
+  background:#fff;font-size:0.82rem;font-weight:600;color:var(--gray)}
+.tagpick button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+
+.mprev{width:100%;max-height:170px;object-fit:contain;border-radius:10px;
+  background:#f1f4f8;margin:6px 0 2px;display:block}
 
 .msg{padding:11px 12px;border-radius:10px;font-size:0.8rem;line-height:1.6;margin-bottom:11px;display:none}
 .msg.on{display:block}
@@ -536,6 +570,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
     <span class="who" id="who"></span>
   </div>
   <div class="fsz">
+    <button id="fs-edit" title="โหมดแก้ไขร้าน" aria-label="โหมดแก้ไขร้าน" data-cap="ร้าน">✎</button>
     <button id="fs-help" title="คู่มือใช้งาน" aria-label="คู่มือใช้งาน" data-cap="ช่วยเหลือ">?</button>
     <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง" data-cap="ย่อ">ก−</button>
     <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น" data-cap="ขยาย">ก+</button>
@@ -722,6 +757,81 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
   <!-- ---------------------------------------------------------- คู่มือใช้งาน
        ไม่ทำเป็นแท็บ เพราะแถบล่างเต็มแล้ว และคู่มือเป็นของที่เปิดนาน ๆ ครั้ง
        เข้าจากปุ่ม ? บนหัวจอ ซึ่งเห็นได้จากทุกหน้า -->
+  <!-- โหมดแก้ไขร้าน — หน้ารวมเมนู แล้วแยกไปหน้าย่อยสี่หน้า -->
+  <section id="pg-edit" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>โหมดแก้ไข</h2></div>
+      <div class="hint" style="padding:0 2px 12px">
+        ทุกอย่างในนี้แก้แล้วขึ้นหน้าร้านทันที ลูกค้ารีเฟรชก็เห็นเลย
+        · แก้ในชีทโดยตรงก็ยังได้เหมือนเดิม สองทางใช้สลับกันได้</div>
+      <div class="edmenu">
+        <button data-edgo="new"><b>ระบบคีย์ ออเดอร์</b>
+          <em>บันทึกคำสั่งซื้อ · ตัดสต็อก · ตรวจสอบยอด</em></button>
+        <button data-edgo="eprod"><b>ข้อมูลร้าน</b>
+          <em>ข้อมูลสินค้า · ราคา · รูปภาพ · ซ่อน/โชว์</em></button>
+        <button data-edgo="eban"><b>แก้ไขแบนเนอร์</b>
+          <em>รูปโปรโมชั่น · ปุ่มกด · เปิดปิดทีละอัน</em></button>
+        <button data-edgo="etag"><b>สินค้าแนะนำ</b>
+          <em>สินค้าใหม่ · สินค้าขายดี · โปรโมชั่น</em></button>
+        <button data-edgo="ecat"><b>หมวดหมู่</b>
+          <em>รูปไอคอน · รูปปก · ชื่อที่ลูกค้าเห็น</em></button>
+        <button data-edgo="elook"><b>หน้าตาหัวร้าน</b>
+          <em>โลโก้ · ภาพพื้นหลัง · แผนที่</em></button>
+        <button data-edgo="file"><b>ไฟล์ต่างๆ</b>
+          <em>เอกสาร · ใบวางบิล · สรุปรายเดือน</em></button>
+      </div>
+    </div>
+  </section>
+
+  <section id="pg-eprod" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2 id="ep-title">ข้อมูลร้าน</h2></div>
+      <div class="msg err" id="ep-err"></div>
+      <div class="msg ok" id="ep-ok"></div>
+      <input id="ep-q" placeholder="ค้นหา — ชื่อสินค้า หรือรหัส SKU" autocomplete="off">
+      <div class="hint" id="ep-hint">แตะสินค้าเพื่อแก้รูป ราคา และการโชว์บนหน้าร้าน</div>
+      <button class="btn ghost" id="ep-back" style="margin-top:10px">← กลับโหมดแก้ไข</button>
+    </div>
+    <div id="ep-list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <section id="pg-eban" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>แก้ไขแบนเนอร์</h2></div>
+      <div class="msg err" id="eb-err"></div>
+      <div class="msg ok" id="eb-ok"></div>
+      <div class="hint" style="padding:0 2px 10px">
+        รูปต้องเปิดดูได้จากข้างนอก — ลิงก์แชร์ไดรฟ์ใช้ได้
+        แต่ต้องตั้งเป็น <b>"ทุกคนที่มีลิงก์"</b> ไม่งั้นลูกค้าเห็นกรอบเปล่า</div>
+      <button class="btn" id="eb-add">＋ เพิ่มแบนเนอร์</button>
+      <button class="btn ghost" id="eb-back" style="margin-top:8px">← กลับโหมดแก้ไข</button>
+    </div>
+    <div id="eb-list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <section id="pg-ecat" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>หมวดหมู่</h2></div>
+      <div class="msg err" id="ec-err"></div>
+      <div class="msg ok" id="ec-ok"></div>
+      <div class="hint" style="padding:0 2px 10px">
+        ชื่อหมวดมาจากคอลัมน์ <b>หมวด</b> ของ ฐานสินค้า หน้านี้แก้ได้แค่รูปกับชื่อที่ลูกค้าเห็น
+        · <b>รูปไอคอน</b> ใช้บนหน้าแรก · <b>รูปปก</b> คือภาพใหญ่ตอนกดเข้าไปในหมวด</div>
+      <button class="btn ghost" id="ec-back">← กลับโหมดแก้ไข</button>
+    </div>
+    <div id="ec-list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <section id="pg-elook" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>หน้าตาหัวร้าน</h2></div>
+      <div class="msg err" id="el-err"></div>
+      <div class="msg ok" id="el-ok"></div>
+      <div id="el-form"><div class="load">กำลังโหลด…</div></div>
+      <button class="btn ghost" id="el-back" style="margin-top:8px">← กลับโหมดแก้ไข</button>
+    </div>
+  </section>
+
   <section id="pg-help" style="display:none">
     <div class="card hp">
       <div class="sec-hd"><h2>คู่มือใช้งาน</h2></div>

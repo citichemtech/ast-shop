@@ -21,7 +21,7 @@ GS = ROOT / "apps-script"
 
 # เรียงตามลำดับที่อ่านแล้วเข้าใจง่าย — Apps Script ไม่สนลำดับ ฟังก์ชันถูก hoist หมด
 SERVER = ["Sheets.gs", "Fefo.gs", "Doc.gs", "Setup.gs", "Api.gs", "Acct.gs", "Pay.gs",
-          "Pub.gs", "Shop.gs", "Import.gs"]
+          "Pub.gs", "Shop.gs", "ShopEdit.gs", "Import.gs"]
 
 # ก้อนย่อยของไฟล์1 สำหรับเครื่องที่เปิดไฟล์ 650 KB ไม่ไหว
 #
@@ -34,7 +34,7 @@ SPLIT = [
     ("1a", ["Sheets.gs", "Fefo.gs", "Doc.gs", "Acct.gs", "Import.gs"]),
     ("1b", ["Api.gs"]),
     ("1c", ["Setup.gs"]),
-    ("1d", ["Pay.gs", "Pub.gs", "Shop.gs"]),
+    ("1d", ["Pay.gs", "Pub.gs", "Shop.gs", "ShopEdit.gs"]),
 ]
 
 

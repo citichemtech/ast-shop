@@ -147,6 +147,41 @@ var MOCK_REQS = [         /* คำขอจากหน้าเว็บที
     names: "Square Endmill 4F 2.5-7.5 x1", est: 275,
     items: [{ sku: "SKU-181", qty: 1 }], status: "รับแล้ว", orderNo: "AST-26-0188" }
 ];
+/* โหมดแก้ไขร้าน — ของจริงอยู่ในชีท ฐานสินค้า / แบนเนอร์หน้าร้าน / หมวดหน้าร้าน */
+function edPic(txt, bg){
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">'
+    + '<rect width="400" height="400" fill="' + bg + '"/>'
+    + '<text x="200" y="220" font-size="48" text-anchor="middle" fill="#fff">'
+    + txt + '</text></svg>';
+  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+}
+var MOCK_ED = {
+  ok: true,
+  slots: ["ติดต่อเรา", "โปรโมชั่นเด่น", "โปรโมชั่นประจำเดือน"],
+  tags: ["แนะนำ", "ใหม่", "ขายดี", "โปรโมชั่น"],
+  look: { logo: "", logoShow: "", cover: "", coverShow: "", map: "", open: true, mode: "queue" },
+  products: [
+    { sku:"SKU-148", name:"Straight Endmill 2F 2.0-17", group:"ดอกกัดคาร์ไบด์", unit:"ชิ้น",
+      price:96, web:"", hidden:false, img:"https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view",
+      img2:"", show:[edPic("A1","#3D8BFF")], tag:"ใหม่" },
+    { sku:"SKU-181", name:"Square Endmill 4F 2.5-7.5", group:"ดอกกัดคาร์ไบด์", unit:"ชิ้น",
+      price:225, web:"ไม่", hidden:true, img:"", img2:"", show:[], tag:"" },
+    { sku:"SKU-Chem-102", name:"Acetone 1000 ml", group:"เคมีภัณฑ์", unit:"ขวด",
+      price:120, web:"", hidden:false, img:"", img2:"", show:[], tag:"" }
+  ],
+  banners: [
+    { row:6, slot:"โปรโมชั่นเด่น", title:"โปรกันยา",
+      img:"https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view",
+      show:edPic("PROMO","#1668D6"), btn:"Buy Now", href:"หมวด:เคมีภัณฑ์", on:true, note:"" }
+  ],
+  cats: [
+    { row:6, group:"ดอกกัดคาร์ไบด์", label:"", icon:"", iconShow:"", cover:"", coverShow:"",
+      home:true },
+    { row:7, group:"เคมีภัณฑ์", label:"Chemical",
+      icon:"https://drive.google.com/file/d/2ZyXwVuTsRqPoNmLkJiHgF/view",
+      iconShow:edPic("CH","#BE4B48"), cover:"", coverShow:"", home:true }
+  ]
+};
 window.SENT = [];
 window.google = { script: { run: (function(){
   var ok=null, bad=null;
@@ -157,6 +192,66 @@ window.google = { script: { run: (function(){
     getOrders: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_ORDERS)) }) },
     /* คำขอสั่งซื้อจากหน้าเว็บ — ยังไม่ใช่ออเดอร์ รอพนักงานกดรับ */
     getRequests: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_REQS)) }) },
+    /* ---------------- โหมดแก้ไขร้าน ---------------- */
+    getShopEdit: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_ED)) }) },
+    saveShopProduct: function(p){
+      reply(function(){
+        var hit = MOCK_ED.products.filter(function(x){ return x.sku === p.sku })[0];
+        if(!hit) throw new Error("ไม่เจอรหัส " + p.sku + " ในชีท ฐานสินค้า");
+        if(p.price !== undefined && p.price !== "" && isNaN(Number(p.price)))
+          throw new Error("ราคาต้องเป็นตัวเลข");
+        if(p.price !== undefined && p.price !== "") hit.price = Number(p.price);
+        if(p.img !== undefined){ hit.img = p.img; hit.show = p.img ? [edPic("A1","#3D8BFF")] : [] }
+        if(p.img2 !== undefined){ hit.img2 = p.img2; if(p.img2) hit.show.push(edPic("A2","#1668D6")) }
+        if(p.tag !== undefined) hit.tag = p.tag;
+        if(p.web !== undefined){ hit.web = p.web; hit.hidden = !!String(p.web||"").trim() }
+        window.SENT.push({ fn:"saveShopProduct", p:p });
+        return { ok:true, changed:1 };
+      });
+    },
+    saveShopBanner: function(b){
+      reply(function(){
+        if(!String(b.img||"").trim())
+          throw new Error("ต้องใส่ลิงก์รูปก่อน แบนเนอร์ที่ไม่มีรูปจะไม่ขึ้นหน้าร้าน");
+        if(!/^https:\/\//.test(b.img)) throw new Error("ลิงก์รูปนี้ใช้ไม่ได้");
+        var hit = b.row ? MOCK_ED.banners.filter(function(x){ return x.row === b.row })[0] : null;
+        if(!hit){
+          hit = { row: 6 + MOCK_ED.banners.length };
+          MOCK_ED.banners.push(hit);
+        }
+        hit.slot = b.slot; hit.title = b.title || ""; hit.img = b.img;
+        hit.show = edPic("NEW","#2C6FD1"); hit.btn = b.btn || ""; hit.href = b.href || "";
+        hit.on = !!b.on;
+        window.SENT.push({ fn:"saveShopBanner", b:b });
+        return { ok:true, row:hit.row, fresh:!b.row };
+      });
+    },
+    deleteShopBanner: function(row){
+      reply(function(){
+        MOCK_ED.banners = MOCK_ED.banners.filter(function(x){ return x.row !== row });
+        window.SENT.push({ fn:"deleteShopBanner", row:row });
+        return { ok:true };
+      });
+    },
+    saveShopCat: function(c){
+      reply(function(){
+        var hit = MOCK_ED.cats.filter(function(x){ return x.group === c.group })[0];
+        if(!hit) throw new Error("ไม่เจอหมวด " + c.group);
+        hit.label = c.label || ""; hit.icon = c.icon || ""; hit.cover = c.cover || "";
+        hit.home = c.home !== false;
+        window.SENT.push({ fn:"saveShopCat", c:c });
+        return { ok:true, row:hit.row, fresh:false };
+      });
+    },
+    saveShopLook: function(v){
+      reply(function(){
+        MOCK_ED.look.logo = v.logo || "";
+        MOCK_ED.look.cover = v.cover || "";
+        MOCK_ED.look.map = v.map || "";
+        window.SENT.push({ fn:"saveShopLook", v:v });
+        return { ok:true, changed:1 };
+      });
+    },
     acceptRequest: function(p){
       reply(function(){
         var r = MOCK_REQS.filter(function(x){ return x.no === p.no })[0];
