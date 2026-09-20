@@ -62,6 +62,11 @@ def main():
     (out / "Pub.html").write_text(
         (GS / "Pub.html").read_text(encoding="utf-8"), encoding="utf-8")
 
+    # ---- Shop.html (ไฟล์6) ----
+    # หน้าร้านที่ลูกค้าเปิดเอง แยกไฟล์ด้วยเหตุผลเดียวกับ Pub.html
+    (out / "Shop.html").write_text(
+        (GS / "Shop.html").read_text(encoding="utf-8"), encoding="utf-8")
+
     # ---- Backup.gs (ไฟล์3) ----
     # ไม่รวมเข้า Code.gs โดยตั้งใจ — ตัวสำรองต้องยืนอยู่ได้ลำพัง
     # แต่ต้องก๊อปมาไว้ที่เดียวกัน ไม่งั้นของที่ส่งให้เจ้าของร้านจะมีไฟล์เก่าปนมา
@@ -106,7 +111,7 @@ def main():
     # ไฟล์ที่ค้างรุ่นเก่าคือไฟล์ที่วางไปแล้วไม่มีอะไรเปลี่ยน แล้วไม่มีใครรู้ว่าทำไม
     HAND = [("1-Code.txt", "Code.gs"), ("2-Index.txt", "Index.html"),
             ("3-appsscript.txt", "appsscript.json"), ("4-Pub.txt", "Pub.html"),
-            ("5-Backup.txt", "Backup.gs")]
+            ("5-Backup.txt", "Backup.gs"), ("6-Shop.txt", "Shop.html")]
     for txt, src in HAND:
         (out.parent / txt).write_text((out / src).read_text(encoding="utf-8"),
                                       encoding="utf-8")
