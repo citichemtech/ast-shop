@@ -159,6 +159,58 @@ function ok(label, cond, extra) {
   ok('และไม่มีแถบตะกร้าให้กด', !(await pg.locator('#bar').isVisible()));
   await pg.screenshot({ path: OUT + '/S2-closed.png' });
 
+  console.log('\n8. กดที่รูปแล้วดูรูปเต็มจอ เลื่อนได้สองรูป');
+  await pg.evaluate(() => { SHOP_DATA.open = true; CART = {}; cartSave(); go('shop'); load(); });
+  await pg.waitForTimeout(700);
+  ok('การ์ดที่มีสองรูปติดป้ายบอกจำนวน',
+     (await pg.locator('#pg-shop [data-pic="SKU-141"] .npic').innerText()).indexOf('2 รูป') > -1);
+  ok('การ์ดที่มีรูปเดียวไม่ติดป้าย',
+     (await pg.locator('#pg-shop [data-pic="SKU-148"] .npic').count()) === 0);
+  ok('การ์ดที่ไม่มีรูปกดไม่ได้', (await pg.locator('#pg-shop [data-pic="SKU-210"]').count()) === 0);
+
+  ok('ยังไม่กด กล่องดูรูปต้องปิดอยู่', !(await pg.locator('#lb').isVisible()));
+  await pg.locator('#pg-shop [data-pic="SKU-141"]').click();
+  await pg.waitForTimeout(350);
+  ok('กดแล้วกล่องดูรูปเปิด', await pg.locator('#lb').isVisible());
+  ok('ใส่รูปมาครบสองรูป', (await pg.locator('#lb-track img').count()) === 2);
+  ok('มีจุดบอกตำแหน่งสองจุด', (await pg.locator('#lb-dots i').count()) === 2);
+  ok('จุดแรกสว่างอยู่', (await pg.locator('#lb-dots i').first().getAttribute('class')) === 'on');
+  ok('ขึ้นชื่อสินค้ากับราคา',
+     /Single Flute/.test(await pg.locator('#lb-name').innerText()) &&
+     /89/.test(await pg.locator('#lb-name').innerText()));
+  await pg.screenshot({ path: OUT + '/S3-pics.png' });
+
+  /* จอมือถือไม่มีลูกศร ใช้นิ้วปัดอย่างเดียว — จำลองด้วยการเลื่อนแถบรูป */
+  ok('จอมือถือซ่อนลูกศรไว้ ใช้ปัดนิ้วแทน', !(await pg.locator('#lb-next').isVisible()));
+  await pg.evaluate(() => {
+    var tr = document.querySelector('#lb-track');
+    tr.scrollLeft = tr.clientWidth;
+    tr.dispatchEvent(new Event('scroll'));
+  });
+  await pg.waitForTimeout(300);
+  ok('ปัดไปรูปที่สองแล้วจุดที่สองสว่างแทน',
+     (await pg.locator('#lb-dots i').nth(1).getAttribute('class')) === 'on');
+  ok('และจุดแรกดับลง',
+     (await pg.locator('#lb-dots i').first().getAttribute('class')) === '');
+
+  await pg.keyboard.press('Escape');
+  await pg.waitForTimeout(300);
+  ok('กด Escape แล้วปิด', !(await pg.locator('#lb').isVisible()));
+  ok('ปิดแล้วเลื่อนหน้าร้านต่อได้',
+     (await pg.evaluate(() => document.body.style.overflow)) === '');
+
+  await pg.locator('#pg-shop [data-pic="SKU-148"]').click();
+  await pg.waitForTimeout(350);
+  ok('สินค้ารูปเดียวก็เปิดดูได้', await pg.locator('#lb').isVisible());
+  ok('แต่ไม่มีจุดให้เลื่อน', (await pg.locator('#lb-dots i').count()) === 0);
+  ok('และไม่มีลูกศร', !(await pg.locator('#lb-next').isVisible()));
+  await pg.locator('#lb-close').click();
+  await pg.waitForTimeout(300);
+  ok('กดกากบาทแล้วปิด', !(await pg.locator('#lb').isVisible()));
+
+  ok('กดที่รูปไม่ทำให้ของลงตะกร้าเอง',
+     (await pg.evaluate(() => Object.keys(CART).length)) === 0);
+
   ok('ไม่มี error สะสมตลอดการทดสอบ', errs.length === 0, errs.join(' | '));
   await b.close();
   console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');

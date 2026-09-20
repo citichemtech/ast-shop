@@ -10,8 +10,18 @@
 """
 import json, sys
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parent.parent
+
+def pic(txt, bg):
+    """รูปปลอมเป็น SVG ฝังมาเลย จะได้ทดสอบได้โดยไม่ต้องต่อเน็ต"""
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600">'
+           '<rect width="600" height="600" fill="' + bg + '"/>'
+           '<text x="300" y="320" font-size="64" text-anchor="middle" fill="#fff">'
+           + txt + '</text></svg>')
+    return "data:image/svg+xml;utf8," + quote(svg)
+
 
 DATA = {
     "ok": True,
@@ -27,17 +37,19 @@ DATA = {
     "cats": ["ดอกกัดคาร์ไบด์", "ดอกเจาะ", "เคมีภัณฑ์"],
     "items": [
         {"sku": "SKU-141", "name": "Single Flute Endmill 1F / 1.0*5.0*3.175*38L (1pcs)",
-         "group": "ดอกกัดคาร์ไบด์", "unit": "ชิ้น", "perPack": 1, "price": 89, "img": "", "out": False},
+         "group": "ดอกกัดคาร์ไบด์", "unit": "ชิ้น", "perPack": 1, "price": 89, "out": False,
+         "img": pic("A1", "#3D8BFF"), "imgs": [pic("A1", "#3D8BFF"), pic("A2", "#1668D6")]},
         {"sku": "SKU-148", "name": "Straight Endmill 2F 2.0-17", "group": "ดอกกัดคาร์ไบด์",
-         "unit": "ชิ้น", "perPack": 1, "price": 96, "img": "", "out": False},
+         "unit": "ชิ้น", "perPack": 1, "price": 96, "out": False,
+         "img": pic("B1", "#BE4B48"), "imgs": [pic("B1", "#BE4B48")]},
         {"sku": "SKU-181", "name": "Square Endmill 4F 2.5-7.5", "group": "ดอกกัดคาร์ไบด์",
-         "unit": "ชิ้น", "perPack": 1, "price": 225, "img": "", "out": True},
+         "unit": "ชิ้น", "perPack": 1, "price": 225, "img": "", "imgs": [], "out": True},
         {"sku": "SKU-210", "name": "ดอกเจาะคาร์ไบด์ 3.0 มม.", "group": "ดอกเจาะ",
-         "unit": "ชิ้น", "perPack": 1, "price": 145, "img": "", "out": False},
+         "unit": "ชิ้น", "perPack": 1, "price": 145, "img": "", "imgs": [], "out": False},
         {"sku": "SKU-Chem-102", "name": "Acetone 1000 ml", "group": "เคมีภัณฑ์",
-         "unit": "ขวด", "perPack": 12, "price": 120, "img": "", "out": False},
+         "unit": "ขวด", "perPack": 12, "price": 120, "img": "", "imgs": [], "out": False},
         {"sku": "SKU-Chem-111", "name": "น้ำยาล้าง PCB 1000 ml", "group": "เคมีภัณฑ์",
-         "unit": "ขวด", "perPack": 12, "price": 160, "img": "", "out": False},
+         "unit": "ขวด", "perPack": 12, "price": 160, "img": "", "imgs": [], "out": False},
     ],
 }
 

@@ -73,7 +73,7 @@ console.log('\n2. ข้อมูลที่ห้ามหลุดไปถ�
 var raw2 = JSON.stringify(d1);
 var it2 = d1.items[0];
 eq('ช่องในรายการสินค้ามีเท่าที่ตั้งใจ', Object.keys(it2).sort(),
-   ['group', 'img', 'name', 'out', 'perPack', 'price', 'sku', 'unit']);
+   ['group', 'img', 'imgs', 'name', 'out', 'perPack', 'price', 'sku', 'unit']);
 truthy('ไม่มีคำว่า cost ในคำตอบ', raw2.indexOf('"cost"') < 0);
 truthy('ไม่มีคำว่า remain ในคำตอบ', raw2.indexOf('"remain"') < 0);
 truthy('ไม่มีเลขแถวของชีทติดไปด้วย', raw2.indexOf('"row"') < 0);
@@ -410,6 +410,34 @@ for (var r21 = DATA_ROW; r21 <= prod21.getMaxRows(); r21++) {
 prod21.cell(row21, 15).v = 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view?usp=sharing';
 var got21 = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
 eq('วางลิงก์ไดรฟ์ในชีทแล้วหน้าร้านได้ที่อยู่รูปจริง', got21.img, THUMB);
+eq('รูปเดียวได้ชุดรูปยาวหนึ่ง', got21.imgs, [THUMB]);
+
+/* ============================================ 22. รูปที่สอง (คอลัมน์ P) */
+console.log('\n22. รูปสองรูปต่อสินค้า — ลูกค้ากดดูแล้วเลื่อนได้');
+var THUMB2 = 'https://drive.google.com/thumbnail?id=2ZyXwVuTsRqPoNmLkJiHgF&sz=w1000';
+prod21.cell(row21, 16).v = 'https://drive.google.com/file/d/2ZyXwVuTsRqPoNmLkJiHgF/view';
+var got22 = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+eq('ได้รูปครบสองรูปตามลำดับคอลัมน์ O แล้ว P', got22.imgs, [THUMB, THUMB2]);
+eq('รูปเล็กในตะกร้ายังเป็นรูปแรกเสมอ', got22.img, THUMB);
+
+prod21.cell(row21, 15).v = '';
+var got22b = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+eq('เว้นรูปแรกไว้ รูปที่สองเลื่อนขึ้นมาเป็นรูปหลัก ไม่มีช่องว่างคั่น',
+   got22b.imgs, [THUMB2]);
+
+prod21.cell(row21, 15).v = 'https://drive.google.com/file/d/2ZyXwVuTsRqPoNmLkJiHgF/view';
+var got22c = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+eq('ก๊อปลิงก์เดียวกันลงสองช่อง ไม่โชว์ซ้ำสองรูป', got22c.imgs, [THUMB2]);
+
+prod21.cell(row21, 16).v = 'ถ่ายไว้ในมือถือ';
+var got22d = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+eq('รูปที่สองใส่มั่ว ตกไปเงียบ ๆ เหลือรูปเดียว ไม่ปล่อยรูปแตก', got22d.imgs, [THUMB2]);
+
+prod21.cell(row21, 15).v = '';
+prod21.cell(row21, 16).v = '';
+var got22e = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+eq('ไม่ใส่รูปเลยได้ชุดว่าง หน้าร้านขึ้นกรอบชื่อสินค้าแทน', got22e.imgs, []);
+eq('ไม่ใส่รูปเลย img ก็ว่าง', got22e.img, '');
 
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);
