@@ -136,6 +136,17 @@ var MOCK_MONTHS = {};     /* ยอดที่กรอกเองในชี
 var MOCK_SIGN = {};       /* ลายเซ็นฝั่งร้านที่เซ็นเก็บไว้ (ของจริงอยู่ในชีท ตั้งค่าแอป) */
 var MOCK_SLIPS = [];      /* สลิปที่แนบในรอบนี้ (ของจริงอยู่ในชีท หลักฐานการชำระเงิน) */
 var MOCK_LINKS = {};      /* ลิงก์ชำระเงินที่สร้างในรอบนี้ (ของจริงอยู่ในชีท ลิงก์ชำระเงิน) */
+var MOCK_REQS = [         /* คำขอจากหน้าเว็บที่ยังไม่ได้จัดการ (ข้อมูลแต่ง) */
+  { no: "REQ-690920-001", at: "20/09/2569 09:12", cust: "มานี ใจดี", tel: "0812345678",
+    addr: "99/9 ถ.ตัวอย่าง ต.เนินพระ อ.เมือง จ.ระยอง 21000", note: "ขอใบกำกับภาษี",
+    names: "Straight Endmill 2F 2.0-17 x2 · Acetone 1000 ml x1", est: 312,
+    items: [{ sku: "SKU-148", qty: 2 }, { sku: "SKU-Chem-102", qty: 1 }],
+    status: "ใหม่", orderNo: "" },
+  { no: "REQ-690919-002", at: "19/09/2569 16:40", cust: "มานะ ใจกล้า", tel: "0899999999",
+    addr: "1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000", note: "",
+    names: "Square Endmill 4F 2.5-7.5 x1", est: 275,
+    items: [{ sku: "SKU-181", qty: 1 }], status: "รับแล้ว", orderNo: "AST-26-0188" }
+];
 window.SENT = [];
 window.google = { script: { run: (function(){
   var ok=null, bad=null;
@@ -144,6 +155,28 @@ window.google = { script: { run: (function(){
     withFailureHandler: function(f){ bad=f; return api },
     getBootstrap: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_BOOT)) }) },
     getOrders: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_ORDERS)) }) },
+    /* คำขอสั่งซื้อจากหน้าเว็บ — ยังไม่ใช่ออเดอร์ รอพนักงานกดรับ */
+    getRequests: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_REQS)) }) },
+    acceptRequest: function(p){
+      reply(function(){
+        var r = MOCK_REQS.filter(function(x){ return x.no === p.no })[0];
+        if(!r) throw new Error("ไม่พบคำขอ " + p.no);
+        if(r.orderNo) throw new Error("คำขอ " + p.no + " รับเป็นออเดอร์ " + r.orderNo + " ไปแล้ว");
+        r.status = "รับแล้ว"; r.orderNo = "AST-26-9001";
+        window.SENT.push({ fn: "acceptRequest", p: p });
+        return { ok: true, no: r.orderNo, req: p.no, net: r.est };
+      });
+    },
+    rejectRequest: function(no, why){
+      reply(function(){
+        var r = MOCK_REQS.filter(function(x){ return x.no === no })[0];
+        if(!r) throw new Error("ไม่พบคำขอ " + no);
+        if(String(why||"").trim().length < 3) throw new Error("ใส่เหตุผลสั้น ๆ ด้วย");
+        r.status = "ไม่รับ"; r.why = why;
+        window.SENT.push({ fn: "rejectRequest", no: no, why: why });
+        return { ok: true, no: no };
+      });
+    },
     /* ค้นออเดอร์ทั้งชีท — ของจริงค้นในชีท ที่นี่ค้นในรายการจำลอง */
     searchOrders: function(q, limit){
       reply(function(){

@@ -4714,6 +4714,40 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
     }, incl.no), incl.total);
 
+  console.log('\n20.9 คำขอสั่งซื้อจากหน้าเว็บ');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(400);
+  eq('ปุ่มบอกจำนวนคำขอที่ยังค้าง',
+     (await page.textContent('#web-badge')).trim(), '(1)');
+  await page.click('#btn-web');
+  await page.waitForTimeout(600);
+  truthy('เข้าหน้าคำขอได้', await page.isVisible('#pg-web'));
+  eq('เห็นคำขอสองใบ', await page.locator('#web-list .row').count(), 2);
+  eq('ใบที่รอมีปุ่มรับเป็นออเดอร์', await page.locator('[data-acc]').count(), 1);
+  eq('ใบที่รับไปแล้วไม่มีปุ่ม', await page.locator('[data-rej]').count(), 1);
+  truthy('โชว์ที่อยู่ที่ลูกค้ากรอกมา',
+     (await page.textContent('#web-list')).indexOf('เนินพระ') > -1);
+  truthy('โชว์รายการสินค้า',
+     (await page.textContent('#web-list')).indexOf('Acetone 1000 ml x1') > -1);
+
+  /* กดรับ — ที่อยู่ต้องถูกเติมมาให้แล้ว พนักงานไม่ต้องพิมพ์ใหม่ */
+  await page.click('[data-acc]');
+  await page.waitForTimeout(400);
+  eq('ชื่อผู้รับถูกเติมมาให้', await page.inputValue('#wa-cust'), 'มานี ใจดี');
+  eq('เบอร์ถูกเติมมาให้', await page.inputValue('#wa-tel'), '0812345678');
+  truthy('ที่อยู่ถูกเติมมาให้',
+     (await page.inputValue('#wa-addr')).indexOf('เนินพระ') > -1);
+  await page.fill('#wa-car', 'Flash Express');
+  await page.click('#wa-go');
+  await page.waitForTimeout(900);
+  var accSent = await page.evaluate(function () {
+    return window.SENT.filter(function (x) { return x.fn === 'acceptRequest' })[0];
+  });
+  truthy('ส่งคำสั่งรับไปจริง', !!accSent);
+  eq('ส่งเลขคำขอไปถูกใบ', accSent.p.no, 'REQ-690920-001');
+  eq('ส่งขนส่งที่เลือกไปด้วย', accSent.p.carrier, 'Flash Express');
+  eq('ตอนนี้ไม่มีใบรออยู่แล้ว', await page.locator('[data-acc]').count(), 0);
+
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 

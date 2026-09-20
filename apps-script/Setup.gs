@@ -20,6 +20,7 @@ var CUT_LAST = 3005;   // ตัดล็อต รองรับ 3000 บร�
    (ของเดิมทำใบละหนึ่งแท็บ ที่ 20 ใบต่อวันจะชนขีดจำกัดของ Google Sheets ใน 2 เดือน) */
 var DOC_LAST = 8005;
 var SLIP_LAST = 3005;  // หลักฐานการชำระเงิน รองรับ 3000 สลิป
+var REQ_LAST = 3005;   // คำขอสั่งซื้อจากหน้าเว็บ
 var LINK_LAST = 3005;  // ลิงก์ชำระเงิน รองรับ 3000 ลิงก์
 var MONTH_LAST = 305;  // สรุปเดือน รองรับ 300 แถว = 60 เดือน × 5 ช่องทาง
 var STOCK_LAST = 150;  // ขอบล่างของชีท สต๊อกคงเหลือ ที่ใช้ในสูตรตรวจยอด
@@ -42,6 +43,7 @@ function setup() {
   made.push(setupAppSheet_(ss));
   made.push(setupMonthSheet_(ss));
   made.push(setupSlipSheet_(ss));
+  made.push(setupReqSheet_(ss));
   made.push(setupLinkSheet_(ss));
   made.push(setupItemLotColumn_(ss));
   made.push(setupAccounting_(ss));
@@ -2693,21 +2695,97 @@ function setupShopColumns() {
   return msg;
 }
 
-/** สวิตช์เปิด/ปิดรับออเดอร์หน้าเว็บ ในชีท ตั้งค่าแอป — เติมให้ถ้ายังไม่มี */
+/** สองสวิตช์ของหน้าร้านในชีท ตั้งค่าแอป — เติมให้ถ้ายังไม่มี สั่งซ้ำได้ไม่เพิ่มซ้ำ */
 function shopSwitchRow_(ss) {
-  var key = 'เปิดรับออเดอร์หน้าเว็บ';
   var s = findSheet_(ss, SH.app.name);
   if (!s) return 'ยังไม่มีชีท ' + SH.app.name + ' — สั่ง setup ก่อนแล้วค่อยสั่งตัวนี้ซ้ำ';
 
+  var WANT = [
+    ['เปิดรับออเดอร์หน้าเว็บ', 'เปิด',
+      'พิมพ์ "ปิด" เมื่อไม่อยากให้ลูกค้าสั่งของจากหน้าเว็บชั่วคราว\n' +
+      'ปิดแล้วลูกค้ายังดูสินค้าและราคาได้ตามปกติ แค่กดสั่งไม่ได้'],
+    ['ออเดอร์จากเว็บ', 'เข้าคิวก่อน',
+      'เข้าคิวก่อน = ไปรอในชีท คำขอสั่งซื้อ ให้พนักงานตรวจแล้วกด "รับเป็นออเดอร์"\n' +
+      'เข้าชีทเลย   = เป็นออเดอร์จริงทันที ตัดสต๊อกทันที ไม่มีใครตรวจก่อน\n' +
+      'แนะนำให้ใช้ "เข้าคิวก่อน" เพราะพลาดแล้วแก้ง่ายกว่ามาก']
+  ];
+
   var last = s.getLastRow();
+  var have = {};
   if (last >= DATA_ROW) {
     var v = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, 1).getValues();
-    for (var i = 0; i < v.length; i++) {
-      if (String(v[i][0] || '').trim() === key) return 'ตั้งค่าแอป มีสวิตช์ "' + key + '" อยู่แล้ว';
-    }
+    for (var i = 0; i < v.length; i++) have[String(v[i][0] || '').trim()] = 1;
   }
-  var row = Math.max(DATA_ROW, last + 1);
-  s.getRange(row, 1, 1, 2).setValues([[key, 'เปิด']]);
-  s.getRange(row, 2).setNote('พิมพ์ "ปิด" เมื่อไม่อยากให้ลูกค้าสั่งของจากหน้าเว็บชั่วคราว');
-  return 'เพิ่มสวิตช์ "' + key + '" ในชีท ' + SH.app.name + ' แล้ว (ตอนนี้เปิดอยู่)';
+
+  var added = [], kept = [];
+  for (var k = 0; k < WANT.length; k++) {
+    if (have[WANT[k][0]]) { kept.push(WANT[k][0]); continue; }
+    last = Math.max(DATA_ROW - 1, s.getLastRow());
+    var row = last + 1;
+    s.getRange(row, 1, 1, 2).setValues([[WANT[k][0], WANT[k][1]]]);
+    s.getRange(row, 2).setNote(WANT[k][2]);
+    added.push(WANT[k][0] + ' = ' + WANT[k][1]);
+  }
+
+  if (!added.length) return 'ตั้งค่าแอป มีสวิตช์ของหน้าร้านครบอยู่แล้ว';
+  return 'เพิ่มสวิตช์ในชีท ' + SH.app.name + ': ' + added.join(' · ') +
+    (kept.length ? '  (มีอยู่แล้ว: ' + kept.join(' · ') + ')' : '');
+}
+
+
+/**
+ * ชีท คำขอสั่งซื้อ — ที่พักของออเดอร์จากหน้าเว็บก่อนพนักงานกดรับ
+ *
+ * แยกจาก ออเดอร์_หัวบิล โดยตั้งใจ คนที่กรอกมาคือใครก็ได้บนอินเทอร์เน็ต
+ * จะให้ไปปนกับใบจริงที่ใช้ปิดบัญชีและตัดสต๊อกไม่ได้
+ */
+function setupReqSheet_(ss) {
+  var name = SH.req.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < REQ_LAST) s.insertRowsAfter(s.getMaxRows(), REQ_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 14) s.insertColumnsAfter(s.getMaxColumns(), 14 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('คำขอสั่งซื้อจากหน้าร้าน — ยังไม่ใช่ออเดอร์')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'ลูกค้ากรอกเข้ามาเอง ระบบยังไม่ตัดสต๊อกและยังไม่ออกเลขออเดอร์  |  ' +
+    'พนักงานกด "รับเป็นออเดอร์" ในระบบคีย์ออเดอร์ ถึงจะกลายเป็นใบจริง  |  ' +
+    'ยอดในช่องประเมินเป็นราคา ณ วันที่ลูกค้ากด ไม่ใช่ยอดที่ตกลงกันจริง'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'เลขคำขอ', 'เข้ามาเมื่อ', 'ชื่อผู้รับ', 'เบอร์โทร', 'ที่อยู่จัดส่ง',
+    'ข้อความจากลูกค้า', 'รายการ\n(SKU*จำนวน)', 'ชื่อสินค้า', 'ยอดประเมิน',
+    'สถานะ', 'เลขออเดอร์ที่รับเป็น', 'ผู้รับเรื่อง', 'เหตุผลที่ไม่รับ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = REQ_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+
+  var inCols = [];
+  for (var c = 2; c <= 14; c++) inCols.push(c);
+  paintCols_(s, n, inCols, [1]);
+
+  s.getRange(DATA_ROW, SH.req.IN.at, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.req.IN.tel, n, 1).setNumberFormat('@');
+  s.getRange(DATA_ROW, SH.req.IN.lines, n, 1).setNumberFormat('@');
+  s.getRange(DATA_ROW, SH.req.IN.est, n, 1).setNumberFormat('#,##0.00');
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.req.IN.no, 130);
+  s.setColumnWidth(SH.req.IN.at, 140);
+  s.setColumnWidth(SH.req.IN.cust, 160);
+  s.setColumnWidth(SH.req.IN.tel, 110);
+  s.setColumnWidth(SH.req.IN.addr, 300);
+  s.setColumnWidth(SH.req.IN.note, 200);
+  s.setColumnWidth(SH.req.IN.lines, 180);
+  s.setColumnWidth(SH.req.IN.names, 280);
+  s.setColumnWidth(SH.req.IN.status, 110);
+  s.setColumnWidth(SH.req.IN.orderNo, 140);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' คำขอ)';
 }

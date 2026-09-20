@@ -37,11 +37,22 @@ function throws(label, fn, needle) {
 }
 
 /* พนักงานเตรียมชีทให้พร้อมก่อน แล้วค่อยจำลองลูกค้าเปิดลิงก์เดียวกัน */
-function shopFixture() {
+function shopFixture(mode) {
   var fx = FS.build();
   var staff = FS.load(fx, {});
   staff.setup();
   staff.setupShopColumns();
+  /* ค่าเริ่มต้นของระบบคือ "เข้าคิวก่อน" — ข้อสอบชุดที่สอบเส้นทางออเดอร์จริง
+     ต้องสลับเป็น "เข้าชีทเลย" ก่อน ไม่งั้นได้เลขคำขอแทนเลขออเดอร์ */
+  if (mode === 'direct') {
+    var app = fx.sheets['ตั้งค่าแอป'];
+    for (var r = DATA_ROW; r <= app.getMaxRows(); r++) {
+      if (String(app.cell(r, 1).v || '').trim() === 'ออเดอร์จากเว็บ') {
+        app.cell(r, 2).v = 'เข้าชีทเลย';
+        break;
+      }
+    }
+  }
   /* ลูกค้า = ไม่มีอีเมล เพราะ deploy ตัวสาธารณะรันในนามเจ้าของ
      Session.getActiveUser() จึงคืนค่าว่างให้คนที่ไม่ได้ล็อกอิน */
   var guest = FS.load(fx, { email: '' });
@@ -136,7 +147,7 @@ eq('จำนวนสินค้าไม่เปลี่ยน', s7.guest.s
 
 /* ============================================ 8. ลูกค้าสั่งซื้อเอง */
 console.log('\n8. ลูกค้ากดสั่งซื้อจากหน้าร้าน');
-var s8 = shopFixture();
+var s8 = shopFixture('direct');
 var shelf8 = s8.guest.shopData().items;
 var buy = function (o) {
   o = o || {};
@@ -159,7 +170,7 @@ eq('ยอดตรงกับราคาในชีทบวกค่าส�
 
 /* ============================================ 9. โกงราคาไม่ได้ */
 console.log('\n9. ส่งราคาปลอมมาจากเบราว์เซอร์');
-var s9 = shopFixture();
+var s9 = shopFixture('direct');
 var shelf9 = s9.guest.shopData().items;
 var r9 = s9.guest.shopOrder({
   clientKey: 'web-cheat', cust: 'คนโกง ราคา', tel: '0812345678',
@@ -221,7 +232,7 @@ throws('ร้านปิดแล้วสั่งไม่ได้', functi
 
 /* ============================================ 13. กดซ้ำไม่ได้สองใบ */
 console.log('\n13. ลูกค้ากดสั่งซ้ำตอนเน็ตช้า');
-var s13 = shopFixture();
+var s13 = shopFixture('direct');
 var sku13 = s13.guest.shopData().items[0].sku;
 var pay13 = {
   clientKey: 'web-same-key', cust: 'มานี ใจดี', tel: '0812345678',
@@ -235,7 +246,7 @@ truthy('และบอกว่าเป็นใบซ้ำ', b13.duplicate =
 
 /* ============================================ 14. ออเดอร์เข้าชีทจริง */
 console.log('\n14. ออเดอร์ที่ลูกค้าสั่ง ต้องเข้าชีทเหมือนพนักงานคีย์');
-var s14 = shopFixture();
+var s14 = shopFixture('direct');
 var sku14 = s14.guest.shopData().items[0].sku;
 var r14 = s14.guest.shopOrder({
   clientKey: 'web-sheet', cust: 'มานี ใจดี', tel: '0812345678',
@@ -253,6 +264,99 @@ truthy('และเก็บข้อความที่ลูกค้าฝ
 /* พนักงานต้องเห็นออเดอร์นี้ในระบบเหมือนใบที่ตัวเองคีย์ */
 var seen14 = s14.staff.getOrders(20).filter(function (o) { return o.no === r14.no });
 eq('พนักงานเห็นออเดอร์ใบนี้', seen14.length, 1);
+
+/* ============================================ 15. โหมดเข้าคิวก่อน */
+console.log('\n15. โหมด "เข้าคิวก่อน" — ค่าเริ่มต้นของระบบ');
+function queueFixture() {
+  var f = shopFixture();
+  /* ค่าเริ่มต้นคือเข้าคิวอยู่แล้ว ไม่ต้องตั้งอะไร */
+  return f;
+}
+var s15 = queueFixture();
+var sku15 = s15.guest.shopData().items[0].sku;
+var q15 = s15.guest.shopOrder({
+  clientKey: 'q-1', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '99/9 ถ.ตัวอย่าง ต.เนินพระ อ.เมือง จ.ระยอง 21000',
+  note: 'ขอใบกำกับภาษี', items: [{ sku: sku15, qty: 2 }]
+});
+truthy('ได้เลขคำขอ ไม่ใช่เลขออเดอร์', /^REQ-/.test(q15.no));
+truthy('บอกว่าเข้าคิวแล้ว', q15.queued === true);
+eq('บอกยอดประเมินให้ลูกค้า', q15.net, s15.guest.shopData().items[0].price * 2 + 50);
+eq('ยังไม่มีลิงก์จ่ายเงิน เพราะยอดยังไม่นิ่ง', q15.payUrl, '');
+
+/* ยังไม่ใช่ออเดอร์ — หัวบิลต้องยังว่าง สต๊อกต้องยังไม่ถูกตัด */
+var head15 = s15.fx.sheets['ออเดอร์_หัวบิล'];
+eq('ยังไม่มีออเดอร์ในชีทหัวบิล', String(head15.cell(DATA_ROW, 1).v || ''), '');
+eq('พนักงานยังไม่เห็นเป็นออเดอร์', s15.staff.getOrders(20).length, 0);
+
+/* แต่ต้องอยู่ในคิวให้พนักงานเห็น */
+var reqs15 = s15.staff.getRequests(20);
+eq('พนักงานเห็นคำขอหนึ่งใบ', reqs15.length, 1);
+eq('เลขคำขอตรงกัน', reqs15[0].no, q15.no);
+eq('ชื่อลูกค้าครบ', reqs15[0].cust, 'มานี ใจดี');
+eq('เบอร์ครบ ศูนย์หน้าไม่หาย', reqs15[0].tel, '0812345678');
+eq('สถานะเริ่มต้นคือใหม่', reqs15[0].status, 'ใหม่');
+eq('แกะรายการสินค้ากลับมาได้', reqs15[0].items, [{ sku: sku15, qty: 2 }]);
+truthy('มีชื่อสินค้าให้อ่านด้วย', reqs15[0].names.indexOf('x2') > -1);
+
+/* ============================================ 16. พนักงานกดรับเป็นออเดอร์ */
+console.log('\n16. พนักงานกดรับคำขอเป็นออเดอร์');
+var got16 = s15.staff.acceptRequest({ no: q15.no, carrier: 'Flash Express' });
+truthy('ได้เลขออเดอร์จริง', /^AST-/.test(got16.no));
+eq('ยอดเท่ากับที่ประเมินไว้', got16.net, q15.net);
+eq('ตอนนี้พนักงานเห็นเป็นออเดอร์แล้ว', s15.staff.getOrders(20).length, 1);
+var after16 = s15.staff.getRequests(20)[0];
+eq('คำขอเปลี่ยนสถานะเป็นรับแล้ว', after16.status, 'รับแล้ว');
+eq('และผูกกับเลขออเดอร์ไว้', after16.orderNo, got16.no);
+truthy('หมายเหตุออเดอร์อ้างเลขคำขอ',
+  String(s15.fx.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, 20).v).indexOf(q15.no) > -1);
+throws('กดรับซ้ำไม่ได้', function () { s15.staff.acceptRequest({ no: q15.no }) }, 'ไปแล้ว');
+
+/* ============================================ 17. ไม่รับคำขอ */
+console.log('\n17. พนักงานไม่รับคำขอ');
+var s17 = queueFixture();
+var sku17 = s17.guest.shopData().items[0].sku;
+var q17 = s17.guest.shopOrder({
+  clientKey: 'q-2', cust: 'มานะ ใจกล้า', tel: '0899999999',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000', items: [{ sku: sku17, qty: 1 }]
+});
+throws('ไม่ใส่เหตุผลไม่ได้', function () { s17.staff.rejectRequest(q17.no, '') }, 'เหตุผล');
+s17.staff.rejectRequest(q17.no, 'ลูกค้าแจ้งยกเลิกทางไลน์');
+eq('สถานะเป็นไม่รับ', s17.staff.getRequests(20)[0].status, 'ไม่รับ');
+eq('และไม่กลายเป็นออเดอร์', s17.staff.getOrders(20).length, 0);
+
+/* ============================================ 18. สลับเป็นเข้าชีทเลย */
+console.log('\n18. สลับโหมดเป็น "เข้าชีทเลย"');
+var s18 = shopFixture();
+var app18 = s18.fx.sheets['ตั้งค่าแอป'], row18 = 0;
+for (var r18 = DATA_ROW; r18 <= app18.getMaxRows(); r18++) {
+  if (String(app18.cell(r18, 1).v || '').trim() === 'ออเดอร์จากเว็บ') { row18 = r18; break; }
+}
+truthy('setupShopColumns เพิ่มสวิตช์เลือกโหมดให้แล้ว', row18 > 0);
+app18.cell(row18, 2).v = 'เข้าชีทเลย';
+var sku18 = s18.guest.shopData().items[0].sku;
+var r18 = s18.guest.shopOrder({
+  clientKey: 'q-3', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000', items: [{ sku: sku18, qty: 1 }]
+});
+truthy('ได้เลขออเดอร์เลย ไม่ผ่านคิว', /^AST-/.test(r18.no));
+truthy('ไม่ได้บอกว่าเข้าคิว', !r18.queued);
+eq('เข้าชีทหัวบิลทันที', s18.staff.getOrders(20).length, 1);
+eq('และไม่มีอะไรค้างในคิว', s18.staff.getRequests(20).length, 0);
+/* สลับกลับ */
+app18.cell(row18, 2).v = 'เข้าคิวก่อน';
+var r18b = s18.guest.shopOrder({
+  clientKey: 'q-4', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000', items: [{ sku: sku18, qty: 1 }]
+});
+truthy('สลับกลับแล้วเข้าคิวเหมือนเดิม', /^REQ-/.test(r18b.no));
+
+/* ============================================ 19. ลูกค้าแตะคิวไม่ได้ */
+console.log('\n19. ลูกค้าเรียกของฝั่งคิวไม่ได้');
+var g19 = shopFixture().guest;
+['getRequests', 'acceptRequest', 'rejectRequest'].forEach(function (fn) {
+  throws('ลูกค้าเรียก ' + fn + ' ไม่ได้', function () { g19[fn]({}) }, 'ระบบไม่ทราบว่าคุณเป็นใคร');
+});
 
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

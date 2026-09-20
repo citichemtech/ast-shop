@@ -231,6 +231,15 @@ function shopOrder(payload) {
   var cfg = appCfg_();
   var ship = (cfg.freeOver && sub >= Number(cfg.freeOver)) ? 0 : Number(cfg.shipFee) || 0;
 
+  /* โหมด "เข้าคิวก่อน" — ยังไม่ใช่ออเดอร์ ไม่ออกเลข ไม่ตัดสต๊อก
+     ลงไว้ในชีท คำขอสั่งซื้อ รอพนักงานตรวจแล้วกดรับ */
+  if (cfg.shopMode !== 'direct') {
+    return shopQueue_(clientKey, {
+      cust: cust, tel: tel, addr: addr, note: note,
+      items: items, est: sub + ship
+    });
+  }
+
   /* ------------------------------------------------ เขียนลงชีท */
   var props = PropertiesService.getScriptProperties();
   var done = props.getProperty('shop_' + clientKey);
@@ -312,4 +321,224 @@ function shopDone_(no, net, dup) {
     payUrl: (link && link.url) || '',
     why: link ? link.why : 'ยังไม่ได้เปิดระบบลิงก์ชำระเงิน'
   };
+}
+
+/* ===========================================================================
+   โหมด "เข้าคิวก่อน" — คำขอสั่งซื้อ
+   =========================================================================== */
+
+/** เลขคำขอ REQ-ปปดดวว-nnn — คนละชุดกับเลขออเดอร์ จะได้ไม่มีใครสับสนว่าใบไหนจริง */
+function reqNewNo_() {
+  var d = new Date();
+  var p = function (n) { return n < 10 ? '0' + n : '' + n };
+  var day = String(d.getFullYear() + 543).slice(2) + p(d.getMonth() + 1) + p(d.getDate());
+  var s = sheetIfAny_('req');
+  var seq = 1;
+  if (s) {
+    var last = s.getLastRow();
+    if (last >= DATA_ROW) {
+      var v = s.getRange(DATA_ROW, SH.req.IN.no, last - DATA_ROW + 1, 1).getValues();
+      for (var i = 0; i < v.length; i++) {
+        var m = /^REQ-(\d{6})-(\d+)$/.exec(String(v[i][0] || '').trim());
+        if (m && m[1] === day && Number(m[2]) >= seq) seq = Number(m[2]) + 1;
+      }
+    }
+  }
+  return 'REQ-' + day + '-' + (seq < 100 ? ('00' + seq).slice(-3) : seq);
+}
+
+/** เขียนคำขอลงคิว แล้วบอกลูกค้าว่าร้านจะติดต่อกลับ */
+function shopQueue_(clientKey, r) {
+  var props = PropertiesService.getScriptProperties();
+  var done = props.getProperty('shopq_' + clientKey);
+  if (done) return shopQueued_(done, r.est, true);
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองกดสั่งอีกครั้งใน 2-3 วินาที');
+  try {
+    done = props.getProperty('shopq_' + clientKey);
+    if (done) return shopQueued_(done, r.est, true);
+
+    if (!sheetIfAny_('req')) {
+      throw new Error('ระบบยังไม่พร้อมรับออเดอร์ทางเว็บ — ทักไลน์ของร้านเพื่อสั่งซื้อได้เลย');
+    }
+    var row = nextRow_('req', SH.req.IN.no);
+    if (!row) throw new Error('ระบบรับคำขอไม่ได้ในตอนนี้ — ทักไลน์ของร้านได้เลย');
+
+    var shelf = {};
+    var list = shopItems_();
+    for (var i = 0; i < list.length; i++) shelf[list[i].sku] = list[i];
+
+    var lines = [], names = [];
+    for (var k = 0; k < r.items.length; k++) {
+      var it = r.items[k];
+      lines.push(it.sku + '*' + it.qty);
+      names.push((shelf[it.sku] ? shelf[it.sku].name : it.sku) + ' x' + it.qty);
+    }
+
+    var no = reqNewNo_();
+    writeRow_('req', row, {
+      no: no, at: new Date(), cust: r.cust, tel: r.tel, addr: r.addr, note: r.note,
+      lines: lines.join(' · '), names: names.join(' · '), est: r.est,
+      status: 'ใหม่', orderNo: '', by: '', why: ''
+    });
+
+    props.setProperty('shopq_' + clientKey, no);
+    writeLog_('หน้าร้าน', 'คำขอสั่งซื้อ', SH.req.name, no,
+      'ลูกค้ากรอกจากหน้าเว็บ', '', r.items.length + ' รายการ',
+      'ยอดประเมิน ' + r.est + ' — รอพนักงานกดรับเป็นออเดอร์');
+
+    return shopQueued_(no, r.est, false);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function shopQueued_(no, est, dup) {
+  return { ok: true, queued: true, no: no, net: Number(est) || 0,
+           duplicate: !!dup, payUrl: '', why: '' };
+}
+
+/* ===========================================================================
+   ฝั่งพนักงาน — ดูคิวและกดรับเป็นออเดอร์
+   =========================================================================== */
+
+/** แกะช่อง lines กลับเป็นรายการสินค้า — รูปแบบ SKU*จำนวน คั่นด้วย · */
+function reqLines_(text) {
+  var out = [];
+  String(text || '').split('·').forEach(function (chunk) {
+    var m = /^\s*(.+?)\s*\*\s*(\d+)\s*$/.exec(chunk);
+    if (m) out.push({ sku: m[1].trim(), qty: Number(m[2]) });
+  });
+  return out;
+}
+
+/** คำขอที่ยังไม่ได้จัดการ — ใหม่สุดขึ้นก่อน */
+function getRequests(limit) {
+  requireStaff_();
+  var s = sheetIfAny_('req');
+  if (!s) return [];
+  var last = s.getLastRow();
+  if (last < DATA_ROW) return [];
+  var IN = SH.req.IN;
+  var v = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, 14).getValues();
+  var out = [];
+  for (var i = v.length - 1; i >= 0; i--) {
+    var no = String(v[i][IN.no - 1] || '').trim();
+    if (!no) continue;
+    out.push(jsonSafe_({
+      row: DATA_ROW + i,
+      no: no,
+      at: v[i][IN.at - 1] instanceof Date ? ymd_(v[i][IN.at - 1], true) : '',
+      cust: String(v[i][IN.cust - 1] || ''),
+      tel: tel_(v[i][IN.tel - 1]),
+      addr: String(v[i][IN.addr - 1] || ''),
+      note: String(v[i][IN.note - 1] || ''),
+      names: String(v[i][IN.names - 1] || ''),
+      items: reqLines_(v[i][IN.lines - 1]),
+      est: Number(v[i][IN.est - 1] || 0),
+      status: String(v[i][IN.status - 1] || 'ใหม่'),
+      orderNo: String(v[i][IN.orderNo - 1] || '')
+    }));
+    if (limit && out.length >= limit) break;
+  }
+  return out;
+}
+
+/** หาแถวของคำขอจากเลขคำขอ */
+function reqRow_(no) {
+  var want = String(no || '').trim();
+  if (!want) throw new Error('ไม่ได้บอกว่าเป็นคำขอใบไหน');
+  var s = sheetIfAny_('req');
+  if (!s) throw new Error('ยังไม่มีชีท ' + SH.req.name);
+  var last = s.getLastRow();
+  var v = last < DATA_ROW ? [] : s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, 14).getValues();
+  for (var i = 0; i < v.length; i++) {
+    if (String(v[i][SH.req.IN.no - 1] || '').trim() === want) {
+      return { row: DATA_ROW + i, vals: v[i] };
+    }
+  }
+  throw new Error('ไม่พบคำขอ ' + want);
+}
+
+/**
+ * รับคำขอเป็นออเดอร์จริง
+ *
+ * ราคาคิดใหม่จากชีท ณ ตอนกดรับเสมอ ไม่ใช้ยอดประเมินที่บันทึกไว้ตอนลูกค้ากด
+ * เพราะระหว่างนั้นราคาอาจเปลี่ยน และใบจริงต้องตรงกับราคาที่ร้านขายวันนี้
+ *
+ * p = { no, cust, tel, addr, carrier, status, ship, discount, vat } — แก้ได้ทุกช่อง
+ * ช่องไหนไม่ส่งมา ใช้ของเดิมที่ลูกค้ากรอก
+ */
+function acceptRequest(p) {
+  var email = requireStaff_();
+  p = p || {};
+  var hit = reqRow_(p.no);
+  var IN = SH.req.IN;
+
+  var already = String(hit.vals[IN.orderNo - 1] || '').trim();
+  if (already) {
+    throw new Error('คำขอ ' + p.no + ' รับเป็นออเดอร์ ' + already + ' ไปแล้ว — ' +
+      'ถ้าต้องการใบใหม่ ให้คีย์ออเดอร์ตามปกติ');
+  }
+
+  var items = reqLines_(hit.vals[IN.lines - 1]);
+  if (!items.length) throw new Error('คำขอ ' + p.no + ' ไม่มีรายการสินค้าที่อ่านออก');
+
+  var prods = {}, list = readProducts_();
+  for (var i = 0; i < list.length; i++) prods[list[i].sku] = list[i];
+
+  var missing = [];
+  var lines = items.map(function (it) {
+    var pr = prods[it.sku];
+    if (!pr) { missing.push(it.sku); return null; }
+    return { sku: it.sku, qty: it.qty, price: pr.price };
+  });
+  if (missing.length) {
+    throw new Error('รหัสสินค้าไม่มีในฐานสินค้าแล้ว: ' + missing.join(', ') +
+      ' — แก้ในชีท ' + SH.req.name + ' หรือคีย์ออเดอร์เองแทน');
+  }
+
+  /* ค่าส่งคิดใหม่จากกติกาในชีท ณ ตอนกดรับ — ยอดที่บันทึกไว้ตอนลูกค้ากด
+     เป็นราคาวันนั้น ซึ่งอาจคนละกติกากับวันนี้ พนักงานพิมพ์ทับได้ถ้าตกลงกันไว้อีกแบบ */
+  var cfgA = appCfg_();
+  var subA = 0;
+  for (var q = 0; q < lines.length; q++) subA += lines[q].price * lines[q].qty;
+  var shipA = (cfgA.freeOver && subA >= Number(cfgA.freeOver)) ? 0 : Number(cfgA.shipFee) || 0;
+
+  var made = createOrder({
+    clientKey: 'req-' + p.no,
+    channel: p.channel || '',
+    carrier: p.carrier || '',
+    status: p.status || 'รอชำระ',
+    cust: p.cust || String(hit.vals[IN.cust - 1] || ''),
+    tel: p.tel || tel_(hit.vals[IN.tel - 1]),
+    addr: p.addr || String(hit.vals[IN.addr - 1] || ''),
+    vat: !!p.vat,
+    discount: Number(p.discount) || 0,
+    ship: (p.ship === undefined || p.ship === '') ? shipA : Number(p.ship) || 0,
+    staff: p.staff || '',
+    note: 'รับจากคำขอ ' + p.no + (hit.vals[IN.note - 1] ? ' · ' + hit.vals[IN.note - 1] : ''),
+    items: lines
+  });
+
+  writeRow_('req', hit.row, { status: 'รับแล้ว', orderNo: made.no, by: email });
+  writeLog_(email, 'รับคำขอเป็นออเดอร์', SH.req.name, p.no,
+    'คำขอ → ออเดอร์', '', made.no, 'รับคำขอจากหน้าเว็บเป็นออเดอร์ ' + made.no);
+
+  return { ok: true, no: made.no, req: p.no, net: made.net };
+}
+
+/** ไม่รับคำขอ — ต้องมีเหตุผล จะได้ตอบลูกค้าได้ว่าทำไม */
+function rejectRequest(no, why) {
+  var email = requireStaff_();
+  var reason = String(why || '').trim();
+  if (reason.length < 3) throw new Error('ใส่เหตุผลสั้น ๆ ด้วย จะได้ตอบลูกค้าได้ว่าทำไมไม่รับ');
+  var hit = reqRow_(no);
+  if (String(hit.vals[SH.req.IN.orderNo - 1] || '').trim()) {
+    throw new Error('คำขอนี้รับเป็นออเดอร์ไปแล้ว ยกเลิกที่ออเดอร์แทน');
+  }
+  writeRow_('req', hit.row, { status: 'ไม่รับ', by: email, why: reason });
+  writeLog_(email, 'ไม่รับคำขอ', SH.req.name, String(no), 'คำขอ', '', 'ไม่รับ', reason);
+  return { ok: true, no: String(no) };
 }

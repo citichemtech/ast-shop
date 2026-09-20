@@ -5815,12 +5815,12 @@ function curPage(){
 }
 
 function go(page){
-  ["new","list","recv","quote","day","sum","shop","cust","file","help"].forEach(function(p){
+  ["new","list","recv","quote","day","sum","shop","cust","file","help","web"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   /* หน้านำเข้า Shopee ไม่มีปุ่มของตัวเองบนแถบล่าง เข้ามาจากหน้าออเดอร์
      จึงให้แท็บ "ออเดอร์" ยังติดไฟค้างไว้ ไม่ใช่ดับหมดทั้งแถบจนไม่รู้ว่าอยู่ตรงไหน */
-  var tab = (page==="shop" || page==="cust") ? "list"
+  var tab = (page==="shop" || page==="cust" || page==="web") ? "list"
           : (page==="file" ? "quote" : page);
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===tab) });
   if(page==="list") loadOrders();
@@ -5830,6 +5830,7 @@ function go(page){
   if(page==="recv") recvInit();
   if(page==="shop") shopInit();
   if(page==="cust") custPageInit();
+  if(page==="web")  webInit();
   if(page==="file") fileInit();
 }
 
@@ -5848,6 +5849,9 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#btn-parse").onclick = doParse;
   $("#btn-save").onclick  = save;
   $("#btn-shop").onclick = function(){ go("shop") };
+  $("#btn-web").onclick  = function(){ go("web") };
+  $("#web-back").onclick = function(){ go("list") };
+  webBadge();
   $("#btn-cust").onclick = function(){ go("cust") };
   $("#btn-file").onclick = function(){ go("file") };
   /* ไอคอนอยู่ใน Assets ซึ่งเป็นตัวแปรใน JS ไม่ใช่ไฟล์รูป จึงใส่ตอนเปิดแอป
@@ -5896,4 +5900,147 @@ document.addEventListener("DOMContentLoaded", function(){
 
   boot();
 });
+
+/* =======================================================================
+   คำขอสั่งซื้อจากหน้าเว็บ
+   -----------------------------------------------------------------------
+   ลูกค้ากรอกชื่อที่อยู่และเลือกของมาให้แล้ว พนักงานแค่ตรวจแล้วกดรับ
+   ไม่ต้องพิมพ์ที่อยู่ใหม่ ซึ่งเป็นจุดที่พิมพ์ผิดแล้วของไปผิดบ้านบ่อยที่สุด
+
+   ของพวกนี้ยังไม่ใช่ออเดอร์ ยังไม่กินเลข ยังไม่ตัดสต๊อก จนกว่าจะกดรับ
+   ======================================================================= */
+
+var WEB_REQS = [];
+
+/* ตัวเลขบนปุ่มบอกว่ามีคำขอค้างกี่ใบ ไม่ต้องเข้าไปดูถึงจะรู้ว่ามีงานรออยู่ */
+function webBadge(){
+  api("getRequests", 100).then(function(rows){
+    var n = (rows || []).filter(function(r){ return r.status === "ใหม่" }).length;
+    var el = $("#web-badge");
+    if(el) el.textContent = n ? "  (" + n + ")" : "";
+  }).catch(function(){ /* ยังไม่มีชีท = ยังไม่ได้เปิดใช้ ไม่ต้องรบกวนใคร */ });
+}
+
+function webInit(){
+  $("#web-list").innerHTML = '<div class="load">กำลังโหลด…</div>';
+  api("getRequests", 100).then(function(rows){
+    WEB_REQS = rows || [];
+    webDraw();
+    webBadge();
+  }).catch(function(e){
+    $("#web-list").innerHTML = '<div class="msg err">' + esc(e.message) + '</div>';
+  });
+}
+
+function webDraw(){
+  if(!WEB_REQS.length){
+    $("#web-list").innerHTML =
+      '<div class="empty"><b>ยังไม่มีคำขอจากหน้าเว็บ</b>'
+      + 'พอลูกค้ากดสั่งจากหน้าร้าน รายการจะมาโผล่ตรงนี้</div>';
+    return;
+  }
+  var wait = WEB_REQS.filter(function(r){ return r.status === "ใหม่" });
+  var past = WEB_REQS.filter(function(r){ return r.status !== "ใหม่" }).slice(0, 20);
+
+  var html = '<div class="subhd">รอดำเนินการ ' + wait.length + ' ใบ</div>'
+    + (wait.length ? wait.map(webCard).join("")
+        : '<div class="hint" style="padding:6px 2px 12px">ไม่มีใบที่รออยู่ — จัดการครบแล้ว</div>');
+  if(past.length){
+    html += '<div class="subhd" style="margin-top:18px">จัดการแล้ว</div>' + past.map(webCard).join("");
+  }
+  $("#web-list").innerHTML = html;
+
+  $$("[data-acc]").forEach(function(b){ b.onclick = function(){ webAccept(b.dataset.acc) } });
+  $$("[data-rej]").forEach(function(b){ b.onclick = function(){ webReject(b.dataset.rej) } });
+}
+
+function webCard(r){
+  var wait = r.status === "ใหม่";
+  var tag = wait ? '<span class="tag wait">รอรับ</span>'
+    : (r.status === "รับแล้ว"
+        ? '<span class="tag ok">รับแล้ว → ' + esc(r.orderNo) + '</span>'
+        : '<span class="tag bad">ไม่รับ</span>');
+  return '<div class="row"><div class="i">'
+    + '<b>' + esc(r.cust) + ' <span class="tag">' + esc(r.no) + '</span> ' + tag + '</b>'
+    + '<span>' + esc(r.at) + ' · 📞 ' + esc(r.tel) + '</span>'
+    + '<span>🏠 ' + esc(r.addr) + '</span>'
+    + '<span>📦 ' + esc(r.names) + '</span>'
+    + (r.note ? '<span>💬 ' + esc(r.note) + '</span>' : '')
+    + '<span>ยอดประเมิน <b>' + baht(r.est) + '</b></span>'
+    + (wait
+        ? '<span style="display:flex;gap:8px;margin-top:10px">'
+          + '<button class="btn" data-acc="' + esc(r.no) + '" style="flex:1">รับเป็นออเดอร์</button>'
+          + '<button class="btn ghost" data-rej="' + esc(r.no) + '" style="flex:0 0 96px">ไม่รับ</button></span>'
+        : '')
+    + '</div></div>';
+}
+
+/* กดรับ = คีย์ออเดอร์ให้ตามที่ลูกค้ากรอก ราคาคิดใหม่จากชีทวันนี้
+   ให้แก้ชื่อ/เบอร์/ที่อยู่ได้ก่อนกด เพราะลูกค้าพิมพ์ตกหล่นเป็นเรื่องปกติ
+   เตือนเรื่องตัดสต๊อกไว้ในกล่อง เพราะกดแล้วย้อนต้องไปยกเลิกที่ออเดอร์ */
+function webAccept(no){
+  var r = WEB_REQS.filter(function(x){ return x.no === no })[0];
+  if(!r) return;
+  openModal("รับคำขอ " + no + " เป็นออเดอร์",
+     '<div class="hint" style="margin-bottom:10px">'
+    +'ระบบจะคีย์ออเดอร์ให้ตามที่ลูกค้ากรอก คิดราคาและค่าจัดส่งใหม่จากชีทวันนี้<br>'
+    +'<b>กดแล้วตัดสต๊อกทันที</b> ถ้าจะยกเลิกต้องไปยกเลิกที่ออเดอร์</div>'
+    +'<div class="hint" style="margin-bottom:10px">📦 ' + esc(r.names) + '</div>'
+    +'<div class="fld"><label>ชื่อผู้รับ</label><input id="wa-cust" value="' + esc(r.cust) + '"></div>'
+    +'<div class="fld"><label>เบอร์โทร</label><input id="wa-tel" value="' + esc(r.tel) + '"></div>'
+    +'<div class="fld"><label>ที่อยู่จัดส่ง</label>'
+    +'<textarea id="wa-addr" rows="3">' + esc(r.addr) + '</textarea></div>'
+    +'<div class="fld"><label>ขนส่ง</label>'
+    +'<input id="wa-car" placeholder="เว้นว่างได้ เลือกทีหลังตอนแพ็กของ"></div>'
+    +'<div class="fld"><label>ค่าจัดส่ง (บาท)</label>'
+    +'<input id="wa-ship" type="number" inputmode="decimal" step="0.01" '
+    +'placeholder="เว้นว่าง = คิดตามกติกาในชีท"></div>'
+    +'<button class="btn" id="wa-go">รับเป็นออเดอร์</button>'
+    +'<div id="wa-msg" style="margin-top:10px"></div>');
+
+  $("#wa-go").onclick = function(){
+    var btn = this;
+    var v = {
+      no: no,
+      cust: $("#wa-cust").value.trim(),
+      tel: $("#wa-tel").value.trim(),
+      addr: $("#wa-addr").value.trim(),
+      carrier: $("#wa-car").value.trim(),
+      ship: $("#wa-ship").value.trim()
+    };
+    if(!v.cust){ $("#wa-msg").innerHTML = '<div class="msg err">ใส่ชื่อผู้รับด้วย</div>'; return }
+    btn.disabled = true; btn.textContent = "กำลังคีย์…";
+    api("acceptRequest", v).then(function(res){
+      closeModal();
+      webInit();
+      go("web");
+    }).catch(function(e){
+      btn.disabled = false; btn.textContent = "รับเป็นออเดอร์";
+      $("#wa-msg").innerHTML = '<div class="msg err">' + esc(e.message) + '</div>';
+    });
+  };
+}
+
+function webReject(no){
+  openModal("ไม่รับคำขอ " + no,
+     '<div class="hint" style="margin-bottom:10px">'
+    +'ใส่เหตุผลไว้ด้วย จะได้ตอบลูกค้าได้ว่าทำไม และย้อนดูทีหลังได้</div>'
+    +'<div class="fld"><label>เหตุผล</label>'
+    +'<input id="wr-why" placeholder="เช่น ลูกค้าแจ้งยกเลิก / ของหมด / ที่อยู่ไม่ครบ"></div>'
+    +'<button class="btn" id="wr-go">บันทึกว่าไม่รับ</button>'
+    +'<div id="wr-msg" style="margin-top:10px"></div>');
+
+  $("#wr-go").onclick = function(){
+    var btn = this, why = $("#wr-why").value.trim();
+    if(why.length < 3){ $("#wr-msg").innerHTML = '<div class="msg err">ใส่เหตุผลสั้น ๆ ด้วย</div>'; return }
+    btn.disabled = true;
+    api("rejectRequest", no, why).then(function(){
+      closeModal();
+      webInit();
+    }).catch(function(e){
+      btn.disabled = false;
+      $("#wr-msg").innerHTML = '<div class="msg err">' + esc(e.message) + '</div>';
+    });
+  };
+}
 </script>

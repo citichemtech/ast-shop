@@ -460,6 +460,21 @@ function send() {
 }
 
 function drawDone(r) {
+  /* โหมด "เข้าคิวก่อน" — ยังไม่ใช่ออเดอร์ ห้ามเขียนว่ารับออเดอร์แล้ว
+     และห้ามโชว์ยอดแบบที่ดูเหมือนยอดที่ต้องโอน เพราะร้านยังไม่ได้ยืนยัน */
+  if (r.queued) {
+    $('#done-body').innerHTML =
+      '<div class="tick">✓</div>'
+      + '<h2>ส่งคำขอสั่งซื้อแล้ว</h2>'
+      + '<div class="no">เลขที่คำขอ <b>' + esc(r.no) + '</b></div>'
+      + '<div class="amt">' + baht(r.net) + '</div>'
+      + '<p>ยอดนี้เป็นยอดประเมินจากราคาหน้าร้าน<br>'
+      + 'ทางร้านจะตรวจสอบของและค่าจัดส่ง แล้วติดต่อกลับเพื่อยืนยันยอดและวิธีชำระเงิน<br>'
+      + 'เก็บเลขคำขอไว้อ้างอิงได้เลย</p>'
+      + (DATA.shop.line ? '<button class="go" id="done-line">ทักไลน์สอบถาม</button>' : '')
+      + '<button class="ghost" data-go="shop" style="margin-top:10px">เลือกซื้อต่อ</button>';
+    return;
+  }
   $('#done-body').innerHTML =
     '<div class="tick">✓</div>'
     + '<h2>รับออเดอร์แล้ว</h2>'
