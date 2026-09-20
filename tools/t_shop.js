@@ -376,5 +376,40 @@ truthy('ไม่มีพารามิเตอร์เลย = ไม่ใ
 truthy('พารามิเตอร์อื่นไม่หลอกให้เปิดหน้าร้าน',
   g20.wantShop_({ parameter: { p: 'abc', workshop: '1' } }) === false);
 
+/* ============================================ 21. ลิงก์รูปสินค้า */
+console.log('\n21. ลิงก์รูป — ต้องรับลิงก์แชร์ไดรฟ์ที่เจ้าของร้านก๊อปมาวางจริง');
+var g21 = shopFixture().guest;
+var THUMB = 'https://drive.google.com/thumbnail?id=1AbCdEfGhIjKlMnOpQrStUv&sz=w1000';
+[
+  ['https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view?usp=sharing', THUMB],
+  ['https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view', THUMB],
+  ['https://drive.google.com/open?id=1AbCdEfGhIjKlMnOpQrStUv', THUMB],
+  ['https://drive.google.com/uc?export=view&id=1AbCdEfGhIjKlMnOpQrStUv', THUMB],
+  ['  https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view  ', THUMB]
+].forEach(function (pair) {
+  eq('แปลง ' + pair[0].trim().slice(0, 46) + '…', g21.shopImg_(pair[0]), pair[1]);
+});
+eq('ลิงก์รูปธรรมดาปล่อยผ่าน',
+   g21.shopImg_('https://example.com/a.jpg'), 'https://example.com/a.jpg');
+eq('ลิงก์ googleusercontent ปล่อยผ่าน',
+   g21.shopImg_('https://lh3.googleusercontent.com/d/1AbCdEfGhIjKlMnOpQrStUv'),
+   'https://lh3.googleusercontent.com/d/1AbCdEfGhIjKlMnOpQrStUv');
+eq('รูปฝังมาแบบ data: ปล่อยผ่าน',
+   g21.shopImg_('data:image/png;base64,AAA'), 'data:image/png;base64,AAA');
+eq('ช่องว่างได้ค่าว่าง', g21.shopImg_(''), '');
+eq('ข้อความมั่วได้ค่าว่าง ไม่ปล่อยให้รูปแตก', g21.shopImg_('รูปอยู่ในเครื่อง'), '');
+eq('ลิงก์ http ธรรมดา (ไม่ใช่ https) ไม่รับ', g21.shopImg_('http://example.com/a.jpg'), '');
+
+/* ต้องต่อถึงหน้าร้านจริง ไม่ใช่แค่ฟังก์ชันลอย ๆ */
+var s21 = shopFixture();
+var prod21 = s21.fx.sheets['ฐานสินค้า'];
+var sku21 = s21.guest.shopData().items[0].sku, row21 = 0;
+for (var r21 = DATA_ROW; r21 <= prod21.getMaxRows(); r21++) {
+  if (String(prod21.cell(r21, 2).v || '').trim() === sku21) { row21 = r21; break; }
+}
+prod21.cell(row21, 15).v = 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view?usp=sharing';
+var got21 = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+eq('วางลิงก์ไดรฟ์ในชีทแล้วหน้าร้านได้ที่อยู่รูปจริง', got21.img, THUMB);
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);
