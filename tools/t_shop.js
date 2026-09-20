@@ -134,5 +134,125 @@ var again7 = s7.staff.setupShopColumns();
 truthy('สั่งซ้ำแล้วบอกว่ามีอยู่แล้ว', again7.indexOf('อยู่แล้ว') > -1);
 eq('จำนวนสินค้าไม่เปลี่ยน', s7.guest.shopData().items.length, s1.guest.shopData().items.length);
 
+/* ============================================ 8. ลูกค้าสั่งซื้อเอง */
+console.log('\n8. ลูกค้ากดสั่งซื้อจากหน้าร้าน');
+var s8 = shopFixture();
+var shelf8 = s8.guest.shopData().items;
+var buy = function (o) {
+  o = o || {};
+  return s8.guest.shopOrder({
+    clientKey: o.key || ('web-' + Math.random()),
+    cust: o.cust === undefined ? 'มานี ใจดี' : o.cust,
+    tel: o.tel === undefined ? '0812345678' : o.tel,
+    addr: o.addr === undefined ? '99/9 ถ.ตัวอย่าง ต.เนินพระ อ.เมือง จ.ระยอง 21000' : o.addr,
+    note: o.note || '',
+    items: o.items || [{ sku: shelf8[0].sku, qty: 2 }]
+  });
+};
+var r8 = buy();
+truthy('สั่งได้ ได้เลขออเดอร์กลับมา', /^AST-/.test(r8.no));
+truthy('ได้ยอดสุทธิกลับมา', r8.net > 0);
+
+/* ยอดต้องเท่ากับ ราคาในชีท x จำนวน + ค่าส่ง */
+var want8 = shelf8[0].price * 2 + 50;
+eq('ยอดตรงกับราคาในชีทบวกค่าส่ง', r8.net, want8);
+
+/* ============================================ 9. โกงราคาไม่ได้ */
+console.log('\n9. ส่งราคาปลอมมาจากเบราว์เซอร์');
+var s9 = shopFixture();
+var shelf9 = s9.guest.shopData().items;
+var r9 = s9.guest.shopOrder({
+  clientKey: 'web-cheat', cust: 'คนโกง ราคา', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+  /* แนบราคา 1 บาทมาด้วย ระบบต้องไม่สนใจ */
+  items: [{ sku: shelf9[0].sku, qty: 1, price: 1, free: 1, name: 'ของปลอม', cost: 0 }]
+});
+eq('ระบบใช้ราคาจากชีท ไม่ใช่ราคาที่ส่งมา', r9.net, shelf9[0].price + 50);
+eq('ไม่มีสินค้าปลอมโผล่ในฐานสินค้า', s9.guest.shopData().items.length, shelf9.length);
+
+/* ============================================ 10. ด่านตรวจข้อมูลลูกค้า */
+console.log('\n10. กรอกไม่ครบต้องไม่ผ่าน');
+throws('ไม่ใส่ชื่อ', function () { buy({ cust: '' }) }, 'ชื่อผู้รับ');
+throws('เบอร์ผิด', function () { buy({ tel: '123' }) }, 'เบอร์โทร');
+throws('ที่อยู่สั้นเกิน', function () { buy({ addr: 'บ้าน' }) }, 'ที่อยู่');
+throws('ไม่เลือกสินค้า', function () { buy({ items: [] }) }, 'ยังไม่ได้เลือกสินค้า');
+throws('รหัสสินค้าที่ไม่มีขาย', function () { buy({ items: [{ sku: 'SKU-ไม่มีจริง', qty: 1 }] }) },
+  'ไม่มีขายแล้ว');
+throws('จำนวนติดลบ', function () { buy({ items: [{ sku: shelf8[0].sku, qty: -3 }] }) }, 'จำนวน');
+throws('จำนวนเป็นเศษ', function () { buy({ items: [{ sku: shelf8[0].sku, qty: 1.5 }] }) }, 'จำนวน');
+throws('สั่งทีเดียวเป็นพันชิ้น', function () { buy({ items: [{ sku: shelf8[0].sku, qty: 5000 }] }) },
+  'จำนวน');
+var many = [];
+for (var m = 0; m < 31; m++) many.push({ sku: shelf8[0].sku, qty: 1 });
+throws('บรรทัดเกินเพดาน', function () { buy({ items: many }) }, 'ไม่เกิน');
+
+/* ============================================ 11. สินค้าที่ปิดขาย สั่งไม่ได้ */
+console.log('\n11. ของที่ซ่อนจากหน้าร้าน ต้องสั่งไม่ได้');
+var s11 = shopFixture();
+var shelf11 = s11.guest.shopData().items;
+var hide = shelf11[0].sku, prod11 = s11.fx.sheets['ฐานสินค้า'], row11 = 0;
+for (var r11 = DATA_ROW; r11 <= prod11.getMaxRows(); r11++) {
+  if (String(prod11.cell(r11, 2).v || '').trim() === hide) { row11 = r11; break; }
+}
+prod11.cell(row11, 14).v = 'ไม่';
+throws('ปิดขายแล้วสั่งไม่ได้', function () {
+  s11.guest.shopOrder({
+    clientKey: 'web-hidden', cust: 'มานี ใจดี', tel: '0812345678',
+    addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+    items: [{ sku: hide, qty: 1 }]
+  });
+}, 'ไม่มีขายแล้ว');
+
+/* ============================================ 12. ร้านปิด สั่งไม่ได้ */
+console.log('\n12. ปิดรับออเดอร์แล้วสั่งไม่ได้');
+var s12 = shopFixture();
+var app12 = s12.fx.sheets['ตั้งค่าแอป'], row12 = 0;
+for (var r12 = DATA_ROW; r12 <= app12.getMaxRows(); r12++) {
+  if (String(app12.cell(r12, 1).v || '').trim() === 'เปิดรับออเดอร์หน้าเว็บ') { row12 = r12; break; }
+}
+app12.cell(row12, 2).v = 'ปิด';
+throws('ร้านปิดแล้วสั่งไม่ได้', function () {
+  s12.guest.shopOrder({
+    clientKey: 'web-closed', cust: 'มานี ใจดี', tel: '0812345678',
+    addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+    items: [{ sku: s12.guest.shopData().items[0].sku, qty: 1 }]
+  });
+}, 'ปิดรับออเดอร์');
+
+/* ============================================ 13. กดซ้ำไม่ได้สองใบ */
+console.log('\n13. ลูกค้ากดสั่งซ้ำตอนเน็ตช้า');
+var s13 = shopFixture();
+var sku13 = s13.guest.shopData().items[0].sku;
+var pay13 = {
+  clientKey: 'web-same-key', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+  items: [{ sku: sku13, qty: 1 }]
+};
+var a13 = s13.guest.shopOrder(pay13);
+var b13 = s13.guest.shopOrder(pay13);
+eq('กดสองครั้งได้เลขเดิม', b13.no, a13.no);
+truthy('และบอกว่าเป็นใบซ้ำ', b13.duplicate === true);
+
+/* ============================================ 14. ออเดอร์เข้าชีทจริง */
+console.log('\n14. ออเดอร์ที่ลูกค้าสั่ง ต้องเข้าชีทเหมือนพนักงานคีย์');
+var s14 = shopFixture();
+var sku14 = s14.guest.shopData().items[0].sku;
+var r14 = s14.guest.shopOrder({
+  clientKey: 'web-sheet', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+  note: 'ฝากส่งเร็วหน่อย', items: [{ sku: sku14, qty: 3 }]
+});
+var head14 = s14.fx.sheets['ออเดอร์_หัวบิล'];
+eq('เลขออเดอร์อยู่ในหัวบิล', String(head14.cell(DATA_ROW, 1).v), r14.no);
+eq('ชื่อลูกค้าเข้าชีท', String(head14.cell(DATA_ROW, 4).v), 'มานี ใจดี');
+eq('เบอร์เก็บครบ ศูนย์หน้าไม่หาย', String(head14.cell(DATA_ROW, 5).v), '0812345678');
+truthy('หมายเหตุบอกว่ามาจากหน้าเว็บ',
+  String(head14.cell(DATA_ROW, 20).v).indexOf('สั่งจากหน้าเว็บ') > -1);
+truthy('และเก็บข้อความที่ลูกค้าฝากไว้ด้วย',
+  String(head14.cell(DATA_ROW, 20).v).indexOf('ฝากส่งเร็วหน่อย') > -1);
+/* พนักงานต้องเห็นออเดอร์นี้ในระบบเหมือนใบที่ตัวเองคีย์ */
+var seen14 = s14.staff.getOrders(20).filter(function (o) { return o.no === r14.no });
+eq('พนักงานเห็นออเดอร์ใบนี้', seen14.length, 1);
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

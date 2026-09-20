@@ -50,7 +50,23 @@ window.google = { script: { run: (function () {
   var api = {
     withSuccessHandler: function (f) { ok = f; return api },
     withFailureHandler: function (f) { bad = f; return api },
-    shopData: function () { setTimeout(function () { ok(SHOP_DATA) }, 350) }
+    shopData: function () { setTimeout(function () { ok(SHOP_DATA) }, 350) },
+    /* จำลองฝั่งเซิร์ฟเวอร์: คิดยอดจากราคาในข้อมูลปลอม ไม่เชื่อราคาที่ส่งมา */
+    shopOrder: function (p) {
+      setTimeout(function () {
+        if (window.SHOP_FAIL) { bad(new Error(window.SHOP_FAIL)); return }
+        var sub = 0;
+        (p.items || []).forEach(function (it) {
+          var f = SHOP_DATA.items.filter(function (x) { return x.sku === it.sku })[0];
+          if (f) sub += f.price * it.qty;
+        });
+        var ship = (SHOP_DATA.ship.freeOver && sub >= SHOP_DATA.ship.freeOver)
+          ? 0 : SHOP_DATA.ship.fee;
+        window.SHOP_SENT = p;
+        ok({ ok: true, no: 'AST-26-0042', duplicate: false, net: sub + ship,
+             payUrl: 'https://example.invalid/pay?p=demo', why: '' });
+      }, 250);
+    }
   };
   return api;
 })() } };
