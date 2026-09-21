@@ -104,6 +104,8 @@ function editCats_() {
   var out = [];
   var rows = shopRows_('scat');
   var IN = SH.scat.IN;
+  var live = groupCounts_();
+  var seen = {};
   for (var i = 0; i < rows.length; i++) {
     var g = String(rows[i][IN.group - 1] || '').trim();
     if (!g) continue;
@@ -115,8 +117,40 @@ function editCats_() {
       label: String(rows[i][IN.label - 1] || ''),
       icon: icon, iconShow: shopImg_(icon),
       cover: cover, coverShow: shopImg_(cover),
-      home: String(rows[i][IN.home - 1] || '').trim() !== 'ซ่อน'
+      home: String(rows[i][IN.home - 1] || '').trim() !== 'ซ่อน',
+      /* หมวดที่ยังไม่มีสินค้าเลย หน้าจอต้องบอกให้เห็น ไม่งั้นเจ้าของร้าน
+         ตั้งหมวดใส่รูปเสร็จสวยงาม แล้วไปดูหน้าร้านไม่เจอ โดยไม่รู้ว่าเพราะอะไร
+         (กติกาคือหมวดที่ไม่มีของขาย ไม่โชว์ให้ลูกค้า กดเข้าไปแล้วเจอหน้าว่าง
+          ทำให้ลูกค้าคิดว่าเว็บเสีย) */
+      n: live[g] || 0
     });
+    seen[g] = 1;
+  }
+
+  /* หมวดที่มีสินค้าอยู่จริง แต่ยังไม่มีแถวในชีท หมวดหน้าร้าน ก็ต้องโชว์ให้แก้ได้
+     ไม่งั้นเพิ่มหมวดใหม่จากหน้าสินค้าแล้วมาหาที่หน้าหมวดไม่เจอ */
+  for (var g2 in live) {
+    if (seen[g2]) continue;
+    out.push({ row: 0, group: g2, label: '', icon: '', iconShow: '',
+               cover: '', coverShow: '', home: true, n: live[g2] });
+  }
+  return out;
+}
+
+/** จำนวนสินค้าในแต่ละหมวด — อ่านแค่คอลัมน์หมวดของ ฐานสินค้า ไม่ลากทั้งชีท */
+function groupCounts_() {
+  var out = {};
+  try {
+    var s = sheet_('prod');
+    var last = dataLast_('prod');
+    if (last < DATA_ROW) return out;
+    var v = s.getRange(DATA_ROW, SH.prod.IN.group, last - DATA_ROW + 1, 1).getValues();
+    for (var i = 0; i < v.length; i++) {
+      var g = String(v[i][0] || '').trim();
+      if (g) out[g] = (out[g] || 0) + 1;
+    }
+  } catch (e) {
+    Logger.log('นับสินค้าตามหมวดไม่ได้: ' + e.message);
   }
   return out;
 }

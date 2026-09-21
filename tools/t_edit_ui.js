@@ -286,6 +286,44 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
   ok('ทุกเมนูมีไอคอน', (await pg.locator('.edmenu .ic').count()) === 7);
   ok('มีท้ายหน้าตามแบบ', await pg.locator('.edfoot').isVisible());
 
+  console.log('\n14. เพิ่มหมวดหมู่จากหน้าหมวดได้เลย');
+  await pg.locator('[data-edgo="ecat"]').click();
+  await pg.waitForTimeout(700);
+  var nCat = await pg.locator('[data-ecat]').count();
+  ok('มีปุ่มเพิ่มหมวดหมู่', await pg.locator('#ec-add').isVisible());
+  ok('การ์ดหมวดบอกจำนวนสินค้า',
+     /สินค้า \d+ ตัว/.test(await pg.locator('[data-ecat="เคมีภัณฑ์"] .sub').innerText()));
+
+  await pg.locator('#ec-add').click();
+  await pg.waitForTimeout(350);
+  await pg.locator('#ecn-go').click();
+  await pg.waitForTimeout(400);
+  ok('ไม่ใส่ชื่อแล้วกดสร้าง ต้องฟ้อง', await pg.locator('#ecn-err').isVisible());
+
+  await pg.locator('#ecn-name').fill('เคมีภัณฑ์');
+  await pg.locator('#ecn-go').click();
+  await pg.waitForTimeout(400);
+  ok('ชื่อซ้ำกับหมวดที่มีอยู่ ต้องฟ้อง',
+     /มีหมวดชื่อนี้อยู่แล้ว/.test(await pg.locator('#ecn-err').innerText()));
+
+  await pg.locator('#ecn-name').fill('Router Bit');
+  await pg.locator('#ecn-label').fill('ดอกเราเตอร์');
+  await pg.locator('#ecn-go').click();
+  await pg.waitForTimeout(900);
+  ok('สร้างหมวดใหม่ได้', (await pg.locator('[data-ecat]').count()) === nCat + 1);
+  ok('ขึ้นข้อความบอกให้ไปใส่สินค้าต่อ',
+     /ย้ายสินค้าเข้าหมวดนี้/.test(await pg.locator('#ec-ok').innerText()));
+  ok('หมวดใหม่ติดป้ายว่ายังไม่มีสินค้า',
+     /ยังไม่มีสินค้า/.test(await pg.locator('[data-ecat="Router Bit"] .pills').innerText()));
+
+  await pg.locator('[data-ecat="Router Bit"]').click();
+  await pg.waitForTimeout(400);
+  ok('เปิดแล้วเตือนว่าลูกค้ายังไม่เห็นหมวดนี้',
+     /ลูกค้าจึงไม่เห็นบนหน้าร้าน/.test(await pg.locator('#m-body').innerText()));
+  await pg.locator('#m-close').click();
+  await pg.waitForTimeout(250);
+  await pg.screenshot({ path: OUT + '/E6-cat.png', fullPage: true });
+
   ok('ไม่มี error ตลอดการทดสอบ', jsErr.length === 0, jsErr.join(' | '));
   await b.close();
   console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');

@@ -176,10 +176,10 @@ var MOCK_ED = {
   ],
   cats: [
     { row:6, group:"ดอกกัดคาร์ไบด์", label:"", icon:"", iconShow:"", cover:"", coverShow:"",
-      home:true },
+      home:true, n:3 },
     { row:7, group:"เคมีภัณฑ์", label:"Chemical",
       icon:"https://drive.google.com/file/d/2ZyXwVuTsRqPoNmLkJiHgF/view",
-      iconShow:edPic("CH","#BE4B48"), cover:"", coverShow:"", home:true }
+      iconShow:edPic("CH","#BE4B48"), cover:"", coverShow:"", home:true, n:2 }
   ]
 };
 window.SENT = [];
@@ -268,7 +268,10 @@ window.google = { script: { run: (function(){
     saveShopCat: function(c){
       reply(function(){
         var hit = MOCK_ED.cats.filter(function(x){ return x.group === c.group })[0];
-        if(!hit) throw new Error("ไม่เจอหมวด " + c.group);
+        if(!hit){
+          hit = { row: 6 + MOCK_ED.cats.length, group: c.group, iconShow:"", coverShow:"", n:0 };
+          MOCK_ED.cats.push(hit);
+        }
         hit.label = c.label || ""; hit.icon = c.icon || ""; hit.cover = c.cover || "";
         hit.home = c.home !== false;
         window.SENT.push({ fn:"saveShopCat", c:c });

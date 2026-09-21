@@ -6556,20 +6556,73 @@ function ecatDraw(){
       + '<span class="th">' + (c.iconShow
           ? '<img src="'+esc(c.iconShow)+'" alt="" loading="lazy">' : "ยังไม่มีรูป") + "</span>"
       + '<span class="bd"><b>'+esc(c.label || c.group)+"</b>"
-        + '<span class="sub">'+esc(c.group)+"</span>"
+        + '<span class="sub">'+esc(c.group)+" · สินค้า "+(c.n||0)+" ตัว</span>"
         + '<span class="pills">'
-          + (c.home ? '<span class="on">โชว์หน้าแรก</span>'
-                    : '<span class="off">ซ่อนจากหน้าแรก</span>')
+          + (!c.n ? '<span class="off">ยังไม่มีสินค้า ลูกค้าไม่เห็นหมวดนี้</span>'
+                  : (c.home ? '<span class="on">โชว์หน้าแรก</span>'
+                            : '<span class="off">ซ่อนจากหน้าแรก</span>'))
           + (c.coverShow ? "<span>มีรูปปก</span>" : "")
         + "</span></span></button>";
   }).join("") + "</div>";
+}
+
+/**
+ * เพิ่มหมวดใหม่
+ *
+ * หมวดที่ยังไม่มีสินค้าอยู่ในนั้น ลูกค้าจะไม่เห็น (กติกาเดิม: กดเข้าไปเจอหน้าว่าง
+ * ทำให้คิดว่าเว็บเสีย) กล่องนี้จึงบอกไว้ตั้งแต่ตอนสร้าง และมีทางลัดไปใส่สินค้าต่อ
+ * ไม่ใช่ปล่อยให้ตั้งหมวดใส่รูปเสร็จสวยงามแล้วไปหาในหน้าร้านไม่เจอ
+ */
+function ecatAdd(){
+  openModal("เพิ่มหมวดหมู่",
+    '<div class="fld"><label>ชื่อหมวด *</label>'
+      + '<input id="ecn-name" placeholder="เช่น Router Bit">'
+      + '<div class="hint">ชื่อนี้จะไปอยู่ในคอลัมน์ หมวด ของชีท ฐานสินค้า</div></div>'
+    + '<div class="fld"><label>ชื่อที่ลูกค้าเห็น</label>'
+      + '<input id="ecn-label" placeholder="เว้นว่าง = ใช้ชื่อหมวดเดิม"></div>'
+    + '<div class="hint" style="padding:0 2px 12px">'
+      + "สร้างเสร็จแล้วอย่าลืมใส่สินค้าเข้าหมวดนี้ด้วย "
+      + "หมวดที่ยังไม่มีสินค้า ลูกค้าจะไม่เห็นบนหน้าร้าน</div>"
+    + '<div class="msg err" id="ecn-err"></div>'
+    + '<button class="btn" id="ecn-go">สร้างหมวด</button>');
+
+  $("#ecn-go").onclick = function(){
+    var name = $("#ecn-name").value.trim();
+    var box = $("#ecn-err");
+    if(!name){ box.textContent = "ยังไม่ได้ใส่ชื่อหมวด"; box.classList.add("on"); return }
+    if((ED.cats||[]).some(function(c){ return c.group === name })){
+      box.textContent = "มีหมวดชื่อนี้อยู่แล้ว"; box.classList.add("on"); return;
+    }
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังสร้าง…";
+    google.script.run
+      .withSuccessHandler(function(){
+        closeModal();
+        edLoad("cat", true, function(){
+          ecatDraw();
+          edNote("ec-ok","ec-err", true,
+            "สร้างหมวด " + name + " แล้ว — ต่อไปไปที่ ข้อมูลร้าน แล้วย้ายสินค้าเข้าหมวดนี้");
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "สร้างหมวด";
+        box.textContent = e.message; box.classList.add("on");
+      })
+      .saveShopCat({ group: name, label: $("#ecn-label").value, home: true });
+  };
 }
 
 function ecatOpen(group){
   var c = ED.cats.filter(function(x){ return x.group===group })[0];
   if(!c) return;
   openModal(c.group,
-    '<div class="fld"><label>ชื่อที่ลูกค้าเห็น</label>'
+    (!c.n
+      ? '<div class="msg err on" style="margin-bottom:12px">'
+        + "หมวดนี้ยังไม่มีสินค้าอยู่เลย ลูกค้าจึงไม่เห็นบนหน้าร้าน<br>"
+        + "ไปที่ <b>ข้อมูลร้าน</b> แล้วย้ายสินค้าเข้าหมวดนี้ก่อน</div>"
+      : '<div class="hint" style="padding:0 2px 10px">มีสินค้าในหมวดนี้ '
+        + c.n + " ตัว</div>")
+    + '<div class="fld"><label>ชื่อที่ลูกค้าเห็น</label>'
       + '<input id="ecm-label" placeholder="เว้นว่าง = ใช้ชื่อหมวดเดิม" value="'
         + esc(c.label) + '"></div>'
     + imgField("ecm-icon", "รูปไอคอน (บนหน้าแรก)", "icon", c.icon, c.iconShow)
@@ -6682,5 +6735,6 @@ document.addEventListener("click", function(e){
   if(b) b.onclick = function(){ go("edit") };
 });
 $("#eb-add").onclick = function(){ edLoad("ban", false, function(){ ebanOpen(0) }) };
+$("#ec-add").onclick = function(){ edLoad("cat", false, ecatAdd) };
 $("#fs-edit").onclick = function(){ go("edit") };
 </script>
