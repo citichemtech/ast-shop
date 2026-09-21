@@ -169,9 +169,16 @@ function getBootstrap() {
   });
 }
 
-function readProducts_() {
+/**
+ * สินค้าทั้งหมดจากชีท ฐานสินค้า
+ *
+ * skipStock = ข้ามการอ่านชีท สต๊อกคงเหลือ สำหรับคนเรียกที่ไม่ได้ใช้ยอดคงเหลือ
+ * (หน้าแก้ข้อมูลร้านเป็นตัวอย่าง — ต้องการแค่ชื่อ ราคา รูป)
+ * ชีทสต๊อกเป็นสูตรทั้งใบ อ่านทีหนึ่งกินเวลาพอ ๆ กับอ่านฐานสินค้าทั้งชีท
+ */
+function readProducts_(skipStock) {
   var rows = readAll_('prod');
-  var stock = readStock_();
+  var stock = skipStock ? {} : readStock_();
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     var sku = String(rows[i][SH.prod.IN.sku - 1] || '').trim();

@@ -17,22 +17,32 @@
  * ทุกการเขียนไปผ่าน writeRow_() ซึ่งกันช่องสูตรไว้ให้อยู่แล้ว
  */
 
-/** ทุกอย่างที่หน้าโหมดแก้ไขต้องใช้ ดึงรอบเดียวจบ */
-function getShopEdit() {
+/**
+ * ข้อมูลของหน้าโหมดแก้ไข — ดึงเฉพาะส่วนที่หน้านั้นใช้จริง
+ *
+ * ของเดิมดึงทุกอย่างรอบเดียว ซึ่งแปลว่าหน้า "หน้าตาหัวร้าน" ที่มีสามช่อง
+ * ต้องรออ่านสินค้า 119 ตัวกับชีทสต๊อกทั้งใบก่อนถึงจะขึ้น รอเป็นสิบวินาที
+ * บนเน็ตมือถือยิ่งนานกว่านั้น จนดูเหมือนแอปค้าง
+ *
+ * scope รับได้: look · ban · cat · prod · all
+ * ค่าที่ไม่รู้จักถือเป็น all เพื่อให้หน้าจอรุ่นเก่าที่ไม่ได้ส่ง scope มายังใช้ได้
+ */
+function getShopEdit(scope) {
   requireStaff_();
-  return {
-    ok: true,
-    products: editProducts_(),
-    banners: editBanners_(),
-    cats: editCats_(),
-    slots: BAN_SLOTS,
-    tags: PROD_TAGS,
-    look: editLook_()
-  };
+  var what = String(scope || 'all').trim();
+  var all = (what !== 'look' && what !== 'ban' && what !== 'cat' && what !== 'prod');
+
+  var out = { ok: true, scope: all ? 'all' : what, slots: BAN_SLOTS, tags: PROD_TAGS };
+  if (all || what === 'look') out.look = editLook_();
+  if (all || what === 'ban') out.banners = editBanners_();
+  if (all || what === 'cat') out.cats = editCats_();
+  if (all || what === 'prod') out.products = editProducts_();
+  return out;
 }
 
 function editProducts_() {
-  var all = readProducts_();
+  /* ไม่ต้องอ่านชีทสต๊อก หน้านี้ไม่ได้โชว์ยอดคงเหลือ และชีทนั้นเป็นสูตรทั้งใบ อ่านช้า */
+  var all = readProducts_(true);
   var out = [];
   for (var i = 0; i < all.length; i++) {
     var p = all[i];
@@ -302,9 +312,12 @@ function saveShopLook(v) {
   if (!v) throw new Error('ไม่มีข้อมูล');
 
   var WANT = [
-    ['โลโก้ร้าน (ลิงก์รูป)', 'logo', 1],
-    ['ภาพหัวหน้าร้าน (ลิงก์รูป)', 'cover', 1],
-    ['ลิงก์แผนที่ร้าน', 'map', 0]
+    ['โลโก้ร้าน (ลิงก์รูป)', 'logo', 1,
+      'โลโก้กลม ๆ บนหัวหน้าร้าน เว้นว่างได้'],
+    ['ภาพหัวหน้าร้าน (ลิงก์รูป)', 'cover', 1,
+      'ภาพพื้นหลังด้านบนสุดของหน้าร้าน เว้นว่าง = ใช้พื้นหลังไล่สีฟ้าของระบบ'],
+    ['ลิงก์แผนที่ร้าน', 'map', 0,
+      'ลิงก์ Google Maps ของหน้าร้าน เว้นว่าง = ระบบเอาที่อยู่ผู้ส่งไปค้นให้เอง']
   ];
   for (var i = 0; i < WANT.length; i++) {
     var f = WANT[i][1], isImg = WANT[i][2];
@@ -332,8 +345,15 @@ function saveShopLook(v) {
     for (var r = 0; r < names.length; r++) {
       if (String(names[r][0] || '').trim() === WANT[k][0]) { row = DATA_ROW + r; break; }
     }
-    if (!row) throw new Error('ไม่เจอแถว "' + WANT[k][0] + '" ในชีท ' + SH.app.name +
-      ' — สั่ง setupShopColumns ก่อนหนึ่งครั้ง');
+    /* ยังไม่มีแถวนี้ในชีท ให้เติมให้เลย ไม่ใช่โยน error ไล่ให้ไปสั่งฟังก์ชันตั้งค่า
+       เจ้าของร้านไม่ควรต้องรู้ว่าแถวไหนถูกสร้างโดยฟังก์ชันชื่ออะไร
+       และตอนนั้นเขาอัปรูปไปแล้ว การบอกให้ไปทำอย่างอื่นก่อนคือทิ้งงานที่ทำมาแล้ว */
+    if (!row) {
+      row = Math.max(DATA_ROW - 1, s.getLastRow()) + 1;
+      s.getRange(row, 1).setValue(WANT[k][0]);
+      s.getRange(row, 2).setNote(WANT[k][3]);
+      names = s.getRange(DATA_ROW, 1, Math.max(1, s.getLastRow() - DATA_ROW + 1), 1).getValues();
+    }
     var before = s.getRange(row, 2).getValue();
     var after = String(v[WANT[k][1]] || '').trim();
     if (String(before || '').trim() === after) continue;

@@ -256,5 +256,105 @@ throws('ตั้งแชร์ไม่ได้ ต้องบอกชั�
 eq('และต้องลบไฟล์ที่คนนอกเปิดไม่ได้ทิ้ง ไม่ปล่อยค้างไว้ให้เข้าใจผิด',
    f8b.staff.__drive.live().length, before8b);
 
+/* ============================================ 9. ดึงเฉพาะที่ต้องใช้ */
+console.log('\n9. แต่ละหน้าดึงเฉพาะก้อนที่ตัวเองใช้ ไม่ลากทั้งร้านมาทุกครั้ง');
+var f9 = fixture();
+var look9 = f9.staff.getShopEdit('look');
+eq('ขอแค่หน้าตาหัวร้าน ได้ look มา', typeof look9.look, 'object');
+eq('และไม่ลากสินค้ามาด้วย', look9.products, undefined);
+eq('ไม่ลากแบนเนอร์มาด้วย', look9.banners, undefined);
+eq('ไม่ลากหมวดมาด้วย', look9.cats, undefined);
+truthy('แต่ยังส่งตัวเลือกที่หน้าจอต้องใช้มาเสมอ', look9.slots.length === 3);
+
+var ban9 = f9.staff.getShopEdit('ban');
+eq('ขอแบนเนอร์ ได้แบนเนอร์', Array.isArray(ban9.banners), true);
+eq('และไม่ลากสินค้ามาด้วย', ban9.products, undefined);
+
+var cat9 = f9.staff.getShopEdit('cat');
+eq('ขอหมวด ได้หมวด', Array.isArray(cat9.cats), true);
+eq('และไม่ลากสินค้ามาด้วย', cat9.products, undefined);
+
+var prod9 = f9.staff.getShopEdit('prod');
+eq('ขอสินค้า ได้สินค้า', Array.isArray(prod9.products), true);
+eq('และไม่ลากแบนเนอร์มาด้วย', prod9.banners, undefined);
+
+var all9 = f9.staff.getShopEdit();
+truthy('ไม่บอก scope = เอาทั้งหมด (หน้าจอรุ่นเก่าที่ยังไม่ส่ง scope ต้องใช้ได้)',
+   !!all9.products && !!all9.banners && !!all9.cats && !!all9.look);
+var bad9 = f9.staff.getShopEdit('อะไรก็ไม่รู้');
+truthy('scope มั่ว = เอาทั้งหมด ไม่ใช่คืนก้อนว่างแล้วหน้าจอโล่ง',
+   !!bad9.products && !!bad9.look);
+
+truthy('หน้าแก้ข้อมูลร้านไม่มียอดคงเหลือหลุดมาด้วย',
+   prod9.products.every(function (p) { return p.remain === undefined }));
+
+/* พิสูจน์ว่าหน้าเบา ๆ ไม่ได้ไปแตะชีทใหญ่จริง ๆ
+   ถ้าวันหลังมีใครเผลอเอา readProducts_() กลับไปใส่ในทางของหน้า look
+   ข้อสอบจะฟ้องทันที ก่อนที่เจ้าของร้านจะเจอหน้าค้างสิบวินาที */
+function readOf(names) {
+  var before = {};
+  names.forEach(function (n) { before[n] = FS.SHEET_READ[n] || 0 });
+  return function () {
+    var d = 0;
+    names.forEach(function (n) { d += (FS.SHEET_READ[n] || 0) - before[n] });
+    return d;
+  };
+}
+
+var heavy9 = ['ฐานสินค้า', 'สต๊อกคงเหลือ'];
+var t9 = readOf(heavy9);
+f9.staff.getShopEdit('look');
+eq('หน้าหน้าตาหัวร้านไม่แตะชีท ฐานสินค้า และ สต๊อกคงเหลือ เลยสักช่อง', t9(), 0);
+
+t9 = readOf(heavy9);
+f9.staff.getShopEdit('ban');
+eq('หน้าแบนเนอร์ก็ไม่แตะ', t9(), 0);
+
+t9 = readOf(heavy9);
+f9.staff.getShopEdit('cat');
+eq('หน้าหมวดก็ไม่แตะ', t9(), 0);
+
+var t9b = readOf(['สต๊อกคงเหลือ']);
+f9.staff.getShopEdit('prod');
+eq('หน้าสินค้าอ่าน ฐานสินค้า แต่ไม่ต้องอ่านชีทสต๊อกที่เป็นสูตรทั้งใบ', t9b(), 0);
+
+/* ============================================ 10. ชีทยังไม่มีแถว ต้องเติมให้เอง */
+console.log('\n10. ชีท ตั้งค่าแอป ยังไม่มีแถวโลโก้ — ต้องเติมให้ ไม่ใช่โยน error ไล่ไปทำอย่างอื่น');
+var f10 = FS.build();
+var st10 = FS.load(f10, {});
+st10.setup();
+/* จงใจไม่สั่ง setupShopColumns — จำลองชีทของคนที่ตั้งระบบไว้ตั้งแต่ก่อนมีหน้าร้าน */
+var app10 = f10.sheets['ตั้งค่าแอป'];
+for (var r10 = DATA_ROW; r10 <= app10.getMaxRows(); r10++) {
+  var k10 = String(app10.cell(r10, 1).v || '').trim();
+  if (k10 === 'โลโก้ร้าน (ลิงก์รูป)' || k10 === 'ภาพหัวหน้าร้าน (ลิงก์รูป)' ||
+      k10 === 'ลิงก์แผนที่ร้าน') {
+    app10.cell(r10, 1).v = '';
+    app10.cell(r10, 2).v = '';
+  }
+}
+eq('เริ่มจากชีทที่ยังไม่มีแถวโลโก้', st10.getShopEdit('look').look.logo, '');
+
+var DRIVE10 = 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view';
+st10.saveShopLook({ logo: DRIVE10 });
+eq('บันทึกผ่าน ไม่ล้ม ไม่ไล่ให้ไปสั่งฟังก์ชันอื่นก่อน',
+   st10.getShopEdit('look').look.logo, DRIVE10);
+eq('และหน้าร้านเห็นโลโก้ทันที',
+   FS.load(f10, { email: '' }).shopData().logo,
+   'https://drive.google.com/thumbnail?id=1AbCdEfGhIjKlMnOpQrStUv&sz=w1000');
+
+st10.saveShopLook({ cover: DRIVE10, map: 'https://maps.app.goo.gl/x' });
+var l10 = st10.getShopEdit('look').look;
+eq('เติมแถวที่สองได้ด้วย', l10.cover, DRIVE10);
+eq('และแถวที่สาม', l10.map, 'https://maps.app.goo.gl/x');
+eq('บันทึกซ้ำไม่สร้างแถวซ้ำ', (function () {
+  st10.saveShopLook({ logo: DRIVE10 });
+  var n = 0;
+  for (var r = DATA_ROW; r <= app10.getMaxRows(); r++) {
+    if (String(app10.cell(r, 1).v || '').trim() === 'โลโก้ร้าน (ลิงก์รูป)') n++;
+  }
+  return n;
+})(), 1);
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

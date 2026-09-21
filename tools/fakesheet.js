@@ -71,9 +71,16 @@ function Range(sheet, r, c, nr, nc) {
    ทุกช่องต้องเดินทางข้ามเน็ตจาก Google กลับมา ข้อสอบเรื่องความเร็วจึงวัดตัวนี้
    ไม่ใช่จับเวลา ซึ่งบนเครื่องทดสอบเร็วจนไม่เห็นความต่าง */
 var CELLS_READ = { n: 0 };
+/* นับแยกรายชีทด้วย — ข้อสอบเรื่อง "หน้านี้ไม่ควรไปแตะชีทนั้น" ต้องพิสูจน์ได้ตรง ๆ
+   จำนวนช่องรวมพิสูจน์ไม่ได้ เพราะชีทเล็กในข้อสอบอาจใหญ่กว่าชีทใหญ่ของจริง */
+var SHEET_READ = {};
+function countRead_(name, n) {
+  CELLS_READ.n += n;
+  SHEET_READ[name] = (SHEET_READ[name] || 0) + n;
+}
 
 Range.prototype.getValues = function () {
-  CELLS_READ.n += this.nr * this.nc;
+  countRead_(this.s.name, this.nr * this.nc);
   var out = [];
   for (var i = 0; i < this.nr; i++) {
     var row = [];
@@ -97,7 +104,7 @@ Range.prototype.getA1Notation = function () {
 Range.prototype.getFormula = function () { return this.getFormulas()[0][0]; };
 Range.prototype.getDisplayValue = function () { return this.getDisplayValues()[0][0]; };
 Range.prototype.getFormulas = function () {
-  CELLS_READ.n += this.nr * this.nc;
+  countRead_(this.s.name, this.nr * this.nc);
   var out = [];
   for (var i = 0; i < this.nr; i++) {
     var row = [];
@@ -671,4 +678,4 @@ function load(fixture, opts) {
 }
 
 module.exports = { build: build, load: load, DATA_ROW: DATA_ROW, HEAD_ROW: HEAD_ROW,
-  CELLS_READ: CELLS_READ };
+  CELLS_READ: CELLS_READ, SHEET_READ: SHEET_READ };

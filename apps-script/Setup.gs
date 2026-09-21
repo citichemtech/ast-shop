@@ -2858,6 +2858,9 @@ function setupShopPages() {
   out.push(setupBanSheet_(ss));
   out.push(setupScatSheet_(ss));
   out.push(setupProdTagCol_(ss));
+  /* สวิตช์กับช่องโลโก้อยู่ในชีท ตั้งค่าแอป — เติมจากตรงนี้ด้วย
+     เจ้าของร้านจะได้สั่งฟังก์ชันเดียวจบ ไม่ต้องจำว่าอันไหนสร้างอะไร */
+  out.push(shopSwitchRow_(ss));
 
   out.push('');
   out.push('ต่อไปทำอะไร');

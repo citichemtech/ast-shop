@@ -6063,7 +6063,7 @@ function webReject(no){
    โหลดข้อมูลรอบเดียวเก็บไว้ใน ED แล้วทุกหน้าย่อยใช้ก้อนเดียวกัน
    บันทึกเสร็จค่อยโหลดใหม่ ไม่ต้องยิงทีละหน้า
    ========================================================================== */
-var ED = null, EDBUSY = false, EPMODE = "all";
+var ED = { slots: [], tags: [] }, EDGOT = {}, EDBUSY = {}, EPMODE = "all";
 
 /**
  * ช่องใส่รูปหนึ่งช่อง = ช่องลิงก์ + ปุ่มเลือกรูปจากเครื่อง + รูปตัวอย่าง
@@ -6141,23 +6141,40 @@ function edNote(idOk, idErr, ok, msg){
   if(ok) setTimeout(function(){ box.classList.remove("on") }, 3500);
 }
 
-/* โหลดข้อมูลโหมดแก้ไข แล้วเรียก then() — ถ้ามีอยู่แล้วและไม่ได้สั่งโหลดใหม่ ใช้ของเดิม */
-function edLoad(force, then){
-  if(ED && !force){ then && then(); return }
-  if(EDBUSY) return;
-  EDBUSY = true;
+/**
+ * โหลดข้อมูลของหน้าโหมดแก้ไขทีละส่วน
+ *
+ * แยกเป็นส่วน ๆ เพราะแต่ละหน้าใช้คนละก้อน ถ้าดึงรวมทีเดียว หน้าที่มีสามช่อง
+ * ต้องรออ่านสินค้าร้อยกว่าตัวก่อนถึงจะขึ้น — ช้าจนดูเหมือนแอปค้าง
+ *
+ * โหลดแล้วจำไว้ใน ED เข้าหน้าเดิมซ้ำจึงขึ้นทันที บันทึกเสร็จค่อยสั่ง force
+ */
+function edLoad(scope, force, then){
+  if(EDGOT[scope] && !force){ then && then(); return }
+  if(EDBUSY[scope]) return;
+  EDBUSY[scope] = true;
   google.script.run
     .withSuccessHandler(function(d){
-      EDBUSY = false; ED = d; then && then();
+      EDBUSY[scope] = false;
+      EDGOT[scope] = true;
+      /* รวมเข้าก้อนเดิม ไม่ทับทั้งก้อน ส่วนที่โหลดไว้แล้วจะได้ไม่หาย */
+      Object.keys(d).forEach(function(k){ ED[k] = d[k] });
+      then && then();
     })
     .withFailureHandler(function(e){
-      EDBUSY = false;
+      EDBUSY[scope] = false;
       ["ep","eb","ec","el"].forEach(function(k){
         var box = $("#"+k+"-err");
         if(box){ box.textContent = "โหลดข้อมูลไม่สำเร็จ — " + e.message; box.classList.add("on") }
       });
+      ["ep-list","eb-list","ec-list"].forEach(function(k){
+        var box = $("#"+k);
+        if(box && /กำลังโหลด/.test(box.textContent)) box.innerHTML = "";
+      });
+      var ef = $("#el-form");
+      if(ef && /กำลังโหลด/.test(ef.textContent)) ef.innerHTML = "";
     })
-    .getShopEdit();
+    .getShopEdit(scope);
 }
 
 function edInit(){ /* หน้ารวมเมนูไม่ต้องโหลดอะไร กดเข้าหน้าย่อยค่อยโหลด */ }
@@ -6172,11 +6189,11 @@ function eprodInit(mode){
       'ตัวที่ติดป้ายจะขึ้นแถบ "สินค้าแนะนำ" บนหน้าแรกของลูกค้า'
     : "แตะสินค้าเพื่อแก้รูป ราคา และการโชว์บนหน้าร้าน";
   $("#ep-q").value = "";
-  edLoad(false, eprodDraw);
+  edLoad("prod", false, eprodDraw);
 }
 
 function eprodList(){
-  if(!ED) return [];
+  if(!ED.products) return [];
   var q = $("#ep-q").value.trim().toLowerCase();
   return ED.products.filter(function(p){
     if(EPMODE==="tag" && !q && !String(p.tag||"").trim()) return false;
@@ -6261,7 +6278,7 @@ function eprodOpen(sku){
     google.script.run
       .withSuccessHandler(function(){
         closeModal();
-        edLoad(true, function(){
+        edLoad("prod", true, function(){
           eprodDraw();
           edNote("ep-ok","ep-err", true, "บันทึกแล้ว — หน้าร้านเปลี่ยนตามทันที");
         });
@@ -6284,10 +6301,10 @@ function eprodOpen(sku){
 
 /* -------------------------------------------------------------- แบนเนอร์ */
 
-function ebanInit(){ edLoad(false, ebanDraw) }
+function ebanInit(){ edLoad("ban", false, ebanDraw) }
 
 function ebanDraw(){
-  if(!ED) return;
+  if(!ED.banners) return;
   if(!ED.banners.length){
     $("#eb-list").innerHTML = '<div class="card"><div class="hint">'
       + "ยังไม่มีแบนเนอร์ — กด ＋ เพิ่มแบนเนอร์ ข้างบน<br>"
@@ -6363,7 +6380,7 @@ function ebanOpen(row){
     google.script.run
       .withSuccessHandler(function(){
         closeModal();
-        edLoad(true, function(){
+        edLoad("ban", true, function(){
           ebanDraw();
           edNote("eb-ok","eb-err", true, "บันทึกแล้ว — หน้าร้านเปลี่ยนตามทันที");
         });
@@ -6397,7 +6414,7 @@ function ebanOpen(row){
       google.script.run
         .withSuccessHandler(function(){
           closeModal();
-          edLoad(true, function(){
+          edLoad("ban", true, function(){
             ebanDraw();
             edNote("eb-ok","eb-err", true, "ลบแบนเนอร์แล้ว");
           });
@@ -6413,10 +6430,10 @@ function ebanOpen(row){
 
 /* ------------------------------------------------------------------ หมวด */
 
-function ecatInit(){ edLoad(false, ecatDraw) }
+function ecatInit(){ edLoad("cat", false, ecatDraw) }
 
 function ecatDraw(){
-  if(!ED) return;
+  if(!ED.cats) return;
   if(!ED.cats.length){
     $("#ec-list").innerHTML = '<div class="card"><div class="hint">'
       + "ยังไม่มีหมวด — สั่งฟังก์ชัน setupShopPages หนึ่งครั้ง "
@@ -6469,7 +6486,7 @@ function ecatOpen(group){
     google.script.run
       .withSuccessHandler(function(){
         closeModal();
-        edLoad(true, function(){
+        edLoad("cat", true, function(){
           ecatDraw();
           edNote("ec-ok","ec-err", true, "บันทึกแล้ว — หน้าร้านเปลี่ยนตามทันที");
         });
@@ -6490,10 +6507,10 @@ function ecatOpen(group){
 
 /* ------------------------------------------------------- หน้าตาหัวหน้าร้าน */
 
-function elookInit(){ edLoad(false, elookDraw) }
+function elookInit(){ edLoad("look", false, elookDraw) }
 
 function elookDraw(){
-  if(!ED) return;
+  if(!ED.look) return;
   var l = ED.look || {};
   $("#el-form").innerHTML =
     imgField("elm-logo", "โลโก้ร้าน", "logo", l.logo, l.logoShow,
@@ -6511,7 +6528,7 @@ function elookDraw(){
     btn.disabled = true; btn.textContent = "กำลังบันทึก…";
     google.script.run
       .withSuccessHandler(function(){
-        edLoad(true, function(){
+        edLoad("look", true, function(){
           elookDraw();
           edNote("el-ok","el-err", true, "บันทึกแล้ว — หน้าร้านเปลี่ยนตามทันที");
         });
@@ -6545,11 +6562,11 @@ document.addEventListener("click", function(e){
   if(t.dataset.ecat){ ecatOpen(t.dataset.ecat); return }
 });
 
-$("#ep-q").addEventListener("input", function(){ if(ED) eprodDraw() });
+$("#ep-q").addEventListener("input", function(){ if(EDGOT.prod) eprodDraw() });
 ["ep","eb","ec","el"].forEach(function(k){
   var b = $("#"+k+"-back");
   if(b) b.onclick = function(){ go("edit") };
 });
-$("#eb-add").onclick = function(){ edLoad(false, function(){ ebanOpen(0) }) };
+$("#eb-add").onclick = function(){ edLoad("ban", false, function(){ ebanOpen(0) }) };
 $("#fs-edit").onclick = function(){ go("edit") };
 </script>

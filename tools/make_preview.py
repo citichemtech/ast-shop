@@ -193,7 +193,19 @@ window.google = { script: { run: (function(){
     /* คำขอสั่งซื้อจากหน้าเว็บ — ยังไม่ใช่ออเดอร์ รอพนักงานกดรับ */
     getRequests: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_REQS)) }) },
     /* ---------------- โหมดแก้ไขร้าน ---------------- */
-    getShopEdit: function(){ reply(function(){ return JSON.parse(JSON.stringify(MOCK_ED)) }) },
+    getShopEdit: function(scope){
+      window.SENT.push({ fn:"getShopEdit", scope:scope });
+      reply(function(){
+        var d = JSON.parse(JSON.stringify(MOCK_ED));
+        var all = ["look","ban","cat","prod"].indexOf(scope) < 0;
+        var out = { ok:true, scope: all?"all":scope, slots:d.slots, tags:d.tags };
+        if(all || scope==="look") out.look = d.look;
+        if(all || scope==="ban")  out.banners = d.banners;
+        if(all || scope==="cat")  out.cats = d.cats;
+        if(all || scope==="prod") out.products = d.products;
+        return out;
+      });
+    },
     saveShopProduct: function(p){
       reply(function(){
         var hit = MOCK_ED.products.filter(function(x){ return x.sku === p.sku })[0];
