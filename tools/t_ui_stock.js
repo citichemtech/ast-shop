@@ -80,9 +80,15 @@ var SHEET = [
     /ต้องรีบระบาย/.test(await page.textContent('#stock-body')));
   truthy('บอกที่ว่างในชีทออเดอร์เป็นจำนวนใบ',
     /ที่ว่างในชีทออเดอร์[\s\S]*120 ใบ/.test(await page.textContent('#stock-body')));
+  /* ชุดจำลองมีสินค้าเคมีสามตัว (CHEM-001/002/003) และของกลุ่ม TOOLING อีกหลายตัว
+     ค้นด้วยคำกว้างต้องได้เฉพาะสามตัวนั้น ค้นด้วยรหัสเต็มต้องเหลือใบเดียว
+     สองขั้นนี้แยกกันเพราะขั้นแรกพิสูจน์ว่า "กรองจริง" ขั้นหลังพิสูจน์ว่า "กรองแคบพอ" */
   await page.fill('#stk-q', 'CHEM');
   await page.waitForTimeout(120);
-  eq('ค้นหาสินค้าได้', await page.locator('#stk-list .row').count(), 1);
+  eq('ค้นหาสินค้าด้วยคำกว้างได้', await page.locator('#stk-list .row').count(), 3);
+  await page.fill('#stk-q', 'CHEM-002');
+  await page.waitForTimeout(120);
+  eq('ค้นหาด้วยรหัสเต็มเหลือตัวเดียว', await page.locator('#stk-list .row').count(), 1);
 
   /* ---------- 2. นำเข้าไฟล์ Shopee ---------- */
   console.log('\n2. นำเข้าออเดอร์จากไฟล์ Shopee');

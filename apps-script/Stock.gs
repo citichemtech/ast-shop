@@ -248,6 +248,30 @@ function readImported_() {
   return by;
 }
 
+/**
+ * ออเดอร์ Shopee ที่นำเข้าไปแล้ว — รวมของที่นำเข้าจาก "แอปคีย์ออเดอร์" ด้วย
+ *
+ * มีตัวนำเข้า Shopee อยู่สองทาง: วางตารางในแอปคีย์ออเดอร์ กับอ่านไฟล์ในแอปสต๊อก
+ * ทั้งสองทางลงท้ายที่ createOrder ตัวเดียวกันและเขียนหมายเหตุว่า "Shopee <เลขที่>"
+ * เหมือนกัน แต่มีแค่ทางของแอปสต๊อกที่ลงทะเบียนในชีท `นำเข้า Shopee`
+ *
+ * ถ้าดูแต่ชีททะเบียน ใบที่คนวางตารางนำเข้าไปแล้วจะถูกนำเข้าซ้ำที่นี่อีกรอบ
+ * = ตัดสต๊อกสองเท่าโดยไม่มีอะไรฟ้อง จึงต้องดูหมายเหตุของออเดอร์ควบไปด้วย
+ * (ทางกลับกันไม่ต้องทำอะไรเพิ่ม เพราะฝั่งโน้นอ่านหมายเหตุอยู่แล้ว)
+ */
+function importedAny_() {
+  var by = readImported_();
+  var notes;
+  try { notes = shopeeImported_(); }
+  catch (e) { return by; }   /* ไม่มีตัวนำเข้าฝั่งแอปคีย์ออเดอร์ = ไม่มีอะไรให้รวม */
+  for (var sn in notes) {
+    if (by[sn]) continue;
+    by[sn] = { row: 0, sn: sn, orderNo: String(notes[sn] || ''),
+               state: 'นำเข้าแล้ว', status: '', amount: 0, fee: 0 };
+  }
+  return by;
+}
+
 /* -------------------------------------------------- อ่านไฟล์ที่หน้าจอส่งมา */
 
 /**
@@ -363,7 +387,7 @@ function previewShopee(orders, opts) {
   opts = normOpts_(opts);
 
   var idx = mapIndex_(readMapRows_());
-  var done = readImported_();
+  var done = importedAny_();
   var prods = {};
   var plist = readProducts_();
   for (var i = 0; i < plist.length; i++) prods[plist[i].sku] = plist[i];
@@ -527,7 +551,7 @@ function commitShopee(orders, opts) {
   if (!lock.tryLock(45000)) throw new Error('มีคนกำลังบันทึกออเดอร์อยู่ ลองใหม่อีกครั้ง');
   try {
     var idx = mapIndex_(readMapRows_());
-    var done = readImported_();
+    var done = importedAny_();
     var props = PropertiesService.getScriptProperties();
     var lists = cfgLists_();
     var saved = [], failed = [], skipped = [];
