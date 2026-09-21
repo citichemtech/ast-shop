@@ -36,7 +36,18 @@ function getShopEdit(scope) {
   if (all || what === 'look') out.look = editLook_();
   if (all || what === 'ban') out.banners = editBanners_();
   if (all || what === 'cat') out.cats = editCats_();
-  if (all || what === 'prod') out.products = editProducts_();
+  if (all || what === 'prod') {
+    out.products = editProducts_();
+    /* หน้าจอต้องมีรายชื่อหมวดที่มีอยู่ให้เลือก ไม่งั้นต้องพิมพ์เองทุกครั้ง
+       แล้วพิมพ์ผิดตัวเดียวก็ได้หมวดใหม่ที่มีสินค้าอยู่ตัวเดียวโดยไม่ตั้งใจ */
+    var g = {}, gl = [];
+    for (var i = 0; i < out.products.length; i++) {
+      var n = String(out.products[i].group || '').trim();
+      if (!n || g[n]) continue;
+      g[n] = 1; gl.push(n);
+    }
+    out.groups = gl.sort();
+  }
   return out;
 }
 
@@ -157,6 +168,12 @@ function saveShopProduct(p) {
     obj[f] = v;
     changed.push([f === 'img' ? 'ลิงก์รูป 1' : 'ลิงก์รูป 2', hit[f], v]);
   });
+  if (p.group !== undefined) {
+    var grp = shopGroupName_(p.group);
+    if (grp !== String(hit.group || '').trim()) {
+      obj.group = grp; changed.push(['หมวด', hit.group, grp]);
+    }
+  }
   if (p.tag !== undefined) {
     /* เก็บเป็นข้อความคั่นจุลภาค รูปแบบเดียวกับที่คนพิมพ์เองในชีท
        จะได้แก้ในชีทกับแก้ในแอปสลับกันได้ ไม่ต้องเลือกว่าจะใช้ทางไหนทางเดียว */
@@ -182,6 +199,61 @@ function saveShopProduct(p) {
       changed[k][1], changed[k][2], 'แก้จากโหมดแก้ไขร้าน');
   }
   return { ok: true, changed: changed.length };
+}
+
+/**
+ * ชื่อหมวดที่ยอมให้บันทึก
+ *
+ * หมวดเป็นช่องกรอกธรรมดาในชีท พิมพ์อะไรลงไปก็ได้ แต่ชื่อหมวดคือกุญแจที่ใช้
+ * จับคู่กับชีท หมวดหน้าร้าน และใช้จัดกลุ่มบนหน้าร้าน เว้นวรรคหน้าหลังเกินมาตัวเดียว
+ * ก็กลายเป็นคนละหมวดทันที โดยที่ตาคนมองไม่เห็นความต่าง จึงต้องตัดให้สะอาดก่อนเสมอ
+ */
+function shopGroupName_(v) {
+  var t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  if (t.length > 60) throw new Error('ชื่อหมวดยาวเกินไป (เกิน 60 ตัวอักษร)');
+  return t;
+}
+
+/**
+ * ย้ายสินค้าหลายตัวไปหมวดเดียวกันในครั้งเดียว
+ *
+ * ทำไมต้องมี: ร้านนี้มีสินค้า 119 ตัวแต่มีหมวดแค่ 3 หมวด แก้ทีละตัวคือ 119 รอบ
+ * ซึ่งไม่มีใครทำจริง แล้วหน้าร้านก็จะมีหมวดสามหมวดไปตลอด
+ * ท่าที่ใช้ได้จริงคือค้นชื่อ ("Endmill Corn") แล้วย้ายทั้งชุดทีเดียว
+ *
+ * เพดาน 200 ตัวต่อครั้ง เพราะเขียนทีละช่อง เกินกว่านี้ Apps Script จะหมดเวลาเอง
+ * แล้วจะเหลือของที่ย้ายไปครึ่งเดียวโดยไม่มีใครรู้ว่าค้างตรงไหน
+ */
+var MOVE_MAX = 200;
+
+function moveShopCategory(p) {
+  var email = requireStaff_();
+  if (!p || !p.skus || !p.skus.length) throw new Error('ยังไม่ได้เลือกสินค้า');
+  var group = shopGroupName_(p.group);
+  if (!group) throw new Error('ยังไม่ได้ใส่ชื่อหมวด');
+  if (p.skus.length > MOVE_MAX) {
+    throw new Error('ย้ายได้ครั้งละไม่เกิน ' + MOVE_MAX + ' ตัว — ' +
+      'ค้นให้แคบลงแล้วย้ายเป็นชุด ๆ');
+  }
+
+  var want = {};
+  for (var i = 0; i < p.skus.length; i++) want[String(p.skus[i]).trim()] = 1;
+
+  var all = readProducts_(true);
+  var moved = 0, same = 0, miss = [];
+  var seen = {};
+  for (var k = 0; k < all.length; k++) {
+    if (!want[all[k].sku]) continue;
+    seen[all[k].sku] = 1;
+    if (String(all[k].group || '').trim() === group) { same++; continue; }
+    writeRow_('prod', all[k].row, { group: group });
+    writeLog_(email, 'แก้ไข', SH.prod.name, all[k].sku, 'หมวด',
+      all[k].group, group, 'ย้ายหมวดเป็นชุดจากโหมดแก้ไขร้าน');
+    moved++;
+  }
+  for (var w in want) if (!seen[w]) miss.push(w);
+
+  return { ok: true, moved: moved, same: same, miss: miss, group: group };
 }
 
 /* --------------------------------------------------------------- แบนเนอร์ */

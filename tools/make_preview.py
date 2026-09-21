@@ -202,7 +202,12 @@ window.google = { script: { run: (function(){
         if(all || scope==="look") out.look = d.look;
         if(all || scope==="ban")  out.banners = d.banners;
         if(all || scope==="cat")  out.cats = d.cats;
-        if(all || scope==="prod") out.products = d.products;
+        if(all || scope==="prod"){
+          out.products = d.products;
+          var g = {}, gl = [];
+          d.products.forEach(function(p){ if(p.group && !g[p.group]){ g[p.group]=1; gl.push(p.group) } });
+          out.groups = gl.sort();
+        }
         return out;
       });
     },
@@ -217,8 +222,23 @@ window.google = { script: { run: (function(){
         if(p.img2 !== undefined){ hit.img2 = p.img2; if(p.img2) hit.show.push(edPic("A2","#1668D6")) }
         if(p.tag !== undefined) hit.tag = p.tag;
         if(p.web !== undefined){ hit.web = p.web; hit.hidden = !!String(p.web||"").trim() }
+        if(p.group !== undefined && p.group !== "") hit.group = p.group;
         window.SENT.push({ fn:"saveShopProduct", p:p });
         return { ok:true, changed:1 };
+      });
+    },
+    moveShopCategory: function(p){
+      reply(function(){
+        if(!p.skus || !p.skus.length) throw new Error("ยังไม่ได้เลือกสินค้า");
+        if(!String(p.group||"").trim()) throw new Error("ยังไม่ได้ใส่ชื่อหมวด");
+        var moved = 0, same = 0;
+        p.skus.forEach(function(sku){
+          var hit = MOCK_ED.products.filter(function(x){ return x.sku === sku })[0];
+          if(!hit) return;
+          if(hit.group === p.group) same++; else { hit.group = p.group; moved++ }
+        });
+        window.SENT.push({ fn:"moveShopCategory", p:p });
+        return { ok:true, moved:moved, same:same, miss:[], group:p.group };
       });
     },
     saveShopBanner: function(b){

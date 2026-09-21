@@ -222,6 +222,70 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
   ok('โลโก้บอกว่าจะถูกตัดเป็นวงกลม',
      /วงกลม/.test(await pg.locator('#elm-logo-msg').innerText()));
 
+  console.log('\n11. หมวดหมู่ — เปลี่ยนทีละตัว และย้ายทั้งชุด');
+  await pg.locator('#el-back').click();
+  await pg.waitForTimeout(300);
+  await pg.locator('[data-edgo="eprod"]').click();
+  await pg.waitForTimeout(700);
+  ok('การ์ดสินค้าบอกหมวดด้วย',
+     /ดอกกัดคาร์ไบด์/.test(await pg.locator('[data-eprod="SKU-148"] .sub').innerText()));
+
+  await pg.locator('[data-eprod="SKU-148"]').click();
+  await pg.waitForTimeout(400);
+  ok('กล่องแก้มีช่องเลือกหมวด', (await pg.locator('#epm-grp').count()) === 1);
+  ok('มีชิปหมวดที่มีอยู่ให้เลือก',
+     (await pg.locator('#epm-grp button[data-grp]').count()) >= 2);
+  ok('และมีปุ่มพิมพ์หมวดใหม่',
+     (await pg.locator('#epm-grp button[data-grpnew]').count()) === 1);
+  ok('ช่องพิมพ์หมวดใหม่ซ่อนอยู่ก่อน', !(await pg.locator('#epm-grp-new').isVisible()));
+  await pg.locator('#epm-grp button[data-grpnew]').click();
+  await pg.waitForTimeout(250);
+  ok('กดแล้วช่องพิมพ์โผล่', await pg.locator('#epm-grp-new').isVisible());
+  await pg.locator('#epm-grp-new').fill('Router Bit');
+  await pg.locator('#epm-save').click();
+  await pg.waitForTimeout(900);
+  ok('บันทึกแล้วหมวดเปลี่ยน',
+     /Router Bit/.test(await pg.locator('[data-eprod="SKU-148"] .sub').innerText()));
+  ok('ส่งหมวดใหม่ไปให้ฝั่งเซิร์ฟเวอร์', await pg.evaluate(() => {
+    var s = SENT.filter(x => x.fn === 'saveShopProduct').pop();
+    return s && s.p.group === 'Router Bit';
+  }));
+
+  console.log('\n12. ย้ายทั้งชุดที่ค้นเจอ');
+  ok('มีปุ่มย้ายทั้งชุด', await pg.locator('#ep-move').isVisible());
+  await pg.locator('#ep-q').fill('Endmill');
+  await pg.waitForTimeout(350);
+  var nHit = await pg.locator('[data-eprod]').count();
+  ok('ค้นแล้วปุ่มบอกจำนวนที่จะย้ายตามผลค้น',
+     (await pg.locator('#ep-move').innerText()).indexOf(String(nHit)) > -1);
+  await pg.locator('#ep-move').click();
+  await pg.waitForTimeout(400);
+  ok('กล่องย้ายเปิด', await pg.locator('#modal.on').isVisible());
+  await pg.locator('#emv-go').click();
+  await pg.waitForTimeout(500);
+  ok('ยังไม่เลือกหมวดแล้วกดย้าย ต้องฟ้อง ไม่ใช่ย้ายไปหมวดว่าง',
+     await pg.locator('#emv-err').isVisible());
+  await pg.locator('#emv-grp button[data-grpnew]').click();
+  await pg.locator('#emv-grp-new').fill('Endmill Corn');
+  await pg.locator('#emv-go').click();
+  await pg.waitForTimeout(1000);
+  ok('ย้ายแล้วกล่องปิด', !(await pg.locator('#modal.on').isVisible()));
+  ok('ขึ้นข้อความบอกว่าย้ายไปกี่ตัว',
+     /ย้ายไปหมวด Endmill Corn/.test(await pg.locator('#ep-ok').innerText()));
+  ok('ส่งรายชื่อสินค้าไปครบ', await pg.evaluate(() => {
+    var s = SENT.filter(x => x.fn === 'moveShopCategory').pop();
+    return s && s.p.group === 'Endmill Corn' && s.p.skus.length > 0;
+  }));
+
+  console.log('\n13. หน้ารวมเมนูตามแบบที่ส่งมา');
+  await pg.locator('#ep-back').click();
+  await pg.waitForTimeout(350);
+  ok('มีแถบหัวโหมดแก้ไข', await pg.locator('.edhero').isVisible());
+  ok('สองเมนูหลักเด่นกว่าเพื่อน', (await pg.locator('.edmenu button.lead').count()) === 2);
+  ok('เมนูรองอยู่ในกล่องรวม', (await pg.locator('.edgroup .edmenu button').count()) === 4);
+  ok('ทุกเมนูมีไอคอน', (await pg.locator('.edmenu .ic').count()) === 7);
+  ok('มีท้ายหน้าตามแบบ', await pg.locator('.edfoot').isVisible());
+
   ok('ไม่มี error ตลอดการทดสอบ', jsErr.length === 0, jsErr.join(' | '));
   await b.close();
   console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');

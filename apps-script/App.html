@@ -6177,9 +6177,59 @@ function edLoad(scope, force, then){
     .getShopEdit(scope);
 }
 
-function edInit(){ /* หน้ารวมเมนูไม่ต้องโหลดอะไร กดเข้าหน้าย่อยค่อยโหลด */ }
+/* หน้ารวมเมนูไม่ต้องโหลดอะไรจากชีท แค่ใส่ตราร้านลงวงกลมสองอันบนสุด
+   ไม่มีตราก็ปล่อยไอคอน SVG ที่วาดไว้แล้วทำงานแทน ไม่เหลือวงกลมเปล่า */
+function edInit(){
+  var a = (typeof APP_LOGO !== "undefined" && APP_LOGO) ? APP_LOGO : "";
+  var b = (typeof SHOP_LOGO !== "undefined" && SHOP_LOGO) ? SHOP_LOGO : "";
+  if(a) $("#ed-ic1").innerHTML = '<img src="'+a+'" alt="">';
+  if(b || a) $("#ed-ic2").innerHTML = '<img src="'+(b||a)+'" alt="">';
+}
 
 /* ---------------------------------------------------------------- สินค้า */
+
+/**
+ * ช่องเลือกหมวด — ชิปของหมวดที่มีอยู่ บวกปุ่มพิมพ์หมวดใหม่
+ *
+ * ให้เลือกจากที่มีก่อน เพราะพิมพ์เองทุกครั้งแล้วพิมพ์ผิดตัวเดียว
+ * จะได้หมวดใหม่ที่มีสินค้าอยู่ตัวเดียว โดยไม่มีอะไรบอกว่าพิมพ์ผิด
+ */
+function groupField(id, cur){
+  var list = (ED.groups || []).slice();
+  if(cur && list.indexOf(cur) < 0) list.push(cur);
+  return '<div class="fld"><label>หมวดหมู่</label>'
+    + '<div class="tagpick" id="'+id+'">'
+    + list.map(function(g){
+        return '<button type="button" data-grp="'+esc(g)+'"'
+          + (g===cur ? ' class="on"' : "") + ">"+esc(g)+"</button>";
+      }).join("")
+    + '<button type="button" data-grpnew="1">＋ หมวดใหม่</button>'
+    + "</div>"
+    + '<input id="'+id+'-new" placeholder="พิมพ์ชื่อหมวดใหม่" style="display:none">'
+    + '<div class="hint">หมวดคือกลุ่มที่ลูกค้าเห็นบนหน้าแรก '
+    + "ตั้งชื่อให้ลูกค้าอ่านรู้เรื่อง ไม่ใช่ชื่อที่ใช้กันเองในร้าน</div></div>";
+}
+
+function bindGroup(id){
+  if(!$("#"+id)) return;
+  $$("#"+id+" button").forEach(function(b){
+    b.onclick = function(){
+      $$("#"+id+" button").forEach(function(x){ x.classList.remove("on") });
+      b.classList.add("on");
+      var nw = $("#"+id+"-new");
+      if(b.dataset.grpnew){ nw.style.display=""; nw.focus() }
+      else { nw.style.display="none"; nw.value="" }
+    };
+  });
+}
+
+/* ค่าที่เลือกอยู่ — undefined = ไม่ได้แตะ จะได้ไม่ส่งไปแก้โดยไม่ตั้งใจ */
+function groupValue(id){
+  var on = $("#"+id+" button.on");
+  if(!on) return undefined;
+  if(on.dataset.grpnew) return $("#"+id+"-new").value.trim();
+  return on.dataset.grp;
+}
 
 function eprodInit(mode){
   EPMODE = mode || "all";
@@ -6202,6 +6252,56 @@ function eprodList(){
   });
 }
 
+/**
+ * ย้ายทั้งชุดที่ค้นเจอไปหมวดเดียวกัน
+ *
+ * ร้านนี้มีสินค้า 119 ตัวแต่มีหมวดแค่ 3 หมวด ถ้าแก้ทีละตัวคือ 119 รอบ
+ * ซึ่งไม่มีใครทำจริง แล้วหน้าร้านก็จะมีสามหมวดไปตลอด
+ * ท่าที่ใช้ได้จริงคือค้นชื่อ ("Endmill Corn") แล้วย้ายทั้งชุดทีเดียว
+ */
+function eprodMove(){
+  var list = eprodList();
+  if(!list.length){ toast("ไม่มีสินค้าให้ย้าย"); return }
+  var q = $("#ep-q").value.trim();
+
+  openModal("ย้าย " + list.length + " ตัวไปหมวดเดียวกัน",
+    '<div class="hint" style="padding:0 2px 10px">'
+      + (q ? 'สินค้าที่ค้นด้วยคำว่า <b>' + esc(q) + '</b> ทั้ง ' + list.length + ' ตัว'
+           : "สินค้าทั้งหมด " + list.length + " ตัวที่เห็นอยู่ตอนนี้")
+      + " จะถูกย้ายไปหมวดที่เลือก</div>"
+    + '<div class="hint" style="padding:0 2px 12px;max-height:160px;overflow:auto">'
+      + list.slice(0,40).map(function(p){ return esc(p.name) }).join("<br>")
+      + (list.length>40 ? "<br>… และอีก " + (list.length-40) + " ตัว" : "")
+      + "</div>"
+    + groupField("emv-grp", "")
+    + '<div class="msg err" id="emv-err"></div>'
+    + '<button class="btn" id="emv-go">ย้ายทั้งหมด</button>');
+
+  bindGroup("emv-grp");
+  $("#emv-go").onclick = function(){
+    var g = groupValue("emv-grp");
+    var box = $("#emv-err");
+    if(!g){ box.textContent = "ยังไม่ได้เลือกหมวด"; box.classList.add("on"); return }
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังย้าย…";
+    google.script.run
+      .withSuccessHandler(function(r){
+        closeModal();
+        edLoad("prod", true, function(){
+          eprodDraw();
+          edNote("ep-ok","ep-err", true,
+            "ย้ายไปหมวด " + r.group + " แล้ว " + r.moved + " ตัว"
+            + (r.same ? " (อีก " + r.same + " ตัวอยู่หมวดนี้อยู่แล้ว)" : ""));
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "ย้ายทั้งหมด";
+        box.textContent = e.message; box.classList.add("on");
+      })
+      .moveShopCategory({ group: g, skus: list.map(function(p){ return p.sku }) });
+  };
+}
+
 function eprodDraw(){
   var list = eprodList();
   if(!list.length){
@@ -6211,7 +6311,14 @@ function eprodDraw(){
         : "ไม่เจอสินค้าที่ค้น") + "</div></div>";
     return;
   }
-  $("#ep-list").innerHTML = '<div class="card">' + list.slice(0,80).map(function(p){
+  var moveBtn = (EPMODE !== "tag" && list.length > 1)
+    ? '<div class="card"><button class="btn ghost" id="ep-move">'
+        + "📂 ย้าย " + list.length + " ตัวที่เห็นอยู่ ไปหมวดเดียวกัน</button>"
+        + '<div class="hint">ค้นชื่อให้แคบลงก่อน แล้วย้ายทั้งชุดทีเดียว '
+        + "เร็วกว่าแก้ทีละตัวมาก</div></div>"
+    : "";
+
+  $("#ep-list").innerHTML = moveBtn + '<div class="card">' + list.slice(0,80).map(function(p){
     var tags = String(p.tag||"").split(/\s*,\s*/).filter(function(t){return !!t});
     return '<button class="edrow" data-eprod="'+esc(p.sku)+'">'
       + '<span class="th">' + (p.show.length
@@ -6219,6 +6326,7 @@ function eprodDraw(){
           : "ยังไม่มีรูป") + "</span>"
       + '<span class="bd"><b>'+esc(p.name)+"</b>"
         + '<span class="sub">'+esc(p.sku)+" · "+baht(p.price)
+          + " · " + esc(p.group || "ไม่มีหมวด")
           + (p.show.length>1 ? " · 2 รูป" : "") + "</span>"
         + '<span class="pills">'
           + (p.hidden ? '<span class="off">ซ่อนจากหน้าร้าน</span>'
@@ -6245,6 +6353,7 @@ function eprodOpen(sku){
     + imgField("epm-img", "รูปที่ 1 (รูปหลัก)", "prod", p.img, p.show[0])
     + imgField("epm-img2", "รูปที่ 2 (ลูกค้ากดดูเพิ่มได้)", "prod", p.img2, p.show[1],
         "เว้นว่างได้ ถ้าเว้นก็มีรูปเดียว · " + IMG_HINT)
+    + groupField("epm-grp", p.group)
     + '<div class="fld"><label>ป้ายหน้าร้าน</label><div class="tagpick" id="epm-tags">'
       + ED.tags.map(function(t){
           return '<button type="button" data-tag="'+esc(t)+'"'
@@ -6260,6 +6369,7 @@ function eprodOpen(sku){
     + '<button class="btn" id="epm-save">บันทึก</button>');
 
   bindPicks(p.sku);
+  bindGroup("epm-grp");
   $$("#epm-tags button").forEach(function(b){
     b.onclick = function(){ b.classList.toggle("on") };
   });
@@ -6290,6 +6400,7 @@ function eprodOpen(sku){
       })
       .saveShopProduct({
         sku: p.sku,
+        group: groupValue("epm-grp"),
         price: $("#epm-price").value,
         img: $("#epm-img").value,
         img2: $("#epm-img2").value,
@@ -6563,6 +6674,9 @@ document.addEventListener("click", function(e){
 });
 
 $("#ep-q").addEventListener("input", function(){ if(EDGOT.prod) eprodDraw() });
+document.addEventListener("click", function(e){
+  if(e.target.closest("#ep-move")) eprodMove();
+});
 ["ep","eb","ec","el"].forEach(function(k){
   var b = $("#"+k+"-back");
   if(b) b.onclick = function(){ go("edit") };

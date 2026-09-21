@@ -258,16 +258,61 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
 .pv .r.miss b{color:var(--red);font-weight:500}
 .pv .r.opt i{opacity:.65}
 
-/* ---------- โหมดแก้ไขร้าน ---------- */
-.edmenu{display:flex;flex-direction:column;gap:10px}
-.edmenu button{display:block;width:100%;text-align:left;padding:15px 44px 15px 16px;
-  border:1px solid var(--line);border-radius:14px;background:#fff;position:relative}
+/* ---------- โหมดแก้ไขร้าน ----------
+   หน้าตาตามแบบที่เจ้าของร้านวางไว้ — แถบฟ้าท้องฟ้า · สองเมนูหลักมีตราร้าน ·
+   กลุ่มเมนูรองอยู่ในกล่องฟ้าอ่อน · ไอคอนกลมสีน้ำเงินทุกอัน
+   ไอคอนวาดด้วย SVG ในไฟล์ ไม่ใช้รูปจากข้างนอก จึงคมทุกจอและไม่ต้องรอโหลด */
+.edhero{position:relative;border-radius:18px;overflow:hidden;margin-bottom:14px;
+  padding:20px 18px 22px;color:#0b2d5c;
+  background:linear-gradient(160deg,#cfe8ff 0%,#eaf5ff 45%,#f7fbff 100%)}
+.edhero::after{content:"";position:absolute;right:-30px;top:-40px;width:190px;height:190px;
+  border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff,rgba(255,255,255,0));
+  opacity:.85}
+.edhero h2{position:relative;font-size:1.5rem;font-weight:800;letter-spacing:-.01em}
+.edhero .sub{position:relative;display:inline-block;margin-top:6px;background:rgba(255,255,255,.75);
+  border-radius:999px;padding:4px 13px;font-size:0.78rem;font-weight:600;color:#2a5b9c}
+.edhero .slog{position:relative;margin-top:12px;font-size:0.9rem;font-style:italic;
+  color:#2f6ab5;line-height:1.35}
+
+.edmenu{display:flex;flex-direction:column;gap:11px}
+.edmenu button{display:flex;align-items:center;gap:13px;width:100%;text-align:left;
+  padding:14px 42px 14px 14px;border:1px solid var(--line);border-radius:16px;
+  background:#fff;position:relative;box-shadow:0 1px 4px rgba(20,50,100,.06)}
 .edmenu button:active{background:#f3f7ff}
+.edmenu .tx{flex:1;min-width:0}
 .edmenu b{display:block;font-size:1.02rem;font-weight:800;color:#123a7a;line-height:1.3}
 .edmenu em{display:block;font-style:normal;font-size:0.76rem;color:#5a7196;margin-top:3px;
   line-height:1.45}
-.edmenu button::after{content:"›";position:absolute;right:17px;top:50%;
-  transform:translateY(-50%);font-size:1.5rem;color:#8ba3c7;line-height:1}
+.edmenu button::after{content:"";position:absolute;right:13px;top:50%;
+  transform:translateY(-50%);width:28px;height:28px;border-radius:50%;
+  background:var(--blue) url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' \
+stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M9 5l7 7-7 7'/></svg>\
+") center/14px no-repeat}
+
+/* ไอคอนกลม — ตราร้านเป็นรูปจริง ส่วนเมนูรองเป็น SVG สีขาวบนวงน้ำเงิน */
+.edmenu .ic{flex:none;width:46px;height:46px;border-radius:50%;display:flex;
+  align-items:center;justify-content:center;background:var(--blue);
+  box-shadow:0 2px 8px rgba(18,70,173,.25)}
+.edmenu .ic svg{width:24px;height:24px;stroke:#fff;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.edmenu .ic.logo{background:#fff;overflow:hidden;border:2px solid #cfe1ff;
+  width:52px;height:52px}
+.edmenu .ic.logo img{width:100%;height:100%;object-fit:contain}
+
+/* สองเมนูหลักเด่นกว่าเพื่อน — ขอบทองกับขอบฟ้าตามแบบ */
+.edmenu button.lead{padding:16px 46px 16px 14px;border-width:2px}
+.edmenu button.gold{border-color:#e3b93f;background:linear-gradient(180deg,#fffdf5,#fff)}
+.edmenu button.blue{border-color:#8fc0f5;background:linear-gradient(180deg,#f5faff,#fff)}
+
+/* กลุ่มเมนูรอง อยู่ในกล่องฟ้าอ่อนเหมือนแบบ */
+.edgroup{background:#e8f3ff;border-radius:18px;padding:12px;margin:14px 0}
+.edgroup .edmenu button{border-color:#fff;box-shadow:0 1px 5px rgba(20,50,100,.07)}
+
+.edfoot{margin-top:16px;text-align:center;padding:18px 12px 6px;
+  border-radius:18px;background:linear-gradient(180deg,#f7fbff,#e8f3ff)}
+.edfoot .slog{font-size:0.95rem;font-style:italic;color:#2f6ab5;line-height:1.35}
+.edfoot .thx{margin-top:8px;font-size:0.8rem;color:#5a7196}
 
 .edrow{display:flex;gap:11px;align-items:flex-start;padding:12px;border:1px solid var(--line);
   border-radius:13px;background:#fff;margin-bottom:9px;width:100%;text-align:left}
@@ -770,25 +815,58 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
   <!-- โหมดแก้ไขร้าน — หน้ารวมเมนู แล้วแยกไปหน้าย่อยสี่หน้า -->
   <section id="pg-edit" style="display:none">
     <div class="card">
-      <div class="sec-hd"><h2>โหมดแก้ไข</h2></div>
+      <div class="edhero">
+        <h2>โหมดแก้ไข</h2>
+        <div class="sub">ศูนย์รวมงานขายและสต็อก</div>
+        <div class="slog">Good Tools<br>Better Tomorrow ♡</div>
+      </div>
       <div class="hint" style="padding:0 2px 12px">
         ทุกอย่างในนี้แก้แล้วขึ้นหน้าร้านทันที ลูกค้ารีเฟรชก็เห็นเลย
         · แก้ในชีทโดยตรงก็ยังได้เหมือนเดิม สองทางใช้สลับกันได้</div>
       <div class="edmenu">
-        <button data-edgo="new"><b>ระบบคีย์ ออเดอร์</b>
-          <em>บันทึกคำสั่งซื้อ · ตัดสต็อก · ตรวจสอบยอด</em></button>
-        <button data-edgo="eprod"><b>ข้อมูลร้าน</b>
-          <em>ข้อมูลสินค้า · ราคา · รูปภาพ · ซ่อน/โชว์</em></button>
-        <button data-edgo="eban"><b>แก้ไขแบนเนอร์</b>
-          <em>รูปโปรโมชั่น · ปุ่มกด · เปิดปิดทีละอัน</em></button>
-        <button data-edgo="etag"><b>สินค้าแนะนำ</b>
-          <em>สินค้าใหม่ · สินค้าขายดี · โปรโมชั่น</em></button>
-        <button data-edgo="ecat"><b>หมวดหมู่</b>
-          <em>รูปไอคอน · รูปปก · ชื่อที่ลูกค้าเห็น</em></button>
-        <button data-edgo="elook"><b>หน้าตาหัวร้าน</b>
-          <em>โลโก้ · ภาพพื้นหลัง · แผนที่</em></button>
-        <button data-edgo="file"><b>ไฟล์ต่างๆ</b>
-          <em>เอกสาร · ใบวางบิล · สรุปรายเดือน</em></button>
+        <button class="lead gold" data-edgo="new">
+          <span class="ic logo" id="ed-ic1"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span>
+          <span class="tx"><b>ระบบคีย์ ออเดอร์</b>
+            <em>บันทึกคำสั่งซื้อ · ตัดสต็อก · ตรวจสอบยอด</em></span></button>
+
+        <button class="lead blue" data-edgo="eprod">
+          <span class="ic logo" id="ed-ic2"><svg viewBox="0 0 24 24"><path d="M3 9l1.5-4.5h15L21 9"/><path d="M4 9v10h16V9"/><path d="M9 19v-5h6v5"/></svg></span>
+          <span class="tx"><b>ข้อมูลร้าน</b>
+            <em>ข้อมูลสินค้า · ราคา · รูปภาพ · หมวดหมู่</em></span></button>
+      </div>
+
+      <div class="edgroup"><div class="edmenu">
+        <button data-edgo="eban">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 5 5L15 16l-3 3-4-4 3-3z"/><path d="M6 18l-2 2"/></svg></span>
+          <span class="tx"><b>แก้ไขแบนเนอร์</b>
+            <em>ปรับแต่งภาพ · สร้างแบนเนอร์ · งานกราฟิก</em></span></button>
+
+        <button data-edgo="etag">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10.5V16H8v-2.5A6 6 0 0 1 12 3z"/></svg></span>
+          <span class="tx"><b>สินค้าแนะนำ</b>
+            <em>สินค้าใหม่ · สินค้าขายดี · โปรโมชั่น</em></span></button>
+
+        <button data-edgo="ecat">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg></span>
+          <span class="tx"><b>หมวดหมู่</b>
+            <em>จัดหมวดหมู่สินค้า · ดูทั้งหมด · ค้นหาง่าย</em></span></button>
+
+        <button data-edgo="elook">
+          <span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3.5"/></svg></span>
+          <span class="tx"><b>หน้าตาหัวร้าน</b>
+            <em>โลโก้ · ภาพพื้นหลัง · แผนที่</em></span></button>
+      </div></div>
+
+      <div class="edmenu">
+        <button data-edgo="file">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg></span>
+          <span class="tx"><b>ไฟล์ต่างๆ</b>
+            <em>เอกสาร · แบบฟอร์ม · เทมเพลต</em></span></button>
+      </div>
+
+      <div class="edfoot">
+        <div class="slog">Good Tools<br>Better Tomorrow ♡</div>
+        <div class="thx">ขอบคุณที่เป็นส่วนหนึ่งของทีมเรา ♡</div>
       </div>
     </div>
   </section>

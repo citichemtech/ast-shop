@@ -356,5 +356,78 @@ eq('บันทึกซ้ำไม่สร้างแถวซ้ำ', (fun
   return n;
 })(), 1);
 
+/* ============================================ 11. หมวดหมู่ */
+console.log('\n11. เปลี่ยนหมวดสินค้า และย้ายทั้งชุดในครั้งเดียว');
+var f11 = fixture();
+var p11 = f11.staff.getShopEdit('prod');
+truthy('ส่งรายชื่อหมวดที่มีอยู่มาให้เลือกด้วย', Array.isArray(p11.groups));
+var sku11 = p11.products[0].sku;
+var was11 = p11.products[0].group;
+
+f11.staff.saveShopProduct({ sku: sku11, group: 'Router Bit' });
+eq('เปลี่ยนหมวดของสินค้าตัวเดียวได้',
+   f11.staff.getShopEdit('prod').products.filter(function (x) { return x.sku === sku11 })[0].group,
+   'Router Bit');
+truthy('หน้าร้านเห็นหมวดใหม่',
+   f11.guest.shopData().cats.indexOf('Router Bit') > -1);
+truthy('และมีการ์ดหมวดใหม่ให้ลูกค้ากด',
+   f11.guest.shopData().catCards.some(function (c) { return c.group === 'Router Bit' }));
+
+f11.staff.saveShopProduct({ sku: sku11, group: '  Router   Bit  ' });
+eq('เว้นวรรคเกินมาถูกตัดให้สะอาด ไม่กลายเป็นคนละหมวด',
+   f11.staff.getShopEdit('prod').products.filter(function (x) { return x.sku === sku11 })[0].group,
+   'Router Bit');
+eq('ส่งค่าเดิมซ้ำ ไม่นับว่าแก้',
+   f11.staff.saveShopProduct({ sku: sku11, group: 'Router Bit' }).changed, 0);
+throws('ชื่อหมวดยาวเกินไป ต้องฟ้อง',
+   function () {
+     f11.staff.saveShopProduct({ sku: sku11, group: new Array(80).join('ก') });
+   }, 'ยาวเกินไป');
+
+/* ย้ายเป็นชุด — ท่าที่ใช้ได้จริงกับสินค้าร้อยกว่าตัว */
+var all11 = f11.staff.getShopEdit('prod').products;
+var many11 = all11.slice(0, 3).map(function (x) { return x.sku });
+var mv11 = f11.staff.moveShopCategory({ group: 'Endmill Corn', skus: many11 });
+truthy('ย้ายเป็นชุดได้', mv11.ok === true);
+eq('บอกจำนวนที่ย้ายจริง', mv11.moved, many11.length);
+var after11 = f11.staff.getShopEdit('prod').products;
+eq('ทุกตัวในชุดย้ายไปหมวดใหม่ครบ',
+   after11.filter(function (x) { return many11.indexOf(x.sku) > -1 })
+     .every(function (x) { return x.group === 'Endmill Corn' }), true);
+
+var mv11b = f11.staff.moveShopCategory({ group: 'Endmill Corn', skus: many11 });
+eq('ย้ายซ้ำเข้าหมวดเดิม ไม่นับว่าย้าย', mv11b.moved, 0);
+eq('แต่บอกว่ามีกี่ตัวที่อยู่หมวดนั้นอยู่แล้ว', mv11b.same, many11.length);
+
+var mv11c = f11.staff.moveShopCategory({ group: 'x', skus: many11.concat(['SKU-ไม่มีจริง']) });
+eq('รหัสที่ไม่มีในชีท ถูกรายงานกลับมา ไม่เงียบหาย', mv11c.miss, ['SKU-ไม่มีจริง']);
+
+throws('ไม่เลือกสินค้าเลย ต้องฟ้อง',
+   function () { f11.staff.moveShopCategory({ group: 'x', skus: [] }) }, 'ยังไม่ได้เลือก');
+throws('ไม่ใส่ชื่อหมวด ต้องฟ้อง',
+   function () { f11.staff.moveShopCategory({ group: '  ', skus: many11 }) }, 'ชื่อหมวด');
+throws('ย้ายทีละเป็นพัน ต้องฟ้องก่อน ไม่ใช่ปล่อยให้หมดเวลากลางทาง',
+   function () {
+     var big = [];
+     for (var i = 0; i < 300; i++) big.push('SKU-' + i);
+     f11.staff.moveShopCategory({ group: 'x', skus: big });
+   }, 'ไม่เกิน');
+
+throws('ลูกค้าย้ายหมวดไม่ได้',
+   function () { f11.guest.moveShopCategory({ group: 'x', skus: ['SKU-141'] }) });
+
+/* ชื่อที่โชว์ให้ลูกค้า — แยกจากชื่อหมวดในชีท
+   (ข้อก่อนหน้าย้ายของไปหมวด x หมด ต้องย้ายกลับก่อน ไม่งั้นหมวดนี้ไม่มีสินค้า
+    แล้วการ์ดหมวดจะหายไปตามกติกา "หมวดที่ไม่มีของขาย ไม่ต้องโชว์") */
+f11.staff.moveShopCategory({ group: 'Endmill Corn', skus: many11 });
+f11.staff.saveShopCat({ group: 'Endmill Corn', label: 'ดอกกัดข้าวโพด' });
+eq('ลูกค้าเห็นชื่อที่ตั้งไว้ ไม่ใช่ชื่อในชีท',
+   f11.guest.shopData().catCards.filter(function (c) { return c.group === 'Endmill Corn' })[0].label,
+   'ดอกกัดข้าวโพด');
+eq('แต่ชื่อหมวดในชีทยังเป็นของเดิม ไม่ถูกแก้ตาม',
+   f11.staff.getShopEdit('prod').products
+     .filter(function (x) { return many11.indexOf(x.sku) > -1 })[0].group,
+   'Endmill Corn');
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);
