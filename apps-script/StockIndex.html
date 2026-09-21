@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<!-- ลิงก์และการพิมพ์ต้องหลุดออกจาก iframe ของ Apps Script ไม่งั้นเปิดไม่ขึ้น -->
+<base target="_top">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,500;0,700;1,700&display=swap">
+</head>
+<body>
+
+<!--
+  แอปสต๊อก & Shopee — คนละลิงก์ คนละไอคอน กับแอปคีย์ออเดอร์
+
+  ทำไมแยก: แอปคีย์ออเดอร์ใช้งานได้ดีอยู่แล้วและมีคนใช้ทุกวัน การเอาของใหม่
+  ไปแปะเป็นแท็บที่ห้าทำให้คนที่คีย์ออเดอร์อย่างเดียวต้องเจอของที่ไม่ได้ใช้
+  และถ้าของใหม่พัง มันพังในแอปเดียวกับที่ร้านต้องใช้ทำมาหากิน
+
+  ที่ไม่แยกคือ "ข้อมูล" — ชีทเดียวกัน สต๊อกก้อนเดียวกัน
+  ของบนชั้นวางมีชุดเดียว ระบบจึงต้องนับเป็นชุดเดียว ไม่งั้นขายเกินแน่นอน
+-->
+
+<?!= include_('Style'); ?>
+
+<div class="top">
+  <div class="logo" id="logo">STOCK</div>
+  <div class="ttl">
+    <b id="brand">สต๊อก &amp; Shopee</b>
+    <span class="who" id="who"></span>
+  </div>
+  <div class="fsz">
+    <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง">ก−</button>
+    <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น">ก+</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="msg err" id="err"></div>
+  <div class="msg ok" id="ok"></div>
+
+  <div class="load" id="booting">กำลังโหลดข้อมูลจากชีท…</div>
+
+  <section id="pg-stock" style="display:none">
+    <div id="sub-board"><div id="stock-body"><div class="load">กำลังโหลด…</div></div></div>
+
+    <div id="sub-imp" style="display:none">
+      <div class="card">
+        <div class="msg" style="display:block;background:#eef4fc;color:#1b3a5c">
+          Shopee ไม่ได้เปิด API ให้ร้านทั่วไปใช้ฟรี ระบบจึงรับ<b>ไฟล์ที่ export จาก Seller Centre</b>
+          (คำสั่งซื้อของฉัน → ส่งออก) รองรับทั้ง .xlsx และ .csv
+        </div>
+        <div class="fld">
+          <label>เลือกไฟล์ออเดอร์จาก Shopee</label>
+          <input id="imp-file" type="file" accept=".xlsx,.xls,.csv,.txt">
+        </div>
+        <button class="mini" id="imp-paste-open" type="button">หรือวางตารางจาก Excel</button>
+        <div id="imp-paste-box" style="display:none;margin-top:10px">
+          <textarea id="imp-paste" rows="4" placeholder="ก๊อปทั้งตารางรวมแถวหัวจาก Excel แล้ววางตรงนี้"></textarea>
+          <button class="mini" id="imp-paste-go" style="margin-top:8px">อ่านข้อความนี้</button>
+        </div>
+        <div id="imp-state" style="margin-top:10px"></div>
+      </div>
+
+      <div id="imp-setup" style="display:none">
+        <div class="card">
+          <div class="subhd" style="margin-top:0">ตัดสต๊อกให้ออเดอร์สถานะไหนบ้าง</div>
+          <div class="fchk" id="imp-kinds"></div>
+          <div class="hint">ค่าตั้งต้นคือตัดเมื่อของออกจากร้านแล้วเท่านั้น
+            ถ้าตัดตั้งแต่ลูกค้ายังไม่จ่ายเงิน แล้วเจอยกเลิกเยอะ สต๊อกจะขาดทั้งที่ของยังอยู่ครบ</div>
+
+          <div class="fld" style="margin-top:12px">
+            <label>ผู้ทำรายการ</label>
+            <select id="s-by"></select>
+            <input id="s-by-new" placeholder="พิมพ์ชื่อ" style="margin-top:8px;display:none">
+            <div class="hint">ชื่อนี้จะไปอยู่ในช่องพนักงานของออเดอร์ที่ตัด และในทะเบียนนำเข้า
+              · ใช้ชื่อชุดเดียวกับแอปคีย์ออเดอร์</div>
+          </div>
+
+          <div class="two">
+            <div class="fld"><label>ลงช่องขนส่งเป็น</label><select id="imp-carrier"></select></div>
+            <div class="fld"><label>ค่าธรรมเนียม Shopee</label>
+              <select id="imp-fee">
+                <option value="none">บันทึกยอดขายเต็ม (ไม่หัก)</option>
+                <option value="discount">หักเป็นส่วนลดของใบนั้น</option>
+              </select></div>
+          </div>
+          <div class="hint">เลือก “บันทึกยอดขายเต็ม” แล้ว<b>กำไรในชีทจะสูงกว่าความจริง</b>
+            เท่ากับค่าคอมมิชชั่นและค่าบริการที่ Shopee หักไป (ปกติราว 10–15%)
+            · เลือก “หักเป็นส่วนลด” แล้วยอดสุทธิจะใกล้เงินที่ได้รับจริง
+            แต่ฐานภาษีของใบนั้นจะลดลงตามไปด้วย เลือกให้ตรงกับที่ตกลงกับบัญชีไว้</div>
+
+          <label class="giftck" style="margin-top:10px">
+            <input type="checkbox" id="imp-keepship"> ลงค่าจัดส่งที่ผู้ซื้อจ่ายเป็นรายได้ค่าส่งของร้าน
+          </label>
+          <div class="hint">ปกติค่าส่งที่ผู้ซื้อจ่ายบน Shopee ไปที่ขนส่ง ไม่ได้เข้าร้าน
+            ติ๊กช่องนี้เฉพาะกรณีที่ร้านเป็นคนจ่ายค่าส่งเองแล้วเรียกเก็บคืน</div>
+        </div>
+
+        <div class="card">
+          <button class="mini" id="imp-cols-open" type="button" style="width:100%">
+            ตรวจการจับคอลัมน์ (กดเมื่ออ่านไฟล์ผิด)</button>
+          <div id="imp-cols" style="display:none;margin-top:10px"></div>
+          <div class="hint" style="margin-top:8px">Shopee เปลี่ยนชื่อคอลัมน์ในไฟล์ export
+            มาแล้วหลายรอบ ถ้าระบบจับผิดคอลัมน์ ให้เลือกเองที่นี่</div>
+        </div>
+
+        <div class="card">
+          <button class="btn" id="imp-preview">ตรวจก่อนตัดสต๊อก</button>
+          <button class="btn dark" id="imp-commit" style="display:none;margin-top:9px">ตัดสต๊อก</button>
+          <button class="mini" id="imp-api" type="button" style="margin-top:9px;width:100%">
+            สถานะช่องเชื่อม Shopee API</button>
+        </div>
+
+        <div id="imp-done"></div>
+        <div id="imp-result"></div>
+      </div>
+    </div>
+
+    <div id="sub-map" style="display:none"><div id="map-body"><div class="load">กำลังโหลด…</div></div></div>
+
+    <div id="sub-moves" style="display:none">
+      <div class="card">
+        <div class="subhd" style="margin-top:0">คืนสินค้าเข้าสต๊อก</div>
+        <div class="hint" style="margin-bottom:9px">ของจะกลับเข้าล็อตเดิมที่ตัดไป
+          และลงชีท รับเข้า เป็นรายการของคืน · <b>แถวออเดอร์เดิมไม่ถูกลบ</b>
+          เพราะการขายเกิดขึ้นจริงและอาจออกเอกสารไปแล้ว</div>
+        <div class="two" style="align-items:end">
+          <div class="fld" style="margin-bottom:0"><label>เลขที่ออเดอร์ในระบบ</label>
+            <input id="rt-no" placeholder="เช่น AST-26-0042"></div>
+          <button class="mini" id="rt-find" style="height:50px">ค้นหาใบนี้</button>
+        </div>
+        <div class="hint">ออเดอร์ Shopee ดูเลขที่ในระบบได้จากชีท <b>นำเข้า Shopee</b> คอลัมน์ E</div>
+      </div>
+
+      <div class="card">
+        <div class="fld"><label>เฉพาะ SKU (เว้นว่าง = ทุกตัว)</label><input id="mv-sku"></div>
+        <div class="two">
+          <div class="fld"><label>ตั้งแต่วันที่</label><input id="mv-from" type="date"></div>
+          <div class="fld"><label>ถึงวันที่</label><input id="mv-to" type="date"></div>
+        </div>
+        <button class="mini" id="mv-go" style="width:100%">ดูประวัติ</button>
+      </div>
+      <div class="card"><div id="mv-list"></div></div>
+    </div>
+  </section>
+</div>
+
+<div class="tabs">
+  <button data-s="board" class="on"><em>▣</em>สต๊อก</button>
+  <button data-s="imp"><em>⇩</em>นำเข้า</button>
+  <button data-s="map"><em>⇄</em>จับคู่ SKU</button>
+  <button data-s="moves"><em>▤</em>ประวัติ</button>
+</div>
+
+<div class="modal" id="modal"><div class="sheet">
+  <div class="m-hd"><h3 id="m-title"></h3><button class="m-x" id="m-close" aria-label="ปิด">✕</button></div>
+  <div id="m-body"></div>
+</div></div>
+<div id="toast"></div>
+
+<?!= include_('Core'); ?>
+
+<script>
+var STAFF_EMAIL = "<?= staffEmail ?>";
+</script>
+
+<?!= include_('Assets'); ?>
+<?!= include_('Stock'); ?>
+
+</body>
+</html>

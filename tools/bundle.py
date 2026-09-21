@@ -21,7 +21,7 @@ GS = ROOT / "apps-script"
 
 # เรียงตามลำดับที่อ่านแล้วเข้าใจง่าย — Apps Script ไม่สนลำดับ ฟังก์ชันถูก hoist หมด
 SERVER = ["Sheets.gs", "Fefo.gs", "Doc.gs", "Setup.gs", "Api.gs", "Acct.gs", "Pay.gs",
-          "Pub.gs", "Import.gs"]
+          "Pub.gs", "Import.gs", "Shopee.gs", "Stock.gs", "ShopeeApi.gs"]
 
 # ก้อนย่อยของไฟล์1 สำหรับเครื่องที่เปิดไฟล์ 650 KB ไม่ไหว
 #
@@ -35,6 +35,7 @@ SPLIT = [
     ("1b", ["Api.gs"]),
     ("1c", ["Setup.gs"]),
     ("1d", ["Pay.gs", "Pub.gs"]),
+    ("1e", ["Shopee.gs", "Stock.gs", "ShopeeApi.gs"]),
 ]
 
 
@@ -76,25 +77,32 @@ def main():
             old.unlink()
             print("  ลบไฟล์ชื่อเก่าที่ค้างอยู่: %s" % stale)
 
-    # ---- Index.html ----
-    index = (GS / "Index.html").read_text(encoding="utf-8")
-
+    # ---- Index.html · StockIndex.html ----
+    # สองแอปเสิร์ฟจากโปรเจกต์เดียว แต่เป็นคนละไฟล์เปลือก ต้องรวมคนละก้อน
+    # ถ้ารวมแต่ Index.html เจ้าของร้านจะได้แอปคีย์ออเดอร์อย่างเดียว
+    # แล้วลิงก์ ?app=stock จะขึ้นว่าหาไฟล์ StockIndex ไม่เจอ
     def sub(m):
         name = m.group(1)
         return ("\n<!-- ==================== %s ==================== -->\n%s"
                 % (name, (GS / (name + ".html")).read_text(encoding="utf-8")))
 
-    page, n = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub, index)
-    if n == 0:
-        sys.exit("ไม่เจอ include_() ใน Index.html — โครงไฟล์เปลี่ยนไป")
     # หมายเหตุต้องอยู่ "หลัง" <!DOCTYPE html> — อะไรก็ตามที่มาก่อนหัวเอกสาร
     # ทำให้เบราว์เซอร์เก่าตกไปโหมด quirks แล้วหน้าจอเพี้ยน
     note = ("\n<!-- สร้างจาก apps-script/ ด้วย tools/bundle.py — อย่าแก้ที่นี่\n"
             "     แก้ที่ไฟล์ต้นฉบับแล้วสั่ง bundle ใหม่ -->")
-    page, k = re.subn(r"<!DOCTYPE html>", lambda m: m.group(0) + note, page, count=1)
-    if not k:
-        sys.exit("ไม่เจอ <!DOCTYPE html> ใน Index.html — หัวเอกสารหายไป")
-    (out / "Index.html").write_text(page, encoding="utf-8")
+
+    counts = {}
+    for shell in ("Index.html", "StockIndex.html"):
+        page, cnt = re.subn(r"<\?!=\s*include_\('(\w+)'\);?\s*\?>", sub,
+                            (GS / shell).read_text(encoding="utf-8"))
+        if cnt == 0:
+            sys.exit("ไม่เจอ include_() ใน %s — โครงไฟล์เปลี่ยนไป" % shell)
+        page, k = re.subn(r"<!DOCTYPE html>", lambda m: m.group(0) + note, page, count=1)
+        if not k:
+            sys.exit("ไม่เจอ <!DOCTYPE html> ใน %s — หัวเอกสารหายไป" % shell)
+        (out / shell).write_text(page, encoding="utf-8")
+        counts[shell] = cnt
+    n = counts["Index.html"]
 
     # ---- appsscript.json ----
     (out / "appsscript.json").write_text(
@@ -106,7 +114,7 @@ def main():
     # ไฟล์ที่ค้างรุ่นเก่าคือไฟล์ที่วางไปแล้วไม่มีอะไรเปลี่ยน แล้วไม่มีใครรู้ว่าทำไม
     HAND = [("1-Code.txt", "Code.gs"), ("2-Index.txt", "Index.html"),
             ("3-appsscript.txt", "appsscript.json"), ("4-Pub.txt", "Pub.html"),
-            ("5-Backup.txt", "Backup.gs")]
+            ("5-Backup.txt", "Backup.gs"), ("6-StockIndex.txt", "StockIndex.html")]
     for txt, src in HAND:
         (out.parent / txt).write_text((out / src).read_text(encoding="utf-8"),
                                       encoding="utf-8")
@@ -158,6 +166,8 @@ def main():
     print("รวมไฟล์เสร็จ → %s" % out)
     print("  Code.gs          %7.0f KB  (รวม %d ไฟล์: %s)" % (kb(out / "Code.gs"), len(SERVER), ", ".join(SERVER)))
     print("  Index.html       %7.0f KB  (รวมหน้าจอ %d ส่วน)" % (kb(out / "Index.html"), n))
+    print("  StockIndex.html  %7.0f KB  (รวมหน้าจอ %d ส่วน)"
+          % (kb(out / "StockIndex.html"), counts["StockIndex.html"]))
     print("  appsscript.json  %7.1f KB" % kb(out / "appsscript.json"))
     print("  ไฟล์สำหรับก๊อปไปวาง → %s" % out.parent)
     for txt, src in HAND:

@@ -245,6 +245,20 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
   var log = mk('Log', 10, 305);
   log.setFormulaDown(1, DATA_ROW, 304, '=calc');
 
+  /* จับคู่SKU / นำเข้า Shopee — สองชีทของส่วนนำเข้า Shopee */
+  var map = mk('จับคู่SKU', 9, 506);
+  [1, 7, 8].forEach(function (c) { map.setFormulaDown(c, DATA_ROW, 505, '=mapcalc'); });
+  (opts.skuMap || []).forEach(function (m, i) {
+    var r = DATA_ROW + i;
+    map.cell(r, 2).v = m.code || '';
+    map.cell(r, 3).v = m.name || '';
+    map.cell(r, 4).v = m.variant || '';
+    map.cell(r, 5).v = m.sku;
+    map.cell(r, 6).v = m.mult === undefined ? 1 : m.mult;
+  });
+  var imp = mk('นำเข้า Shopee', 11, 10006);
+  imp.setFormulaDown(1, DATA_ROW, 10005, '=impcalc');
+
   /* ล็อตสินค้า / ตัดล็อต */
   var lot = mk('ล็อตสินค้า', 13, 1006);
   [1, 3, 8, 9, 10, 12, 13].forEach(function (c) { lot.setFormulaDown(c, DATA_ROW, 1005, '=lotcalc'); });
@@ -570,6 +584,13 @@ function load(fixture, opts) {
         throw new Error('formatDate: ยังไม่ได้ทำรูปแบบ ' + fmt);
       },
       base64Decode: function (b64) { return Buffer.from(String(b64), 'base64'); },
+      /* ลายเซ็น Shopee ทดสอบได้จริงใน node — crypto ของ node ให้ผลเดียวกับของจริง */
+      computeHmacSha256Signature: function (value, key) {
+        var mac = require('crypto').createHmac('sha256', key).update(String(value)).digest();
+        var out = [];
+        for (var i = 0; i < mac.length; i++) out.push(mac[i] > 127 ? mac[i] - 256 : mac[i]);
+        return out;
+      },
       base64Encode: function (bytes) { return Buffer.from(bytes).toString('base64'); },
       /* zip จริง แบบไม่บีบอัด (store) — พอให้ไฟล์ .xlsx ที่ออกมาเปิดได้จริง
          ถ้าจำลองแบบขอไปที ข้อสอบจะผ่านทั้งที่ไฟล์ที่ส่งให้บัญชีเปิดไม่ขึ้น */
@@ -616,6 +637,9 @@ function load(fixture, opts) {
       }
     },
     Logger: { log: function () {} },
+    UrlFetchApp: {
+      fetch: function () { throw new Error('ชีทจำลองไม่ยิงเน็ตจริง'); }
+    },
     CacheService: {
       getScriptCache: cacheStub_,
       getUserCache: cacheStub_
@@ -631,8 +655,8 @@ function load(fixture, opts) {
   var dir = path.join(__dirname, '..', 'apps-script');
   /* Doc.gs ต้องโหลดด้วย ไม่งั้น issueDoc/voidDoc เรียก docType_ ไม่เจอ
      ทะเบียนเอกสารเป็นของที่แก้ทีหลังไม่ได้ จึงต้องมีข้อสอบคุมเหมือนส่วนอื่น */
-  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs', 'Pay.gs',
-    'Pub.gs'];
+  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Shopee.gs', 'Setup.gs', 'Api.gs', 'Acct.gs',
+    'Pay.gs', 'Pub.gs', 'Stock.gs', 'ShopeeApi.gs'];
   /* BUNDLE=1 = สอบไฟล์ที่รวมแล้วแทนไฟล์ต้นฉบับ
      ไฟล์ที่เอาไปวางใน Apps Script จริงคือไฟล์ที่รวมแล้ว ถ้าตัวรวมทำอะไรพัง
      ข้อสอบที่อ่านแต่ต้นฉบับจะผ่านหมดโดยที่ของจริงใช้ไม่ได้ */
