@@ -219,6 +219,18 @@ function build(opts) {
   /* สต๊อกคงเหลือ — สูตรล้วน */
   var stock = mk('สต๊อกคงเหลือ', 15, 151);
   for (var sc = 1; sc <= 15; sc++) stock.setFormulaDown(sc, DATA_ROW, 150, '=calc');
+  /* ช่อง F (รับเข้า) กับ G (ปรับลด) เป็นสูตรของเจ้าของร้าน โปรเจกต์นี้ไม่ได้เขียน
+     (STOCK_ROW6 ใน Setup.gs ไม่มีคอลัมน์ 6 7 8 เลย) ชีทจำลองจึงต้องมีสูตรหน้าตาแบบนั้น
+     และตอนคิดยอดต้องเคารพคำในสูตรด้วย ไม่ใช่นับทุกอย่างที่ไม่ใช่ปรับลดเป็นรับเข้า
+     — ของจริงร้านนี้เจอว่าสูตรไม่ได้นับคำว่า "ปรับเพิ่ม" ลงไปเท่าไรยอดก็ไม่ขึ้น */
+  stock.setFormulaDown(6, DATA_ROW, 150,
+    '=IF($B6="","",SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"ซื้อเข้า")+SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"ปรับเพิ่ม")+SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"คืนจากลูกค้า"))');
+  stock.setFormulaDown(7, DATA_ROW, 150,
+    '=IF($B6="","",SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"ปรับลด"))');
   demo.forEach(function (p, i) {
     var r = DATA_ROW + i;
     stock.cell(r, 2).v = p.sku;
@@ -334,14 +346,39 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
        ของเดิมชีทจำลองตั้งคงเหลือเป็นเลขนิ่ง 1000 ไว้เฉย ๆ ไม่เคยคิดจากเอกสารเลย
        ตัวที่เขียนแถว รับเข้า แล้วหวังให้ยอดขยับจึงทดสอบอะไรไม่ได้ — ผ่านทุกครั้ง
        เพราะไม่มีอะไรขยับตั้งแต่แรก ไม่ใช่เพราะโค้ดถูก */
+    /* อ่านคำจากสูตรช่อง F/G แล้วนับตามนั้น เหมือนที่ Google Sheets ทำกับ SUMIFS จริง
+       ประเภทที่ไม่มีคำไหนในสูตรตรงเลย จะไม่ถูกนับทั้งสองฝั่ง ซึ่งคือพฤติกรรมจริง
+       และคือเหตุที่ยอดไม่ขยับทั้งที่ลงแถวไปแล้ว */
+    function fxWords(f) {
+      var out = [], m, re = /"([^"]*)"/g, t = String(f || '');
+      while ((m = re.exec(t)) !== null) {
+        var w = m[1].trim();
+        if (!w || /^[<>=!]+$/.test(w) || /^[A-Za-z]{1,3}\d+$/.test(w)) continue;
+        if (out.indexOf(w) < 0) out.push(w);
+      }
+      return out;
+    }
+    var upWords = fxWords(stock.cell(DATA_ROW, 6).f);
+    var dnWords = fxWords(stock.cell(DATA_ROW, 7).f);
+    function hits(words, t) {
+      for (var q = 0; q < words.length; q++) if (t.indexOf(words[q]) > -1) return true;
+      return false;
+    }
+
     var gotBy = {}, adjBy = {}, soldBy = {};
     for (var vr = DATA_ROW; vr <= 400; vr++) {
       var vsku = recv.cell(vr, 6).v;
       if (!vsku) continue;
       var vq = Number(recv.cell(vr, 8).v || 0);
       var vt = String(recv.cell(vr, 4).v || '');
-      if (vt.indexOf('ปรับลด') > -1) adjBy[vsku] = (adjBy[vsku] || 0) + vq;
-      else gotBy[vsku] = (gotBy[vsku] || 0) + vq;
+      if (!upWords.length && !dnWords.length) {
+        if (vt.indexOf('ปรับลด') > -1) adjBy[vsku] = (adjBy[vsku] || 0) + vq;
+        else gotBy[vsku] = (gotBy[vsku] || 0) + vq;
+      } else if (hits(dnWords, vt)) {
+        adjBy[vsku] = (adjBy[vsku] || 0) + vq;
+      } else if (hits(upWords, vt)) {
+        gotBy[vsku] = (gotBy[vsku] || 0) + vq;
+      }
     }
     for (var xr = DATA_ROW; xr <= itemLimit; xr++) {
       var xsku = item.cell(xr, 4).v;

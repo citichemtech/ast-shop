@@ -215,6 +215,45 @@ function readProducts_(skipStock) {
   return out;
 }
 
+/**
+ * คำที่สูตรของชีท สต๊อกคงเหลือ นับเข้าช่อง "รับเข้า" กับช่อง "ปรับลด" จริง ๆ
+ *
+ * ทำไมต้องอ่านสูตร: ชีทเป็นของเจ้าของร้าน เราไม่ได้เป็นคนเขียนสูตรนั้น
+ * และห้ามไปแก้ด้วย คำที่ดรอปดาวน์มีให้เลือก กับคำที่สูตรนับ ไม่จำเป็นต้องตรงกัน
+ * ของจริงที่เจอ: ดรอปดาวน์มี "ปรับเพิ่ม" แต่สูตรช่องรับเข้าไม่ได้นับคำนั้น
+ * ลงไปเท่าไรยอดก็ไม่ขึ้น ด่านตรวจถอยคืนทุกครั้ง นับสต๊อกจึงทำไม่ได้เลย
+ *
+ * วิธีที่ถูกคือถามชีทว่า "แกนับคำไหน" แล้วใช้คำนั้น ไม่ใช่เดาจากชื่อที่ดูเข้าท่า
+ * อ่านไม่ออก (สูตรเขียนคนละแบบ) คืนชุดว่าง ให้คนเรียกถอยไปใช้ค่าเดาเหมือนเดิม
+ */
+function stockTypeWords_() {
+  var out = { up: [], down: [] };
+  try {
+    var s = sheet_('stock');
+    /* F = รับเข้า · G = ปรับลด ตามที่ checkLotStock อ่านอยู่แล้ว */
+    var f = s.getRange(DATA_ROW, 6, 1, 2).getFormulas()[0];
+    out.up = formulaWords_(f[0]);
+    out.down = formulaWords_(f[1]);
+  } catch (e) {
+    Logger.log('อ่านสูตรชีทสต๊อกไม่ได้: ' + e.message);
+  }
+  return out;
+}
+
+/** คำในเครื่องหมายคำพูดของสูตร — ตัดตัวที่เป็นที่อยู่ช่องหรือเครื่องหมายเปรียบเทียบทิ้ง */
+function formulaWords_(formula) {
+  var t = String(formula || '');
+  var out = [], m, re = /"([^"]*)"/g;
+  while ((m = re.exec(t)) !== null) {
+    var w = m[1].trim();
+    if (!w) continue;
+    if (/^[<>=!]+$/.test(w)) continue;          // ">" "<=" ฯลฯ
+    if (/^[A-Za-z]{1,3}\d+$/.test(w)) continue;  // ที่อยู่ช่องอย่าง B6
+    if (out.indexOf(w) < 0) out.push(w);
+  }
+  return out;
+}
+
 function readStock_() {
   var s = sheet_('stock');
   var last = s.getLastRow();
@@ -4242,8 +4281,14 @@ function countStock(payload) {
 
     var plan = planCount_(p, email);
     var lists = cfgLists_();
-    var upType = pickWord_(lists.recvType, ['ปรับเพิ่ม', 'รับเข้า', 'ซื้อ']);
-    var dnType = pickWord_(lists.recvType, ['ปรับลด']);
+
+    /* เลือกคำที่ "สูตรของชีทนับจริง" ไม่ใช่คำที่เราคิดว่าน่าจะใช่
+       ของเดิมเลือก ปรับเพิ่ม เพราะมีในดรอปดาวน์ แต่สูตรช่องรับเข้าของชีทนี้
+       ไม่ได้นับคำนั้น ยอดจึงไม่ขึ้นตาม แล้วด่านตรวจก็ถอยคืนทุกครั้ง
+       — นับสต๊อกจึงทำไม่สำเร็จสักที โดยไม่มีอะไรบอกว่าติดตรงไหน */
+    var fx = stockTypeWords_();
+    var upType = pickStockType_(lists.recvType, ['ปรับเพิ่ม', 'รับเข้า', 'ซื้อ'], fx.up);
+    var dnType = pickStockType_(lists.recvType, ['ปรับลด'], fx.down);
     if (!dnType) {
       throw new Error('ชีท ' + SH.cfg.name + ' ไม่มีประเภท "ปรับลด" ให้เลือก ' +
         '— ลดยอดไม่ได้เลยถ้าไม่มีคำนี้ ต้องเติมในชีทก่อน');
@@ -4347,6 +4392,39 @@ function countStock(payload) {
 }
 
 /** หาคำแรกในรายการของชีทที่ตรงกับคำที่อยากได้ — ไม่ฮาร์ดโค้ด เพราะร้านแก้ชีทเองได้ */
+/**
+ * เลือกประเภทที่จะลงในชีท รับเข้า ให้สูตรของชีทสต๊อกนับให้จริง
+ *
+ * ลำดับการเลือก
+ *   1. คำที่เราชอบ และสูตรนับด้วย        ← ปกติได้ตัวนี้
+ *   2. คำอะไรก็ได้ที่สูตรนับ              ← สูตรของร้านนี้ใช้คำอื่น
+ *   3. คำที่เราชอบ โดยไม่สนสูตร           ← อ่านสูตรไม่ออก ถอยไปใช้ค่าเดาเหมือนเดิม
+ *
+ * ข้อ 2 คือหัวใจ — ของเดิมมีแต่ข้อ 1 กับ 3 พอสูตรของร้านไม่ได้นับคำที่เราชอบ
+ * ยอดก็ไม่ขยับ ด่านตรวจถอยคืนทุกครั้ง แล้วนับสต๊อกทำไม่สำเร็จเลยสักที
+ */
+function pickStockType_(types, prefer, counted) {
+  counted = counted || [];
+  function counts(word) {
+    for (var c = 0; c < counted.length; c++) {
+      if (String(counted[c]).indexOf(word) > -1 || word.indexOf(String(counted[c])) > -1) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (counted.length) {
+    for (var i = 0; i < prefer.length; i++) {
+      if (!counts(prefer[i])) continue;
+      var hit = pickWord_(types, [prefer[i]]);
+      if (hit) return hit;
+    }
+    var any = pickWord_(types, counted);
+    if (any) return any;
+  }
+  return pickWord_(types, prefer);
+}
+
 function pickWord_(list, wants) {
   list = list || [];
   for (var w = 0; w < wants.length; w++) {

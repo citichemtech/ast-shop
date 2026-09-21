@@ -3020,3 +3020,65 @@ function setupProdTagCol_(ss) {
     ? 'ฐานสินค้า มีคอลัมน์ ' + colLetter_(need) + ' ป้ายหน้าร้าน อยู่แล้ว'
     : 'เพิ่มคอลัมน์ ' + colLetter_(need) + ' ป้ายหน้าร้าน ให้ ฐานสินค้า แล้ว';
 }
+
+
+/**
+ * บอกว่าสูตรของชีท สต๊อกคงเหลือ นับ "ประเภท" ไหนเข้าช่องไหน
+ *
+ * ทำไมต้องมี: ดรอปดาวน์ในชีท ตั้งค่า กับสูตรในชีท สต๊อกคงเหลือ เป็นคนละที่กัน
+ * เลือกประเภทที่มีในดรอปดาวน์ได้ ไม่ได้แปลว่าสูตรจะนับให้
+ * ของจริงที่เจอ 21 ก.ย. 69: นับสต๊อก SKU-134 ตั้งไว้ 2,500 แต่ชีทคิดออกมาเป็น −2
+ * เพราะสูตรช่องรับเข้าไม่ได้นับคำว่า "ปรับเพิ่ม" ลงไปเท่าไรยอดก็ไม่ขึ้น
+ *
+ * ระบบเลือกคำที่สูตรนับให้เองแล้ว ฟังก์ชันนี้มีไว้ดูว่าเลือกอะไร และมีคำไหนตกหล่น
+ */
+function checkStockTypes() {
+  requireStaff_();
+  var out = [];
+  var fx = stockTypeWords_();
+  var lists = cfgLists_();
+  var types = lists.recvType || [];
+
+  var s = sheet_('stock');
+  var f = s.getRange(DATA_ROW, 6, 1, 2).getFormulas()[0];
+
+  out.push('สูตรของชีท ' + SH.stock.name + ' แถว ' + DATA_ROW);
+  out.push('  ช่องรับเข้า (F) : ' + (f[0] || '(ไม่มีสูตร)'));
+  out.push('  ช่องปรับลด (G) : ' + (f[1] || '(ไม่มีสูตร)'));
+  out.push('');
+  out.push('คำที่สูตรนับจริง');
+  out.push('  เข้าช่องรับเข้า : ' + (fx.up.length ? fx.up.join(' · ') : '(อ่านไม่ออก)'));
+  out.push('  เข้าช่องปรับลด : ' + (fx.down.length ? fx.down.join(' · ') : '(อ่านไม่ออก)'));
+  out.push('');
+
+  out.push('ประเภทในดรอปดาวน์ของชีท ' + SH.cfg.name + ' (' + types.length + ' ตัว)');
+  var orphan = [];
+  for (var i = 0; i < types.length; i++) {
+    var t = String(types[i]);
+    var inUp = fx.up.some(function (w) { return t.indexOf(w) > -1 || w.indexOf(t) > -1 });
+    var inDn = fx.down.some(function (w) { return t.indexOf(w) > -1 || w.indexOf(t) > -1 });
+    var where = inUp ? 'นับเข้า "รับเข้า"' : (inDn ? 'นับเข้า "ปรับลด"' : '⚠ ไม่มีสูตรไหนนับเลย');
+    if (!inUp && !inDn) orphan.push(t);
+    out.push('  ' + t + '  →  ' + where);
+  }
+
+  out.push('');
+  var up = pickWord_(types, fx.up.concat(['ปรับเพิ่ม', 'รับเข้า', 'ซื้อ']));
+  var dn = pickWord_(types, fx.down.concat(['ปรับลด']));
+  out.push('ตอนนับสต๊อก ระบบจะใช้');
+  out.push('  เพิ่มยอด : ' + (up || '⚠ ไม่มีคำที่ใช้ได้เลย'));
+  out.push('  ลดยอด   : ' + (dn || '⚠ ไม่มีคำที่ใช้ได้เลย'));
+
+  if (orphan.length) {
+    out.push('');
+    out.push('⚠ ประเภทที่ลงไปแล้วยอดไม่ขยับ: ' + orphan.join(' · '));
+    out.push('  ลงประเภทพวกนี้ในชีท ' + SH.recv.name + ' ได้ แต่ ' + SH.stock.name +
+      ' จะไม่นับให้ ยอดคงเหลือจึงไม่เปลี่ยน');
+    out.push('  ถ้าตั้งใจให้นับ ต้องไปเติมคำนั้นในสูตรของชีท ' + SH.stock.name + ' เอง');
+    out.push('  (ระบบไม่แก้สูตรให้ เพราะสูตรเป็นของเจ้าของร้าน เดาผิดคือยอดทั้งชีทเพี้ยน)');
+  }
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
