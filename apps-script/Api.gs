@@ -216,6 +216,71 @@ function readProducts_(skipStock) {
 }
 
 /**
+ * กางหลักฐานให้ดูว่าเขียนอะไรลงไป และสูตรของชีทนับอะไร
+ *
+ * มีไว้ให้ข้อความ error ตอนนับสต๊อกไม่ผ่าน บอกได้พอที่จะลงมือแก้ต่อ
+ * ไม่ใช่บอกว่า "อาจจะเพราะ..." แล้วทิ้งให้ไปเดาเอง
+ */
+function countWhyDump_(plan, upType, dnType, wrRecv) {
+  var out = [];
+  out.push('ระบบลงอะไรไปในชีท ' + SH.recv.name);
+  for (var i = 0; i < plan.lines.length; i++) {
+    var L = plan.lines[i];
+    if (!L.diff) { out.push('  ' + L.sku + ' : ส่วนต่าง 0 ไม่ต้องลงแถว'); continue; }
+    out.push('  ' + L.sku + ' : ประเภท "' + (L.diff > 0 ? upType : dnType) +
+      '" จำนวน ' + Math.abs(L.diff) + ' (ยอดเดิม ' + L.was + ' → ' + L.counted + ')');
+  }
+  out.push('  รวม ' + wrRecv.length + ' แถว แถวที่ ' + (wrRecv.join(', ') || '-'));
+
+  var fx = stockTypeWords_();
+  out.push('');
+  out.push('สูตรของชีท ' + SH.stock.name + ' นับคำพวกนี้');
+  out.push('  ช่องรับเข้า : ' + (fx.up.length ? fx.up.join(' · ') : '(อ่านสูตรไม่ออก)'));
+  out.push('  ช่องปรับลด : ' + (fx.down.length ? fx.down.join(' · ') : '(อ่านสูตรไม่ออก)'));
+
+  /* แถวที่สูตรพัง (#REF!) คือกรณีที่เกิดจริงกับชีทนี้มาแล้ว ตอนลบแถวออกจาก ฐานสินค้า
+     แถวแบบนั้นจะนิ่งค้างตลอด ลงอะไรไปยอดก็ไม่ขยับ — ต้องฟ้องให้เห็น */
+  var broke = countBrokenRows_(plan.lines);
+  if (broke.length) {
+    out.push('');
+    out.push('⚠ แถวในชีท ' + SH.stock.name + ' ที่สูตรพังอยู่');
+    for (var b = 0; b < broke.length; b++) out.push('  ' + broke[b]);
+    out.push('  แถวที่สูตรขึ้น #REF! จะนิ่งค้างตลอด ลงอะไรไปยอดก็ไม่ขยับ');
+    out.push('  ต้องซ่อมสูตรแถวนั้นในชีทก่อน (ลากสูตรจากแถวที่ยังดีลงมาทับ)');
+  }
+  return out.join('\n');
+}
+
+/** แถวของ SKU พวกนี้ในชีทสต๊อก มีสูตรที่พังอยู่ไหม */
+function countBrokenRows_(lines) {
+  var out = [];
+  try {
+    var s = sheet_('stock');
+    var last = s.getLastRow();
+    if (last < DATA_ROW) return out;
+    var n = last - DATA_ROW + 1;
+    var want = {};
+    for (var i = 0; i < lines.length; i++) want[lines[i].sku] = 1;
+    var v = s.getRange(DATA_ROW, 1, n, SH.stock.remain).getValues();
+    var f = s.getRange(DATA_ROW, 1, n, SH.stock.remain).getFormulas();
+    for (var r = 0; r < n; r++) {
+      var sku = String(v[r][SH.stock.sku - 1] || '').trim();
+      if (!sku || !want[sku]) continue;
+      var hit = [];
+      for (var c = 0; c < f[r].length; c++) {
+        if (String(f[r][c]).indexOf('#REF!') > -1) hit.push(colLetter_(c + 1));
+      }
+      if (hit.length) {
+        out.push(sku + ' อยู่แถว ' + (DATA_ROW + r) + ' — สูตรพังที่คอลัมน์ ' + hit.join(', '));
+      }
+    }
+  } catch (e) {
+    Logger.log('ตรวจแถวสูตรพังไม่ได้: ' + e.message);
+  }
+  return out;
+}
+
+/**
  * คำที่สูตรของชีท สต๊อกคงเหลือ นับเข้าช่อง "รับเข้า" กับช่อง "ปรับลด" จริง ๆ
  *
  * ทำไมต้องอ่านสูตร: ชีทเป็นของเจ้าของร้าน เราไม่ได้เป็นคนเขียนสูตรนั้น
@@ -4355,9 +4420,12 @@ function countStock(payload) {
       }
     }
     if (bad.length) {
+      /* ข้อความนี้คือทั้งหมดที่คนอ่านจะได้เห็น — ต้องพอให้ลงมือแก้ได้เลย
+         ของเดิมบอกแค่ "สาเหตุที่เป็นไปได้" แล้วทิ้งให้ไปเดาเอง
+         ของจริงเจอว่าเจ้าของร้านลองซ้ำสองรอบ ได้เลขเดิมเป๊ะทั้งสองรอบ
+         ซึ่งเป็นเบาะแสว่าแถวที่ลงไปไม่ถูกนับเลย แต่ข้อความไม่ได้ช่วยให้เห็นเลย */
       throw new Error('ตั้งยอดแล้วชีทไม่ได้ยอดตามที่นับ — ถอยคืนให้หมดแล้ว ไม่แตะอะไรทั้งนั้น\n' +
-        bad.join('\n') + '\nสาเหตุที่เป็นไปได้: สูตรช่องรับเข้า/ปรับลด ของชีทไม่ได้นับ "' +
-        upType + '" หรือ "' + dnType + '" เข้าไปด้วย');
+        bad.join('\n') + '\n\n' + countWhyDump_(plan, upType, dnType, wrRecv));
     }
 
     var res = { ok: true, date: ymd_(plan.date), preview: countPreview_(plan),
