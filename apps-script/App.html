@@ -1067,7 +1067,12 @@ function renderOrders(){
     var dead = isDead(o);
     return '<div class="row"><div class="i">'
       + '<b>'+flagTag(o)+esc(o.cust||"ไม่ระบุชื่อ")+'</b>'
-      +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))+' · '+chanTag(o.channel)
+      /* เวลาที่คีย์ต่อท้ายวันที่ — ออเดอร์เก่าที่ยังไม่มีเวลา จะไม่ขึ้นอะไรเพิ่ม
+         ว่างคือไม่รู้ ไม่ใช่เที่ยงคืน จึงไม่เติมเลขมั่ว ๆ ให้ดูเหมือนรู้ */
+      +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))
+      + (o.keyedAt ? ' <b style="color:var(--gray);font-weight:600">'
+          + esc(o.keyedAt) + ' น.</b>' : '')
+      + ' · '+chanTag(o.channel)
       + (o.track?' · '+esc(o.track):'')+'</span><br>'
       +'<span style="color:var(--ink);font-weight:700">'+baht(o.net)+'</span> '
       +'<span class="tag '+statusTag(o.status)+'">'+esc(o.status||"-")+'</span>'

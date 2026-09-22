@@ -176,6 +176,23 @@ function getBootstrap() {
  * (หน้าแก้ข้อมูลร้านเป็นตัวอย่าง — ต้องการแค่ชื่อ ราคา รูป)
  * ชีทสต๊อกเป็นสูตรทั้งใบ อ่านทีหนึ่งกินเวลาพอ ๆ กับอ่านฐานสินค้าทั้งชีท
  */
+/**
+ * เวลาจากช่องวันเวลา เอาแค่ ชม.:นาที
+ *
+ * ชีทคืนค่ามาเป็น Date ถ้าช่องตั้งรูปแบบเป็นวันเวลา แต่ถ้าเคยถูกพิมพ์ทับด้วยมือ
+ * จะได้เป็นข้อความ จึงรับทั้งสองแบบ อ่านไม่ออกคืนค่าว่าง ไม่เดาเป็นเที่ยงคืน
+ */
+function hhmm_(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, tz_(), 'HH:mm');
+  }
+  var t = String(v == null ? '' : v).trim();
+  if (!t) return '';
+  var m = /(\d{1,2}):(\d{2})/.exec(t);
+  if (!m) return '';
+  return ('0' + m[1]).slice(-2) + ':' + m[2];
+}
+
 function readProducts_(skipStock) {
   var rows = readAll_('prod');
   var stock = skipStock ? {} : readStock_();
@@ -539,6 +556,8 @@ function readOrders_(opts) {
            กำไรที่ชีทคิดในช่อง P ยังไม่ได้หักสองก้อนนี้ หน้าจอจึงต้องเห็นเพื่อหักเอง */
         fee: Number(hcell(hv[i], SH.head.IN.fee) || 0),
         shipCost: Number(hcell(hv[i], SH.head.IN.shipCost) || 0),
+        /* ว่าง = ออเดอร์เก่าที่คีย์ก่อนมีช่องนี้ หน้าจอต้องไม่โชว์เวลามั่ว ๆ แทน */
+        keyedAt: hhmm_(hcell(hv[i], SH.head.IN.keyedAt)),
         items: []
       };
 
@@ -3527,7 +3546,10 @@ function commitOrder_(plan) {
       tel: plan.tel, addr: plan.addr, carrier: plan.carrier, track: plan.track,
       vat: plan.vat, discount: plan.discount, ship: plan.ship,
       status: plan.status, staff: plan.staff, note: plan.note,
-      fee: plan.fee, shipCost: plan.shipCost
+      fee: plan.fee, shipCost: plan.shipCost,
+      /* เวลาที่กดบันทึกจริง ระบบเขียนเอง ไม่รับจากฝั่งหน้าจอ
+         ถ้ารับจากหน้าจอ เวลาจะเป็นของนาฬิกาเครื่องที่คีย์ ซึ่งเพี้ยนได้และแก้ได้ */
+      keyedAt: new Date()
     });
     written.head = hRow;
   }

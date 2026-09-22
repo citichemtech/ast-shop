@@ -3835,6 +3835,53 @@ var over60 = [];
 for (var nm60 in fx60.sheets) over60 = over60.concat(fx60.sheets[nm60].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over60, []);
 
+/* -------------------------------------------- 60ข. เวลาที่คีย์เข้าระบบ */
+console.log('\n60ข. เวลาที่คีย์เข้าระบบ — คนละช่องกับวันที่ของออเดอร์');
+var fx60t = FS.build();
+var api60t = FS.load(fx60t);
+var head60t = fx60t.sheets['ออเดอร์_หัวบิล'];
+var C60t = api60t.SH.head.IN;
+
+var before60t = new Date();
+var r60t = api60t.createOrder({
+  clientKey: 'kt-1', date: '2026-09-01', channel: 'หน้าร้าน', cust: 'ลูกค้าทดสอบ',
+  tel: '0812345678', addr: 'ที่อยู่ทดสอบ 10000', staff: 'เอ๋',
+  items: [{ sku: 'SKU-141', qty: 1 }]
+});
+truthy2('บันทึกออเดอร์ผ่าน', r60t.ok === true);
+
+var row60t = 0;
+for (var q60 = DATA_ROW; q60 <= 400; q60++) {
+  if (String(head60t.cell(q60, C60t.no).v || '') === r60t.no) { row60t = q60; break; }
+}
+truthy2('เจอแถวของออเดอร์', row60t > 0);
+var at60t = head60t.cell(row60t, C60t.keyedAt).v;
+truthy2('ช่องเวลาที่คีย์ถูกเขียนเป็นวันเวลาจริง', at60t instanceof Date);
+truthy2('และเป็นเวลาตอนกดบันทึก ไม่ใช่วันที่ของออเดอร์',
+  at60t.getTime() >= before60t.getTime() - 2000);
+truthy2('วันที่ของออเดอร์ยังเป็นวันที่คนคีย์เลือก ไม่ถูกทับด้วยเวลาปัจจุบัน',
+  String(head60t.cell(row60t, C60t.date).v).indexOf('2026-09-01') > -1 ||
+  (head60t.cell(row60t, C60t.date).v instanceof Date &&
+   head60t.cell(row60t, C60t.date).v.getMonth() === 8));
+
+var got60t = api60t.getOrders().filter(function (o) { return o.no === r60t.no })[0];
+truthy2('อ่านกลับมาได้เป็น ชม.:นาที', /^\d{2}:\d{2}$/.test(got60t.keyedAt));
+
+/* ออเดอร์เก่าที่ยังไม่มีเวลา ต้องได้ค่าว่าง ไม่ใช่เที่ยงคืน */
+head60t.cell(row60t, C60t.keyedAt).v = '';
+var old60t = api60t.getOrders().filter(function (o) { return o.no === r60t.no })[0];
+eq('ช่องว่าง = ไม่รู้เวลา ไม่ใช่ 00:00', old60t.keyedAt, '');
+head60t.cell(row60t, C60t.keyedAt).v = '22/09/2569 10:23';
+var txt60t = api60t.getOrders().filter(function (o) { return o.no === r60t.no })[0];
+eq('ช่องที่ถูกพิมพ์ทับเป็นข้อความ ก็ยังอ่านเวลาออก', txt60t.keyedAt, '10:23');
+head60t.cell(row60t, C60t.keyedAt).v = 'อะไรก็ไม่รู้';
+var bad60t = api60t.getOrders().filter(function (o) { return o.no === r60t.no })[0];
+eq('อ่านไม่ออกคืนค่าว่าง ไม่เดา', bad60t.keyedAt, '');
+
+var over60t = [];
+for (var n60 in fx60t.sheets) over60t = over60t.concat(fx60t.sheets[n60].overwrittenFormulas);
+eq('เพิ่มช่องเวลาแล้วไม่มีช่องสูตรถูกเขียนทับ', over60t, []);
+
 /* -------------------------------------------- 61. นับสต๊อกตั้งต้น */
 console.log('\n61. นับสต๊อกตั้งต้น — ของที่ขายไปก่อนมีแอปไม่มีประวัติให้กู้');
 /* เจ้าของร้านชี้เอง: "ของพวกนี้ขายมาก่อนทำแอปเสร็จ การไปตัดออเดอร์เก่าคงไม่ใช่ทาง

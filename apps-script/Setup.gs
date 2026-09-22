@@ -2193,7 +2193,10 @@ function setupAccounting_(ss) {
     /* เงินที่แพลตฟอร์มหักไปก่อนโอนเข้าร้าน — เป็นรายจ่ายของร้าน ไม่ใช่ส่วนลดลูกค้า
        จึงห้ามเอาไปลดยอดขายหรือยอดในใบกำกับภาษี ต้องอยู่คนละช่องกันคนละเรื่อง */
     { col: C.fee, head: 'ค่าธรรมเนียม\nแพลตฟอร์ม', width: 120 },
-    { col: C.shipCost, head: 'ค่าส่งที่ร้าน\nออกเอง', width: 110 }
+    { col: C.shipCost, head: 'ค่าส่งที่ร้าน\nออกเอง', width: 110 },
+    /* คนละช่องกับ "วันที่" (B) ซึ่งเป็นวันของออเดอร์ที่คนคีย์เลือกเอง ย้อนหลังได้
+       ช่องนี้ระบบเขียนเองตอนกดบันทึก ใช้ตอบว่าใบนี้เข้ามาตอนกี่โมง */
+    { col: C.keyedAt, head: 'เวลาที่คีย์\nเข้าระบบ', width: 140, fmt: 'dd/mm/yyyy HH:mm' }
   ];
 
   var need = SH.head.width;
@@ -2209,6 +2212,10 @@ function setupAccounting_(ss) {
       .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
       .setVerticalAlignment('middle').setWrap(true);
     s.setColumnWidth(cols[i].col, cols[i].width);
+    if (cols[i].fmt) {
+      var n = Math.max(1, s.getMaxRows() - DATA_ROW + 1);
+      s.getRange(DATA_ROW, cols[i].col, n, 1).setNumberFormat(cols[i].fmt);
+    }
   }
 
   /* รายการตัวเลือกไปอยู่ในชีท ตั้งค่า ที่เดียวกับ dropdown ชุดอื่น

@@ -101,7 +101,7 @@ BOOT = {
 }
 
 ORDERS = [{
-    "no": "AST-26-0005", "date": "2026-08-28", "channel": "เพจ Facebook",
+    "no": "AST-26-0005", "date": "2026-08-28", "keyedAt": "14:07", "channel": "เพจ Facebook",
     "cust": "ลูกค้าตัวอย่าง ก", "tel": "0800000000",
     "addr": "1/2 ถ.ตัวอย่าง\nต.ในเมือง อ.เมือง\nเชียงใหม่ 50000",
     "carrier": "Flash Express", "track": "TH0000000001", "vat": "ไม่รับ VAT",

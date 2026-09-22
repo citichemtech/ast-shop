@@ -4748,6 +4748,17 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ส่งขนส่งที่เลือกไปด้วย', accSent.p.carrier, 'Flash Express');
   eq('ตอนนี้ไม่มีใบรออยู่แล้ว', await page.locator('[data-acc]').count(), 0);
 
+  console.log('\n20ข. เวลาที่คีย์ขึ้นในรายการออเดอร์');
+  await page.locator('.tabs button[data-go="list"]').click();
+  await page.waitForTimeout(700);
+  /* ข้อก่อนหน้าเปลี่ยนชุดออเดอร์ไปแล้ว ติดเวลาให้ใบแรกเองแล้ววาดใหม่ */
+  await page.evaluate(() => { ORDERS[0].keyedAt = '14:07'; renderOrders(); });
+  await page.waitForTimeout(400);
+  var txt20b = await page.locator('#list').innerText();
+  truthy('ใบที่มีเวลาที่คีย์ โชว์เวลาต่อท้ายวันที่', /14:07 น\./.test(txt20b));
+  eq('ใบที่ไม่มีเวลา ไม่ขึ้นเวลามั่ว ๆ ให้',
+     (txt20b.match(/ น\./g) || []).length, 1);
+
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 

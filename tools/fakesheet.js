@@ -241,7 +241,7 @@ function build(opts) {
   /* กว้างเท่า SH.head.width จริง — ชีทของจริงถูก setup ขยายให้ครบแล้ว
    ชีทจำลองแคบกว่าเมื่อไร ช่องท้าย ๆ จะอ่านกลับมาเป็น 0 เงียบ ๆ
    แล้วข้อสอบจะผ่านทั้งที่เขียนลงไปแล้วอ่านไม่เจอ */
-var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
+var head = mk('ออเดอร์_หัวบิล', 27, headLimit + 1);
   [10, 13, 14, 15, 16, 18, 21].forEach(function (c) {
     head.setFormulaDown(c, DATA_ROW, headLimit, '=headcalc');
   });
@@ -620,6 +620,7 @@ function load(fixture, opts) {
           return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
             p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
         }
+        if (fmt === 'HH:mm') { return p(d.getHours()) + ':' + p(d.getMinutes()); }
         if (fmt === 'd/M/yyyy HH:mm') {
           return d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear() +
             ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
