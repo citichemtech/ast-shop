@@ -309,6 +309,16 @@ stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M9 5l7 
 .edgroup{background:#e8f3ff;border-radius:18px;padding:12px;margin:14px 0}
 .edgroup .edmenu button{border-color:#fff;box-shadow:0 1px 5px rgba(20,50,100,.07)}
 
+.edlink{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;
+  background:#f4f8ff;border:1px solid #dae7fb;margin-bottom:9px}
+.edlink .t{flex:1;min-width:0}
+.edlink b{display:block;font-size:0.9rem;font-weight:700;color:#123a7a}
+.edlink .u{font-size:0.7rem;color:var(--gray);word-break:break-all;line-height:1.4;margin-top:2px}
+.edlink .go{flex:none;border:0;border-radius:10px;background:var(--blue);color:#fff;
+  padding:9px 13px;font-size:0.8rem;font-weight:700}
+.edlink .cp{flex:none;border:1px solid var(--line);border-radius:10px;background:#fff;
+  color:var(--ink);padding:9px 11px;font-size:0.8rem;font-weight:700}
+
 .edfoot{margin-top:16px;text-align:center;padding:18px 12px 6px;
   border-radius:18px;background:linear-gradient(180deg,#f7fbff,#e8f3ff)}
 .edfoot .slog{font-size:0.95rem;font-style:italic;color:#2f6ab5;line-height:1.35}
@@ -862,6 +872,11 @@ stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M9 5l7 
           <span class="ic"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg></span>
           <span class="tx"><b>ไฟล์ต่างๆ</b>
             <em>เอกสาร · แบบฟอร์ม · เทมเพลต</em></span></button>
+      </div>
+
+      <div class="card" id="ed-links" style="margin-top:14px">
+        <div class="sec-hd"><h2>ลิงก์หน้าร้าน</h2></div>
+        <div id="ed-links-bd"><div class="load">กำลังโหลด…</div></div>
       </div>
 
       <div class="edfoot">

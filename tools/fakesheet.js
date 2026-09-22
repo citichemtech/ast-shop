@@ -664,6 +664,15 @@ function load(fixture, opts) {
       newBlob: function (data, type, name) { return blob_(data, type, name, opts); }
     },
     DriveApp: drive.app,
+    /* ลิงก์ของ deploy ที่กำลังเปิดอยู่ — ใช้ทำลิงก์ "ดูหน้าร้านเอง"
+       ห้ามเอาไปใช้เป็นลิงก์ของลูกค้า มีข้อสอบคุมเรื่องนี้ไว้ */
+    ScriptApp: {
+      getService: function () {
+        return { getUrl: function () {
+          return 'https://script.google.com/macros/s/STAFFDEPLOY/exec';
+        } };
+      }
+    },
     LockService: {
       getScriptLock: function () {
         return {

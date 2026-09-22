@@ -6184,7 +6184,53 @@ function edInit(){
   var b = (typeof SHOP_LOGO !== "undefined" && SHOP_LOGO) ? SHOP_LOGO : "";
   if(a) $("#ed-ic1").innerHTML = '<img src="'+a+'" alt="">';
   if(b || a) $("#ed-ic2").innerHTML = '<img src="'+(b||a)+'" alt="">';
+  /* ลิงก์หน้าร้านอยู่ในก้อน look ซึ่งเบามาก ดึงมาเลยตอนเปิดหน้ารวมเมนู */
+  edLoad("look", false, edLinksDraw);
 }
+
+/**
+ * สองลิงก์ของหน้าร้าน
+ *
+ * ตัวดูเอง = ลิงก์ที่เปิดอยู่ตอนนี้ + ?shop=1 กดดูได้ทันทีเพราะล็อกอินอยู่แล้ว
+ * ตัวลูกค้า = ต้องมาจากช่องในชีทเท่านั้น ห้ามเอาลิงก์ของพนักงานไปให้ลูกค้า
+ * ลูกค้าเปิดแล้วจะเจอหน้าให้ล็อกอิน Google ซึ่งคือเสียลูกค้าจริง ๆ ไม่ใช่แค่กดไม่ได้
+ */
+function edLinksDraw(){
+  var L = (ED.look && ED.look.links) || {};
+  var html = "";
+
+  if(L.preview){
+    html += '<div class="edlink"><div class="t"><b>ดูหน้าร้านเอง</b>'
+      + '<div class="u">' + esc(L.preview) + "</div></div>"
+      + '<button class="go" data-open="' + esc(L.preview) + '">เปิด</button></div>';
+  }
+
+  if(L.customer){
+    html += '<div class="edlink"><div class="t"><b>ลิงก์สำหรับลูกค้า</b>'
+      + '<div class="u">' + esc(L.customer) + "</div></div>"
+      + '<button class="cp" data-copy="' + esc(L.customer) + '">คัดลอก</button>'
+      + '<button class="go" data-open="' + esc(L.customer) + '">เปิด</button></div>';
+  } else {
+    html += '<div class="msg err on" style="margin:0">'
+      + esc(L.why || "ยังไม่มีลิงก์สำหรับลูกค้า") + "</div>";
+  }
+
+  html += '<div class="hint">ลิงก์ของพนักงานกับของลูกค้าเป็นคนละตัวกัน '
+    + "ส่งลิงก์พนักงานให้ลูกค้าไม่ได้ ลูกค้าจะเจอหน้าให้ล็อกอิน Google</div>";
+  $("#ed-links-bd").innerHTML = html;
+}
+
+document.addEventListener("click", function(e){
+  var t = e.target.closest("[data-open],[data-copy]");
+  if(!t) return;
+  if(t.dataset.open){
+    var u = t.dataset.open, w = null;
+    try { w = window.open(u, "_blank") } catch(err) {}
+    if(!w){ try { top.location.href = u } catch(err2) { location.href = u } }
+    return;
+  }
+  copyText(t.dataset.copy, "คัดลอกลิงก์แล้ว วางในไลน์ส่งให้ลูกค้าได้เลย");
+});
 
 /* ---------------------------------------------------------------- สินค้า */
 

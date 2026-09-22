@@ -159,7 +159,9 @@ var MOCK_ED = {
   ok: true,
   slots: ["ติดต่อเรา", "โปรโมชั่นเด่น", "โปรโมชั่นประจำเดือน"],
   tags: ["แนะนำ", "ใหม่", "ขายดี", "โปรโมชั่น"],
-  look: { logo: "", logoShow: "", cover: "", coverShow: "", map: "", open: true, mode: "queue" },
+  look: { logo: "", logoShow: "", cover: "", coverShow: "", map: "", open: true, mode: "queue",
+          links: { preview: "https://script.google.com/macros/s/STAFF/exec?shop=1",
+                   customer: "https://script.google.com/macros/s/PUBLIC/exec?shop=1", why: "" } },
   products: [
     { sku:"SKU-148", name:"Straight Endmill 2F 2.0-17", group:"ดอกกัดคาร์ไบด์", unit:"ชิ้น",
       price:96, web:"", hidden:false, img:"https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view",

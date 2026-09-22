@@ -436,5 +436,32 @@ eq('แต่ชื่อหมวดในชีทยังเป็นขอ�
      .filter(function (x) { return many11.indexOf(x.sku) > -1 })[0].group,
    'Endmill Corn');
 
+/* ============================================ 12. ลิงก์หน้าร้าน */
+console.log('\n12. สองลิงก์ของหน้าร้าน — ตัวดูเอง กับตัวที่ส่งให้ลูกค้า');
+var f12 = fixture();
+var L12 = f12.staff.getShopEdit('look').look.links;
+truthy('ลิงก์ดูเองมี ?shop=1 ต่อท้าย', /\?shop=1$/.test(L12.preview));
+eq('ยังไม่ได้กรอกลิงก์ลูกค้าในชีท = ไม่มีลิงก์ลูกค้า', L12.customer, '');
+truthy('และบอกว่าต้องทำอะไรต่อ', L12.why.indexOf('ลิงก์เว็บแอปสำหรับลูกค้า') > -1);
+truthy('บอกด้วยว่า deploy ต้องตั้งยังไง',
+   L12.why.indexOf('ทุกคน') > -1 && L12.why.indexOf('ฉัน') > -1);
+
+var app12 = f12.fx.sheets['ตั้งค่าแอป'];
+for (var r12 = DATA_ROW; r12 <= app12.getMaxRows(); r12++) {
+  if (String(app12.cell(r12, 1).v || '').trim() === 'ลิงก์เว็บแอปสำหรับลูกค้า') {
+    app12.cell(r12, 2).v = 'https://script.google.com/macros/s/PUBLIC/exec';
+    break;
+  }
+}
+var L12b = f12.staff.getShopEdit('look').look.links;
+eq('กรอกแล้วได้ลิงก์ลูกค้าพร้อม ?shop=1',
+   L12b.customer, 'https://script.google.com/macros/s/PUBLIC/exec?shop=1');
+eq('และไม่มีคำเตือนแล้ว', L12b.why, '');
+truthy('ลิงก์ลูกค้ากับลิงก์ดูเองต้องไม่ใช่ตัวเดียวกัน',
+   L12b.customer !== L12b.preview);
+
+throws('ลูกค้าเรียกดูลิงก์พวกนี้ไม่ได้',
+   function () { f12.guest.getShopEdit('look') });
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

@@ -324,6 +324,33 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
   await pg.waitForTimeout(250);
   await pg.screenshot({ path: OUT + '/E6-cat.png', fullPage: true });
 
+  console.log('\n15. ลิงก์หน้าร้านอยู่บนหน้ารวมเมนู');
+  await pg.locator('#ec-back').click();
+  await pg.waitForTimeout(700);
+  ok('มีกล่องลิงก์หน้าร้าน', await pg.locator('#ed-links').isVisible());
+  ok('มีลิงก์สองตัว', (await pg.locator('.edlink').count()) === 2);
+  ok('ตัวดูเองใช้ลิงก์ที่เปิดอยู่ + ?shop=1',
+     /STAFF\/exec\?shop=1/.test(await pg.locator('.edlink').first().innerText()));
+  ok('ตัวลูกค้าใช้ลิงก์จากชีท ไม่ใช่ลิงก์พนักงาน',
+     /PUBLIC\/exec\?shop=1/.test(await pg.locator('.edlink').nth(1).innerText()));
+  ok('ตัวลูกค้ามีปุ่มคัดลอก', (await pg.locator('.edlink [data-copy]').count()) === 1);
+  ok('เตือนว่าสองลิงก์เป็นคนละตัวกัน',
+     /คนละตัวกัน/.test(await pg.locator('#ed-links-bd').innerText()));
+  await pg.screenshot({ path: OUT + '/E7-links.png', fullPage: true });
+
+  /* ยังไม่ได้กรอกลิงก์ลูกค้า ต้องบอกให้ชัดว่าต้องทำอะไรต่อ ไม่ใช่โชว์ลิงก์พนักงานแทน */
+  await pg.evaluate(() => {
+    MOCK_ED.look.links = { preview: "https://script.google.com/macros/s/STAFF/exec?shop=1",
+      customer: "", why: 'ยังไม่ได้กรอก "ลิงก์เว็บแอปสำหรับลูกค้า" ในชีท ตั้งค่าแอป' };
+    EDGOT.look = false;
+    edLoad("look", true, edLinksDraw);
+  });
+  await pg.waitForTimeout(700);
+  ok('ยังไม่มีลิงก์ลูกค้า ขึ้นกล่องแดงบอกเหตุผล',
+     await pg.locator('#ed-links-bd .msg.err').isVisible());
+  ok('และไม่เอาลิงก์พนักงานมาโชว์เป็นลิงก์ลูกค้า',
+     (await pg.locator('.edlink').count()) === 1);
+
   ok('ไม่มี error ตลอดการทดสอบ', jsErr.length === 0, jsErr.join(' | '));
   await b.close();
   console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');

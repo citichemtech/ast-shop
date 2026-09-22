@@ -155,9 +155,34 @@ function groupCounts_() {
   return out;
 }
 
+/**
+ * สองลิงก์ของหน้าร้าน — ตัวดูเอง กับตัวที่ส่งให้ลูกค้า
+ *
+ * ตัวดูเอง: ลิงก์ของ deploy ที่เปิดอยู่ตอนนี้ + ?shop=1
+ *   เจ้าของร้านล็อกอินอยู่แล้ว จึงเปิดได้แน่นอน ใช้ดูว่าหน้าร้านหน้าตาเป็นยังไง
+ *
+ * ตัวลูกค้า: ต้องมาจากช่อง "ลิงก์เว็บแอปสำหรับลูกค้า" ในชีทเท่านั้น
+ *   ห้ามเดาจาก ScriptApp.getService().getUrl() เด็ดขาด นั่นคือลิงก์ของ deploy
+ *   ที่พนักงานใช้อยู่ ซึ่งลูกค้าเปิดแล้วเจอหน้าให้ล็อกอิน Google
+ *   ส่งลิงก์ผิดออกไปหาลูกค้าคือเสียลูกค้าจริง ๆ ไม่ใช่แค่กดไม่ได้
+ */
+function shopLinks_(c) {
+  var mine = '';
+  try { mine = String(ScriptApp.getService().getUrl() || ''); } catch (e) {}
+  var base = String((c && c.payLink) || '').trim();
+  return {
+    preview: mine ? mine + '?shop=1' : '',
+    customer: base ? base + (base.indexOf('?') > -1 ? '&' : '?') + 'shop=1' : '',
+    why: base ? '' : 'ยังไม่ได้กรอก "ลิงก์เว็บแอปสำหรับลูกค้า" ในชีท ' + SH.app.name +
+      ' — ต้องสร้าง deploy อีกตัวที่ตั้ง "ทำงานในชื่อ: ฉัน" และ "ใครเข้าถึงได้: ทุกคน" ' +
+      'แล้วเอาลิงก์นั้นมากรอก'
+  };
+}
+
 function editLook_() {
   var c = appCfg_();
   return {
+    links: shopLinks_(c),
     logo: String(c.shopLogo || ''), logoShow: shopImg_(c.shopLogo),
     cover: String(c.shopCover || ''), coverShow: shopImg_(c.shopCover),
     map: String(c.shopMap || ''),
