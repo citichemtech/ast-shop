@@ -889,6 +889,32 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   var edStart = await page.locator('#ed-rows .edrow').count();
   truthy('เปิดมาแล้วเห็นรายการเดิมของใบนั้น', edStart > 0);
 
+  /* เคยมีคลาส .edrow ของหน้าโหมดแก้ไขไปชนกับแถวนี้ แล้วตั้ง display:flex
+     ทุกอย่างในแถวเลยเรียงแนวนอน ช่องเลือกสินค้าเหลือกว้างสามตัวอักษร
+     และข้อความช่องติ๊กตกบรรทัดทีละตัว — บนมือถือใช้งานไม่ได้เลย
+     ข้อสอบนี้วัดความกว้างจริงบนจอ 390px ไม่ใช่ดูแค่ว่ามี element อยู่ */
+  console.log('\n   แถวสินค้าในกล่องนี้ต้องอ่านออกบนมือถือ');
+  var lay = await page.evaluate(function () {
+    var row = document.querySelector('#ed-rows .edrow');
+    var box = row.getBoundingClientRect();
+    var sel = row.querySelector('.i-sku').getBoundingClientRect();
+    var cks = [].map.call(row.querySelectorAll('.giftck'), function (el) {
+      var r = el.getBoundingClientRect();
+      return { w: r.width, h: r.height, x: r.left };
+    });
+    var qty = row.querySelector('.i-qty').getBoundingClientRect();
+    return { boxW: box.width, selW: sel.width, qtyW: qty.width, cks: cks };
+  });
+  truthy('ช่องเลือกสินค้ากว้างเกือบเต็มแถว (' + Math.round(lay.selW) + ' จาก ' +
+    Math.round(lay.boxW) + ')', lay.selW > lay.boxW * 0.8);
+  truthy('ช่องจำนวนกว้างพอพิมพ์ (' + Math.round(lay.qtyW) + 'px)', lay.qtyW > 100);
+  eq('ช่องติ๊กมีสองช่อง', lay.cks.length, 2);
+  lay.cks.forEach(function (c, i) {
+    truthy('ข้อความช่องติ๊กที่ ' + (i + 1) + ' ไม่ถูกบีบเป็นคอลัมน์ (กว้าง ' +
+      Math.round(c.w) + 'px สูง ' + Math.round(c.h) + 'px)',
+      c.w > lay.boxW * 0.8 && c.h < 90);
+  });
+
   console.log('\n   กดเพิ่มสินค้าแล้วต้องมีบรรทัดใหม่ให้กรอก');
   await page.click('#ed-add');
   await page.waitForTimeout(200);

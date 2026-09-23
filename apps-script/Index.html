@@ -324,20 +324,24 @@ stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M9 5l7 
 .edfoot .slog{font-size:0.95rem;font-style:italic;color:#2f6ab5;line-height:1.35}
 .edfoot .thx{margin-top:8px;font-size:0.8rem;color:#5a7196}
 
-.edrow{display:flex;gap:11px;align-items:flex-start;padding:12px;border:1px solid var(--line);
+/* ชื่อคลาสนี้เคยเป็น .edrow แล้วชนกับแถวสินค้าในกล่อง "แก้รายการสินค้า"
+   ซึ่งใช้ class="it edrow" มาก่อน — พอตั้ง display:flex ลูกทุกตัวในแถวนั้น
+   (หัวข้อ · ช่องเลือกสินค้า · จำนวน · ราคา · ช่องติ๊กสองช่อง) เรียงเป็นแนวนอน
+   บนมือถือจึงบีบจนตัวหนังสือตกบรรทัดทีละตัว อ่านไม่ออกเลย ห้ามตั้งชื่อชนกันอีก */
+.edpick{display:flex;gap:11px;align-items:flex-start;padding:12px;border:1px solid var(--line);
   border-radius:13px;background:#fff;margin-bottom:9px;width:100%;text-align:left}
-.edrow .th{width:56px;height:56px;border-radius:10px;background:#f1f4f8;flex:none;
+.edpick .th{width:56px;height:56px;border-radius:10px;background:#f1f4f8;flex:none;
   overflow:hidden;display:flex;align-items:center;justify-content:center;
   font-size:0.62rem;color:#9aa8b8;text-align:center;padding:3px}
-.edrow .th img{width:100%;height:100%;object-fit:cover}
-.edrow .bd{flex:1;min-width:0}
-.edrow .bd b{display:block;font-size:0.9rem;font-weight:700;line-height:1.35}
-.edrow .bd .sub{font-size:0.74rem;color:var(--gray);margin-top:2px}
-.edrow .bd .pills{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
-.edrow .bd .pills span{font-size:0.66rem;font-weight:700;padding:2px 8px;border-radius:999px;
+.edpick .th img{width:100%;height:100%;object-fit:cover}
+.edpick .bd{flex:1;min-width:0}
+.edpick .bd b{display:block;font-size:0.9rem;font-weight:700;line-height:1.35}
+.edpick .bd .sub{font-size:0.74rem;color:var(--gray);margin-top:2px}
+.edpick .bd .pills{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.edpick .bd .pills span{font-size:0.66rem;font-weight:700;padding:2px 8px;border-radius:999px;
   background:#eaf1ff;color:#1e4f9c}
-.edrow .bd .pills span.off{background:#fbe9e9;color:#8f1d1d}
-.edrow .bd .pills span.on{background:#e6f5ec;color:#0a6b3c}
+.edpick .bd .pills span.off{background:#fbe9e9;color:#8f1d1d}
+.edpick .bd .pills span.on{background:#e6f5ec;color:#0a6b3c}
 
 .tagpick{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 2px}
 .tagpick button{padding:8px 15px;border-radius:999px;border:1px solid var(--line);

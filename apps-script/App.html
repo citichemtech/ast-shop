@@ -2610,13 +2610,15 @@ function edRow(v){
     +'<input class="i-name" type="text" placeholder="พิมพ์ชื่อสินค้า" value="'+esc(v.name||"")+'">'
     +'<input class="i-cost" type="number" inputmode="decimal" min="0" '
     +'placeholder="ต้นทุน/หน่วย (ไม่ใส่ก็ได้)" style="margin-top:6px"></div>'
-    +'<div class="three">'
+    /* สองช่อง ไม่ใช่สามเหมือนหน้าคีย์ออเดอร์ — กล่องนี้ไม่มีช่องราคามาตรฐาน
+       ถ้าใช้สามคอลัมน์จะเหลือคอลัมน์ว่างหนึ่งช่อง แล้วอีกสองช่องแคบลงโดยเปล่าประโยชน์ */
+    +'<div class="two">'
     +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
     +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||1)+'"></div>'
     +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
     +'<input class="i-price" type="number" inputmode="decimal" min="0" step="0.01" '
-    +'placeholder="ปล่อยว่าง = ราคามาตรฐาน" value="'+(v.price===""||v.price===undefined?"":v.price)+'"></div>'
-    +'<div></div></div>'
+    +'placeholder="ปล่อยว่าง = ราคาป้าย" value="'+(v.price===""||v.price===undefined?"":v.price)+'"></div>'
+    +'</div>'
     +'<label class="giftck"><input type="checkbox" class="i-free"'+(v.free?" checked":"")+'>'
     +' ซื้อมาขายไป — พิมพ์ชื่อและราคาเอง</label>'
     /* หน้าคีย์ออเดอร์มีช่องนี้มาตั้งแต่แรก แต่กล่องแก้รายการไม่มี
@@ -6371,7 +6373,7 @@ function eprodDraw(){
 
   $("#ep-list").innerHTML = moveBtn + '<div class="card">' + list.slice(0,80).map(function(p){
     var tags = String(p.tag||"").split(/\s*,\s*/).filter(function(t){return !!t});
-    return '<button class="edrow" data-eprod="'+esc(p.sku)+'">'
+    return '<button class="edpick" data-eprod="'+esc(p.sku)+'">'
       + '<span class="th">' + (p.show.length
           ? '<img src="'+esc(p.show[0])+'" alt="" loading="lazy">'
           : "ยังไม่มีรูป") + "</span>"
@@ -6481,7 +6483,7 @@ function ebanDraw(){
     if(!list.length) return "";
     return '<div class="card"><div class="sec-hd"><h2>'+esc(slot)+"</h2></div>"
       + list.map(function(b){
-          return '<button class="edrow" data-eban="'+b.row+'">'
+          return '<button class="edpick" data-eban="'+b.row+'">'
             + '<span class="th">' + (b.show
                 ? '<img src="'+esc(b.show)+'" alt="" loading="lazy">' : "รูปเสีย") + "</span>"
             + '<span class="bd"><b>'+esc(b.title||"(ไม่ได้ตั้งชื่อ)")+"</b>"
@@ -6603,7 +6605,7 @@ function ecatDraw(){
     return;
   }
   $("#ec-list").innerHTML = '<div class="card">' + ED.cats.map(function(c){
-    return '<button class="edrow" data-ecat="'+esc(c.group)+'">'
+    return '<button class="edpick" data-ecat="'+esc(c.group)+'">'
       + '<span class="th">' + (c.iconShow
           ? '<img src="'+esc(c.iconShow)+'" alt="" loading="lazy">' : "ยังไม่มีรูป") + "</span>"
       + '<span class="bd"><b>'+esc(c.label || c.group)+"</b>"
