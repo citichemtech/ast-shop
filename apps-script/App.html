@@ -6218,13 +6218,57 @@ function edLinksDraw(){
       + '<button class="cp" data-copy="' + esc(L.customer) + '">คัดลอก</button>'
       + '<button class="go" data-open="' + esc(L.customer) + '">เปิด</button></div>';
   } else {
-    html += '<div class="msg err on" style="margin:0">'
-      + esc(L.why || "ยังไม่มีลิงก์สำหรับลูกค้า") + "</div>";
+    /* เดิมตรงนี้มีแต่กล่องแดงบอกว่า "ไปกรอกในชีท ตั้งค่าแอป" ซึ่งแปลว่าคนที่เพิ่ง
+       สร้าง deploy เสร็จและมีลิงก์อยู่ในมือ ต้องไปเปิดชีทบนมือถือแล้วไล่หาแถว
+       — งานค้างอยู่ตรงนั้นทุกครั้ง ใส่ช่องวางไว้ตรงที่เตือนเลย จบในที่เดียว */
+    html += '<div class="msg err on" style="margin:0 0 10px">'
+      + esc(L.why || "ยังไม่มีลิงก์สำหรับลูกค้า") + "</div>"
+      + '<div class="fld"><label>วางลิงก์สำหรับลูกค้าตรงนี้ได้เลย</label>'
+      + '<input id="ed-paylink" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec">'
+      + '<div class="hint">ก๊อปจากช่องที่อยู่เว็บตอนเปิดหน้าร้านได้เลย '
+      + 'มี ?shop=1 ติดมาด้วยก็ไม่เป็นไร ระบบตัดให้เอง</div></div>'
+      + '<button class="btn" id="ed-paysave">บันทึกลิงก์</button>'
+      + '<div id="ed-paymsg" style="margin-top:8px"></div>';
   }
 
   html += '<div class="hint">ลิงก์ของพนักงานกับของลูกค้าเป็นคนละตัวกัน '
     + "ส่งลิงก์พนักงานให้ลูกค้าไม่ได้ ลูกค้าจะเจอหน้าให้ล็อกอิน Google</div>";
   $("#ed-links-bd").innerHTML = html;
+
+  var save = $("#ed-paysave");
+  if(save) save.onclick = function(){ payLinkSave(this, $("#ed-paylink").value) };
+}
+
+/* บันทึกลิงก์ลูกค้าจากหน้าโหมดแก้ไข — ใช้ทั้งกล่องเตือนและฟอร์มหน้าตาหัวร้าน */
+function payLinkSave(btn, val, then){
+  var v = String(val || "").trim();
+  var box = $("#ed-paymsg");
+  function say(good, txt){
+    if(!box) { toast(txt); return }
+    box.className = "msg " + (good ? "ok" : "err") + " on";
+    box.style.margin = "8px 0 0";
+    box.textContent = txt;
+  }
+  if(!v){ say(false, "ยังไม่ได้วางลิงก์"); return }
+
+  btn.disabled = true;
+  var label = btn.textContent;
+  btn.textContent = "กำลังบันทึก…";
+  google.script.run
+    .withSuccessHandler(function(){
+      /* โหลดใหม่แล้ววาดใหม่ กล่องแดงจะกลายเป็นลิงก์พร้อมปุ่มคัดลอกทันที
+         ถ้าไม่โหลดใหม่ เจ้าของร้านจะไม่มีทางรู้ว่าที่วางไปนั้นใช้ได้จริงหรือเปล่า */
+      edLoad("look", true, function(){
+        edLinksDraw();
+        if(then) then();
+        toast("บันทึกลิงก์แล้ว — ส่งให้ลูกค้าได้เลย");
+      });
+    })
+    .withFailureHandler(function(e){
+      btn.disabled = false; btn.textContent = label;
+      say(false, e.message);
+    })
+    .saveShopLook({ payLink: v });
 }
 
 document.addEventListener("click", function(e){
@@ -6737,6 +6781,13 @@ function elookDraw(){
     + '<div class="fld"><label>ลิงก์แผนที่ร้าน</label>'
       + '<input id="elm-map" placeholder="ลิงก์ Google Maps — เว้นว่าง = ค้นจากที่อยู่ผู้ส่งให้เอง" value="'
         + esc(l.map||"") + '"></div>'
+    /* ช่องนี้เคยแก้ได้ทางเดียวคือเปิดชีทไปหาแถว ซึ่งบนมือถือแทบทำไม่ได้
+       และเป็นช่องเดียวที่ถ้าไม่กรอก หน้าร้านก็ส่งให้ลูกค้าไม่ได้เลย */
+    + '<div class="fld"><label>ลิงก์เว็บแอปสำหรับลูกค้า</label>'
+      + '<input id="elm-paylink" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="'
+        + esc(l.payLink||"") + '">'
+      + '<div class="hint">ลิงก์ของ deploy ที่ตั้ง “ทำงานในชื่อ: ฉัน” และ “ใครเข้าถึงได้: ทุกคน” '
+      + 'คนละตัวกับลิงก์ที่พนักงานใช้ · มี ?shop=1 ติดมาก็ได้ ระบบตัดให้เอง</div></div>'
     + '<button class="btn" id="elm-save">บันทึก</button>';
 
   bindPicks("");
@@ -6757,7 +6808,8 @@ function elookDraw(){
       .saveShopLook({
         logo: $("#elm-logo").value,
         cover: $("#elm-cover").value,
-        map: $("#elm-map").value
+        map: $("#elm-map").value,
+        payLink: $("#elm-paylink").value
       });
   };
 }

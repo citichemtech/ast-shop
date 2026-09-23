@@ -351,6 +351,41 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
   ok('และไม่เอาลิงก์พนักงานมาโชว์เป็นลิงก์ลูกค้า',
      (await pg.locator('.edlink').count()) === 1);
 
+  /* เดิมกล่องแดงบอกแค่ "ไปกรอกในชีท ตั้งค่าแอป" ซึ่งแปลว่าคนที่เพิ่งสร้าง deploy เสร็จ
+     และมีลิงก์อยู่ในมือ ต้องไปเปิดชีทบนมือถือแล้วไล่หาแถว งานค้างอยู่ตรงนั้นทุกครั้ง */
+  console.log('\n15ข. วางลิงก์ลูกค้าได้ตรงที่เตือน ไม่ต้องเปิดชีท');
+  ok('มีช่องให้วางลิงก์อยู่ในกล่องเตือน', await pg.locator('#ed-paylink').isVisible());
+  ok('มีปุ่มบันทึกลิงก์', await pg.locator('#ed-paysave').isVisible());
+  await pg.screenshot({ path: OUT + '/E7b-paste.png', fullPage: true });
+
+  /* วางลิงก์พนักงานผิดตัว = ลูกค้าเจอหน้าล็อกอิน ต้องฟ้องตรงนั้น ไม่ใช่เงียบแล้วบันทึก */
+  await pg.locator('#ed-paylink').fill('https://script.google.com/macros/s/STAFF/exec?shop=1');
+  await pg.locator('#ed-paysave').click();
+  await pg.waitForTimeout(700);
+  ok('วางลิงก์พนักงานมา ขึ้นคำเตือนตรงนั้น',
+     /ลิงก์ของพนักงาน/.test(await pg.locator('#ed-paymsg').innerText()));
+  ok('ยังไม่มีลิงก์ลูกค้าเพิ่มขึ้นมา', (await pg.locator('.edlink').count()) === 1);
+  ok('กดใหม่ได้ ปุ่มไม่ค้างอยู่ที่ "กำลังบันทึก"',
+     !(await pg.locator('#ed-paysave').isDisabled()));
+
+  await pg.locator('#ed-paylink').fill(
+    'https://script.google.com/macros/s/PUBLIC9/exec?shop=1');
+  await pg.locator('#ed-paysave').click();
+  await pg.waitForTimeout(900);
+  var sent15 = await pg.evaluate(() =>
+    (SENT.filter(x => x.fn === 'saveShopLook').pop() || {}).v);
+  ok('ส่งลิงก์ที่วางขึ้นชีทจริง',
+     sent15 && /PUBLIC9\/exec/.test(sent15.payLink || ''), JSON.stringify(sent15));
+  ok('บันทึกแล้วกล่องแดงหายไป',
+     (await pg.locator('#ed-links-bd .msg.err').count()) === 0);
+  ok('และขึ้นเป็นลิงก์ลูกค้าพร้อมปุ่มคัดลอกทันที',
+     (await pg.locator('.edlink').count()) === 2 &&
+     (await pg.locator('.edlink [data-copy]').count()) === 1);
+  ok('ลิงก์ที่ได้ต่อ ?shop=1 ให้ชั้นเดียว ไม่ซ้อนกันสองชั้น',
+     /PUBLIC9\/exec\?shop=1$/.test(
+       (await pg.locator('.edlink').nth(1).locator('.u').innerText()).trim()));
+  await pg.screenshot({ path: OUT + '/E7c-saved.png', fullPage: true });
+
   ok('ไม่มี error ตลอดการทดสอบ', jsErr.length === 0, jsErr.join(' | '));
   await b.close();
   console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');

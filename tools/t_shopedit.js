@@ -463,5 +463,56 @@ truthy('ลิงก์ลูกค้ากับลิงก์ดูเอง
 throws('ลูกค้าเรียกดูลิงก์พวกนี้ไม่ได้',
    function () { f12.guest.getShopEdit('look') });
 
+/* ============================================ 13. วางลิงก์ลูกค้าจากในแอป */
+console.log('\n13. วางลิงก์ลูกค้าได้จากในแอป ไม่ต้องเปิดชีทไปหาแถว');
+var f13 = fixture();
+var EXEC13 = 'https://script.google.com/macros/s/PUBLIC13/exec';
+
+/* ที่ก๊อปมาจากช่องที่อยู่เว็บจะติด ?shop=1 มาเสมอ เพราะนั่นคือหน้าที่เพิ่งเปิดดู
+   ค่านี้ถูกใช้เป็นฐานที่ระบบเอาไปต่อ ?p= เองตอนสร้างลิงก์จ่ายเงิน
+   ถ้าเก็บของเดิมไว้จะได้ลิงก์ที่มีพารามิเตอร์ซ้อนกันสองชั้น */
+f13.staff.saveShopLook({ payLink: EXEC13 + '?shop=1' });
+var L13 = f13.staff.getShopEdit('look').look;
+eq('ตัด ?shop=1 ออกก่อนเก็บ เหลือแค่ฐานถึง /exec', L13.payLink, EXEC13);
+eq('แล้วได้ลิงก์ลูกค้าที่ต่อ ?shop=1 ให้ชั้นเดียว', L13.links.customer, EXEC13 + '?shop=1');
+eq('ไม่มีคำเตือนค้างอยู่แล้ว', L13.links.why, '');
+
+/* แถวนี้ไม่ได้ถูกสร้างโดย setup ทุกกรณี ต้องเติมให้เอง ไม่ใช่โยน error
+   ไล่ให้ไปสั่งฟังก์ชันตั้งค่า ตอนนั้นเขามีลิงก์อยู่ในมือแล้ว */
+var app13 = f13.fx.sheets['ตั้งค่าแอป'];
+var found13 = 0;
+for (var r13 = DATA_ROW; r13 <= app13.getMaxRows(); r13++) {
+  if (String(app13.cell(r13, 1).v || '').trim() === 'ลิงก์เว็บแอปสำหรับลูกค้า') found13++;
+}
+eq('มีแถวเดียวในชีท ไม่ได้สร้างซ้ำ', found13, 1);
+
+/* ความผิดพลาดที่แพงที่สุดของขั้นตอนนี้ — วางลิงก์พนักงานแทนลิงก์ลูกค้า
+   ลูกค้ากดแล้วเจอหน้าให้ล็อกอิน Google ซึ่งดูเหมือนร้านพัง
+   และกว่าจะรู้ก็ตอนลูกค้าทักมาบ่น ต้องจับให้ได้ตั้งแต่ตอนวาง */
+var MINE13 = f13.staff.getShopEdit('look').look.links.preview.split('?')[0];
+throws('วางลิงก์พนักงานมาต้องไม่ยอมรับ',
+   function () { f13.staff.saveShopLook({ payLink: MINE13 }) }, 'ลิงก์ของพนักงาน');
+throws('และบอกวิธีไปเอาลิงก์ที่ถูกตัว',
+   function () { f13.staff.saveShopLook({ payLink: MINE13 + '?shop=1' }) }, 'ทุกคน');
+eq('ของเดิมยังอยู่ ไม่ถูกทับด้วยของผิด',
+   f13.staff.getShopEdit('look').look.payLink, EXEC13);
+
+/* /dev เปิดได้เฉพาะเจ้าของสคริปต์ ส่งให้ลูกค้าแล้วเจอหน้าล็อกอินเหมือนกัน */
+throws('ลิงก์ /dev ที่เป็นตัวทดสอบ ต้องไม่ยอมรับ',
+   function () { f13.staff.saveShopLook({ payLink: 'https://script.google.com/macros/s/X13/dev' }) },
+   '/exec');
+throws('ไม่ใช่ https ก็ไม่รับ',
+   function () { f13.staff.saveShopLook({ payLink: 'script.google.com/macros/s/X/exec' }) },
+   'https');
+
+var broke13 = [];
+Object.keys(f13.fx.sheets).forEach(function (n) {
+  broke13 = broke13.concat(f13.fx.sheets[n].overwrittenFormulas);
+});
+eq('ไม่มีช่องสูตรถูกแตะตลอดข้อนี้', broke13, []);
+
+throws('ลูกค้าบันทึกลิงก์เองไม่ได้',
+   function () { f13.guest.saveShopLook({ payLink: EXEC13 }) });
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);
