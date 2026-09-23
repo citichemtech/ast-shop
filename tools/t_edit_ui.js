@@ -154,10 +154,8 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
      (await pg.locator('[data-pick="epm-img"]').count()) === 1);
   ok('ช่องรูปที่ 2 ก็มี',
      (await pg.locator('[data-pick="epm-img2"]').count()) === 1);
-  ok('บอกขนาดรูปที่ควรใช้ไว้ใต้ช่อง',
-     /1000×1000/.test(await pg.locator('#epm-img-msg').innerText()));
-  ok('บอกขนาดไฟล์สูงสุดด้วย',
-     /8 MB/.test(await pg.locator('#epm-img-msg').innerText()));
+  ok('บอกว่าถ่ายมาได้เลย แอปย่อให้เอง',
+     /ย่อให้เอง/.test(await pg.locator('#epm-img-msg').innerText()));
   ok('ยังไม่มีรูป ตัวอย่างต้องซ่อนอยู่',
      !(await pg.locator('#epm-img-prev').isVisible()));
   ok('ช่องลิงก์ยังว่าง', (await pg.locator('#epm-img').inputValue()) === '');
@@ -182,6 +180,53 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
   }));
   await pg.screenshot({ path: OUT + '/E5-upload.png', fullPage: true });
 
+  /* รูปจากกล้องมือถือใบหนึ่ง 4–8 MB พอแปลงเป็นข้อความเพื่อส่งจะบวมอีกหนึ่งในสาม
+     เจ้าของร้านรออัปรูปเดียวเป็นนาที และไม่มีอะไรบอกว่ามันยังทำงานอยู่หรือค้างไปแล้ว
+     ข้อสอบนี้จึงวัดจำนวนไบต์ที่ส่งจริง ไม่ใช่วัดว่ามีการเรียกฟังก์ชันไหม */
+  console.log('\n9ข. รูปใหญ่ต้องถูกย่อในเครื่องก่อนส่ง');
+  var big = await pg.evaluate(async () => {
+    var c = document.createElement('canvas');
+    c.width = 2400; c.height = 1600;
+    var g = c.getContext('2d');
+    /* ภาพรบกวนแบบสุ่ม เลียนแบบรูปถ่ายจริงที่บีบแล้วยังใหญ่
+       ถ้าใช้พื้นสีเดียว JPEG จะบีบเหลือไม่กี่ KB แล้วข้อสอบจะผ่านแบบหลอกตัวเอง */
+    var im = g.createImageData(c.width, c.height);
+    for (var i = 0; i < im.data.length; i += 4) {
+      im.data[i] = Math.random() * 255; im.data[i+1] = Math.random() * 255;
+      im.data[i+2] = Math.random() * 255; im.data[i+3] = 255;
+    }
+    g.putImageData(im, 0, 0);
+    var blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
+    var f = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
+    var dt = new DataTransfer(); dt.items.add(f);
+    var el = document.querySelector('#epm-img2-file');
+    el.files = dt.files;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return f.size;
+  });
+  ok('สร้างรูปทดสอบที่ใหญ่พอจะเห็นผล (' + Math.round(big/1024) + ' KB)', big > 700 * 1024);
+
+  await pg.waitForTimeout(2500);
+  var up = await pg.evaluate(() => SENT.filter(x => x.fn === 'uploadShopImage').pop());
+  ok('ส่งขึ้นไปจริง', !!up && /^data:image\//.test(up.data || ''));
+  ok('ที่ส่งไปเล็กกว่าไฟล์ต้นฉบับมาก (' + Math.round(big/1024) + ' KB → ' +
+     Math.round((up ? up.bytes : 0)/1024) + ' KB)',
+     !!up && up.bytes < big / 4);
+  ok('แปลงเป็น JPEG ไม่ใช่ส่งของเดิม', !!up && /^data:image\/jpeg/.test(up.data || ''));
+
+  var dim = await pg.evaluate(async () => {
+    var u = SENT.filter(x => x.fn === 'uploadShopImage').pop();
+    var im = new Image();
+    await new Promise(r => { im.onload = r; im.onerror = r; im.src = u.data });
+    return { w: im.naturalWidth, h: im.naturalHeight };
+  });
+  ok('ด้านยาวสุดไม่เกิน 1000px ตามที่การ์ดสินค้าใช้จริง (' + dim.w + '×' + dim.h + ')',
+     Math.max(dim.w, dim.h) <= 1000 && dim.w > 0);
+  ok('สัดส่วนภาพไม่เพี้ยน รูปแนวนอนยังเป็นแนวนอน',
+     Math.abs((dim.w / dim.h) - (2400 / 1600)) < 0.02);
+  ok('บอกให้เห็นว่าย่อจากเท่าไรเหลือเท่าไร ไม่ใช่ขึ้นว่ากำลังอัปเฉย ๆ',
+     /ย่อจาก/.test(await pg.locator('#epm-img2-msg').innerText()));
+
   await pg.locator('#epm-save').click();
   await pg.waitForTimeout(900);
   ok('กดบันทึกแล้วลิงก์ลงไปถึงชีท', await pg.evaluate(() => {
@@ -198,7 +243,7 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
   await pg.waitForTimeout(400);
   ok('แบนเนอร์มีปุ่มเลือกรูป', (await pg.locator('[data-pick="ebm-img"]').count()) === 1);
   ok('และบอกว่าควรใช้รูปแนวนอน',
-     /1200×600/.test(await pg.locator('#ebm-img-msg').innerText()));
+     /แนวนอน/.test(await pg.locator('#ebm-img-msg').innerText()));
   await pg.locator('#m-close').click();
   await pg.waitForTimeout(250);
 

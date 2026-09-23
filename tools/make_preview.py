@@ -288,7 +288,11 @@ window.google = { script: { run: (function(){
       reply(function(){
         if(!/^data:image\//.test(String(p.data||"")))
           throw new Error("ยังไม่ได้เลือกรูป หรือไฟล์อ่านไม่ออก");
-        window.SENT.push({ fn:"uploadShopImage", kind:p.kind, tag:p.tag });
+        /* เก็บขนาดของจริงที่ส่งมาด้วย ข้อสอบเรื่องย่อรูปวัดจากตัวเลขนี้
+           ไม่ใช่วัดว่า "มีการเรียกฟังก์ชันไหม" ซึ่งผ่านได้ทั้งที่ยังส่งไฟล์เต็ม */
+        var b64 = String(p.data).slice(String(p.data).indexOf(",") + 1);
+        window.SENT.push({ fn:"uploadShopImage", kind:p.kind, tag:p.tag,
+                           data:p.data, bytes: Math.round(b64.length * 0.75) });
         var id = "UPLOADED" + (window.SENT.length);
         return { ok:true, url:"https://drive.google.com/file/d/"+id+"/view",
                  show: edPic("UP","#0a6b3c"), name:"รูป.jpg" };

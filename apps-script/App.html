@@ -6095,12 +6095,86 @@ function imgField(id, label, kind, value, show, hint){
 }
 
 /* ขนาดที่แนะนำ บอกไว้ทุกช่อง ไม่งั้นได้รูปแนวตั้งมาใส่ในกรอบแนวนอนแล้วโดนครอบตัด */
-var IMG_HINT = 'รูปสี่เหลี่ยมจัตุรัส 1000×1000 px · ไฟล์ไม่เกิน 8 MB · JPG หรือ PNG';
-var IMG_HINT_BAN = 'รูปแนวนอน 1200×600 px (กว้าง 2 ส่วน สูง 1 ส่วน) · ไม่เกิน 8 MB';
-var IMG_HINT_COVER = 'รูปแนวนอน 1200×500 px · ไม่เกิน 8 MB · ส่วนบนจะมีชื่อร้านทับ';
-var IMG_HINT_LOGO = 'รูปสี่เหลี่ยมจัตุรัส 400×400 px · ระบบตัดเป็นวงกลมให้เอง';
+/* ไม่ต้องบอกให้ย่อรูปมาก่อนแล้ว แอปย่อให้เองตอนเลือก — ที่เคยบอกว่า "ไม่เกิน 8 MB"
+   ทำให้คนคิดว่าส่งไฟล์เต็มได้ แล้วไปนั่งรอนาทีกว่าต่อรูป */
+var IMG_HINT = 'ถ่ายมาเลย แอปย่อให้เอง · รูปสี่เหลี่ยมจัตุรัสสวยที่สุด';
+var IMG_HINT_BAN = 'รูปแนวนอน สัดส่วนกว้าง 2 ส่วน สูง 1 ส่วน · แอปย่อให้เอง';
+var IMG_HINT_COVER = 'รูปแนวนอน · ส่วนบนจะมีชื่อร้านทับ · แอปย่อให้เอง';
+var IMG_HINT_LOGO = 'รูปสี่เหลี่ยมจัตุรัส ระบบตัดเป็นวงกลมให้เอง · แอปย่อให้เอง';
 
 /* ผูกปุ่มเลือกรูปของทุกช่องในกล่องที่เพิ่งเปิด */
+/* ด้านยาวสุดที่เก็บจริงของรูปแต่ละแบบ ใหญ่กว่านี้ไม่ได้ช่วยให้สวยขึ้นบนจอลูกค้า
+   แต่ทำให้รออัปนานขึ้นเป็นสิบเท่า — การ์ดสินค้าบนมือถือกว้างจริงแค่ ~180px */
+var PIC_MAX = { logo: 600, prod: 1000, cat: 1000, cover: 1600, ban: 1600 };
+var PIC_Q = 0.82;
+
+function kb_(n){
+  return n >= 1048576 ? (Math.round(n / 104857.6) / 10) + " MB"
+                      : Math.max(1, Math.round(n / 1024)) + " KB";
+}
+
+/**
+ * ย่อรูปในเครื่องก่อนส่ง
+ *
+ * รูปจากกล้องมือถือใบหนึ่ง 4–8 MB พอแปลงเป็นข้อความเพื่อส่งผ่าน google.script.run
+ * จะบวมอีกหนึ่งในสาม กลายเป็นสิบเมกะไบต์ต่อรูป บนเน็ตมือถือคือรอเป็นนาที
+ * ย่อเหลือด้านยาว 1000px คุณภาพ 82% ได้ไฟล์ราว 150–250 KB — เล็กลงราวยี่สิบเท่า
+ * และยังคมกว่าขนาดที่การ์ดสินค้าใช้จริงอยู่ดี
+ *
+ * ถ้าย่อไม่สำเร็จ (HEIC ที่เบราว์เซอร์ถอดรหัสไม่ได้ · รูปใหญ่จนวาดไม่ไหว)
+ * ให้ส่งไฟล์เดิมไปแทน ห้ามล้มทั้งงานเพราะย่อไม่ได้ — ฝั่งชีทรับไฟล์เดิมได้อยู่แล้ว
+ */
+function shrinkPic(f, maxPx, done){
+  function raw(why){
+    var fr = new FileReader();
+    fr.onerror = function(){ done(null, null, "อ่านไฟล์ไม่ได้ ลองเลือกรูปอื่น") };
+    fr.onload = function(){ done(fr.result, { from: f.size, to: f.size, why: why }) };
+    fr.readAsDataURL(f);
+  }
+
+  function draw(src, w, h, close){
+    var scale = Math.min(1, maxPx / Math.max(w, h));
+    /* เล็กอยู่แล้วและไฟล์ไม่ใหญ่ ไม่ต้องยุ่ง — บีบซ้ำมีแต่เสียคุณภาพเปล่า ๆ */
+    if(scale === 1 && f.size <= 400 * 1024){ close && close(); raw(""); return }
+    try {
+      var c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(w * scale));
+      c.height = Math.max(1, Math.round(h * scale));
+      var g = c.getContext("2d");
+      g.fillStyle = "#fff";           /* PNG โปร่งใสกลายเป็น JPG จะได้พื้นขาว ไม่ใช่ดำ */
+      g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(src, 0, 0, c.width, c.height);
+      var out = c.toDataURL("image/jpeg", PIC_Q);
+      close && close();
+      var got = Math.round((out.length - out.indexOf(",") - 1) * 0.75);
+      /* ย่อแล้วกลับใหญ่กว่าเดิม (รูปเล็กมาก ๆ เจอได้) ให้ใช้ของเดิม */
+      if(got >= f.size){ raw(""); return }
+      done(out, { from: f.size, to: got, why: "" });
+    } catch(e){
+      close && close();
+      raw("ย่อรูปไม่ได้ ส่งไฟล์เต็ม");
+    }
+  }
+
+  /* createImageBitmap ถอดรหัสนอกเธรดหลัก จอไม่ค้างระหว่างรอ และหมุนรูปตาม EXIF ให้ด้วย
+     รูปถ่ายแนวตั้งจากมือถือจะได้ไม่กลายเป็นแนวนอนหลังย่อ */
+  if(typeof createImageBitmap === "function"){
+    createImageBitmap(f, { imageOrientation: "from-image" }).then(function(bm){
+      draw(bm, bm.width, bm.height, function(){ try { bm.close() } catch(e){} });
+    }).catch(function(){ viaImg() });
+  } else viaImg();
+
+  function viaImg(){
+    var url = URL.createObjectURL(f);
+    var im = new Image();
+    im.onload = function(){
+      draw(im, im.naturalWidth, im.naturalHeight, function(){ URL.revokeObjectURL(url) });
+    };
+    im.onerror = function(){ URL.revokeObjectURL(url); raw("เบราว์เซอร์เปิดรูปแบบนี้ไม่ได้ ส่งไฟล์เต็ม") };
+    im.src = url;
+  }
+}
+
 function bindPicks(tag){
   $$("[data-pick]").forEach(function(btn){
     if(btn.dataset.bound) return;
@@ -6112,29 +6186,36 @@ function bindPicks(tag){
       var f = file.files && file.files[0];
       if(!f) return;
       var msg = $("#"+id+"-msg");
-      msg.textContent = "กำลังอัปรูป… อย่าเพิ่งปิดหน้านี้";
       btn.disabled = true;
-      var fr = new FileReader();
-      fr.onerror = function(){
-        btn.disabled = false;
-        msg.textContent = "อ่านไฟล์ไม่ได้ ลองเลือกรูปอื่น";
-      };
-      fr.onload = function(){
+      msg.textContent = "ย่อรูป… (" + kb_(f.size) + ")";
+
+      shrinkPic(f, PIC_MAX[kind] || 1000, function(data, info, err){
+        if(err || !data){
+          btn.disabled = false;
+          msg.textContent = err || "อ่านไฟล์ไม่ได้ ลองเลือกรูปอื่น";
+          return;
+        }
+        /* บอกขนาดที่กำลังส่งจริง จะได้รู้ว่ารอเพราะอะไรและอีกนานแค่ไหน
+           ตัวเลขนี้คือสิ่งเดียวที่แยก "กำลังทำงาน" ออกจาก "ค้าง" ได้ */
+        msg.textContent = (info && info.why ? info.why + " · " : "") +
+          "กำลังส่ง " + kb_(info ? info.to : 0) + "… อย่าเพิ่งปิดหน้านี้";
         google.script.run
           .withSuccessHandler(function(r){
             btn.disabled = false;
             $("#"+id).value = r.url;
             var pv = $("#"+id+"-prev");
             pv.src = r.show; pv.style.display = "";
-            msg.textContent = "อัปแล้ว — อย่าลืมกดบันทึกข้างล่างด้วย";
+            msg.textContent = "อัปแล้ว" +
+              (info && info.to < info.from
+                 ? " (ย่อจาก " + kb_(info.from) + " เหลือ " + kb_(info.to) + ")" : "") +
+              " — อย่าลืมกดบันทึกข้างล่างด้วย";
           })
           .withFailureHandler(function(e){
             btn.disabled = false;
             msg.textContent = e.message;
           })
-          .uploadShopImage({ data: fr.result, kind: kind, tag: tag || "" });
-      };
-      fr.readAsDataURL(f);
+          .uploadShopImage({ data: data, kind: kind, tag: tag || "" });
+      });
     };
   });
 }
