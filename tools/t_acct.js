@@ -280,5 +280,29 @@ for (var nm in s9.fx.sheets) {
 }
 eq('ไม่มีช่องสูตรถูกแตะ', touched, []);
 
+/* ---------- ออกใบซ้ำ: ข้อความต้องชี้ปุ่มที่กดได้ ไม่ใช่ไล่ไปแก้ในชีท ---------- */
+console.log('\nออกใบซ้ำ — ข้อความต้องบอกทางที่กดได้จริง');
+var sDup = start();
+sDup.ctx.issueDoc({
+  clientKey: 'dup-1', type: 'rec', orderNo: sDup.no, date: '2026-09-07',
+  cust: { name: 'บริษัท ทดสอบ จำกัด', taxId: '0105558055790', branch: 'สำนักงานใหญ่',
+          addr: '1 ถ.ทดสอบ', tel: '021234567', email: 'a@b.c' }
+});
+var msgDup = '';
+try {
+  sDup.ctx.issueDoc({
+    clientKey: 'dup-2', type: 'rec', orderNo: sDup.no, date: '2026-09-07',
+    cust: { name: 'บริษัท ทดสอบ จำกัด', taxId: '0105558055790', branch: 'สำนักงานใหญ่',
+            addr: '1 ถ.ทดสอบ', tel: '021234567', email: 'a@b.c' }
+  });
+} catch (eDup) { msgDup = eDup.message; }
+
+truthy('ออกใบซ้ำไม่ได้ และบอกเลขใบเดิม', /ไปแล้วเป็นใบ/.test(msgDup));
+truthy('บอกทางที่หนึ่ง — แก้ไขใบ ใช้เลขเดิม', /แก้ไขใบ/.test(msgDup));
+truthy('บอกทางที่สอง — ยกเลิกแล้วออกใหม่', /ยกเลิก/.test(msgDup));
+truthy('ชี้ไปที่รายการในหน้าจอ ไม่ใช่ไล่ให้ไปเปิดชีท',
+   /เอกสารที่ออกไปแล้ว/.test(msgDup));
+truthy('ไม่บอกให้ไปแก้ในชีทอีกแล้ว', !/ในชีท เอกสาร/.test(msgDup));
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);
