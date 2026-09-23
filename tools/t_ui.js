@@ -2833,7 +2833,9 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
         icons: q('.acts .sqic').length,
         lines: Object.keys(tops).length,
         srcs: q('.acts .sqic').map(function (im) { return im.getAttribute('src').slice(-40) }),
-        iconW: btns.length ? Math.round(r.querySelector('.sqic').getBoundingClientRect().width) : 0
+        iconW: btns.length ? Math.round(r.querySelector('.sqic').getBoundingClientRect().width) : 0,
+        sqW: btns.length ? Math.round(btns[0].getBoundingClientRect().width) : 0,
+        sqH: btns.length ? Math.round(btns[0].getBoundingClientRect().height) : 0
       });
     });
     return out;
@@ -2863,9 +2865,16 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
      ล็อกเลขไว้ที่ 8 ตั้งใจ — วันที่ได้รูปมาแล้วข้อสอบข้อนี้จะเตือนให้มาแก้เป็น 9 */
   eq('แปดปุ่มเดิมยังเป็นรูปจริง ไม่มีปุ่มไหนตกกลับไปเป็นตัวอักษร',
     seen40.rows.slice(0, 4).map(function (r) { return r.icons }), [8, 8, 8, 8]);
-  /* ปุ่มตกบรรทัด = ปุ่มสุดท้ายลอยเดี่ยวใต้แถว ดูเหมือนปุ่มแปลกที่ไม่เข้าพวก */
-  eq('ปุ่มทั้งเก้าอยู่บรรทัดเดียวกันบนจอมือถือ',
-    seen40.rows.slice(0, 4).map(function (r) { return r.lines }), [1, 1, 1, 1]);
+  /* เดิมข้อนี้บังคับให้เก้าปุ่มอยู่บรรทัดเดียว เพราะกลัวปุ่มสุดท้ายลอยเดี่ยวดูไม่เข้าพวก
+     แต่บนมือถือมันแปลว่าปุ่มละ 35px เล็กกว่าปลายนิ้ว และพอกด ก+ แถวนี้กว้างเกินจอ
+     เบราว์เซอร์จึงย่อทั้งหน้าลงมาให้พอดี — กดขยายตัวอักษรแล้วได้หน้าเล็กลง
+     ตอนนี้จัดเป็นตาราง 5 ช่อง ได้สองแถวเท่า ๆ กัน 5+4 ปุ่มใหญ่ขึ้นเกือบเท่าตัว
+     ข้อสอบจึงเปลี่ยนไปวัดสิ่งที่สำคัญกว่า: ต้องเป็นแถวที่ตรงกันเป็นตาราง ไม่เกินสองแถว */
+  eq('ปุ่มเรียงเป็นตารางไม่เกินสองแถวบนจอมือถือ',
+    seen40.rows.slice(0, 4).map(function (r) { return r.lines }), [2, 2, 2, 2]);
+  truthy('ปุ่มใหญ่พอให้นิ้วกด ไม่ใช่แถบบาง ๆ',
+    seen40.rows.slice(0, 4).every(function (r) { return r.sqW >= 38 && r.sqH >= 38 }),
+    JSON.stringify(seen40.rows.slice(0, 4).map(function (r) { return r.sqW + 'x' + r.sqH })));
   eq('รูปแปดอันต้องเป็นคนละรูปกันทั้งหมด ไม่มีปุ่มไหนใช้รูปซ้ำ',
     seen40.rows[0].srcs.filter(function (s, i, a) { return a.indexOf(s) === i }).length, 8);
   truthy('ไอคอนใหญ่พอให้เห็นว่าเป็นรูปอะไร ไม่ใช่จุดเล็ก ๆ',

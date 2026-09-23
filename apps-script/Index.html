@@ -53,7 +53,10 @@ body{margin:0;background:var(--bg);color:var(--ink);
 .fsz button:active{background:rgba(255,255,255,.32)}
 h1,h2,h3{margin:0}
 button{font:inherit;cursor:pointer}
-input,select,textarea{font:inherit;width:100%;padding:13px 14px;border:1px solid var(--line);
+/* min-width:0 ไม่ใช่ของประดับ — ช่องวันที่ (type=date) มีความกว้างขั้นต่ำในตัวเอง
+   ตามขนาดตัวอักษร พอกด ก+ จนสุด ช่องเดียวกินไป 271px สองช่องในแถวเดียวกันจึง
+   กว้าง 550px+ ดันหน้าให้ล้นจอ แล้วเบราว์เซอร์ย่อทั้งหน้าลงมา กลายเป็นกดขยายแล้วได้เล็กลง */
+input,select,textarea{font:inherit;width:100%;min-width:0;padding:13px 14px;border:1px solid var(--line);
   border-radius:10px;background:#fff;color:var(--ink)}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
 textarea{resize:vertical}
@@ -94,6 +97,9 @@ textarea{resize:vertical}
 /* สองช่องเรียงข้างกัน — พอป้ายเป็นสองภาษาพร้อมไอคอน ช่องละครึ่งจอแคบเกินไป
    ชื่อป้ายจะตกบรรทัดจนสองช่องสูงไม่เท่ากันและอ่านยาก บนมือถือจึงเรียงลงมาแทน */
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* ช่องในตารางยุบได้ ไม่งั้นช่องที่มีความกว้างขั้นต่ำในตัว (วันที่ · ตัวเลข)
+   จะดันคอลัมน์ให้กว้างกว่าที่แบ่งไว้ แล้วทั้งแถวล้นออกนอกจอ */
+.two>*{min-width:0}
 @media (max-width:430px){ .two{grid-template-columns:1fr;gap:0} }
 .hint{font-size:0.8rem;color:var(--gray);margin-top:5px;line-height:1.5}
 .subhd{font-size:0.85rem;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
@@ -191,9 +197,13 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
 .row .i b{display:block}
 .row .i span{font-size:0.82rem;color:var(--gray)}
 .row .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-/* จอแคบ: ปุ่มห้าอันเบียดจนชื่อลูกค้ากับเลขออเดอร์ตกบรรทัดทีละคำ อ่านยาก
-   ให้ปุ่มลงไปอยู่แถวของตัวเองเต็มความกว้างแทน ข้อความจะได้เต็มบรรทัด */
-@media (max-width:430px){
+/* จอแคบ: ปุ่มเบียดจนชื่อลูกค้ากับเลขออเดอร์ตกบรรทัดทีละคำ อ่านยาก
+   ให้ปุ่มลงไปอยู่แถวของตัวเองเต็มความกว้างแทน ข้อความจะได้เต็มบรรทัด
+
+   เส้นแบ่งอยู่ที่ 560px เท่ากับกฎจัดปุ่มข้างล่าง เมื่อก่อนเป็น 430 กับ 520 คนละที่
+   ช่วง 431–520 จึงตกร่อง: ปุ่มถูกสั่งให้ยืดเต็มแถว (flex:1 1 0) ทั้งที่แถวยัง
+   ไม่ได้กว้างเต็มจอ กล่องปุ่มเลยยุบเหลือ 307px แทนที่จะเป็น 372px ปุ่มแบนลงทันที */
+@media (max-width:560px){
   .row .i{flex:0 0 100%}
   .row .acts{flex:0 0 100%;justify-content:flex-start;margin-top:8px}
 }
@@ -206,18 +216,25 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
 /* ป้ายสถานะเป็นชิปกลม ๆ ต้องอยู่ต่อท้ายยอดเงินในบรรทัดเดียวกัน
    กฎ span+span ด้านบนมีไว้ให้ที่อยู่ขึ้นบรรทัดใหม่ ไม่ได้ตั้งใจให้ชิปยืดเต็มแถว */
 .row .i span+span.tag{display:inline-block;margin-top:0}
-.sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
+/* ขนาดปุ่มผูกกับตัวอักษรของตัวเอง ปุ่ม ก+ ก− จึงขยายปุ่มทั้งใบ ไม่ใช่ขยายแต่รูปข้างใน
+   มี min ไว้กันปุ่มเล็กกว่านิ้วคน ถึงจะย่อตัวอักษรจนสุดก็ยังกดติด */
+.sq{width:2.2em;height:2.2em;min-width:40px;min-height:40px;
+  border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
 .sq.red{color:var(--red);border-color:#f0c9c9}
-/* ปุ่มบนแถวออเดอร์ใช้รูปจริง ขนาดผูกกับตัวอักษร ปุ่ม ก+ ก− จึงขยายไอคอนตามไปด้วย */
-.sq .sqic{width:1.5em;height:1.5em;object-fit:contain;display:block;margin:0 auto}
+/* max ไว้กันรูปดันปุ่มให้กว้างกว่าช่องที่มี — รูปที่ดันปุ่มจนล้นจอคือต้นเหตุที่
+   กด ก+ แล้วทั้งหน้ากลับเล็กลง เพราะเบราว์เซอร์ต้องย่อทุกอย่างลงมาให้พอดีจอ */
+.sq .sqic{width:1.5em;height:1.5em;max-width:100%;max-height:100%;
+  object-fit:contain;display:block;margin:0 auto}
 .sq{display:flex;align-items:center;justify-content:center}
-/* แปดปุ่มต้องอยู่แถวเดียวกันเสมอ ถ้าตกบรรทัดหนึ่งปุ่มจะดูเหมือนปุ่มแปลกที่ไม่เข้าพวก
-   บนจอแคบจึงให้ปุ่มยืดหดเท่า ๆ กันเต็มความกว้างแถวแทนการขึ้นบรรทัดใหม่
-   เจาะจงเฉพาะแถวออเดอร์ ไม่ใช่ทุกแถวที่มีปุ่ม — แถวรายการเอกสารใช้ปุ่มตัวหนังสือ
-   ถ้าโดนบีบไม่ให้ตกบรรทัด คำว่า "ทำเป็นออเดอร์" จะถูกหั่นเป็นตัวละบรรทัด */
-@media (max-width:520px){
-  #list .row .acts{flex-wrap:nowrap;gap:5px}
-  #list .row .acts .sq{flex:1 1 0;width:auto;min-width:0}
+/* เก้าปุ่มเรียงแถวเดียวบนมือถือ แปลว่าปุ่มละ 35px ซึ่งเล็กกว่าปลายนิ้ว และพอกด ก+
+   ให้ตัวหนังสือใหญ่ขึ้น แถวนี้จะกว้าง 460px บนจอ 411px — ล้นจอ เบราว์เซอร์จึงย่อ
+   ทั้งหน้าลงครึ่งหนึ่งให้พอดี ยิ่งกดขยายยิ่งได้หน้าเล็กลง
+
+   เปลี่ยนเป็นตาราง 5 ช่อง ได้สองแถว 5+4 ปุ่มละ 67px กดถนัดกว่าเดิมเกือบเท่าตัว
+   และไม่ล้นจอที่ขนาดตัวอักษรไหนเลย · จอกว้างพอค่อยกลับไปเป็นแถวเดียวเก้าช่อง */
+@media (max-width:560px){
+  #list .row .acts{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  #list .row .acts .sq{width:auto;min-width:0}
 }
 /* ปุ่มตัวหนังสือบนแถวเอกสาร กว้างเท่าที่ข้อความต้องการ ล้นก็ตกบรรทัดทั้งปุ่ม */
 .row .acts .mini{flex:0 0 auto;white-space:nowrap}
