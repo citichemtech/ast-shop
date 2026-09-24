@@ -490,14 +490,33 @@ eq('มีแถวเดียวในชีท ไม่ได้สร้า
    ลูกค้ากดแล้วเจอหน้าให้ล็อกอิน Google ซึ่งดูเหมือนร้านพัง
    และกว่าจะรู้ก็ตอนลูกค้าทักมาบ่น ต้องจับให้ได้ตั้งแต่ตอนวาง */
 var MINE13 = f13.staff.getShopEdit('look').look.links.preview.split('?')[0];
-throws('วางลิงก์พนักงานมาต้องไม่ยอมรับ',
-   function () { f13.staff.saveShopLook({ payLink: MINE13 }) }, 'ลิงก์ของพนักงาน');
-throws('และบอกวิธีไปเอาลิงก์ที่ถูกตัว',
-   function () { f13.staff.saveShopLook({ payLink: MINE13 + '?shop=1' }) }, 'ทุกคน');
+throws('วางลิงก์พนักงานมาต้องเตือนก่อน ไม่บันทึกทันที',
+   function () { f13.staff.saveShopLook({ payLink: MINE13 }) }, 'ลิงก์เดียวกับที่คุณเปิดอยู่');
+throws('เตือนแม้จะติด ?shop=1 มาด้วย',
+   function () { f13.staff.saveShopLook({ payLink: MINE13 + '?shop=1' }) }, 'SAME_AS_STAFF');
 eq('ของเดิมยังอยู่ ไม่ถูกทับด้วยของผิด',
    f13.staff.getShopEdit('look').look.payLink, EXEC13);
 
 /* /dev เปิดได้เฉพาะเจ้าของสคริปต์ ส่งให้ลูกค้าแล้วเจอหน้าล็อกอินเหมือนกัน */
+/* deploy ตัวเดียวที่ตั้ง "ใครเข้าถึงได้: ทุกคน" ใช้เป็นทั้งหน้าพนักงานและหน้าลูกค้าได้จริง
+   ห้ามเด็ดขาดคือบังคับให้ไปสร้าง deploy ที่ไม่จำเป็นอีกตัว แล้วงานค้างอยู่ตรงนั้น
+   จึงเปลี่ยนเป็นเตือนแล้วให้ยืนยันเองหลังไปทดสอบมา */
+truthy('คำเตือนมีรหัสนำหน้าให้หน้าจอรู้ว่าต้องขึ้นปุ่มยืนยัน', (function () {
+  try { f13.staff.saveShopLook({ payLink: MINE13 }); return false }
+  catch (e) { return String(e.message).indexOf('SAME_AS_STAFF|') === 0 }
+})());
+truthy('คำเตือนบอกวิธีทดสอบด้วยหน้าต่างไม่ระบุตัวตน', (function () {
+  try { f13.staff.saveShopLook({ payLink: MINE13 }); return false }
+  catch (e) { return /ไม่ระบุตัวตน/.test(e.message) && /\?shop=1/.test(e.message) }
+})());
+f13.staff.saveShopLook({ payLink: MINE13, payLinkSure: true });
+eq('ยืนยันแล้วบันทึกได้ ใช้ deploy ตัวเดียวกันได้',
+   f13.staff.getShopEdit('look').look.payLink, MINE13);
+truthy('และได้ลิงก์ลูกค้าออกมาจริง',
+   /\?shop=1$/.test(f13.staff.getShopEdit('look').look.links.customer));
+/* กลับค่าเดิมไว้ให้ข้อสอบข้อถัดไป */
+f13.staff.saveShopLook({ payLink: EXEC13 });
+
 throws('ลิงก์ /dev ที่เป็นตัวทดสอบ ต้องไม่ยอมรับ',
    function () { f13.staff.saveShopLook({ payLink: 'https://script.google.com/macros/s/X13/dev' }) },
    '/exec');

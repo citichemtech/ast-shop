@@ -408,10 +408,36 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
   await pg.locator('#ed-paysave').click();
   await pg.waitForTimeout(700);
   ok('วางลิงก์พนักงานมา ขึ้นคำเตือนตรงนั้น',
-     /ลิงก์ของพนักงาน/.test(await pg.locator('#ed-paymsg').innerText()));
+     /ลิงก์เดียวกับที่คุณเปิดอยู่/.test(await pg.locator('#ed-paymsg').innerText()));
+  ok('ไม่โชว์รหัสภายใน SAME_AS_STAFF ให้คนอ่าน',
+     !/SAME_AS_STAFF/.test(await pg.locator('#ed-paymsg').innerText()));
   ok('ยังไม่มีลิงก์ลูกค้าเพิ่มขึ้นมา', (await pg.locator('.edlink').count()) === 1);
   ok('กดใหม่ได้ ปุ่มไม่ค้างอยู่ที่ "กำลังบันทึก"',
      !(await pg.locator('#ed-paysave').isDisabled()));
+
+  /* deploy ตัวเดียวที่ตั้ง "ทุกคน" ใช้ได้จริงทั้งสองหน้า จึงต้องมีทางไปต่อ
+     ไม่ใช่ตันอยู่แค่คำเตือน แต่ต้องเป็นการกดยืนยันเอง ไม่ใช่ผ่านไปเงียบ ๆ */
+  var confirmBtn = pg.locator('#ed-paymsg button');
+  ok('มีปุ่มให้ยืนยันหลังไปทดสอบมาแล้ว', (await confirmBtn.count()) === 1);
+  ok('ปุ่มบอกชัดว่าต้องทดสอบก่อนถึงกด',
+     /ทดสอบแล้ว/.test(await confirmBtn.innerText()));
+  await confirmBtn.click();
+  await pg.waitForTimeout(900);
+  ok('ยืนยันแล้วบันทึกได้จริง',
+     (await pg.locator('.edlink').count()) === 2);
+  var sentSure = await pg.evaluate(() =>
+    (SENT.filter(x => x.fn === 'saveShopLook').pop() || {}).v);
+  ok('ส่งธงยืนยันขึ้นไปด้วย', !!sentSure && sentSure.payLinkSure === true);
+
+  /* กลับไปสถานะไม่มีลิงก์ เพื่อสอบทางปกติต่อ */
+  await pg.evaluate(() => {
+    MOCK_ED.look.payLink = "";
+    MOCK_ED.look.links = { preview: "https://script.google.com/macros/s/STAFF/exec?shop=1",
+      customer: "", why: 'ยังไม่ได้กรอก "ลิงก์เว็บแอปสำหรับลูกค้า"' };
+    EDGOT.look = false;
+    edLoad("look", true, edLinksDraw);
+  });
+  await pg.waitForTimeout(700);
 
   await pg.locator('#ed-paylink').fill(
     'https://script.google.com/macros/s/PUBLIC9/exec?shop=1');

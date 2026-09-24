@@ -6321,7 +6321,7 @@ function edLinksDraw(){
 }
 
 /* บันทึกลิงก์ลูกค้าจากหน้าโหมดแก้ไข — ใช้ทั้งกล่องเตือนและฟอร์มหน้าตาหัวร้าน */
-function payLinkSave(btn, val, then){
+function payLinkSave(btn, val, then, sure){
   var v = String(val || "").trim();
   var box = $("#ed-paymsg");
   function say(good, txt){
@@ -6347,9 +6347,24 @@ function payLinkSave(btn, val, then){
     })
     .withFailureHandler(function(e){
       btn.disabled = false; btn.textContent = label;
-      say(false, e.message);
+      var m = String(e.message || "");
+      /* ลิงก์ซ้ำกับของพนักงาน = เตือน ไม่ใช่ห้าม deploy ตัวเดียวที่ตั้ง "ทุกคน"
+         ใช้เป็นทั้งสองหน้าได้จริง แต่ถ้าตั้งผิดลูกค้าจะเจอหน้าล็อกอินโดยไม่มีใครมาบอก
+         จึงให้ไปทดสอบก่อนแล้วค่อยกดยืนยันเอง ไม่ใช่กดผ่านโดยไม่รู้ตัว */
+      if(m.indexOf("SAME_AS_STAFF|") === 0){
+        say(false, m.slice("SAME_AS_STAFF|".length));
+        var go = document.createElement("button");
+        go.className = "btn ghost";
+        go.style.marginTop = "8px";
+        go.textContent = "ทดสอบแล้ว ลูกค้าเปิดได้ — ใช้ลิงก์นี้";
+        go.onclick = function(){ payLinkSave(go, v, then, true) };
+        box.appendChild(document.createElement("br"));
+        box.appendChild(go);
+        return;
+      }
+      say(false, m);
     })
-    .saveShopLook({ payLink: v });
+    .saveShopLook({ payLink: v, payLinkSure: !!sure });
 }
 
 document.addEventListener("click", function(e){
@@ -6890,7 +6905,10 @@ function elookDraw(){
         logo: $("#elm-logo").value,
         cover: $("#elm-cover").value,
         map: $("#elm-map").value,
-        payLink: $("#elm-paylink").value
+        payLink: $("#elm-paylink").value,
+        /* ช่องนี้เปิดมาพร้อมค่าเดิมเสมอ กดบันทึกทั้งที่ไม่ได้ตั้งใจแก้ลิงก์ก็เกิดได้
+           ถ้าไม่ยอมให้ผ่าน จะแก้โลโก้ไม่ได้เลยเพราะติดด่านลิงก์ที่ไม่ได้แตะ */
+        payLinkSure: true
       });
   };
 }

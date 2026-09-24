@@ -308,8 +308,9 @@ window.google = { script: { run: (function(){
         if(v.payLink !== undefined){
           var base = String(v.payLink||"").trim().split("#")[0].split("?")[0];
           var mine = String((MOCK_ED.look.links||{}).preview||"").split("?")[0];
-          if(base && mine && base === mine)
-            throw new Error("อันนี้เป็นลิงก์ของพนักงาน ลูกค้ากดแล้วจะเจอหน้าให้ล็อกอิน Google");
+          if(base && mine && base === mine && !v.payLinkSure)
+            throw new Error("SAME_AS_STAFF|อันนี้เป็นลิงก์เดียวกับที่คุณเปิดอยู่ตอนนี้ "
+              + "ทดสอบด้วยหน้าต่างไม่ระบุตัวตนก่อน");
           if(base && !/\/exec$/.test(base))
             throw new Error("ลิงก์เว็บแอปต้องลงท้ายด้วย /exec — ที่วางมาคือ " + base);
           MOCK_ED.look.payLink = base;
