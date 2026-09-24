@@ -840,6 +840,7 @@ function appCfg_() {
        ห้ามเดาจาก ScriptApp.getService().getUrl() เพราะนั่นคือลิงก์ของ deploy
        ตัวที่พนักงานกำลังใช้อยู่ ซึ่งลูกค้าเปิดไม่ได้ ส่งไปก็เจอหน้าให้ล็อกอิน */
     payLink: '',
+    reqMail: '',
     /* ลายเซ็นฝั่งร้านที่เซ็นครั้งเดียวแล้วประทับให้ทุกใบ เก็บเป็นพิกัดเส้น (ดู Sign.html)
        ไม่ใช่รูป เพราะช่องในชีทรับได้ 50,000 ตัวอักษร และต้องคมตอนพิมพ์ 300 dpi */
     sign: { cashier: '', auth: '' },
@@ -926,6 +927,8 @@ function appCfg_() {
     else if (k === 'คำนำหน้าเลขใบวางบิล') out.docPrefix.bill = String(val || out.docPrefix.bill);
     else if (k === 'เครดิตกี่วัน (ใบวางบิล)') out.creditDays = Number(val || 30) || 30;
     else if (k === 'ลิงก์เว็บแอปสำหรับลูกค้า') out.payLink = webLink_(val);
+    /* หลายอีเมลได้ คั่นด้วยจุลภาค — เจ้าของร้านกับคนคีย์ไม่ใช่คนเดียวกันเสมอไป */
+    else if (k === 'อีเมลแจ้งเตือนออเดอร์จากเว็บ') out.reqMail = String(val || '').trim();
     else if (k === 'ยกยอดเลขใบเสร็จ/ใบกำกับภาษีมาจาก') out.docStart.rec = Number(val || 0) || 0;
     else if (k === 'ยกยอดเลขใบแจ้งหนี้มาจาก') out.docStart.inv = Number(val || 0) || 0;
     else if (k === 'ยกยอดเลขใบเสนอราคามาจาก') out.docStart.quote = Number(val || 0) || 0;

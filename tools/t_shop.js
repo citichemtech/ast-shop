@@ -555,5 +555,102 @@ for (var a24 = DATA_ROW; a24 <= app23.getMaxRows(); a24++) {
 eq('ใส่ลิงก์แผนที่เองแล้วใช้ตัวนั้น',
    s23.guest.shopData().map.url, 'https://maps.app.goo.gl/abcdef');
 
+/* ====================================== 24. อีเมลแจ้งร้านทันทีที่มีคนสั่ง
+
+   ก่อนหน้านี้คำขอไปนอนรออยู่ในชีทเงียบ ๆ ไม่มีอะไรเด้งบอกสักอย่าง
+   ลูกค้าสั่งตอนตีสองแล้วไม่มีใครเปิดแอป ออเดอร์ค้างข้ามคืนโดยไม่มีใครรู้    */
+console.log('\n24. อีเมลแจ้งร้านทันทีที่ลูกค้าสั่งจากหน้าเว็บ');
+
+function setApp(fx, key, val) {
+  var app = fx.sheets['ตั้งค่าแอป'];
+  for (var r = DATA_ROW; r <= app.getMaxRows(); r++) {
+    if (String(app.cell(r, 1).v || '').trim() === key) { app.cell(r, 2).v = val; return true }
+  }
+  return false;
+}
+
+var s24 = shopFixture();
+truthy('setup สร้างช่องอีเมลแจ้งเตือนให้ในชีทตั้งค่าแอป',
+   setApp(s24.fx, 'อีเมลแจ้งเตือนออเดอร์จากเว็บ', 'aey@chem-inno-tech.com'));
+
+var shelf24 = s24.guest.shopData().items;
+var r24 = s24.guest.shopOrder({
+  clientKey: 'web-mail-1', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '99/9 ถ.ตัวอย่าง จ.ระยอง 21000', note: 'รบกวนส่งด่วน',
+  items: [{ sku: shelf24[0].sku, qty: 3 }]
+});
+eq('ส่งอีเมลออกไปหนึ่งฉบับ', s24.fx.MAILS.length, 1);
+var m24 = s24.fx.MAILS[0] || {};
+eq('ส่งถึงอีเมลที่กรอกไว้ ไม่ใช่เดาเอง', m24.to, 'aey@chem-inno-tech.com');
+truthy('หัวข้อมีเลขคำขอ จะได้เห็นตั้งแต่ยังไม่เปิดอ่าน',
+   String(m24.subject).indexOf(r24.no) > -1);
+truthy('หัวข้อมียอดเงินด้วย', /\d/.test(String(m24.subject)) &&
+   String(m24.subject).indexOf('บาท') > -1);
+
+/* ข้อมูลที่ต้องใช้ตัดสินใจ ต้องอยู่ในอีเมลครบ ไม่ใช่ไล่ให้ไปเปิดแอปดูเอง
+   คนอ่านอีเมลนี้ตอนตีสองบนมือถือ ต้องรู้ทันทีว่าควรลุกหรือรอเช้า */
+['มานี ใจดี', '0812345678', '99/9', 'รบกวนส่งด่วน', shelf24[0].name]
+  .forEach(function (want) {
+    truthy('ในอีเมลมี "' + String(want).slice(0, 22) + '"',
+      String(m24.body).indexOf(want) > -1);
+  });
+truthy('บอกว่ายังไม่ตัดสต๊อก และต้องไปกดรับเป็นออเดอร์',
+   /ยังไม่ตัดสต๊อก/.test(m24.body) && /รับเป็นออเดอร์/.test(m24.body));
+truthy('บอกวิธีปิดการแจ้งเตือนไว้ท้ายอีเมล', /"ปิด"/.test(m24.body));
+
+console.log('\n   โหมดเข้าชีทเลย ยิ่งต้องรู้ทันที เพราะตัดสต๊อกไปแล้วจริง ๆ');
+var s24b = shopFixture('direct');
+setApp(s24b.fx, 'อีเมลแจ้งเตือนออเดอร์จากเว็บ', 'aey@chem-inno-tech.com');
+var shelf24b = s24b.guest.shopData().items;
+var r24b = s24b.guest.shopOrder({
+  clientKey: 'web-mail-2', cust: 'สมชาย', tel: '0899999999',
+  addr: '1 ถ.ทดสอบ ต.เนินพระ อ.เมือง จ.ระยอง 21000', items: [{ sku: shelf24b[0].sku, qty: 1 }]
+});
+eq('ส่งอีเมลออกไปด้วย', s24b.fx.MAILS.length, 1);
+truthy('หัวข้อใช้เลขออเดอร์จริง',
+   String(s24b.fx.MAILS[0].subject).indexOf(r24b.no) > -1);
+truthy('และบอกว่าตัดสต๊อกไปแล้ว ไม่ใช่ข้อความของคำขอ',
+   /ตัดสต๊อก(และตัดล็อต)?ไป/.test(s24b.fx.MAILS[0].body));
+
+console.log('\n   ส่งอีเมลไม่ได้ ห้ามทำให้ลูกค้าสั่งไม่สำเร็จ');
+/* ตอนนี้คำขอลงชีทไปแล้ว งานสำคัญที่สุดสำเร็จแล้ว ถ้าปล่อย error ให้หลุดออกไป
+   ลูกค้าจะเห็นหน้าจอแดงแล้วกดสั่งซ้ำ ได้คำขอซ้ำสองใบทั้งที่ของเข้าระบบแล้ว */
+var s24c = shopFixture();
+setApp(s24c.fx, 'อีเมลแจ้งเตือนออเดอร์จากเว็บ', 'aey@chem-inno-tech.com');
+s24c.guest.__mailFail = true;
+var shelf24c = s24c.guest.shopData().items;
+var r24c = s24c.guest.shopOrder({
+  clientKey: 'web-mail-3', cust: 'ลูกค้าเน็ตล่ม', tel: '0800000000',
+  addr: '2 ถ.ทดสอบ ต.เนินพระ อ.เมือง จ.ระยอง 21000', items: [{ sku: shelf24c[0].sku, qty: 1 }]
+});
+truthy('ลูกค้ายังได้เลขคำขอกลับไปตามปกติ', /^REQ-/.test(r24c.no));
+eq('ไม่มีอีเมลออกไปเลย', s24c.fx.MAILS.length, 0);
+/* และของต้องอยู่ในชีทจริง ไม่ใช่แค่ตอบกลับสวย ๆ แล้วไม่มีอะไรถูกบันทึก */
+var req24 = s24c.fx.sheets['คำขอสั่งซื้อ'];
+var found24 = false;
+for (var q24 = DATA_ROW; q24 <= req24.getMaxRows(); q24++) {
+  if (String(req24.cell(q24, 2).v || '') === r24c.no) { found24 = true; break }
+}
+truthy('คำขอยังถูกบันทึกลงชีทครบ', found24);
+
+console.log('\n   พิมพ์ว่า "ปิด" แล้วต้องไม่ส่ง · เว้นว่างแล้วส่งเข้าอีเมลเจ้าของสคริปต์');
+var s24d = shopFixture();
+setApp(s24d.fx, 'อีเมลแจ้งเตือนออเดอร์จากเว็บ', 'ปิด');
+var shelf24d = s24d.guest.shopData().items;
+s24d.guest.shopOrder({ clientKey: 'web-mail-4', cust: 'ลูกค้า ก', tel: '0811111111',
+  addr: '3 ถ.ทดสอบ ต.เนินพระ อ.เมือง จ.ระยอง 21000', items: [{ sku: shelf24d[0].sku, qty: 1 }] });
+eq('พิมพ์ปิดแล้วไม่ส่งเลย', s24d.fx.MAILS.length, 0);
+
+var s24e = shopFixture();   /* ไม่กรอกช่องอีเมลเลย */
+var shelf24e = s24e.guest.shopData().items;
+s24e.guest.shopOrder({ clientKey: 'web-mail-5', cust: 'ลูกค้า ข', tel: '0822222222',
+  addr: '4 ถ.ทดสอบ ต.เนินพระ อ.เมือง จ.ระยอง 21000', items: [{ sku: shelf24e[0].sku, qty: 1 }] });
+eq('ลืมกรอก ก็ยังส่งให้ ไม่ใช่เงียบหาย', s24e.fx.MAILS.length, 1);
+eq('ส่งเข้าอีเมลเจ้าของสคริปต์', s24e.fx.MAILS[0].to, 'citisales01@chem-inno-tech.com');
+
+console.log('\n   ลูกค้าต้องไม่เห็นอะไรเพิ่มจากเดิม');
+truthy('คำตอบที่ส่งกลับไม่มีอีเมลของร้านติดไปด้วย',
+   JSON.stringify(r24).indexOf('chem-inno-tech.com') < 0);
+
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

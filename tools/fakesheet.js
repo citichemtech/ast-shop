@@ -435,7 +435,7 @@ var head = mk('ออเดอร์_หัวบิล', 27, headLimit + 1);
   }
 
   recalc();   // ชีทจริงมีค่าจากสูตรอยู่แล้วตั้งแต่ก่อนเปิดแอป ชีทจำลองก็ต้องเหมือนกัน
-  return { sheets: sheets, recalc: recalc, demo: demo };
+  return { sheets: sheets, recalc: recalc, demo: demo, MAILS: [] };
 }
 
 /* ------------------------------------------------- โหลด .gs เข้ามารันใน node */
@@ -590,6 +590,15 @@ function load(fixture, opts) {
       newDataValidation: function () {
         var b = { requireValueInRange: function () { return b; }, requireValueInList: function () { return b; }, setAllowInvalid: function () { return b; }, build: function () { return {}; } };
         return b;
+      }
+    },
+    /* กล่องจดหมายจำลอง — ข้อสอบวัดว่าส่งถึงใคร หัวข้ออะไร ในตัวอีเมลมีอะไรบ้าง
+       ไม่ใช่วัดแค่ว่า "มีการเรียกฟังก์ชันส่งเมล" ซึ่งผ่านได้ทั้งที่ส่งผิดคน
+       ctx.__mailFail = true เพื่อจำลองโควตาเต็มหรือเน็ตสะดุด */
+    GmailApp: {
+      sendEmail: function (to, subject, body, o) {
+        if (ctx.__mailFail) throw new Error('โควตาส่งอีเมลเต็มแล้ว');
+        fixture.MAILS.push({ to: to, subject: subject, body: body, opts: o || {} });
       }
     },
     Session: {
