@@ -53,6 +53,12 @@ function setup() {
   made.push(setupCarrierList_(ss));
   made.push(setupStatusList_(ss));
   made.push(setupRecvTypeList_(ss));
+  /* แถวตั้งค่าของหน้าร้านอยู่ใน shopSwitchRow_ ซึ่ง setup ไม่เคยเรียกเลย
+     มีแต่ setupShopPages ที่เรียก — คนที่สั่ง setup ตามที่บอกจึงไม่ได้แถวใหม่
+     ของจริง 24 ก.ย. 69: บอกเจ้าของร้านให้สั่ง setup เพื่อให้ได้แถวอีเมลแจ้งเตือน
+     สั่งแล้วไม่มีแถวขึ้นมา เพราะมันไม่เคยอยู่ในเส้นทางของ setup ตั้งแต่แรก
+     ฟังก์ชันนี้เช็คก่อนเขียนอยู่แล้ว สั่งซ้ำกี่ครั้งก็ไม่เพิ่มซ้ำ */
+  made.push(shopSwitchRow_(ss));
   // ซ่อมให้อัตโนมัติ แต่ห้ามล้มทั้ง setup ถ้าซ่อมไม่ได้ — ส่วนอื่นติดตั้งไปแล้ว
   try { made.push(repairStockSheet()); }
   catch (e) { made.push('ซ่อมชีทสต๊อกไม่สำเร็จ: ' + e.message); }
