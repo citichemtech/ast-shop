@@ -4304,5 +4304,90 @@ var over67 = [];
 for (var nm67 in fx67.sheets) over67 = over67.concat(fx67.sheets[nm67].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over67, []);
 
+/* ============================================================ 68
+   ช่วงแถวในสูตรสั้นกว่าข้อมูล — ของที่กรอกใหม่หายเงียบ
+
+   ของจริงที่ร้านเจอ: เจ้าของร้านนับสต๊อกทุกวัน กรอกทุกวัน แล้วบอกว่า
+   "ใส่แล้วไม่ตัดให้ เลขมั่วไปหมด" ไล่ดูชีทจริงพบว่าแอปเขียนครบทุกแถว
+   แต่สูตรในชีท สต๊อกคงเหลือ เขียนช่วงไว้ตายตัวถึงแถว 16 ของชีท รับเข้า
+   ตั้งแต่ตอนที่ชีทยังมีข้อมูลไม่กี่แถว แถว 17 เป็นต้นไปจึงไม่ถูกนับเลย
+   รวมของที่หายไป 5,435 ชิ้น และยอดคงเหลือออกมาติดลบทั้งที่ของเต็มชั้น
+
+   อาการนี้เงียบกว่าทุกอย่างที่เคยเจอ — ไม่ error ไม่มี #REF! ไม่มีเลขนิ่ง
+   ตัวเลขยังดูปกติทุกช่อง แค่ "ไม่นับ" ของใหม่เท่านั้น                      */
+console.log('\n68. ช่วงแถวในสูตรสั้นกว่าข้อมูล — ของที่กรอกใหม่หายเงียบ');
+var fx68 = FS.build();
+var api68 = FS.load(fx68);
+api68.setup();
+var st68 = fx68.sheets['สต๊อกคงเหลือ'];
+var rv68 = fx68.sheets['รับเข้า'];
+var sku68 = fx68.sheets['ฐานสินค้า'].cell(DATA_ROW, 2).v;
+
+/* จำลองสูตรของเจ้าของร้านที่เขียนช่วงไว้ตายตัวถึงแถว 16 */
+var CUT = 16;
+[6, 7].forEach(function (c) {
+  for (var r = DATA_ROW; r <= 150; r++) {
+    var f = String(st68.cell(r, c).f || '');
+    st68.cell(r, c).f = f.replace(/(!\$[A-Z]{1,3}\$6:\$[A-Z]{1,3})(?!\d)/g, '$1' + CUT);
+  }
+});
+truthy2('ตั้งสูตรให้สั้นถึงแถว 16 ได้',
+  String(st68.cell(DATA_ROW, 6).f).indexOf('$H$6:$H16') > -1);
+
+/* กรอกรับเข้าจนเลยแถว 16 ไป — แถวก่อนหน้านั้นต้องนับได้ แถวหลังต้องหาย */
+function recvAt(row, sku, qty, type) {
+  rv68.cell(row, 2).v = new Date();
+  rv68.cell(row, 3).v = 'PO-' + row;
+  rv68.cell(row, 4).v = type || 'ซื้อเข้า';
+  rv68.cell(row, 6).v = sku;
+  rv68.cell(row, 8).v = qty;
+}
+recvAt(CUT, sku68, 40);        /* แถวสุดท้ายที่สูตรเห็น */
+recvAt(CUT + 1, sku68, 1500);  /* แถวแรกที่สูตรมองไม่เห็น */
+recvAt(CUT + 2, sku68, 230, 'ปรับเพิ่ม');
+fx68.recalc();
+
+function stockOf(sku) {
+  for (var r = DATA_ROW; r <= 150; r++) {
+    if (st68.cell(r, 2).v === sku) {
+      return { got: Number(st68.cell(r, 6).v || 0), left: Number(st68.cell(r, 9).v || 0) };
+    }
+  }
+  return null;
+}
+var bad68 = stockOf(sku68);
+eq('ก่อนซ่อม: นับได้แค่แถวที่สูตรเอื้อมถึง 40 ชิ้น', bad68.got, 40);
+truthy2('อีก 1,730 ชิ้นหายเงียบ ไม่มีอะไรฟ้อง', bad68.got < 40 + 1730);
+
+console.log('\n   สั่งซ่อมแล้วต้องนับครบ โดยไม่แตะเงื่อนไขในสูตรเดิม');
+var wordsBefore = String(st68.cell(DATA_ROW, 6).f).match(/"[^"]*"/g).join(',');
+var out68 = api68.fixStockSumRange();
+truthy2('บอกว่าขยายช่วงให้กี่คอลัมน์', /ขยายช่วงแถว/.test(out68));
+fx68.recalc();
+
+var good68 = stockOf(sku68);
+eq('หลังซ่อม: นับครบทั้ง 1,770 ชิ้น', good68.got, 40 + 1500 + 230);
+eq('เงื่อนไขในสูตรยังเป็นของเดิมทุกคำ ไม่ได้เขียนสูตรใหม่ทับ',
+  String(st68.cell(DATA_ROW, 6).f).match(/"[^"]*"/g).join(','), wordsBefore);
+truthy2('ขยายลงครบทุกแถว ไม่ใช่แค่แถว 6',
+  String(st68.cell(DATA_ROW + 40, 6).f).indexOf('$H16,') < 0 &&
+  String(st68.cell(DATA_ROW + 40, 6).f).indexOf('SUMIFS') > -1);
+
+console.log('\n   สั่งซ้ำต้องไม่ขยายซ้ำ และไม่มีช่องสูตรของเจ้าของร้านถูกเขียนใหม่');
+var again68 = api68.fixStockSumRange();
+truthy2('สั่งซ้ำแล้วบอกว่าครบอยู่แล้ว', /ครบอยู่แล้ว/.test(again68));
+
+/* ของจริงเข้าทาง setup ได้ด้วย เจ้าของร้านจะได้ไม่ต้องจำชื่อฟังก์ชันเพิ่มอีกตัว */
+var fx68b = FS.build();
+var api68b = FS.load(fx68b);
+api68b.setup();
+var st68b = fx68b.sheets['สต๊อกคงเหลือ'];
+for (var r68 = DATA_ROW; r68 <= 150; r68++) {
+  var f68 = String(st68b.cell(r68, 6).f || '');
+  st68b.cell(r68, 6).f = f68.replace(/(!\$[A-Z]{1,3}\$6:\$[A-Z]{1,3})(?!\d)/g, '$1' + CUT);
+}
+var rep68 = api68b.repairStockSheet();
+truthy2('สั่ง repairStockSheet ก็ขยายช่วงให้ด้วย', /ขยายช่วงแถว/.test(rep68));
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

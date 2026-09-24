@@ -1555,6 +1555,103 @@ function checkLotStock() {
   return msg;
 }
 
+/**
+ * ขยายช่วงแถวในสูตรของคอลัมน์ รับเข้า · ปรับลด · ขายออก ให้ครอบข้อมูลทั้งชีท
+ *
+ * ---------------------------------------------------------------------------
+ * อาการที่เจอจริง และเหตุผลที่ต้องมีฟังก์ชันนี้
+ * ---------------------------------------------------------------------------
+ * เจ้าของร้านนับสต๊อกทุกวันแล้วบอกว่า "ใส่แล้วไม่ตัดให้ เลขมั่วไปหมด"
+ * ไล่ดูของจริงในชีทแล้วพบว่าแอปเขียนลง รับเข้า ครบถ้วนทุกแถว ไม่มีอะไรหาย
+ * แต่คอลัมน์ "รับเข้า" ในชีท สต๊อกคงเหลือ นับได้แค่ถึงแถว 16 ของชีท รับเข้า
+ *
+ *   แถว 6–16   ตรงกันหมด
+ *   แถว 17–25  เป็นศูนย์ทั้งหมด ทั้งที่มีของ 5,435 ชิ้น
+ *
+ * เพราะสูตร SUMIFS เขียนช่วงไว้ตายตัว เช่น รับเข้า!$H$6:$H$16 ตั้งแต่ตอนที่
+ * ชีทยังมีข้อมูลไม่กี่แถว พอกรอกเกินแถวนั้นไป ชีทก็มองไม่เห็นอีกเลย
+ * และไม่มีอะไรฟ้องสักอย่าง — ไม่ error ไม่ขึ้นเตือน ตัวเลขยังดูสวยปกติ
+ * อาการจึงออกมาเป็น "ยอดคงเหลือติดลบ" ทั้งที่ของเต็มชั้น
+ *
+ * สามคอลัมน์นี้เป็นสูตรที่เจ้าของร้านเขียนเอง กติกาของโปรเจกต์คือห้ามเขียนทับ
+ * ฟังก์ชันนี้จึงไม่ประกอบสูตรใหม่ แต่ "ขยายเลขแถวท้ายช่วง" ในสูตรเดิมเท่านั้น
+ * เงื่อนไขว่านับประเภทไหนบ้าง คิดยังไง ยังเป็นของเดิมทุกตัวอักษร
+ */
+function fixStockSumRange() {
+  requireStaff_();
+  var out = fixStockSumRange_(true);
+  Logger.log(out.text);
+  return out.text;
+}
+
+/* คอลัมน์ที่เป็นสูตรของเจ้าของร้าน — ไม่มีใน STOCK_ROW6 โดยตั้งใจ */
+var STOCK_SUM_COLS = { 6: 'รับเข้า', 7: 'ปรับลด', 8: 'ขายออก' };
+
+function fixStockSumRange_(loud) {
+  var ss = ss_();
+  var s = sheet_('stock');
+  var notes = [], changed = 0;
+
+  for (var col in STOCK_SUM_COLS) {
+    col = Number(col);
+    if (col > s.getLastColumn()) continue;
+    var cell = s.getRange(DATA_ROW, col);
+    var f = String(cell.getFormula() || '');
+    if (f.charAt(0) !== '=') {
+      notes.push('  ' + cell.getA1Notation() + ' (' + STOCK_SUM_COLS[col] +
+        ') ไม่มีสูตร เป็นเลขนิ่ง — ต้องใส่สูตรเองก่อน');
+      continue;
+    }
+    var out = widenRanges_(ss, f);
+    if (out.text === f) continue;
+    cell.setFormula(out.text);
+    changed++;
+    notes.push('  ' + cell.getA1Notation() + ' (' + STOCK_SUM_COLS[col] + ') ' +
+      out.hits.join(' · '));
+  }
+
+  if (!changed) {
+    return { changed: 0, text: loud ? 'ช่วงแถวในสูตร ' + SH.stock.name +
+      ' ครอบข้อมูลครบอยู่แล้ว ไม่ต้องขยาย' : '' };
+  }
+
+  /* ขยายแถว 6 แล้วต้องลากลงทั้งชีท ไม่งั้นแถวอื่นยังอ่านไม่ถึงเหมือนเดิม
+     ช่วงที่ตรึงด้วย $ จะไม่ถูกขยับตอนคัดลอก จึงได้ช่วงใหม่เท่ากันทุกแถว */
+  for (var c2 in STOCK_SUM_COLS) {
+    c2 = Number(c2);
+    if (c2 > s.getLastColumn()) continue;
+    s.getRange(DATA_ROW, c2).copyTo(s.getRange(DATA_ROW + 1, c2, STOCK_LAST - DATA_ROW, 1));
+  }
+  SpreadsheetApp.flush();
+
+  return { changed: changed,
+    text: 'ขยายช่วงแถวในสูตรของ ' + SH.stock.name + ' ' + changed + ' คอลัมน์\n' +
+      notes.join('\n') +
+      '\n  (ลากลงครบทุกแถวถึงแถว ' + STOCK_LAST + ' แล้ว)' };
+}
+
+/**
+ * ขยายเลขแถวท้ายของทุกช่วงที่ชี้ไปชีทอื่น ให้ครอบทั้งชีทนั้น
+ *
+ * แตะเฉพาะช่วงที่มีชื่อชีทนำหน้า — ช่วงที่ไม่มีชื่อชีทคืออ้างในชีทตัวเอง
+ * ซึ่งเป็นคนละเรื่องและขยายมั่วไม่ได้ และไม่ยุ่งกับช่วงที่กว้างอยู่แล้ว
+ */
+function widenRanges_(ss, f) {
+  var hits = [];
+  var re = /((?:'(?:[^']|'')+'|[^\s!+\-*\/(),;:=<>&"]+)!)(\$?)([A-Z]{1,3})(\$?)(\d+):(\$?)([A-Z]{1,3})(\$?)(\d+)/g;
+  var text = f.replace(re, function (all, pre, d1, c1, d2, r1, d3, c2, d4, r2) {
+    var nm = pre.slice(0, -1);
+    if (nm.charAt(0) === "'") nm = nm.slice(1, -1).replace(/''/g, "'");
+    var sh = findSheet_(ss, nm);
+    if (!sh) return all;
+    var want = sh.getMaxRows();
+    if (Number(r2) >= want) return all;
+    hits.push(nm + '!' + c1 + r1 + ':' + c2 + r2 + ' → ' + c2 + want);
+    return pre + d1 + c1 + d2 + r1 + ':' + d3 + c2 + d4 + want;
+  });
+  return { text: text, hits: hits };
+}
+
 function repairStockSheet() {
   requireStaff_();
   var s = sheet_('stock');
@@ -1585,10 +1682,15 @@ function repairStockSheet() {
     f = tmpl.getFormulas()[0];
   }
 
+  /* ช่วงแถวที่สั้นเกินข้อมูลคืออาการที่เงียบที่สุดในบรรดาทั้งหมด — ไม่ error
+     ไม่มีเลขนิ่ง ไม่มี #REF! ตัวเลขยังดูปกติทุกช่อง แค่ "ไม่นับ" ของที่กรอกใหม่
+     จึงต้องตรวจตรงนี้ด้วย ไม่งั้นซ่อมอย่างอื่นเสร็จแล้วยอดก็ยังผิดเหมือนเดิม */
+  var wide = fixStockSumRange_(false);
+
   var before = countRef_(s, cols);
   var skew = countSkew_(s);
   var flat = countFlat_(s, cols);
-  if (!before && !skew && !flat && !fixed.length) {
+  if (!before && !skew && !flat && !fixed.length && !wide.changed) {
     var okMsg = 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
     Logger.log(okMsg);
     return okMsg;
@@ -1605,7 +1707,8 @@ function repairStockSheet() {
       fixed.join(', ') + ')\n' : '') +
     '  ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')\n' +
     '  ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')\n' +
-    '  ซ่อมช่องที่กลายเป็นเลขนิ่ง ' + flat + ' ช่อง (เหลือ ' + flatAfter + ')' + extra;
+    '  ซ่อมช่องที่กลายเป็นเลขนิ่ง ' + flat + ' ช่อง (เหลือ ' + flatAfter + ')' +
+    (wide.changed ? '\n' + wide.text : '') + extra;
   Logger.log(msg);
   return msg;
 }

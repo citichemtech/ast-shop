@@ -358,15 +358,30 @@ var head = mk('ออเดอร์_หัวบิล', 27, headLimit + 1);
       }
       return out;
     }
+    /* ช่วงแถวท้ายสูตรก็สำคัญไม่แพ้คำในสูตร — ของจริงร้านนี้เขียนช่วงไว้ตายตัว
+       ถึงแถว 16 ตั้งแต่ตอนที่ชีทยังมีข้อมูลไม่กี่แถว พอกรอกเกินแถวนั้นไป
+       ชีทก็มองไม่เห็นอีกเลย และไม่มีอะไรฟ้อง — ของหาย 5,435 ชิ้นโดยไม่รู้ตัว
+       ชีทจำลองต้องเลียนแบบข้อนี้ด้วย ไม่งั้นข้อสอบจะผ่านทั้งที่ของจริงพัง */
+    function fxEndRow(f) {
+      var t = String(f || ''), m, lim = 0;
+      var re = /!\$?[A-Z]{1,3}\$?\d+:\$?[A-Z]{1,3}\$?(\d+)/g;
+      while ((m = re.exec(t)) !== null) {
+        var n = Number(m[1]);
+        if (!lim || n < lim) lim = n;
+      }
+      return lim || Infinity;
+    }
     var upWords = fxWords(stock.cell(DATA_ROW, 6).f);
     var dnWords = fxWords(stock.cell(DATA_ROW, 7).f);
+    var recvEnd = Math.min(fxEndRow(stock.cell(DATA_ROW, 6).f),
+                           fxEndRow(stock.cell(DATA_ROW, 7).f));
     function hits(words, t) {
       for (var q = 0; q < words.length; q++) if (t.indexOf(words[q]) > -1) return true;
       return false;
     }
 
     var gotBy = {}, adjBy = {}, soldBy = {};
-    for (var vr = DATA_ROW; vr <= 400; vr++) {
+    for (var vr = DATA_ROW; vr <= Math.min(400, recvEnd); vr++) {
       var vsku = recv.cell(vr, 6).v;
       if (!vsku) continue;
       var vq = Number(recv.cell(vr, 8).v || 0);
