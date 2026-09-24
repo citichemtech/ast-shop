@@ -4389,5 +4389,85 @@ for (var r68 = DATA_ROW; r68 <= 150; r68++) {
 var rep68 = api68b.repairStockSheet();
 truthy2('สั่ง repairStockSheet ก็ขยายช่วงให้ด้วย', /ขยายช่วงแถว/.test(rep68));
 
+/* ============================================================ 69
+   ประเภทที่มีในดรอปดาวน์ แต่ไม่มีสูตรไหนนับ
+
+   ของจริง: ร้านกรอกน้ำยาจากถัง 200 ลิตรใส่ขวดขายทุกวัน ลงแถวประเภท "เติมน้ำยา"
+   คำนี้ระบบเป็นคนเติมเข้าดรอปดาวน์เองเพื่อไม่ให้ช่องขึ้นสามเหลี่ยมเตือน
+   แต่ไม่เคยมีใครเพิ่มเข้าไปในสูตรของชีท สต๊อกคงเหลือ ซึ่งนับแค่สามคำเดิม
+   น้ำยาทุกขวดที่เติมมาตลอดจึงไม่เคยถูกนับเข้าสต๊อกเลย IPA เติมไป 230 ขวด
+   ชีทแสดง รับเข้า = 0 คงเหลือ −19 แล้วหน้าร้านขึ้นว่าสินค้าหมด               */
+console.log('\n69. ประเภทที่มีให้เลือก แต่ไม่มีสูตรไหนนับ');
+var fx69 = FS.build();
+var api69 = FS.load(fx69);
+api69.setup();
+var st69 = fx69.sheets['สต๊อกคงเหลือ'];
+var rv69 = fx69.sheets['รับเข้า'];
+var sku69 = fx69.sheets['ฐานสินค้า'].cell(DATA_ROW, 2).v;
+
+truthy2('ดรอปดาวน์มีคำว่า เติมน้ำยา ให้เลือก',
+  JSON.stringify(api69.getBootstrap().lists.recvType).indexOf('เติมน้ำยา') > -1);
+
+/* setup เพิ่งซ่อมให้ไปแล้ว ถอดคำออกก่อนเพื่อจำลองชีทของจริงที่ยังไม่เคยซ่อม
+   (สูตรของร้านเขียนไว้ตั้งแต่ก่อนที่คำว่า "เติมน้ำยา" จะมีในดรอปดาวน์) */
+function dropTerm(col, word) {
+  for (var r = DATA_ROW; r <= 150; r++) {
+    var f = String(st69.cell(r, col).f || '');
+    if (f.indexOf(word) < 0) continue;
+    var at = f.indexOf('+SUMIFS(');
+    while (at > -1) {
+      var d = 0, e = -1;
+      for (var j = at + 7; j < f.length; j++) {
+        if (f.charAt(j) === '(') d++;
+        else if (f.charAt(j) === ')') { d--; if (!d) { e = j; break } }
+      }
+      if (e < 0) break;
+      if (f.slice(at, e + 1).indexOf(word) > -1) { f = f.slice(0, at) + f.slice(e + 1); at = f.indexOf('+SUMIFS('); }
+      else at = f.indexOf('+SUMIFS(', e);
+    }
+    st69.cell(r, col).f = f;
+  }
+}
+dropTerm(6, 'เติมน้ำยา');
+truthy2('แต่สูตรของร้านไม่ได้นับคำนี้',
+  String(st69.cell(DATA_ROW, 6).f).indexOf('เติมน้ำยา') < 0);
+
+rv69.cell(DATA_ROW, 2).v = new Date();
+rv69.cell(DATA_ROW, 4).v = 'เติมน้ำยา';
+rv69.cell(DATA_ROW, 6).v = sku69;
+rv69.cell(DATA_ROW, 8).v = 230;
+fx69.recalc();
+
+function got69() {
+  for (var r = DATA_ROW; r <= 150; r++) {
+    if (st69.cell(r, 2).v === sku69) return Number(st69.cell(r, 6).v || 0);
+  }
+  return null;
+}
+eq('ก่อนซ่อม: เติมน้ำยา 230 ขวด แต่สต๊อกนับได้ 0', got69(), 0);
+
+console.log('\n   สั่งซ่อมแล้วต้องนับให้ โดยไม่ประกอบสูตรใหม่ทับ');
+var rangeBefore = String(st69.cell(DATA_ROW, 6).f).match(/\$[A-Z]{1,3}\$6:\$[A-Z]{1,3}/g).join(',');
+var out69 = api69.fixStockRecvTypes();
+truthy2('บอกว่าเพิ่มคำไหนเข้าไป', /เติมน้ำยา/.test(out69));
+fx69.recalc();
+eq('หลังซ่อม: นับครบ 230 ขวด', got69(), 230);
+eq('ช่วงและคอลัมน์ที่อ้างยังเหมือนเดิมเป๊ะ ก๊อปก้อนเดิมมาไม่ได้เขียนใหม่',
+  String(st69.cell(DATA_ROW, 6).f).match(/\$[A-Z]{1,3}\$6:\$[A-Z]{1,3}/g).join(',').indexOf(rangeBefore), 0);
+truthy2('ลากลงครบทุกแถว',
+  String(st69.cell(DATA_ROW + 40, 6).f).indexOf('เติมน้ำยา') > -1);
+
+console.log('\n   ตรวจนับ ต้องไม่ถูกเติมเข้าสูตรบวก ไม่งั้นยอดเด้งสองเท่า');
+truthy2('สูตรไม่มีคำว่า ตรวจนับ',
+  String(st69.cell(DATA_ROW, 6).f).indexOf('ตรวจนับ') < 0);
+truthy2('และบอกไว้ว่าข้ามให้ตั้งใจ เพราะอะไร', /ข้ามให้ตั้งใจ/.test(out69));
+
+truthy2('สั่งซ้ำแล้วบอกว่าครบอยู่แล้ว',
+  /ครบอยู่แล้ว|มีสูตรนับให้อยู่แล้ว/.test(api69.fixStockRecvTypes()));
+
+var over69 = [];
+for (var n69 in fx69.sheets) over69 = over69.concat(fx69.sheets[n69].overwrittenFormulas);
+eq('ไม่มีช่องสูตรอื่นถูกเขียนทับ', over69, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

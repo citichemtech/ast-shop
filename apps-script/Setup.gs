@@ -1587,6 +1587,125 @@ function fixStockSumRange() {
 /* คอลัมน์ที่เป็นสูตรของเจ้าของร้าน — ไม่มีใน STOCK_ROW6 โดยตั้งใจ */
 var STOCK_SUM_COLS = { 6: 'รับเข้า', 7: 'ปรับลด', 8: 'ขายออก' };
 
+/**
+ * เติม "ประเภทรับเข้า" ที่มีในดรอปดาวน์แต่ไม่มีสูตรไหนนับ เข้าไปในสูตร
+ *
+ * ---------------------------------------------------------------------------
+ * อาการที่เจอจริง
+ * ---------------------------------------------------------------------------
+ * ร้านนี้กรอกน้ำยาจากถัง 200 ลิตรใส่ขวดขายทุกวัน แล้วลงแถว รับเข้า ประเภท
+ * "เติมน้ำยา" — คำนี้ระบบเป็นคนเติมเข้าดรอปดาวน์ให้เอง (EXTRA_RECV_TYPE)
+ * เพื่อไม่ให้ช่องขึ้นสามเหลี่ยมเตือน แต่ไม่เคยมีใครเพิ่มคำนี้เข้าไปในสูตร
+ * ของชีท สต๊อกคงเหลือ ซึ่งนับแค่ ซื้อเข้า · ปรับเพิ่ม · คืนจากลูกค้า
+ *
+ * ผลคือน้ำยาทุกขวดที่เติมมาตลอด ไม่เคยถูกนับเข้าสต๊อกเลยสักขวด
+ * IPA 1000ml: เติมไป 230 ขวด แต่ชีทแสดง รับเข้า = 0 คงเหลือ −19
+ * แล้วหน้าร้านขึ้นว่า "สินค้าหมด" ลูกค้ากดสั่งไม่ได้ ทั้งที่ของเต็มชั้น
+ *
+ * เลือกที่จะไม่ประกอบสูตรใหม่ทับ — ก๊อป SUMIFS ก้อนเดิมในสูตรนั้นมาหนึ่งก้อน
+ * เปลี่ยนเฉพาะคำที่ใช้เทียบ แล้วต่อท้ายด้วย + ช่วงและคอลัมน์ที่อ้างจึงเหมือนเดิมเป๊ะ
+ *
+ * "ตรวจนับ" ไม่เติมให้ เพราะการตรวจนับคือ "ยอดจริงมีเท่านี้" ไม่ใช่ "เพิ่มมาเท่านี้"
+ * เติมเข้าไปในสูตรบวกเมื่อไร ยอดจะเด้งเป็นสองเท่าทันที
+ * ตอนนับสต๊อกจากแอป ระบบเขียนเป็นส่วนต่างด้วยคำที่สูตรนับอยู่แล้ว (pickStockType_)
+ */
+var STOCK_TYPE_SKIP = ['ตรวจนับ'];
+
+function fixStockRecvTypes() {
+  requireStaff_();
+  var out = fixStockRecvTypes_();
+  Logger.log(out.text);
+  return out.text;
+}
+
+function fixStockRecvTypes_() {
+  var s = sheet_('stock');
+  var fx = stockTypeWords_();
+  var types = (cfgLists_().recvType || []);
+
+  var miss = [];
+  for (var i = 0; i < types.length; i++) {
+    var t = String(types[i] || '').trim();
+    if (!t || STOCK_TYPE_SKIP.indexOf(t) > -1) continue;
+    var seen = fx.up.concat(fx.down).some(function (w) {
+      return t.indexOf(w) > -1 || w.indexOf(t) > -1;
+    });
+    if (!seen) miss.push(t);
+  }
+  if (!miss.length) {
+    return { changed: 0, text: 'ทุกประเภทในดรอปดาวน์มีสูตรนับให้อยู่แล้ว' };
+  }
+
+  /* ประเภทที่ชื่อบอกว่าเป็นการลด ให้เข้าช่องปรับลด ที่เหลือถือเป็นของเข้า
+     เดาจากชื่อได้แค่นี้ จึงต้องรายงานออกไปให้เห็นทุกตัวว่าเอาเข้าช่องไหน */
+  var up = [], dn = [];
+  for (var k = 0; k < miss.length; k++) {
+    (/ลด|จ่ายออก|เสียหาย|ทิ้ง/.test(miss[k]) ? dn : up).push(miss[k]);
+  }
+
+  var notes = [], changed = 0;
+  [[6, up], [7, dn]].forEach(function (pair) {
+    var col = pair[0], words = pair[1];
+    if (!words.length) return;
+    var cell = s.getRange(DATA_ROW, col);
+    var f = String(cell.getFormula() || '');
+    var built = addSumifsTerms_(f, words);
+    if (!built) {
+      notes.push('  ' + STOCK_SUM_COLS[col] + ': หาก้อน SUMIFS ในสูตรไม่เจอ ' +
+        'จึงเติม ' + words.join(' · ') + ' ให้ไม่ได้ — ต้องเพิ่มเองในชีท');
+      return;
+    }
+    cell.setFormula(built);
+    cell.copyTo(s.getRange(DATA_ROW + 1, col, STOCK_LAST - DATA_ROW, 1));
+    changed++;
+    notes.push('  ' + STOCK_SUM_COLS[col] + ': เพิ่ม ' + words.join(' · '));
+  });
+  SpreadsheetApp.flush();
+
+  return { changed: changed,
+    text: (changed ? 'เพิ่มประเภทที่ไม่เคยถูกนับ เข้าไปในสูตรของ ' + SH.stock.name
+                   : 'เจอประเภทที่ไม่มีสูตรนับ แต่เติมให้ไม่ได้') + '\n' +
+      notes.join('\n') +
+      '\n  ข้ามให้ตั้งใจ: ' + STOCK_TYPE_SKIP.join(' · ') +
+      ' (เป็นยอดจริง ไม่ใช่ยอดที่เพิ่มมา เติมเข้าสูตรบวกแล้วยอดจะเด้งสองเท่า)' };
+}
+
+/**
+ * ต่อ SUMIFS ก้อนใหม่ท้ายก้อนสุดท้าย โดยใช้ก้อนเดิมเป็นแม่แบบ
+ *
+ * คัดลอกก้อนเดิมมาทั้งดุ้นแล้วเปลี่ยนเฉพาะข้อความในเครื่องหมายคำพูดตัวสุดท้าย
+ * ช่วงแถว คอลัมน์ที่เทียบ และวิธีอ้างอิง จึงตรงกับของเดิมทุกตัวอักษร
+ * ปลอดภัยกว่าประกอบสูตรใหม่เอง ซึ่งต้องเดาว่าเจ้าของร้านอ้างคอลัมน์ไหนไว้บ้าง
+ */
+function addSumifsTerms_(f, words) {
+  var i = f.indexOf('SUMIFS(');
+  if (i < 0) return '';
+
+  var last = null, from = 0;
+  while (true) {
+    var at = f.indexOf('SUMIFS(', from);
+    if (at < 0) break;
+    var depth = 0, end = -1;
+    for (var j = at + 6; j < f.length; j++) {
+      if (f.charAt(j) === '(') depth++;
+      else if (f.charAt(j) === ')') { depth--; if (!depth) { end = j; break } }
+    }
+    if (end < 0) break;
+    last = { start: at, end: end, text: f.slice(at, end + 1) };
+    from = end + 1;
+  }
+  if (!last) return '';
+
+  var add = '';
+  for (var k = 0; k < words.length; k++) {
+    /* แทนที่ข้อความในคำพูดตัวสุดท้ายของก้อนแม่แบบ = เงื่อนไขประเภท */
+    var t = last.text.replace(/"((?:[^"]|"")*)"(?=[^"]*$)/, '"' + String(words[k]).replace(/"/g, '""') + '"');
+    if (t === last.text) return '';        /* ไม่มีคำพูดให้เปลี่ยน แปลว่าเดาผิด */
+    add += '+' + t;
+  }
+  return f.slice(0, last.end + 1) + add + f.slice(last.end + 1);
+}
+
 function fixStockSumRange_(loud) {
   var ss = ss_();
   var s = sheet_('stock');
@@ -1686,11 +1805,15 @@ function repairStockSheet() {
      ไม่มีเลขนิ่ง ไม่มี #REF! ตัวเลขยังดูปกติทุกช่อง แค่ "ไม่นับ" ของที่กรอกใหม่
      จึงต้องตรวจตรงนี้ด้วย ไม่งั้นซ่อมอย่างอื่นเสร็จแล้วยอดก็ยังผิดเหมือนเดิม */
   var wide = fixStockSumRange_(false);
+  /* ประเภทที่มีในดรอปดาวน์แต่ไม่มีสูตรไหนนับ เป็นอาการเงียบพอ ๆ กัน —
+     ระบบเองเป็นคนเติมคำว่า "เติมน้ำยา" เข้าดรอปดาวน์ แต่ไม่มีใครเพิ่มเข้าสูตร
+     น้ำยาที่กรอกใส่ขวดขายทุกวันจึงไม่เคยถูกนับเข้าสต๊อกเลยสักขวด */
+  var kinds = fixStockRecvTypes_();
 
   var before = countRef_(s, cols);
   var skew = countSkew_(s);
   var flat = countFlat_(s, cols);
-  if (!before && !skew && !flat && !fixed.length && !wide.changed) {
+  if (!before && !skew && !flat && !fixed.length && !wide.changed && !kinds.changed) {
     var okMsg = 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
     Logger.log(okMsg);
     return okMsg;
@@ -1708,7 +1831,8 @@ function repairStockSheet() {
     '  ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')\n' +
     '  ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')\n' +
     '  ซ่อมช่องที่กลายเป็นเลขนิ่ง ' + flat + ' ช่อง (เหลือ ' + flatAfter + ')' +
-    (wide.changed ? '\n' + wide.text : '') + extra;
+    (wide.changed ? '\n' + wide.text : '') +
+    (kinds.changed ? '\n' + kinds.text : '') + extra;
   Logger.log(msg);
   return msg;
 }
