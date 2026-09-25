@@ -6010,6 +6010,16 @@ function webAccept(no){
     +'<div class="fld"><label>ค่าจัดส่ง (บาท)</label>'
     +'<input id="wa-ship" type="number" inputmode="decimal" step="0.01" '
     +'placeholder="เว้นว่าง = คิดตามกติกาในชีท"></div>'
+    /* ลูกค้าขอปลายทางมาได้ แต่คนอนุมัติคือพนักงาน ตรงนี้คือจุดที่ตัดสิน
+       ติ๊กมาให้ล่วงหน้าถ้าลูกค้าขอมา จะได้ไม่ต้องจำว่าใบไหนขออะไร
+       แต่ยังเอาติ๊กออกได้ ระบบไม่ตัดสินแทน — และเกินวงเงินฝั่งชีทก็ยังไม่ผ่านอยู่ดี */
+    +'<label class="fld" style="display:flex;align-items:flex-start;gap:10px;'
+    +'cursor:pointer"><input type="checkbox" id="wa-cod" style="width:auto;margin-top:3px"'
+    + (r.cod ? ' checked' : '') + '>'
+    +'<span><b>เก็บเงินปลายทาง</b>'
+    +'<span class="hint" style="display:block">'
+    + (r.cod ? 'ลูกค้าขอมาแบบนี้ ' : 'ลูกค้าไม่ได้ขอ ')
+    +'· ติ๊กแล้วใบนี้จะไม่ขึ้นค้างโอน และจะส่งลิงก์โอนเงินให้ไม่ได้</span></span></label>'
     +'<button class="btn" id="wa-go">รับเป็นออเดอร์</button>'
     +'<div id="wa-msg" style="margin-top:10px"></div>');
 
@@ -6021,7 +6031,8 @@ function webAccept(no){
       tel: $("#wa-tel").value.trim(),
       addr: $("#wa-addr").value.trim(),
       carrier: $("#wa-car").value.trim(),
-      ship: $("#wa-ship").value.trim()
+      ship: $("#wa-ship").value.trim(),
+      status: $("#wa-cod").checked ? "เก็บเงินปลายทาง" : ""
     };
     if(!v.cust){ $("#wa-msg").innerHTML = '<div class="msg err">ใส่ชื่อผู้รับด้วย</div>'; return }
     btn.disabled = true; btn.textContent = "กำลังคีย์…";

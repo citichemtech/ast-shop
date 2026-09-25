@@ -323,6 +323,118 @@ function ok(label, cond, extra) {
     await cp.close();
   }
 
+  /* ------------------------------------------- เก็บเงินปลายทาง เกิน 2,000 ต้องหาย
+
+     เจ้าของร้านสั่งไว้คำเดียวว่า "เกิน2000ไม่มีปุ่มปลายทาง" ข้อที่เสี่ยงที่สุด
+     ไม่ใช่ตอนยอดเกินตั้งแต่แรก แต่คือตอนลูกค้าเลือกปลายทางไว้ตอนยอดยังน้อย
+     แล้วย้อนกลับไปหยิบของเพิ่มจนเกินวงเงิน ถ้าตัวเลือกเก่ายังค้างอยู่
+     ออเดอร์จะถูกส่งเป็นปลายทางทั้งที่ปุ่มไม่ได้อยู่บนจอแล้ว                  */
+  console.log('\ny. เก็บเงินปลายทาง — เกินวงเงินต้องไม่มีปุ่มให้กด');
+  var cd = await b.newPage({ viewport: { width: 430, height: 950 } });
+  cd.on('pageerror', e => errs.push(String(e)));
+  await cd.goto('file:///home/user/ast-shop/out/shop.html');
+  await cd.waitForTimeout(900);
+
+  async function toPay(n) {
+    await cd.evaluate(() => { CART = {}; cartSave(); go('shop'); draw(); });
+    await cd.waitForTimeout(250);
+    for (var i = 0; i < n; i++) {
+      await cd.locator('#pg-shop .grid .card:not(.is-out) .plus').first().click();
+    }
+    await cd.waitForTimeout(250);
+    await cd.locator('#nav-cart').click();
+    await cd.waitForTimeout(250);
+    await cd.locator('[data-go="pay"]').first().click();
+    await cd.waitForTimeout(300);
+  }
+
+  /* 89 x 12 = 1,068 · เกิน 1,000 ส่งฟรี → ยอดรวม 1,068 ไม่เกินวงเงิน */
+  await toPay(12);
+  ok('ยอด 1,068 — มีปุ่มเก็บเงินปลายทางให้เลือก',
+     await cd.locator('#payopt-cod').isVisible());
+  ok('ค่าเริ่มต้นคือโอนเงิน ไม่ใช่ปลายทาง',
+     (await cd.locator('#payopt-bank').getAttribute('class')).indexOf('on') > -1 &&
+     (await cd.locator('#payopt-cod').getAttribute('class')).indexOf('on') < 0);
+  ok('บอกวงเงินไว้ในปุ่มด้วย ลูกค้าจะได้ไม่งงตอนมันหายไป',
+     /2,000/.test(await cd.locator('#cod-note').innerText()));
+
+  await cd.locator('#payopt-cod').click();
+  await cd.waitForTimeout(250);
+  ok('กดที่แถวไหนก็เลือกได้ ไม่ต้องเล็งวงกลม',
+     (await cd.locator('#payopt-cod').getAttribute('class')).indexOf('on') > -1);
+  ok('ข้อความท้ายเปลี่ยนเป็นบอกว่าไม่ต้องโอน',
+     /ไม่ต้องโอนเงิน/.test(await cd.locator('#ckfoot').innerText()));
+  await cd.screenshot({ path: OUT + '/S7-cod.png' });
+
+  /* เลือกปลายทางค้างไว้ แล้วย้อนไปหยิบของเพิ่มจนเกินวงเงิน */
+  await cd.locator('#pg-pay .ico').click();
+  await cd.waitForTimeout(250);
+  await cd.locator('[data-go="shop"]').first().click();
+  await cd.waitForTimeout(250);
+  for (var j = 0; j < 12; j++) {
+    await cd.locator('#pg-shop .grid .card:not(.is-out) .plus').first().click();
+  }
+  await cd.waitForTimeout(250);
+  await cd.locator('#nav-cart').click();
+  await cd.waitForTimeout(250);
+  await cd.locator('[data-go="pay"]').first().click();
+  await cd.waitForTimeout(350);
+  var tot = await cd.evaluate(() => cartSub() + shipOf(cartSub()));
+  ok('ยอดตอนนี้เกิน 2,000 แล้วจริง (' + tot + ')', tot > 2000);
+  ok('ปุ่มปลายทางหายไปจากจอ', !(await cd.locator('#payopt-cod').isVisible()));
+  ok('และตัวเลือกที่ค้างไว้ถูกดึงกลับมาที่โอนเงิน — ไม่ใช่ซ่อนปุ่มแต่ค่ายังติด',
+     (await cd.locator('#payopt-bank').getAttribute('class')).indexOf('on') > -1);
+  ok('บอกเหตุผลไว้ด้วยว่าทำไมปลายทางหายไป',
+     /เกิน ฿2,000/.test(await cd.locator('#ckfoot').innerText()),
+     await cd.locator('#ckfoot').innerText());
+
+  await cd.locator('#i-name').fill('มานี ใจดี');
+  await cd.locator('#i-tel').fill('0812345678');
+  await cd.locator('#i-addr').fill('99/9 ถ.ตัวอย่าง ต.เนินพระ อ.เมือง จ.ระยอง 21000');
+  await cd.locator('#btn-send').click();
+  await cd.waitForTimeout(700);
+  ok('ยอดเกินวงเงิน ส่งออกไปแบบไม่ใช่ปลายทาง',
+     (await cd.evaluate(() => window.SHOP_SENT)).cod === false);
+
+  /* ยอดไม่เกินวงเงิน + เลือกปลายทาง → หน้าสั่งสำเร็จห้ามมีปุ่มไปโอนเงิน */
+  await toPay(12);
+  await cd.locator('#payopt-cod').click();
+  await cd.waitForTimeout(200);
+  await cd.locator('#i-name').fill('มานี ใจดี');
+  await cd.locator('#i-tel').fill('0812345678');
+  await cd.locator('#i-addr').fill('99/9 ถ.ตัวอย่าง ต.เนินพระ อ.เมือง จ.ระยอง 21000');
+  await cd.locator('#btn-send').click();
+  await cd.waitForTimeout(800);
+  ok('ส่ง cod:true ไปให้เซิร์ฟเวอร์', (await cd.evaluate(() => window.SHOP_SENT)).cod === true);
+  var doneTx = await cd.locator('#done-body').innerText();
+  ok('หน้าสั่งสำเร็จบอกว่าไม่ต้องโอน', /ไม่ต้องโอนเงิน/.test(doneTx), doneTx);
+  ok('และไม่มีปุ่มไปหน้าชำระเงินให้กดเด็ดขาด',
+     (await cd.locator('#done-body [data-pay]').count()) === 0);
+  await cd.screenshot({ path: OUT + '/S8-cod-done.png' });
+  await cd.close();
+
+  /* ------------------------------------------------------- โลโก้ร้านต้องใหญ่ */
+  console.log('\nz. โลโก้ร้าน — เจ้าของขอให้ใหญ่');
+  for (var lv of [{ w: 390, h: 844, min: 70 }, { w: 1280, h: 900, min: 100 }]) {
+    var lp = await b.newPage({ viewport: { width: lv.w, height: lv.h } });
+    await lp.goto('file:///home/user/ast-shop/out/shop.html');
+    await lp.waitForTimeout(900);
+    var lm = await lp.evaluate(() => {
+      var lg = document.querySelector('.logo').getBoundingClientRect();
+      var top = document.querySelector('.hdr-top').getBoundingClientRect();
+      var h1 = document.querySelector('.hdr h1').getBoundingClientRect();
+      return { w: lg.width, h: lg.height, rowRight: top.right,
+               h1Right: h1.right, docW: document.documentElement.scrollWidth,
+               winW: window.innerWidth };
+    });
+    ok('จอ ' + lv.w + ' — โลโก้กว้างอย่างน้อย ' + lv.min + 'px (ได้ ' +
+       Math.round(lm.w) + ')', lm.w >= lv.min);
+    ok('จอ ' + lv.w + ' — โลโก้ยังกลม ไม่โดนบีบ', Math.abs(lm.w - lm.h) < 1);
+    ok('จอ ' + lv.w + ' — โลโก้ใหญ่แล้วแถวหัวยังไม่ดันจนหน้าล้นออกนอกจอ',
+       lm.docW <= lm.winW + 1, lm.docW + ' > ' + lm.winW);
+    await lp.close();
+  }
+
   ok('ไม่มี error สะสมตลอดการทดสอบ', errs.length === 0, errs.join(' | '));
   await b.close();
   console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');

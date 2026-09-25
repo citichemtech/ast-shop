@@ -682,7 +682,8 @@ for (var r25 = DATA_ROW; r25 <= app25.getMaxRows(); r25++) {
   if (k25) keys25.push(k25);
 }
 [ 'เปิดรับออเดอร์หน้าเว็บ', 'ออเดอร์จากเว็บ', 'โลโก้ร้าน (ลิงก์รูป)',
-  'ภาพหัวหน้าร้าน (ลิงก์รูป)', 'ลิงก์แผนที่ร้าน', 'อีเมลแจ้งเตือนออเดอร์จากเว็บ'
+  'ภาพหัวหน้าร้าน (ลิงก์รูป)', 'ลิงก์แผนที่ร้าน', 'อีเมลแจ้งเตือนออเดอร์จากเว็บ',
+  'วงเงินสูงสุดเก็บเงินปลายทาง'
 ].forEach(function (want) {
   truthy('setup สร้างแถว "' + want + '"', keys25.indexOf(want) > -1);
 });
@@ -750,6 +751,221 @@ var s26c = shopFixture();
 s26c.guest.__cacheOff = true;      /* อ่านแคชไม่ได้เลย */
 truthy('อ่านแคชไม่ได้ ก็ยังส่งข้อมูลให้ตามปกติ',
    (s26c.guest.shopData().items || []).length > 0);
+
+/* ============================== 27. เก็บเงินปลายทาง — วงเงินสูงสุด
+
+   เจ้าของร้านสั่งว่า "เกิน2000ไม่มีปุ่มปลายทาง" ข้อสอบชุดนี้คุมสองเรื่อง
+
+     1. เกินวงเงินแล้วสั่งปลายทางไม่ได้จริง แม้ยิงตรงมาที่ shopOrder
+        หน้าเว็บซ่อนปุ่มให้แล้วก็จริง แต่ปุ่มที่ซ่อนด้วย CSS เปิด DevTools ก็โผล่
+        ถ้าด่านนี้ไม่มี ร้านจะแพ็คของหลักหมื่นส่งออกไปโดยยังไม่ได้เงินสักบาท
+     2. ใบปลายทางต้องไม่มีลิงก์โอนเงินติดไปด้วย ไม่งั้นลูกค้าจ่ายสองรอบ    */
+console.log('\n27. เก็บเงินปลายทาง — วงเงินสูงสุด');
+
+function codRow(fx) {
+  var app = fx.sheets['ตั้งค่าแอป'];
+  for (var r = DATA_ROW; r <= app.getMaxRows(); r++) {
+    if (String(app.cell(r, 1).v || '').trim() === 'วงเงินสูงสุดเก็บเงินปลายทาง') return r;
+  }
+  return 0;
+}
+function setCodMax(fx, v) {
+  var r = codRow(fx);
+  if (r) fx.sheets['ตั้งค่าแอป'].cell(r, 2).v = v;
+  return r;
+}
+
+var s27 = shopFixture('direct');
+truthy('setup สร้างช่องวงเงินปลายทางให้ในชีทตั้งค่าแอป', codRow(s27.fx) > 0);
+eq('ค่าเริ่มต้นในชีทคือ 2000', s27.fx.sheets['ตั้งค่าแอป'].cell(codRow(s27.fx), 2).v, 2000);
+
+var sku27 = s27.guest.shopData().items[0].sku;
+s27.staff.saveShopProduct({ sku: sku27, price: 900 });   /* 900 + ค่าส่ง 50 */
+eq('หน้าร้านรู้วงเงินปลายทาง เอาไปซ่อน/โชว์ปุ่มเองได้', s27.guest.shopSee().cod.max, 2000);
+
+/* ---- ยอดไม่เกินวงเงิน: สั่งปลายทางได้ ---- */
+var ok27 = s27.guest.shopOrder({
+  clientKey: 'cod-ok', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+  cod: true, items: [{ sku: sku27, qty: 2 }]   /* 1,800 · เกิน 1,000 ส่งฟรี */
+});
+var head27 = s27.fx.sheets['ออเดอร์_หัวบิล'];
+eq('ยอด 1,800 สั่งปลายทางได้', ok27.net, 1800);
+eq('สถานะใบเป็น "เก็บเงินปลายทาง" ไม่ใช่ "รอชำระ"',
+   String(head27.cell(DATA_ROW, 17).v), 'เก็บเงินปลายทาง');
+truthy('หมายเหตุบอกว่าลูกค้าเลือกปลายทางเอง',
+   String(head27.cell(DATA_ROW, 20).v).indexOf('ลูกค้าเลือกเก็บเงินปลายทาง') > -1);
+eq('บอกหน้าร้านว่าใบนี้ปลายทาง', ok27.cod, true);
+eq('ไม่มีลิงก์โอนเงินติดไปด้วย — ไม่งั้นลูกค้าจ่ายสองรอบ', ok27.payUrl, '');
+eq('และไม่สร้างแถวลิงก์ไว้ให้ใครส่งต่อด้วย — แถวลิงก์คือลิงก์ที่ส่งต่อได้จริง',
+   String(s27.fx.sheets['ลิงก์ชำระเงิน'].cell(DATA_ROW, 2).v || ''), '');
+
+/* กดซ้ำเพราะเน็ตช้า ต้องได้ใบเดิมและยังเป็นปลายทางเหมือนเดิม */
+var dup27 = s27.guest.shopOrder({
+  clientKey: 'cod-ok', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+  cod: true, items: [{ sku: sku27, qty: 2 }]
+});
+eq('กดซ้ำได้ใบเดิม', dup27.no, ok27.no);
+eq('กดซ้ำแล้วยังเป็นปลายทาง ไม่เผลอยื่นปุ่มโอนเงินให้', dup27.cod, true);
+eq('และยังไม่มีลิงก์โอนเงิน', dup27.payUrl, '');
+
+/* ---- ยอดเกินวงเงิน: ต้องไม่ผ่าน แม้ยิงตรงมา ---- */
+var s27b = shopFixture('direct');
+var sku27b = s27b.guest.shopData().items[0].sku;
+s27b.staff.saveShopProduct({ sku: sku27b, price: 900 });
+throws('ยอด 2,750 สั่งปลายทางไม่ผ่าน แม้ยิงตรงมาที่ shopOrder', function () {
+  s27b.guest.shopOrder({
+    clientKey: 'cod-over', cust: 'มานี ใจดี', tel: '0812345678',
+    addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+    cod: true, items: [{ sku: sku27b, qty: 3 }]   /* 2,700 + 50 */
+  });
+}, 'ไม่เกิน 2,000');
+eq('และต้องไม่มีออเดอร์หลุดลงชีทเลย',
+   String(s27b.fx.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, 1).v || ''), '');
+
+/* ยอดเท่าวงเงินพอดี ต้องผ่าน — ขอบเขตที่คนพลาดบ่อยที่สุด */
+var s27c = shopFixture('direct');
+var sku27c = s27c.guest.shopData().items[0].sku;
+s27c.staff.saveShopProduct({ sku: sku27c, price: 2000 });
+var edge27 = s27c.guest.shopOrder({
+  clientKey: 'cod-edge', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+  cod: true, items: [{ sku: sku27c, qty: 1 }]   /* 2,000 พอดี ไม่เกินวงเงิน */
+});
+eq('ยอด 2,000 พอดี ยังสั่งปลายทางได้', edge27.net, 2000);
+eq('และเป็นใบปลายทางจริง', edge27.cod, true);
+
+/* ---- ไม่เลือกปลายทาง = เหมือนเดิมทุกอย่าง ---- */
+var s27d = shopFixture('direct');
+var sku27d = s27d.guest.shopData().items[0].sku;
+var plain27 = s27d.guest.shopOrder({
+  clientKey: 'cod-no', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+  items: [{ sku: sku27d, qty: 1 }]
+});
+eq('ใบโอนเงินยังเป็น "รอชำระ" เหมือนเดิม',
+   String(s27d.fx.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, 17).v), 'รอชำระ');
+eq('ไม่ได้ถูกตีเป็นใบปลายทาง', plain27.cod, false);
+eq('และสร้างแถวลิงก์ให้ตามปกติ — ต่างกับใบปลายทางตรงนี้',
+   String(s27d.fx.sheets['ลิงก์ชำระเงิน'].cell(DATA_ROW, 2).v || ''), plain27.no);
+
+/* ---- ปิดปลายทางทั้งร้านด้วยเลข 0 ---- */
+var s27e = shopFixture('direct');
+setCodMax(s27e.fx, 0);
+var sku27e = s27e.guest.shopData().items[0].sku;
+eq('ตั้ง 0 แล้วหน้าร้านรู้ว่าปิดปลายทาง', s27e.guest.shopSee().cod.max, 0);
+throws('ตั้ง 0 แล้วสั่งปลายทางไม่ได้เลย', function () {
+  s27e.guest.shopOrder({
+    clientKey: 'cod-off', cust: 'มานี ใจดี', tel: '0812345678',
+    addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+    cod: true, items: [{ sku: sku27e, qty: 1 }]
+  });
+}, 'ยังไม่เปิดรับเก็บเงินปลายทาง');
+
+/* ช่องว่าง = ยังไม่เคยตั้ง ต้องใช้ 2000 ไม่ใช่ตีเป็น 0 แล้วปิดปลายทางให้เงียบ ๆ */
+var s27f = shopFixture('direct');
+setCodMax(s27f.fx, '');
+eq('เว้นว่างในชีท = ใช้ค่าเริ่มต้น 2,000 ไม่ใช่ปิดปลายทาง',
+   s27f.guest.shopSee().cod.max, 2000);
+
+/* ---- โหมดเข้าคิว: ไม่ตั้งสถานะให้เอง แค่บันทึกว่าลูกค้าขอมา ---- */
+console.log('\n   โหมดเข้าคิว — พนักงานตัดสินเป็นใบ ๆ ตอนกดรับ');
+var s27g = shopFixture();                 /* ค่าเริ่มต้น = เข้าคิวก่อน */
+var sku27g = s27g.guest.shopData().items[0].sku;
+s27g.staff.saveShopProduct({ sku: sku27g, price: 900 });
+var q27 = s27g.guest.shopOrder({
+  clientKey: 'cod-q', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '99/9 ถ.ตัวอย่าง ต.เนินพระ อ.เมือง จ.ระยอง 21000',
+  note: 'ขอใบกำกับภาษี', cod: true, items: [{ sku: sku27g, qty: 1 }]
+});
+var req27 = s27g.fx.sheets['คำขอสั่งซื้อ'];
+truthy('ได้เลขคำขอ ไม่ใช่เลขออเดอร์', /^REQ-/.test(q27.no));
+truthy('หมายเหตุขึ้นต้นด้วย "เก็บเงินปลายทาง" คนกดรับจะได้เห็นก่อนตัดท้าย',
+   /^เก็บเงินปลายทาง/.test(String(req27.cell(DATA_ROW, 7).v)));
+truthy('ข้อความที่ลูกค้าฝากไว้ยังอยู่ครบ',
+   String(req27.cell(DATA_ROW, 7).v).indexOf('ขอใบกำกับภาษี') > -1);
+eq('คำขอยังเป็นสถานะ "ใหม่" ระบบไม่ตัดสินใจแทนพนักงาน',
+   String(req27.cell(DATA_ROW, 11).v), 'ใหม่');
+eq('ยังไม่มีออเดอร์จริงในชีทหัวบิล',
+   String(s27g.fx.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, 1).v || ''), '');
+eq('บอกหน้าร้านว่าเป็นคำขอปลายทาง จะได้ไม่เขียนว่าให้รอโอนเงิน', q27.cod, true);
+
+/* เกินวงเงิน โหมดคิวก็ต้องกันเหมือนกัน ไม่ใช่กันแค่โหมดเข้าชีทเลย */
+var s27h = shopFixture();
+var sku27h = s27h.guest.shopData().items[0].sku;
+s27h.staff.saveShopProduct({ sku: sku27h, price: 900 });
+throws('โหมดคิว: ยอดเกินวงเงินก็สั่งปลายทางไม่ได้', function () {
+  s27h.guest.shopOrder({
+    clientKey: 'cod-q-over', cust: 'มานี ใจดี', tel: '0812345678',
+    addr: '99/9 ถ.ตัวอย่าง ต.เนินพระ อ.เมือง จ.ระยอง 21000',
+    cod: true, items: [{ sku: sku27h, qty: 3 }]
+  });
+}, 'ไม่เกิน 2,000');
+eq('และไม่มีคำขอหลุดลงชีทด้วย',
+   String(s27h.fx.sheets['คำขอสั่งซื้อ'].cell(DATA_ROW, 1).v || ''), '');
+
+/* ---- อีเมลแจ้งร้านต้องเตือนว่าใบนี้ปลายทาง ---- */
+var s27i = shopFixture('direct');
+var app27i = s27i.fx.sheets['ตั้งค่าแอป'];
+for (var r27 = DATA_ROW; r27 <= app27i.getMaxRows(); r27++) {
+  if (String(app27i.cell(r27, 1).v || '').trim() === 'อีเมลแจ้งเตือนออเดอร์จากเว็บ') {
+    app27i.cell(r27, 2).v = 'shop@example.com'; break;
+  }
+}
+var sku27i = s27i.guest.shopData().items[0].sku;
+s27i.staff.saveShopProduct({ sku: sku27i, price: 900 });
+s27i.fx.MAILS.length = 0;
+s27i.guest.shopOrder({
+  clientKey: 'cod-mail', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '1/1 ถ.ทดสอบ ต.ทดสอบ อ.เมือง จ.ระยอง 21000',
+  cod: true, items: [{ sku: sku27i, qty: 1 }]
+});
+eq('ส่งอีเมลแจ้งร้านหนึ่งฉบับ', s27i.fx.MAILS.length, 1);
+truthy('หัวข้ออีเมลบอกว่าเป็นปลายทาง ตั้งแต่ยังไม่เปิดอ่าน',
+   s27i.fx.MAILS[0].subject.indexOf('เก็บเงินปลายทาง') > -1);
+truthy('ในเนื้อเมลเตือนห้ามส่งลิงก์โอนเงินให้ลูกค้า',
+   s27i.fx.MAILS[0].body.indexOf('อย่าส่งลิงก์โอนเงินให้') > -1);
+
+/* ---- พนักงานกดรับคำขอเป็นใบปลายทาง ---- */
+console.log('\n   พนักงานกดรับ — คนอนุมัติปลายทางคือพนักงาน ไม่ใช่ลูกค้า');
+var s27j = shopFixture();
+var sku27j = s27j.guest.shopData().items[0].sku;
+s27j.staff.saveShopProduct({ sku: sku27j, price: 900 });
+var q27j = s27j.guest.shopOrder({
+  clientKey: 'cod-acc', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '99/9 ถ.ตัวอย่าง ต.เนินพระ อ.เมือง จ.ระยอง 21000',
+  cod: true, items: [{ sku: sku27j, qty: 1 }]
+});
+var seen27 = s27j.staff.getRequests(20).filter(function (x) { return x.no === q27j.no })[0];
+eq('หน้าจอพนักงานรู้ว่าลูกค้าขอปลายทาง จะได้ติ๊กมาให้ล่วงหน้า', seen27.cod, true);
+
+var acc27 = s27j.staff.acceptRequest({ no: q27j.no, status: 'เก็บเงินปลายทาง' });
+eq('กดรับเป็นใบปลายทางได้', String(
+   s27j.fx.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, 17).v), 'เก็บเงินปลายทาง');
+truthy('ได้เลขออเดอร์จริง', /^AST-/.test(acc27.no));
+
+/* พนักงานเผลอติ๊กปลายทางให้ใบที่เกินวงเงิน ต้องถูกกันเหมือนกัน
+   ด่านนี้สำคัญกว่าฝั่งลูกค้าอีก เพราะใบที่กดรับคือใบที่ตัดสต๊อกจริง */
+var s27k = shopFixture();
+var sku27k = s27k.guest.shopData().items[0].sku;
+s27k.staff.saveShopProduct({ sku: sku27k, price: 900 });
+var q27k = s27k.guest.shopOrder({
+  clientKey: 'cod-acc-over', cust: 'มานี ใจดี', tel: '0812345678',
+  addr: '99/9 ถ.ตัวอย่าง ต.เนินพระ อ.เมือง จ.ระยอง 21000',
+  items: [{ sku: sku27k, qty: 3 }]          /* ลูกค้าไม่ได้ขอปลายทาง ยอด 2,700 */
+});
+eq('ลูกค้าไม่ได้ขอปลายทาง หน้าจอพนักงานต้องไม่ติ๊กให้',
+   s27k.staff.getRequests(20)[0].cod, false);
+throws('พนักงานติ๊กปลายทางให้ใบ 2,700 ไม่ผ่าน', function () {
+  s27k.staff.acceptRequest({ no: q27k.no, status: 'เก็บเงินปลายทาง' });
+}, 'เกินวงเงินเก็บเงินปลายทาง');
+eq('และไม่มีออเดอร์หลุดลงชีท',
+   String(s27k.fx.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, 1).v || ''), '');
+truthy('รับเป็น "รอชำระ" แทนได้ตามปกติ',
+   /^AST-/.test(s27k.staff.acceptRequest({ no: q27k.no }).no));
+eq('และใบนั้นเป็น "รอชำระ" ไม่ใช่ปลายทาง',
+   String(s27k.fx.sheets['ออเดอร์_หัวบิล'].cell(DATA_ROW, 17).v), 'รอชำระ');
 
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

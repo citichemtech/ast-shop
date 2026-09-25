@@ -34,6 +34,7 @@ DATA = {
         "addr": "ที่อยู่ตัวอย่าง เขตตัวอย่าง กรุงเทพมหานคร 10000",
     },
     "ship": {"fee": 50, "freeOver": 1000},
+    "cod": {"max": 2000},
     "logo": "",
     "cover": "",
     "map": {"url": "https://www.google.com/maps/search/?api=1&query=test",
@@ -101,8 +102,11 @@ window.google = { script: { run: (function () {
           ? 0 : SHOP_DATA.ship.fee;
         window.SHOP_SENT = p;
         window.SENT_ORDERS.push(p);
-        ok({ ok: true, no: 'AST-26-0042', duplicate: false, net: sub + ship,
-             payUrl: 'https://example.invalid/pay?p=demo', why: '' });
+        /* ของจริง: ใบปลายทางไม่มีลิงก์โอนเงินกลับมาเลย ตัวปลอมต้องทำเหมือนกัน
+           ไม่งั้นข้อสอบจะผ่านทั้งที่หน้าจริงยังยื่นปุ่มโอนเงินให้ใบปลายทาง */
+        var isCod = !!p.cod && (SHOP_DATA.cod.max > 0 && sub + ship <= SHOP_DATA.cod.max);
+        ok({ ok: true, no: 'AST-26-0042', duplicate: false, net: sub + ship, cod: isCod,
+             payUrl: isCod ? '' : 'https://example.invalid/pay?p=demo', why: '' });
       }, 250);
     }
   };

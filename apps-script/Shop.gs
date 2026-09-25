@@ -157,7 +157,8 @@ function shopCats_(items) {
    เก็บก้อนคำตอบไว้ในแคชของสคริปต์ คนถัดไปที่เปิดจึงได้ทันที
    อายุสั้น (5 นาที) และล้างทิ้งทุกครั้งที่พนักงานแก้อะไรที่ลูกค้าเห็น
    หรือมีออเดอร์ตัดสต๊อก ป้ายของหมดจึงไม่ค้างนานกว่านั้น                    */
-var SHOP_CACHE_KEY = 'shopData1';
+var SHOP_CACHE_KEY = 'shopData2';   /* ขึ้นเลขทุกครั้งที่รูปร่างข้อมูลเปลี่ยน
+                                       ไม่งั้นคนที่เพิ่งเข้าจะได้ของเก่าในแคชที่ยังไม่มีฟิลด์ใหม่ */
 var SHOP_CACHE_SEC = 300;
 
 /** ล้างแคชหน้าร้าน — เรียกทุกครั้งที่ของที่ลูกค้าเห็นเปลี่ยน */
@@ -201,6 +202,9 @@ function shopDataFresh_() {
       addr: c.sender.addr || ''
     },
     ship: { fee: Number(c.shipFee) || 0, freeOver: Number(c.freeOver) || 0 },
+    /* วงเงินปลายทาง ส่งไปให้หน้าร้านซ่อน/โชว์ปุ่มได้เอง
+       แต่ฝั่งเซิร์ฟเวอร์เช็คซ้ำอีกรอบเสมอ ตัวเลขนี้แค่ทำให้หน้าจอไม่หลอกลูกค้า */
+    cod: { max: Number(c.codMax) || 0 },
     logo: shopImg_(c.shopLogo),
     cover: shopImg_(c.shopCover),
     map: shopMap_(c),
@@ -408,6 +412,11 @@ var SHOP_MAX_LINES = 30;     // บรรทัดต่อออเดอร์
 var SHOP_MAX_QTY = 999;      // ชิ้นต่อบรรทัด
 
 /** ตัดช่องว่างหัวท้าย ตัดอักขระควบคุม และจำกัดความยาว */
+/** ตัวเลขบาทแบบอ่านง่ายสำหรับข้อความที่ลูกค้าเห็น — 2000 -> "2,000" */
+function shopBaht_(n) {
+  return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
 function shopClean_(v, max) {
   var t = String(v == null ? '' : v).replace(/[\u0000-\u001F\u007F]/g, ' ');
   t = t.replace(/[ \t]+/g, ' ').trim();
@@ -501,11 +510,30 @@ function shopOrder(payload) {
   var cfg = appCfg_();
   var ship = (cfg.freeOver && sub >= Number(cfg.freeOver)) ? 0 : Number(cfg.shipFee) || 0;
 
+  /* ------------------------------------------- เก็บเงินปลายทาง: ด่านวงเงิน
+
+     หน้าร้านซ่อนปุ่มปลายทางให้อยู่แล้วเมื่อยอดเกินวงเงิน แต่ห้ามเชื่อแค่นั้น
+     ปุ่มที่ซ่อนด้วย CSS เปิด DevTools กดสามทีก็โผล่ และ shopOrder เป็นฟังก์ชัน
+     ที่เรียกจากเบราว์เซอร์ตรง ๆ ได้ ใครก็ส่ง cod:true มาพร้อมของ 50,000 บาทได้
+     ถ้าไม่มีด่านนี้ ร้านจะแพ็คของห้าหมื่นส่งออกไปโดยยังไม่ได้เงินสักบาท
+     หลักเดียวกับราคา — ตัวเลขที่ใช้ตัดสินใจเอาจากชีทเสมอ ไม่เอาจากเบราว์เซอร์ */
+  var wantCod = !!p.cod;
+  var codMax = Number(cfg.codMax) || 0;
+  if (wantCod) {
+    if (codMax <= 0) {
+      throw new Error('ตอนนี้ร้านยังไม่เปิดรับเก็บเงินปลายทาง — เลือกโอนเงินแทนได้เลย');
+    }
+    if (sub + ship > codMax) {
+      throw new Error('เก็บเงินปลายทางได้เฉพาะยอดไม่เกิน ' + shopBaht_(codMax) + ' บาท — ' +
+        'ยอดของคุณ ' + shopBaht_(sub + ship) + ' บาท กรุณาเลือกโอนเงินแทน');
+    }
+  }
+
   /* โหมด "เข้าคิวก่อน" — ยังไม่ใช่ออเดอร์ ไม่ออกเลข ไม่ตัดสต๊อก
      ลงไว้ในชีท คำขอสั่งซื้อ รอพนักงานตรวจแล้วกดรับ */
   if (cfg.shopMode !== 'direct') {
     return shopQueue_(clientKey, {
-      cust: cust, tel: tel, addr: addr, note: note,
+      cust: cust, tel: tel, addr: addr, note: note, cod: wantCod,
       items: items, est: sub + ship
     });
   }
@@ -529,11 +557,14 @@ function shopOrder(payload) {
     var plan = planOrder_({
       channel: shopChannel_(lists.channel),
       carrier: '',                       // พนักงานเลือกขนส่งตอนแพ็กของ
-      status: 'รอชำระ',
+      /* ปลายทางเป็น "สถานะ" ไม่ใช่ค่าบริการ — ยอดเงินของใบไม่ขยับสักบาท
+         แต่ใบนี้ต้องไม่ไปกองรวมกับใบค้างโอน และต้องไม่มีใครส่งลิงก์โอนตามไป */
+      status: wantCod ? COD_STATUS_ : 'รอชำระ',
       cust: cust, tel: tel, addr: addr,
       vat: false, discount: 0, ship: ship,
       staff: 'ลูกค้าสั่งเอง',
-      note: (note ? note + ' · ' : '') + 'สั่งจากหน้าเว็บร้าน',
+      note: (note ? note + ' · ' : '') + 'สั่งจากหน้าเว็บร้าน'
+        + (wantCod ? ' · ลูกค้าเลือกเก็บเงินปลายทาง' : ''),
       items: items
     }, 'หน้าร้าน');
 
@@ -546,20 +577,22 @@ function shopOrder(payload) {
 
     /* เก็บยอดไว้คู่กับเลขใบด้วย เพราะตอนลูกค้ากดซ้ำ เราอ่านยอดจากชีทไม่ได้
        readOrders_ มีด่านพนักงานอยู่ข้างใน ซึ่งถูกแล้ว ลูกค้าไม่ควรอ่านออเดอร์ใครก็ได้ */
-    props.setProperty('shop_' + clientKey, no + '|' + plan.net);
+    /* ติดธง cod ไปด้วย เพราะตอนลูกค้ากดซ้ำเราอ่านสถานะจากชีทไม่ได้
+       (readOrders_ มีด่านพนักงาน) ถ้าไม่เก็บไว้ ครั้งที่สองจะเผลอโชว์ปุ่มโอนเงิน */
+    props.setProperty('shop_' + clientKey, no + '|' + plan.net + (wantCod ? '|cod' : ''));
     writeLog_('หน้าร้าน', 'ลูกค้าสั่งเอง', SH.head.name, no,
       'ออเดอร์จากหน้าเว็บ', '', items.length + ' รายการ',
       'ลูกค้ากดสั่งเองจากหน้าร้าน ยอดสุทธิ ' + plan.net);
 
     /* โหมดนี้ตัดสต๊อกไปแล้วจริง ๆ ยิ่งต้องรู้ทันทีกว่าโหมดเข้าคิวอีก
        ของออกจากชั้นไปแล้วโดยไม่มีใครในร้านรู้ตัว คือสิ่งที่ต้องไม่เกิด */
-    shopTell_('ออเดอร์ใหม่จากหน้าเว็บ', no, {
-      cust: cust, tel: tel, addr: addr, note: note, est: plan.net
+    shopTell_(wantCod ? 'ออเดอร์ใหม่จากหน้าเว็บ (เก็บเงินปลายทาง)' : 'ออเดอร์ใหม่จากหน้าเว็บ', no, {
+      cust: cust, tel: tel, addr: addr, note: note, est: plan.net, cod: wantCod
     }, items.map(function (x) {
       return ((onShelf[x.sku] && onShelf[x.sku].name) || x.sku) + ' x' + x.qty;
     }).join('\n  · '), true);
 
-    return shopDone_(no, Number(plan.net) || 0, false);
+    return shopDone_(no, Number(plan.net) || 0, false, wantCod);
   } catch (err) {
     rollback_(written);
     throw err;
@@ -575,13 +608,22 @@ function shopOrder(payload) {
  * ถ้ายังไม่ได้กรอก "ลิงก์เว็บแอปสำหรับลูกค้า" ในชีท จะไม่มี url ให้ ต้องให้พนักงานติดต่อกลับ
  */
 function shopSaved_(saved) {
-  var bar = String(saved).indexOf('|');
-  return bar < 0
-    ? shopDone_(String(saved), 0, true)
-    : shopDone_(String(saved).slice(0, bar), Number(String(saved).slice(bar + 1)) || 0, true);
+  var part = String(saved).split('|');
+  return shopDone_(part[0], Number(part[1]) || 0, true, part[2] === 'cod');
 }
 
-function shopDone_(no, net, dup) {
+function shopDone_(no, net, dup, cod) {
+  /* ใบเก็บเงินปลายทางห้ามมีลิงก์โอนเงินเด็ดขาด ลูกค้าจ่ายกับคนส่งของอยู่แล้ว
+     ถ้ายังยื่นปุ่ม "ไปหน้าชำระเงิน" ให้ คนที่รีบก็จะโอนไปอีกรอบ แล้วร้านต้องตามคืนเงิน
+     จึงไม่สร้างแถวลิงก์ให้ตั้งแต่ต้น ไม่ใช่แค่ไม่โชว์ปุ่ม — แถวที่มีอยู่คือลิงก์ที่ส่งต่อได้ */
+  if (cod) {
+    return {
+      ok: true, no: no, duplicate: !!dup, net: Number(net) || 0,
+      cod: true, payUrl: '',
+      why: 'ใบนี้เก็บเงินปลายทาง ไม่ต้องโอน'
+    };
+  }
+
   var link = linkInfo_(no);
   if (!link && sheetIfAny_('link')) {
     var row = nextRow_('link', SH.link.IN.no);
@@ -596,6 +638,7 @@ function shopDone_(no, net, dup) {
     no: no,
     duplicate: !!dup,
     net: Number(net) || 0,
+    cod: false,
     payUrl: (link && link.url) || '',
     why: link ? link.why : 'ยังไม่ได้เปิดระบบลิงก์ชำระเงิน'
   };
@@ -629,13 +672,13 @@ function reqNewNo_() {
 function shopQueue_(clientKey, r) {
   var props = PropertiesService.getScriptProperties();
   var done = props.getProperty('shopq_' + clientKey);
-  if (done) return shopQueued_(done, r.est, true);
+  if (done) return shopQueued_(done, r.est, true, r.cod);
 
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองกดสั่งอีกครั้งใน 2-3 วินาที');
   try {
     done = props.getProperty('shopq_' + clientKey);
-    if (done) return shopQueued_(done, r.est, true);
+    if (done) return shopQueued_(done, r.est, true, r.cod);
 
     if (!sheetIfAny_('req')) {
       throw new Error('ระบบยังไม่พร้อมรับออเดอร์ทางเว็บ — ทักไลน์ของร้านเพื่อสั่งซื้อได้เลย');
@@ -655,8 +698,15 @@ function shopQueue_(clientKey, r) {
     }
 
     var no = reqNewNo_();
+    /* โหมดเข้าคิวไม่ตั้งสถานะให้เอง — เจ้าของร้านสั่งไว้ว่าปลายทาง "ให้พนักงาน
+       ตัดสินเป็นใบ ๆ ตอนกดรับคำขอ" ตรงนี้จึงแค่บันทึกว่าลูกค้าขออะไรมา
+       ปักไว้หน้าสุดของหมายเหตุ ไม่ต่อท้าย เพราะหมายเหตุยาว ๆ จะถูกตัดท้ายในตาราง
+       แล้วคนกดรับจะไม่เห็นบรรทัดที่สำคัญที่สุดของใบนี้ */
+    var qnote = r.cod
+      ? ('เก็บเงินปลายทาง' + (r.note ? ' · ' + r.note : ''))
+      : r.note;
     writeRow_('req', row, {
-      no: no, at: new Date(), cust: r.cust, tel: r.tel, addr: r.addr, note: r.note,
+      no: no, at: new Date(), cust: r.cust, tel: r.tel, addr: r.addr, note: qnote,
       lines: lines.join(' · '), names: names.join(' · '), est: r.est,
       status: 'ใหม่', orderNo: '', by: '', why: ''
     });
@@ -666,9 +716,10 @@ function shopQueue_(clientKey, r) {
       'ลูกค้ากรอกจากหน้าเว็บ', '', r.items.length + ' รายการ',
       'ยอดประเมิน ' + r.est + ' — รอพนักงานกดรับเป็นออเดอร์');
 
-    shopTell_('คำขอสั่งซื้อใหม่', no, r, names.join('\n  · '), false);
+    shopTell_(r.cod ? 'คำขอสั่งซื้อใหม่ (ขอเก็บเงินปลายทาง)' : 'คำขอสั่งซื้อใหม่',
+      no, r, names.join('\n  · '), false);
 
-    return shopQueued_(no, r.est, false);
+    return shopQueued_(no, r.est, false, r.cod);
   } finally {
     lock.releaseLock();
   }
@@ -716,6 +767,8 @@ function shopTell_(what, no, r, itemText, isOrder) {
       what + ' เลขที่ ' + no,
       'ยอดประเมิน ' + money + ' บาท',
       '',
+      (r.cod ? '*** ลูกค้าขอเก็บเงินปลายทาง — อย่าส่งลิงก์โอนเงินให้ ***' : ''),
+      (r.cod ? '' : null),
       'ลูกค้า : ' + (r.cust || '-'),
       'เบอร์  : ' + (r.tel || '-'),
       'ที่อยู่  : ' + (r.addr || '-'),
@@ -732,7 +785,7 @@ function shopTell_(what, no, r, itemText, isOrder) {
       'อีเมลนี้ส่งอัตโนมัติจากหน้าร้าน ' + shop,
       'ไม่อยากรับ ให้พิมพ์ว่า "ปิด" ในช่อง "อีเมลแจ้งเตือนออเดอร์จากเว็บ" ของชีท ' +
         SH.app.name
-    ].filter(function (x) { return x !== '' || true }).join('\n');
+    ].filter(function (x) { return x !== null }).join('\n');
 
     /* GmailApp ไม่ใช่ MailApp — เหตุผลเดียวกับตอนส่งเอกสารให้ลูกค้า
        คือต้องมีสำเนาอยู่ในกล่อง "ส่งแล้ว" เพื่อย้อนดูได้ว่าเคยเตือนไปเมื่อไร */
@@ -743,9 +796,9 @@ function shopTell_(what, no, r, itemText, isOrder) {
   }
 }
 
-function shopQueued_(no, est, dup) {
+function shopQueued_(no, est, dup, cod) {
   return { ok: true, queued: true, no: no, net: Number(est) || 0,
-           duplicate: !!dup, payUrl: '', why: '' };
+           duplicate: !!dup, cod: !!cod, payUrl: '', why: '' };
 }
 
 /* ===========================================================================
@@ -783,6 +836,10 @@ function getRequests(limit) {
       tel: tel_(v[i][IN.tel - 1]),
       addr: String(v[i][IN.addr - 1] || ''),
       note: String(v[i][IN.note - 1] || ''),
+      /* ลูกค้าขอปลายทางมาหรือเปล่า — อ่านจากธงที่ปักไว้หน้าสุดของหมายเหตุ
+         ส่งเป็นฟิลด์แยกให้หน้าจอ ดีกว่าให้หน้าจอไปเดาจากข้อความเอง
+         เพราะวันหลังใครแก้ข้อความธง หน้าจอจะเงียบ ๆ เลิกติ๊กให้โดยไม่มีใครรู้ */
+      cod: /^เก็บเงินปลายทาง/.test(String(v[i][IN.note - 1] || '').trim()),
       names: String(v[i][IN.names - 1] || ''),
       items: reqLines_(v[i][IN.lines - 1]),
       est: Number(v[i][IN.est - 1] || 0),
@@ -855,17 +912,38 @@ function acceptRequest(p) {
   for (var q = 0; q < lines.length; q++) subA += lines[q].price * lines[q].qty;
   var shipA = (cfgA.freeOver && subA >= Number(cfgA.freeOver)) ? 0 : Number(cfgA.shipFee) || 0;
 
+  /* ------------------------------------------- พนักงานกดรับเป็นใบปลายทาง
+
+     เจ้าของร้านสั่งไว้ว่าโหมดคิวให้ "พนักงานตัดสินเป็นใบ ๆ ตอนกดรับคำขอ"
+     ลูกค้าแค่ขอมา คนที่อนุมัติคือพนักงาน — แต่วงเงินยังคุมเหมือนกัน
+     ตรงนี้ใช้ยอดที่คิดใหม่วันนี้ (subA + ค่าส่งที่จะใช้จริง) ไม่ใช่ยอดประเมิน
+     ของวันที่ลูกค้ากด เพราะราคาอาจขึ้นไปแล้วจนเกินวงเงินโดยไม่มีใครทันสังเกต */
+  var shipUse = (p.ship === undefined || p.ship === '') ? shipA : Number(p.ship) || 0;
+  var status = String(p.status || '').trim() || 'รอชำระ';
+  if (isCodStatus_(status)) {
+    var maxA = Number(cfgA.codMax) || 0;
+    if (maxA <= 0) {
+      throw new Error('ตั้งค่าแอปปิดเก็บเงินปลายทางไว้ (วงเงินสูงสุด = 0) — ' +
+        'ถ้าจะรับใบนี้เป็นปลายทาง ต้องตั้งวงเงินในชีทก่อน');
+    }
+    if (subA + shipUse - (Number(p.discount) || 0) > maxA) {
+      throw new Error('ยอดใบนี้ ' + shopBaht_(subA + shipUse - (Number(p.discount) || 0)) +
+        ' บาท เกินวงเงินเก็บเงินปลายทาง ' + shopBaht_(maxA) + ' บาท — ' +
+        'รับเป็น "รอชำระ" แล้วให้ลูกค้าโอนแทน หรือแก้วงเงินในชีท ตั้งค่าแอป');
+    }
+  }
+
   var made = createOrder({
     clientKey: 'req-' + p.no,
     channel: p.channel || '',
     carrier: p.carrier || '',
-    status: p.status || 'รอชำระ',
+    status: status,
     cust: p.cust || String(hit.vals[IN.cust - 1] || ''),
     tel: p.tel || tel_(hit.vals[IN.tel - 1]),
     addr: p.addr || String(hit.vals[IN.addr - 1] || ''),
     vat: !!p.vat,
     discount: Number(p.discount) || 0,
-    ship: (p.ship === undefined || p.ship === '') ? shipA : Number(p.ship) || 0,
+    ship: shipUse,
     staff: p.staff || '',
     note: 'รับจากคำขอ ' + p.no + (hit.vals[IN.note - 1] ? ' · ' + hit.vals[IN.note - 1] : ''),
     items: lines
