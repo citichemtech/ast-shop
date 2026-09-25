@@ -20,6 +20,7 @@ var CUT_LAST = 3005;   // ตัดล็อต รองรับ 3000 บร�
    (ของเดิมทำใบละหนึ่งแท็บ ที่ 20 ใบต่อวันจะชนขีดจำกัดของ Google Sheets ใน 2 เดือน) */
 var DOC_LAST = 8005;
 var SLIP_LAST = 3005;  // หลักฐานการชำระเงิน รองรับ 3000 สลิป
+var REQ_LAST = 3005;   // คำขอสั่งซื้อจากหน้าเว็บ
 var LINK_LAST = 3005;  // ลิงก์ชำระเงิน รองรับ 3000 ลิงก์
 var MONTH_LAST = 305;  // สรุปเดือน รองรับ 300 แถว = 60 เดือน × 5 ช่องทาง
 var STOCK_LAST = 150;  // ขอบล่างของชีท สต๊อกคงเหลือ ที่ใช้ในสูตรตรวจยอด
@@ -42,12 +43,22 @@ function setup() {
   made.push(setupAppSheet_(ss));
   made.push(setupMonthSheet_(ss));
   made.push(setupSlipSheet_(ss));
+  made.push(setupReqSheet_(ss));
+  made.push(setupBanSheet_(ss));
+  made.push(setupScatSheet_(ss));
+  made.push(setupProdTagCol_(ss));
   made.push(setupLinkSheet_(ss));
   made.push(setupItemLotColumn_(ss));
   made.push(setupAccounting_(ss));
   made.push(setupCarrierList_(ss));
   made.push(setupStatusList_(ss));
   made.push(setupRecvTypeList_(ss));
+  /* แถวตั้งค่าของหน้าร้านอยู่ใน shopSwitchRow_ ซึ่ง setup ไม่เคยเรียกเลย
+     มีแต่ setupShopPages ที่เรียก — คนที่สั่ง setup ตามที่บอกจึงไม่ได้แถวใหม่
+     ของจริง 24 ก.ย. 69: บอกเจ้าของร้านให้สั่ง setup เพื่อให้ได้แถวอีเมลแจ้งเตือน
+     สั่งแล้วไม่มีแถวขึ้นมา เพราะมันไม่เคยอยู่ในเส้นทางของ setup ตั้งแต่แรก
+     ฟังก์ชันนี้เช็คก่อนเขียนอยู่แล้ว สั่งซ้ำกี่ครั้งก็ไม่เพิ่มซ้ำ */
+  made.push(shopSwitchRow_(ss));
   // ซ่อมให้อัตโนมัติ แต่ห้ามล้มทั้ง setup ถ้าซ่อมไม่ได้ — ส่วนอื่นติดตั้งไปแล้ว
   try { made.push(repairStockSheet()); }
   catch (e) { made.push('ซ่อมชีทสต๊อกไม่สำเร็จ: ' + e.message); }
@@ -1550,6 +1561,222 @@ function checkLotStock() {
   return msg;
 }
 
+/**
+ * ขยายช่วงแถวในสูตรของคอลัมน์ รับเข้า · ปรับลด · ขายออก ให้ครอบข้อมูลทั้งชีท
+ *
+ * ---------------------------------------------------------------------------
+ * อาการที่เจอจริง และเหตุผลที่ต้องมีฟังก์ชันนี้
+ * ---------------------------------------------------------------------------
+ * เจ้าของร้านนับสต๊อกทุกวันแล้วบอกว่า "ใส่แล้วไม่ตัดให้ เลขมั่วไปหมด"
+ * ไล่ดูของจริงในชีทแล้วพบว่าแอปเขียนลง รับเข้า ครบถ้วนทุกแถว ไม่มีอะไรหาย
+ * แต่คอลัมน์ "รับเข้า" ในชีท สต๊อกคงเหลือ นับได้แค่ถึงแถว 16 ของชีท รับเข้า
+ *
+ *   แถว 6–16   ตรงกันหมด
+ *   แถว 17–25  เป็นศูนย์ทั้งหมด ทั้งที่มีของ 5,435 ชิ้น
+ *
+ * เพราะสูตร SUMIFS เขียนช่วงไว้ตายตัว เช่น รับเข้า!$H$6:$H$16 ตั้งแต่ตอนที่
+ * ชีทยังมีข้อมูลไม่กี่แถว พอกรอกเกินแถวนั้นไป ชีทก็มองไม่เห็นอีกเลย
+ * และไม่มีอะไรฟ้องสักอย่าง — ไม่ error ไม่ขึ้นเตือน ตัวเลขยังดูสวยปกติ
+ * อาการจึงออกมาเป็น "ยอดคงเหลือติดลบ" ทั้งที่ของเต็มชั้น
+ *
+ * สามคอลัมน์นี้เป็นสูตรที่เจ้าของร้านเขียนเอง กติกาของโปรเจกต์คือห้ามเขียนทับ
+ * ฟังก์ชันนี้จึงไม่ประกอบสูตรใหม่ แต่ "ขยายเลขแถวท้ายช่วง" ในสูตรเดิมเท่านั้น
+ * เงื่อนไขว่านับประเภทไหนบ้าง คิดยังไง ยังเป็นของเดิมทุกตัวอักษร
+ */
+function fixStockSumRange() {
+  requireStaff_();
+  var out = fixStockSumRange_(true);
+  Logger.log(out.text);
+  return out.text;
+}
+
+/* คอลัมน์ที่เป็นสูตรของเจ้าของร้าน — ไม่มีใน STOCK_ROW6 โดยตั้งใจ */
+var STOCK_SUM_COLS = { 6: 'รับเข้า', 7: 'ปรับลด', 8: 'ขายออก' };
+
+/**
+ * เติม "ประเภทรับเข้า" ที่มีในดรอปดาวน์แต่ไม่มีสูตรไหนนับ เข้าไปในสูตร
+ *
+ * ---------------------------------------------------------------------------
+ * อาการที่เจอจริง
+ * ---------------------------------------------------------------------------
+ * ร้านนี้กรอกน้ำยาจากถัง 200 ลิตรใส่ขวดขายทุกวัน แล้วลงแถว รับเข้า ประเภท
+ * "เติมน้ำยา" — คำนี้ระบบเป็นคนเติมเข้าดรอปดาวน์ให้เอง (EXTRA_RECV_TYPE)
+ * เพื่อไม่ให้ช่องขึ้นสามเหลี่ยมเตือน แต่ไม่เคยมีใครเพิ่มคำนี้เข้าไปในสูตร
+ * ของชีท สต๊อกคงเหลือ ซึ่งนับแค่ ซื้อเข้า · ปรับเพิ่ม · คืนจากลูกค้า
+ *
+ * ผลคือน้ำยาทุกขวดที่เติมมาตลอด ไม่เคยถูกนับเข้าสต๊อกเลยสักขวด
+ * IPA 1000ml: เติมไป 230 ขวด แต่ชีทแสดง รับเข้า = 0 คงเหลือ −19
+ * แล้วหน้าร้านขึ้นว่า "สินค้าหมด" ลูกค้ากดสั่งไม่ได้ ทั้งที่ของเต็มชั้น
+ *
+ * เลือกที่จะไม่ประกอบสูตรใหม่ทับ — ก๊อป SUMIFS ก้อนเดิมในสูตรนั้นมาหนึ่งก้อน
+ * เปลี่ยนเฉพาะคำที่ใช้เทียบ แล้วต่อท้ายด้วย + ช่วงและคอลัมน์ที่อ้างจึงเหมือนเดิมเป๊ะ
+ *
+ * "ตรวจนับ" ไม่เติมให้ เพราะการตรวจนับคือ "ยอดจริงมีเท่านี้" ไม่ใช่ "เพิ่มมาเท่านี้"
+ * เติมเข้าไปในสูตรบวกเมื่อไร ยอดจะเด้งเป็นสองเท่าทันที
+ * ตอนนับสต๊อกจากแอป ระบบเขียนเป็นส่วนต่างด้วยคำที่สูตรนับอยู่แล้ว (pickStockType_)
+ */
+var STOCK_TYPE_SKIP = ['ตรวจนับ'];
+
+function fixStockRecvTypes() {
+  requireStaff_();
+  var out = fixStockRecvTypes_();
+  Logger.log(out.text);
+  return out.text;
+}
+
+function fixStockRecvTypes_() {
+  var s = sheet_('stock');
+  var fx = stockTypeWords_();
+  var types = (cfgLists_().recvType || []);
+
+  var miss = [];
+  for (var i = 0; i < types.length; i++) {
+    var t = String(types[i] || '').trim();
+    if (!t || STOCK_TYPE_SKIP.indexOf(t) > -1) continue;
+    var seen = fx.up.concat(fx.down).some(function (w) {
+      return t.indexOf(w) > -1 || w.indexOf(t) > -1;
+    });
+    if (!seen) miss.push(t);
+  }
+  if (!miss.length) {
+    return { changed: 0, text: 'ทุกประเภทในดรอปดาวน์มีสูตรนับให้อยู่แล้ว' };
+  }
+
+  /* ประเภทที่ชื่อบอกว่าเป็นการลด ให้เข้าช่องปรับลด ที่เหลือถือเป็นของเข้า
+     เดาจากชื่อได้แค่นี้ จึงต้องรายงานออกไปให้เห็นทุกตัวว่าเอาเข้าช่องไหน */
+  var up = [], dn = [];
+  for (var k = 0; k < miss.length; k++) {
+    (/ลด|จ่ายออก|เสียหาย|ทิ้ง/.test(miss[k]) ? dn : up).push(miss[k]);
+  }
+
+  var notes = [], changed = 0;
+  [[6, up], [7, dn]].forEach(function (pair) {
+    var col = pair[0], words = pair[1];
+    if (!words.length) return;
+    var cell = s.getRange(DATA_ROW, col);
+    var f = String(cell.getFormula() || '');
+    var built = addSumifsTerms_(f, words);
+    if (!built) {
+      notes.push('  ' + STOCK_SUM_COLS[col] + ': หาก้อน SUMIFS ในสูตรไม่เจอ ' +
+        'จึงเติม ' + words.join(' · ') + ' ให้ไม่ได้ — ต้องเพิ่มเองในชีท');
+      return;
+    }
+    cell.setFormula(built);
+    cell.copyTo(s.getRange(DATA_ROW + 1, col, STOCK_LAST - DATA_ROW, 1));
+    changed++;
+    notes.push('  ' + STOCK_SUM_COLS[col] + ': เพิ่ม ' + words.join(' · '));
+  });
+  SpreadsheetApp.flush();
+
+  return { changed: changed,
+    text: (changed ? 'เพิ่มประเภทที่ไม่เคยถูกนับ เข้าไปในสูตรของ ' + SH.stock.name
+                   : 'เจอประเภทที่ไม่มีสูตรนับ แต่เติมให้ไม่ได้') + '\n' +
+      notes.join('\n') +
+      '\n  ข้ามให้ตั้งใจ: ' + STOCK_TYPE_SKIP.join(' · ') +
+      ' (เป็นยอดจริง ไม่ใช่ยอดที่เพิ่มมา เติมเข้าสูตรบวกแล้วยอดจะเด้งสองเท่า)' };
+}
+
+/**
+ * ต่อ SUMIFS ก้อนใหม่ท้ายก้อนสุดท้าย โดยใช้ก้อนเดิมเป็นแม่แบบ
+ *
+ * คัดลอกก้อนเดิมมาทั้งดุ้นแล้วเปลี่ยนเฉพาะข้อความในเครื่องหมายคำพูดตัวสุดท้าย
+ * ช่วงแถว คอลัมน์ที่เทียบ และวิธีอ้างอิง จึงตรงกับของเดิมทุกตัวอักษร
+ * ปลอดภัยกว่าประกอบสูตรใหม่เอง ซึ่งต้องเดาว่าเจ้าของร้านอ้างคอลัมน์ไหนไว้บ้าง
+ */
+function addSumifsTerms_(f, words) {
+  var i = f.indexOf('SUMIFS(');
+  if (i < 0) return '';
+
+  var last = null, from = 0;
+  while (true) {
+    var at = f.indexOf('SUMIFS(', from);
+    if (at < 0) break;
+    var depth = 0, end = -1;
+    for (var j = at + 6; j < f.length; j++) {
+      if (f.charAt(j) === '(') depth++;
+      else if (f.charAt(j) === ')') { depth--; if (!depth) { end = j; break } }
+    }
+    if (end < 0) break;
+    last = { start: at, end: end, text: f.slice(at, end + 1) };
+    from = end + 1;
+  }
+  if (!last) return '';
+
+  var add = '';
+  for (var k = 0; k < words.length; k++) {
+    /* แทนที่ข้อความในคำพูดตัวสุดท้ายของก้อนแม่แบบ = เงื่อนไขประเภท */
+    var t = last.text.replace(/"((?:[^"]|"")*)"(?=[^"]*$)/, '"' + String(words[k]).replace(/"/g, '""') + '"');
+    if (t === last.text) return '';        /* ไม่มีคำพูดให้เปลี่ยน แปลว่าเดาผิด */
+    add += '+' + t;
+  }
+  return f.slice(0, last.end + 1) + add + f.slice(last.end + 1);
+}
+
+function fixStockSumRange_(loud) {
+  var ss = ss_();
+  var s = sheet_('stock');
+  var notes = [], changed = 0;
+
+  for (var col in STOCK_SUM_COLS) {
+    col = Number(col);
+    if (col > s.getLastColumn()) continue;
+    var cell = s.getRange(DATA_ROW, col);
+    var f = String(cell.getFormula() || '');
+    if (f.charAt(0) !== '=') {
+      notes.push('  ' + cell.getA1Notation() + ' (' + STOCK_SUM_COLS[col] +
+        ') ไม่มีสูตร เป็นเลขนิ่ง — ต้องใส่สูตรเองก่อน');
+      continue;
+    }
+    var out = widenRanges_(ss, f);
+    if (out.text === f) continue;
+    cell.setFormula(out.text);
+    changed++;
+    notes.push('  ' + cell.getA1Notation() + ' (' + STOCK_SUM_COLS[col] + ') ' +
+      out.hits.join(' · '));
+  }
+
+  if (!changed) {
+    return { changed: 0, text: loud ? 'ช่วงแถวในสูตร ' + SH.stock.name +
+      ' ครอบข้อมูลครบอยู่แล้ว ไม่ต้องขยาย' : '' };
+  }
+
+  /* ขยายแถว 6 แล้วต้องลากลงทั้งชีท ไม่งั้นแถวอื่นยังอ่านไม่ถึงเหมือนเดิม
+     ช่วงที่ตรึงด้วย $ จะไม่ถูกขยับตอนคัดลอก จึงได้ช่วงใหม่เท่ากันทุกแถว */
+  for (var c2 in STOCK_SUM_COLS) {
+    c2 = Number(c2);
+    if (c2 > s.getLastColumn()) continue;
+    s.getRange(DATA_ROW, c2).copyTo(s.getRange(DATA_ROW + 1, c2, STOCK_LAST - DATA_ROW, 1));
+  }
+  SpreadsheetApp.flush();
+
+  return { changed: changed,
+    text: 'ขยายช่วงแถวในสูตรของ ' + SH.stock.name + ' ' + changed + ' คอลัมน์\n' +
+      notes.join('\n') +
+      '\n  (ลากลงครบทุกแถวถึงแถว ' + STOCK_LAST + ' แล้ว)' };
+}
+
+/**
+ * ขยายเลขแถวท้ายของทุกช่วงที่ชี้ไปชีทอื่น ให้ครอบทั้งชีทนั้น
+ *
+ * แตะเฉพาะช่วงที่มีชื่อชีทนำหน้า — ช่วงที่ไม่มีชื่อชีทคืออ้างในชีทตัวเอง
+ * ซึ่งเป็นคนละเรื่องและขยายมั่วไม่ได้ และไม่ยุ่งกับช่วงที่กว้างอยู่แล้ว
+ */
+function widenRanges_(ss, f) {
+  var hits = [];
+  var re = /((?:'(?:[^']|'')+'|[^\s!+\-*\/(),;:=<>&"]+)!)(\$?)([A-Z]{1,3})(\$?)(\d+):(\$?)([A-Z]{1,3})(\$?)(\d+)/g;
+  var text = f.replace(re, function (all, pre, d1, c1, d2, r1, d3, c2, d4, r2) {
+    var nm = pre.slice(0, -1);
+    if (nm.charAt(0) === "'") nm = nm.slice(1, -1).replace(/''/g, "'");
+    var sh = findSheet_(ss, nm);
+    if (!sh) return all;
+    var want = sh.getMaxRows();
+    if (Number(r2) >= want) return all;
+    hits.push(nm + '!' + c1 + r1 + ':' + c2 + r2 + ' → ' + c2 + want);
+    return pre + d1 + c1 + d2 + r1 + ':' + d3 + c2 + d4 + want;
+  });
+  return { text: text, hits: hits };
+}
+
 function repairStockSheet() {
   requireStaff_();
   var s = sheet_('stock');
@@ -1580,10 +1807,19 @@ function repairStockSheet() {
     f = tmpl.getFormulas()[0];
   }
 
+  /* ช่วงแถวที่สั้นเกินข้อมูลคืออาการที่เงียบที่สุดในบรรดาทั้งหมด — ไม่ error
+     ไม่มีเลขนิ่ง ไม่มี #REF! ตัวเลขยังดูปกติทุกช่อง แค่ "ไม่นับ" ของที่กรอกใหม่
+     จึงต้องตรวจตรงนี้ด้วย ไม่งั้นซ่อมอย่างอื่นเสร็จแล้วยอดก็ยังผิดเหมือนเดิม */
+  var wide = fixStockSumRange_(false);
+  /* ประเภทที่มีในดรอปดาวน์แต่ไม่มีสูตรไหนนับ เป็นอาการเงียบพอ ๆ กัน —
+     ระบบเองเป็นคนเติมคำว่า "เติมน้ำยา" เข้าดรอปดาวน์ แต่ไม่มีใครเพิ่มเข้าสูตร
+     น้ำยาที่กรอกใส่ขวดขายทุกวันจึงไม่เคยถูกนับเข้าสต๊อกเลยสักขวด */
+  var kinds = fixStockRecvTypes_();
+
   var before = countRef_(s, cols);
   var skew = countSkew_(s);
   var flat = countFlat_(s, cols);
-  if (!before && !skew && !flat && !fixed.length) {
+  if (!before && !skew && !flat && !fixed.length && !wide.changed && !kinds.changed) {
     var okMsg = 'ชีท ' + SH.stock.name + ': สูตรปกติดีอยู่แล้ว ไม่ต้องซ่อม';
     Logger.log(okMsg);
     return okMsg;
@@ -1600,7 +1836,9 @@ function repairStockSheet() {
       fixed.join(', ') + ')\n' : '') +
     '  ซ่อม #REF! ' + before + ' ช่อง (เหลือ ' + after + ')\n' +
     '  ซ่อมแถวที่ชี้ผิดตัวสินค้า ' + skew + ' แถว (เหลือ ' + skewAfter + ')\n' +
-    '  ซ่อมช่องที่กลายเป็นเลขนิ่ง ' + flat + ' ช่อง (เหลือ ' + flatAfter + ')' + extra;
+    '  ซ่อมช่องที่กลายเป็นเลขนิ่ง ' + flat + ' ช่อง (เหลือ ' + flatAfter + ')' +
+    (wide.changed ? '\n' + wide.text : '') +
+    (kinds.changed ? '\n' + kinds.text : '') + extra;
   Logger.log(msg);
   return msg;
 }
@@ -2188,7 +2426,10 @@ function setupAccounting_(ss) {
     /* เงินที่แพลตฟอร์มหักไปก่อนโอนเข้าร้าน — เป็นรายจ่ายของร้าน ไม่ใช่ส่วนลดลูกค้า
        จึงห้ามเอาไปลดยอดขายหรือยอดในใบกำกับภาษี ต้องอยู่คนละช่องกันคนละเรื่อง */
     { col: C.fee, head: 'ค่าธรรมเนียม\nแพลตฟอร์ม', width: 120 },
-    { col: C.shipCost, head: 'ค่าส่งที่ร้าน\nออกเอง', width: 110 }
+    { col: C.shipCost, head: 'ค่าส่งที่ร้าน\nออกเอง', width: 110 },
+    /* คนละช่องกับ "วันที่" (B) ซึ่งเป็นวันของออเดอร์ที่คนคีย์เลือกเอง ย้อนหลังได้
+       ช่องนี้ระบบเขียนเองตอนกดบันทึก ใช้ตอบว่าใบนี้เข้ามาตอนกี่โมง */
+    { col: C.keyedAt, head: 'เวลาที่คีย์\nเข้าระบบ', width: 140, fmt: 'dd/mm/yyyy HH:mm' }
   ];
 
   var need = SH.head.width;
@@ -2204,6 +2445,10 @@ function setupAccounting_(ss) {
       .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
       .setVerticalAlignment('middle').setWrap(true);
     s.setColumnWidth(cols[i].col, cols[i].width);
+    if (cols[i].fmt) {
+      var n = Math.max(1, s.getMaxRows() - DATA_ROW + 1);
+      s.getRange(DATA_ROW, cols[i].col, n, 1).setNumberFormat(cols[i].fmt);
+    }
   }
 
   /* รายการตัวเลือกไปอยู่ในชีท ตั้งค่า ที่เดียวกับ dropdown ชุดอื่น
@@ -2642,4 +2887,442 @@ function namelessRows_(ss, need) {
     }
   }
   return lines.join('\n');
+}
+
+
+/**
+ * เตรียมชีทให้พร้อมสำหรับหน้าร้านที่ลูกค้าเปิดเอง — สั่งครั้งเดียวพอ สั่งซ้ำได้ไม่พัง
+ *
+ * เพิ่มสามคอลัมน์ท้าย ฐานสินค้า (ต่อท้ายช่องสูตร ไม่แทรกกลาง ไม่งั้นสูตรของชีทอื่น
+ * ที่ชี้มาที่คอลัมน์ K L M จะเลื่อนพังหมด แบบเดียวกับที่เคยเกิดตอนลบแถวทิ้ง)
+ *
+ *   N  ขายหน้าเว็บ   เว้นว่าง = ขาย · พิมพ์ "ไม่" = ซ่อนจากหน้าร้าน
+ *   O  ลิงก์รูป 1    รูปหลัก ขึ้นบนการ์ดสินค้า เว้นว่างได้ หน้าร้านจะขึ้นกรอบชื่อสินค้าแทน
+ *   P  ลิงก์รูป 2    รูปที่สอง ลูกค้ากดที่รูปแล้วเลื่อนดูได้ เว้นว่างก็มีรูปเดียว
+ *
+ * และเพิ่มสวิตช์ "เปิดรับออเดอร์หน้าเว็บ" ในชีท ตั้งค่าแอป ถ้ายังไม่มี
+ */
+function setupShopColumns() {
+  var email = requireStaff_();
+  var ss = ss_();
+  var out = [];
+
+  var s = findSheet_(ss, SH.prod.name);
+  if (!s) throw new Error('ไม่เจอชีท ' + SH.prod.name);
+
+  var need = SH.prod.IN.img2;                      // P = 16
+  if (s.getMaxColumns() < need) s.insertColumnsAfter(s.getMaxColumns(), need - s.getMaxColumns());
+
+  /* หัวคอลัมน์เขียนทับได้เสมอ เพราะสามช่องนี้ไม่มีใครใช้นอกจากหน้าร้าน
+     ชีทที่ตั้งไว้รอบก่อนจะได้ชื่อ "ลิงก์รูป" เฉย ๆ ที่ช่อง O — เขียนใหม่เป็น
+     "ลิงก์รูป 1" ให้ตรงกับ "ลิงก์รูป 2" ที่เพิ่งเพิ่ม ลิงก์ที่กรอกไว้แล้วไม่หาย
+     เพราะแตะแค่แถวหัว (HEAD_ROW) ไม่ได้แตะแถวข้อมูล */
+  var head = s.getRange(HEAD_ROW, SH.prod.IN.web, 1, 3).getValues()[0];
+  var had = String(head[0] || '').trim() && String(head[1] || '').trim();
+  var had2 = String(head[2] || '').trim();
+
+  s.getRange(HEAD_ROW, SH.prod.IN.web, 1, 3)
+    .setValues([['ขายหน้าเว็บ', 'ลิงก์รูป 1', 'ลิงก์รูป 2']])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold');
+  s.getRange(HEAD_ROW + 1, SH.prod.IN.web).setNote(
+    'เว้นว่าง = ขายบนหน้าร้าน\n' +
+    'พิมพ์ "ไม่" = ซ่อนจากหน้าร้าน (พนักงานยังคีย์ขายได้ตามปกติ)');
+  s.getRange(HEAD_ROW + 1, SH.prod.IN.img).setNote(
+    'รูปหลัก — รูปนี้ขึ้นบนการ์ดสินค้าและในตะกร้า\n' +
+    'วางลิงก์แชร์จาก Google ไดรฟ์ได้เลย ระบบแปลงให้เอง\n' +
+    'แต่รูปในไดรฟ์ต้องตั้งแชร์เป็น "ทุกคนที่มีลิงก์" ไม่งั้นลูกค้าเห็นกรอบเปล่า');
+  s.getRange(HEAD_ROW + 1, SH.prod.IN.img2).setNote(
+    'รูปที่สอง — ลูกค้ากดที่รูปแล้วเลื่อนดูได้\n' +
+    'เว้นว่างได้ ถ้าเว้นก็มีรูปเดียว ไม่พัง\n' +
+    'เหมาะกับรูปมุมที่รูปหลักไม่เห็น เช่น ปลายคม หรือฉลากข้างขวด');
+
+  if (had && had2) {
+    out.push('ฐานสินค้า มีคอลัมน์ ขายหน้าเว็บ กับ ลิงก์รูปครบทั้งสองช่องอยู่แล้ว');
+  } else if (had) {
+    out.push('เพิ่มคอลัมน์ ' + colLetter_(SH.prod.IN.img2) + ' ลิงก์รูป 2 ให้ ฐานสินค้า แล้ว');
+    out.push('  ลิงก์รูปที่กรอกไว้ในคอลัมน์ ' + colLetter_(SH.prod.IN.img) + ' ยังอยู่ครบ ไม่ต้องกรอกใหม่');
+    out.push('  ตัวไหนอยากให้ลูกค้าดูได้สองรูป ค่อยเติมลิงก์ที่สองในคอลัมน์ ' +
+      colLetter_(SH.prod.IN.img2));
+  } else {
+    out.push('เพิ่มคอลัมน์ ' + colLetter_(SH.prod.IN.web) + ' ขายหน้าเว็บ · ' +
+      colLetter_(SH.prod.IN.img) + ' ลิงก์รูป 1 · ' +
+      colLetter_(SH.prod.IN.img2) + ' ลิงก์รูป 2 ให้ ฐานสินค้า แล้ว');
+    out.push('  ทุกตัวเริ่มต้นเป็น "ขาย" เหมือนหน้าร้านชุดเดิม ตัวไหนไม่อยากให้ลูกค้าเห็น');
+    out.push('  ให้พิมพ์คำว่า ไม่ ลงในคอลัมน์ ' + colLetter_(SH.prod.IN.web) + ' ของแถวนั้น');
+  }
+
+  out.push(shopSwitchRow_(ss));
+  out.push('');
+  out.push('สินค้าที่ลูกค้าจะเห็นตอนนี้: ' + shopItems_().length + ' รายการ');
+
+  writeLog_(email, 'ตั้งค่า', SH.prod.name, '', 'เตรียมคอลัมน์หน้าร้าน', '', '');
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/** สองสวิตช์ของหน้าร้านในชีท ตั้งค่าแอป — เติมให้ถ้ายังไม่มี สั่งซ้ำได้ไม่เพิ่มซ้ำ */
+function shopSwitchRow_(ss) {
+  var s = findSheet_(ss, SH.app.name);
+  if (!s) return 'ยังไม่มีชีท ' + SH.app.name + ' — สั่ง setup ก่อนแล้วค่อยสั่งตัวนี้ซ้ำ';
+
+  var WANT = [
+    ['เปิดรับออเดอร์หน้าเว็บ', 'เปิด',
+      'พิมพ์ "ปิด" เมื่อไม่อยากให้ลูกค้าสั่งของจากหน้าเว็บชั่วคราว\n' +
+      'ปิดแล้วลูกค้ายังดูสินค้าและราคาได้ตามปกติ แค่กดสั่งไม่ได้'],
+    ['ออเดอร์จากเว็บ', 'เข้าคิวก่อน',
+      'เข้าคิวก่อน = ไปรอในชีท คำขอสั่งซื้อ ให้พนักงานตรวจแล้วกด "รับเป็นออเดอร์"\n' +
+      'เข้าชีทเลย   = เป็นออเดอร์จริงทันที ตัดสต๊อกทันที ไม่มีใครตรวจก่อน\n' +
+      'แนะนำให้ใช้ "เข้าคิวก่อน" เพราะพลาดแล้วแก้ง่ายกว่ามาก'],
+    ['โลโก้ร้าน (ลิงก์รูป)', '',
+      'โลโก้กลม ๆ บนหัวหน้าร้าน เว้นว่างได้\n' +
+      'ลิงก์แชร์ไดรฟ์ใช้ได้ แต่ต้องตั้งเป็น "ทุกคนที่มีลิงก์"'],
+    ['ภาพหัวหน้าร้าน (ลิงก์รูป)', '',
+      'ภาพพื้นหลังด้านบนสุดของหน้าร้าน เว้นว่างได้\n' +
+      'เว้นว่าง = ใช้พื้นหลังไล่สีฟ้าของระบบแทน'],
+    ['ลิงก์แผนที่ร้าน', '',
+      'ลิงก์ Google Maps ของหน้าร้าน เว้นว่างได้\n' +
+      'เว้นว่าง = ระบบเอาที่อยู่ผู้ส่งไปค้นใน Google Maps ให้เอง'],
+    ['อีเมลแจ้งเตือนออเดอร์จากเว็บ', '',
+      'ลูกค้าสั่งของจากหน้าเว็บเมื่อไร ระบบส่งอีเมลมาบอกทันที\n' +
+      'ใส่หลายอีเมลได้ คั่นด้วยจุลภาค · เว้นว่าง = ส่งเข้าอีเมลเจ้าของสคริปต์\n' +
+      'พิมพ์ "ปิด" ถ้าไม่ต้องการให้ส่งเลย']
+  ];
+
+  var last = s.getLastRow();
+  var have = {};
+  if (last >= DATA_ROW) {
+    var v = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, 1).getValues();
+    for (var i = 0; i < v.length; i++) have[String(v[i][0] || '').trim()] = 1;
+  }
+
+  var added = [], kept = [];
+  for (var k = 0; k < WANT.length; k++) {
+    if (have[WANT[k][0]]) { kept.push(WANT[k][0]); continue; }
+    last = Math.max(DATA_ROW - 1, s.getLastRow());
+    var row = last + 1;
+    s.getRange(row, 1, 1, 2).setValues([[WANT[k][0], WANT[k][1]]]);
+    s.getRange(row, 2).setNote(WANT[k][2]);
+    added.push(WANT[k][0] + ' = ' + WANT[k][1]);
+  }
+
+  if (!added.length) return 'ตั้งค่าแอป มีสวิตช์ของหน้าร้านครบอยู่แล้ว';
+  return 'เพิ่มสวิตช์ในชีท ' + SH.app.name + ': ' + added.join(' · ') +
+    (kept.length ? '  (มีอยู่แล้ว: ' + kept.join(' · ') + ')' : '');
+}
+
+
+/**
+ * ชีท คำขอสั่งซื้อ — ที่พักของออเดอร์จากหน้าเว็บก่อนพนักงานกดรับ
+ *
+ * แยกจาก ออเดอร์_หัวบิล โดยตั้งใจ คนที่กรอกมาคือใครก็ได้บนอินเทอร์เน็ต
+ * จะให้ไปปนกับใบจริงที่ใช้ปิดบัญชีและตัดสต๊อกไม่ได้
+ */
+function setupReqSheet_(ss) {
+  var name = SH.req.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < REQ_LAST) s.insertRowsAfter(s.getMaxRows(), REQ_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 14) s.insertColumnsAfter(s.getMaxColumns(), 14 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('คำขอสั่งซื้อจากหน้าร้าน — ยังไม่ใช่ออเดอร์')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'ลูกค้ากรอกเข้ามาเอง ระบบยังไม่ตัดสต๊อกและยังไม่ออกเลขออเดอร์  |  ' +
+    'พนักงานกด "รับเป็นออเดอร์" ในระบบคีย์ออเดอร์ ถึงจะกลายเป็นใบจริง  |  ' +
+    'ยอดในช่องประเมินเป็นราคา ณ วันที่ลูกค้ากด ไม่ใช่ยอดที่ตกลงกันจริง'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'เลขคำขอ', 'เข้ามาเมื่อ', 'ชื่อผู้รับ', 'เบอร์โทร', 'ที่อยู่จัดส่ง',
+    'ข้อความจากลูกค้า', 'รายการ\n(SKU*จำนวน)', 'ชื่อสินค้า', 'ยอดประเมิน',
+    'สถานะ', 'เลขออเดอร์ที่รับเป็น', 'ผู้รับเรื่อง', 'เหตุผลที่ไม่รับ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = REQ_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+
+  var inCols = [];
+  for (var c = 2; c <= 14; c++) inCols.push(c);
+  paintCols_(s, n, inCols, [1]);
+
+  s.getRange(DATA_ROW, SH.req.IN.at, n, 1).setNumberFormat('dd/mm/yyyy HH:mm');
+  s.getRange(DATA_ROW, SH.req.IN.tel, n, 1).setNumberFormat('@');
+  s.getRange(DATA_ROW, SH.req.IN.lines, n, 1).setNumberFormat('@');
+  s.getRange(DATA_ROW, SH.req.IN.est, n, 1).setNumberFormat('#,##0.00');
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.req.IN.no, 130);
+  s.setColumnWidth(SH.req.IN.at, 140);
+  s.setColumnWidth(SH.req.IN.cust, 160);
+  s.setColumnWidth(SH.req.IN.tel, 110);
+  s.setColumnWidth(SH.req.IN.addr, 300);
+  s.setColumnWidth(SH.req.IN.note, 200);
+  s.setColumnWidth(SH.req.IN.lines, 180);
+  s.setColumnWidth(SH.req.IN.names, 280);
+  s.setColumnWidth(SH.req.IN.status, 110);
+  s.setColumnWidth(SH.req.IN.orderNo, 140);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' คำขอ)';
+}
+
+
+/* ============================================================================
+   หน้าร้านแบบใหม่ — แบนเนอร์ · หมวดมีรูป · ป้ายสินค้าแนะนำ
+   ========================================================================== */
+
+var BAN_LAST = 105;    // แบนเนอร์หน้าร้าน รองรับ 100 แบนเนอร์
+var SCAT_LAST = 85;    // หมวดหน้าร้าน รองรับ 80 หมวด
+
+/** ตำแหน่งที่แบนเนอร์ไปโผล่บนหน้าแรก — ต้องตรงกับที่ Shop.gs อ่าน */
+var BAN_SLOTS = ['ติดต่อเรา', 'โปรโมชั่นเด่น', 'โปรโมชั่นประจำเดือน'];
+
+/** ป้ายที่ติดสินค้าได้ — ตัวที่ทำให้สินค้าไปขึ้นแถบพิเศษบนหน้าแรก */
+var PROD_TAGS = ['แนะนำ', 'ใหม่', 'ขายดี', 'โปรโมชั่น'];
+
+/**
+ * เตรียมชีทสำหรับหน้าร้านหน้าตาใหม่ — สั่งครั้งเดียวพอ สั่งซ้ำได้ไม่พัง
+ *
+ * ทำสามอย่าง
+ *   1. สร้างชีท แบนเนอร์หน้าร้าน  — รูปใหญ่สามแถบบนหน้าแรก
+ *   2. สร้างชีท หมวดหน้าร้าน      — รูปไอคอนกับรูปปกของแต่ละหมวด (เติมชื่อหมวดให้เอง)
+ *   3. เพิ่มคอลัมน์ Q "ป้ายหน้าร้าน" ที่ ฐานสินค้า — ติดป้าย แนะนำ/ใหม่/ขายดี/โปรโมชั่น
+ *
+ * ไม่มีอันไหนบังคับกรอก ปล่อยว่างทั้งหมดหน้าร้านก็ยังทำงานเหมือนเดิมทุกอย่าง
+ * แค่ไม่มีแบนเนอร์ ไม่มีรูปหมวด และไม่มีแถบสินค้าแนะนำ
+ */
+function setupShopPages() {
+  var email = requireStaff_();
+  var ss = ss_();
+  var out = [];
+
+  out.push(setupBanSheet_(ss));
+  out.push(setupScatSheet_(ss));
+  out.push(setupProdTagCol_(ss));
+  /* สวิตช์กับช่องโลโก้อยู่ในชีท ตั้งค่าแอป — เติมจากตรงนี้ด้วย
+     เจ้าของร้านจะได้สั่งฟังก์ชันเดียวจบ ไม่ต้องจำว่าอันไหนสร้างอะไร */
+  out.push(shopSwitchRow_(ss));
+
+  out.push('');
+  out.push('ต่อไปทำอะไร');
+  out.push('  1. ใส่ลิงก์รูปแบนเนอร์ในชีท ' + SH.ban.name + ' แล้วพิมพ์ เปิด ในช่องเปิดใช้');
+  out.push('  2. ใส่ลิงก์รูปหมวดในชีท ' + SH.scat.name + ' (ชื่อหมวดเติมมาให้แล้ว)');
+  out.push('  3. ติดป้าย แนะนำ หรือ ขายดี ในคอลัมน์ ' + colLetter_(SH.prod.IN.tag) +
+           ' ของ ฐานสินค้า ให้ตัวที่อยากดันขึ้นหน้าแรก');
+  out.push('  ทุกช่องเว้นว่างได้หมด หน้าร้านไม่พัง แค่แถบนั้นไม่ขึ้น');
+
+  writeLog_(email, 'ตั้งค่า', SH.ban.name, '', 'เตรียมหน้าร้านแบบใหม่', '', '');
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+function setupBanSheet_(ss) {
+  var name = SH.ban.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < BAN_LAST) s.insertRowsAfter(s.getMaxRows(), BAN_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 8) s.insertColumnsAfter(s.getMaxColumns(), 8 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('แบนเนอร์บนหน้าร้านที่ลูกค้าเปิด')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'รูปต้องเปิดดูได้จากข้างนอก — ลิงก์แชร์ไดรฟ์ใช้ได้ แต่ต้องตั้งเป็น "ทุกคนที่มีลิงก์"  |  ' +
+    'ช่องเปิดใช้ต้องพิมพ์ เปิด ถึงจะขึ้นหน้าร้าน  |  ' +
+    'ลิงก์ปุ่มใส่ได้สามแบบ: ที่อยู่เว็บ · หมวด:ชื่อหมวด · สินค้า:SKU'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'ตำแหน่ง', 'ชื่อแบนเนอร์\n(ไว้ดูเอง ลูกค้าไม่เห็น)', 'ลิงก์รูป',
+    'ข้อความบนปุ่ม', 'ลิงก์ปุ่ม', 'เปิดใช้', 'หมายเหตุ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = BAN_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($D6="","",COUNTA($D$6:$D6))');
+  paintCols_(s, n, [2, 3, 4, 5, 6, 7, 8], [1]);
+
+  s.getRange(DATA_ROW, SH.ban.IN.slot, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(BAN_SLOTS, true)
+      .setAllowInvalid(false).build());
+  s.getRange(DATA_ROW, SH.ban.IN.on, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(['เปิด', 'ปิด'], true)
+      .setAllowInvalid(false).build());
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.ban.IN.slot, 170);
+  s.setColumnWidth(SH.ban.IN.title, 200);
+  s.setColumnWidth(SH.ban.IN.img, 320);
+  s.setColumnWidth(SH.ban.IN.btn, 130);
+  s.setColumnWidth(SH.ban.IN.href, 260);
+  s.setColumnWidth(SH.ban.IN.note, 200);
+
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name + ' (รองรับ ' + n + ' แบนเนอร์)';
+}
+
+/**
+ * ชีทหมวดหน้าร้าน — เติมชื่อหมวดที่มีอยู่จริงใน ฐานสินค้า ให้เลย
+ *
+ * เติมให้เพราะถ้าปล่อยว่าง เจ้าของร้านต้องพิมพ์ชื่อหมวดเองให้ตรงเป๊ะกับคอลัมน์ C
+ * พิมพ์ผิดตัวเดียวรูปก็ไม่ขึ้น โดยไม่มีอะไรบอกว่าผิดตรงไหน
+ * หมวดที่มีแถวอยู่แล้วไม่แตะ — สั่งซ้ำแล้วรูปที่ใส่ไว้ต้องไม่หาย
+ */
+function setupScatSheet_(ss) {
+  var name = SH.scat.name;
+  var s = findSheet_(ss, name);
+  var fresh = !s;
+  if (fresh) s = ss.insertSheet(name);
+
+  if (s.getMaxRows() < SCAT_LAST) s.insertRowsAfter(s.getMaxRows(), SCAT_LAST - s.getMaxRows());
+  if (s.getMaxColumns() < 7) s.insertColumnsAfter(s.getMaxColumns(), 7 - s.getMaxColumns());
+
+  s.getRange('A2').setValue('หมวดสินค้าบนหน้าร้าน — ใส่ไว้แต่งรูป ไม่ได้สร้างหมวดใหม่')
+    .setFontWeight('bold').setFontSize(12);
+  s.getRange('A3').setValue(
+    'ชื่อหมวดต้องตรงกับคอลัมน์ ' + colLetter_(SH.prod.IN.group) + ' ของ ฐานสินค้า เป๊ะ ๆ  |  ' +
+    'หมวดที่ไม่มีแถวในนี้ก็ยังขึ้นหน้าร้าน แค่ไม่มีรูป  |  ' +
+    'รูปไอคอนใช้บนหน้าแรก รูปปกใช้เป็นภาพใหญ่ด้านบนตอนกดเข้าไปในหมวด'
+  ).setFontColor(C_SUB_FG);
+
+  var head = ['ลำดับ', 'หมวด\n(ตรงกับ ฐานสินค้า)', 'ชื่อที่โชว์ให้ลูกค้า\n(เว้นว่าง = ใช้ชื่อหมวด)',
+    'ลิงก์รูปไอคอน', 'ลิงก์รูปปก', 'โชว์หน้าแรก', 'หมายเหตุ'];
+  s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
+    .setVerticalAlignment('middle').setWrap(true);
+
+  var n = SCAT_LAST - DATA_ROW + 1;
+  fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
+  paintCols_(s, n, [2, 3, 4, 5, 6, 7], [1]);
+
+  s.getRange(DATA_ROW, SH.scat.IN.home, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(['โชว์', 'ซ่อน'], true)
+      .setAllowInvalid(false).build());
+
+  s.setFrozenRows(HEAD_ROW);
+  s.setColumnWidth(SH.scat.IN.group, 220);
+  s.setColumnWidth(SH.scat.IN.label, 200);
+  s.setColumnWidth(SH.scat.IN.icon, 300);
+  s.setColumnWidth(SH.scat.IN.cover, 300);
+  s.setColumnWidth(SH.scat.IN.note, 180);
+
+  var added = seedScatRows_(s);
+  return (fresh ? 'สร้างชีท ' : 'อัปเดตชีท ') + name +
+    (added ? ' — เติมชื่อหมวดให้ใหม่ ' + added + ' หมวด' : ' — ชื่อหมวดครบอยู่แล้ว');
+}
+
+function seedScatRows_(s) {
+  var have = {}, lastUsed = DATA_ROW - 1;
+  var vals = s.getRange(DATA_ROW, SH.scat.IN.group, SCAT_LAST - DATA_ROW + 1, 1).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    var g = String(vals[i][0] || '').trim();
+    if (g) { have[g] = 1; lastUsed = DATA_ROW + i; }
+  }
+
+  var seen = {}, want = [];
+  var prods = readProducts_();
+  for (var k = 0; k < prods.length; k++) {
+    var grp = String(prods[k].group || '').trim();
+    if (!grp || seen[grp] || have[grp]) continue;
+    seen[grp] = 1;
+    want.push([grp]);
+  }
+  if (!want.length) return 0;
+  if (lastUsed + want.length > SCAT_LAST) want = want.slice(0, SCAT_LAST - lastUsed);
+  s.getRange(lastUsed + 1, SH.scat.IN.group, want.length, 1).setValues(want);
+  /* หมวดที่เติมให้ใหม่ตั้งเป็น โชว์ ไว้ก่อน เจ้าของร้านค่อยไล่ปิดตัวที่ไม่อยากให้เห็น
+     ตรงข้ามกับตั้งเป็น ซ่อน ซึ่งจะทำให้กรอกรูปเสร็จแล้วงงว่าทำไมไม่ขึ้น */
+  var on = want.map(function () { return ['โชว์'] });
+  s.getRange(lastUsed + 1, SH.scat.IN.home, want.length, 1).setValues(on);
+  return want.length;
+}
+
+function setupProdTagCol_(ss) {
+  var s = findSheet_(ss, SH.prod.name);
+  if (!s) throw new Error('ไม่เจอชีท ' + SH.prod.name);
+
+  var need = SH.prod.IN.tag;                       // Q = 17
+  if (s.getMaxColumns() < need) s.insertColumnsAfter(s.getMaxColumns(), need - s.getMaxColumns());
+
+  var had = String(s.getRange(HEAD_ROW, need).getValue() || '').trim();
+  s.getRange(HEAD_ROW, need).setValue('ป้ายหน้าร้าน')
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold');
+  s.getRange(HEAD_ROW + 1, need).setNote(
+    'ติดป้ายให้สินค้าที่อยากดันขึ้นหน้าแรก เว้นว่างได้\n' +
+    'เลือกได้: ' + PROD_TAGS.join(' · ') + '\n' +
+    'ติดได้หลายป้าย คั่นด้วยเครื่องหมายจุลภาค เช่น  ใหม่, โปรโมชั่น\n' +
+    'ป้าย "ขายดี" ติดเองได้ แต่ถึงไม่ติด ระบบก็จัดอันดับจากยอดขายจริงให้อยู่แล้ว');
+
+  var last = s.getMaxRows();
+  s.getRange(DATA_ROW, need, last - DATA_ROW + 1, 1).setFontColor(C_IN_FG);
+
+  return had
+    ? 'ฐานสินค้า มีคอลัมน์ ' + colLetter_(need) + ' ป้ายหน้าร้าน อยู่แล้ว'
+    : 'เพิ่มคอลัมน์ ' + colLetter_(need) + ' ป้ายหน้าร้าน ให้ ฐานสินค้า แล้ว';
+}
+
+
+/**
+ * บอกว่าสูตรของชีท สต๊อกคงเหลือ นับ "ประเภท" ไหนเข้าช่องไหน
+ *
+ * ทำไมต้องมี: ดรอปดาวน์ในชีท ตั้งค่า กับสูตรในชีท สต๊อกคงเหลือ เป็นคนละที่กัน
+ * เลือกประเภทที่มีในดรอปดาวน์ได้ ไม่ได้แปลว่าสูตรจะนับให้
+ * ของจริงที่เจอ 21 ก.ย. 69: นับสต๊อก SKU-134 ตั้งไว้ 2,500 แต่ชีทคิดออกมาเป็น −2
+ * เพราะสูตรช่องรับเข้าไม่ได้นับคำว่า "ปรับเพิ่ม" ลงไปเท่าไรยอดก็ไม่ขึ้น
+ *
+ * ระบบเลือกคำที่สูตรนับให้เองแล้ว ฟังก์ชันนี้มีไว้ดูว่าเลือกอะไร และมีคำไหนตกหล่น
+ */
+function checkStockTypes() {
+  requireStaff_();
+  var out = [];
+  var fx = stockTypeWords_();
+  var lists = cfgLists_();
+  var types = lists.recvType || [];
+
+  var s = sheet_('stock');
+  var f = s.getRange(DATA_ROW, 6, 1, 2).getFormulas()[0];
+
+  out.push('สูตรของชีท ' + SH.stock.name + ' แถว ' + DATA_ROW);
+  out.push('  ช่องรับเข้า (F) : ' + (f[0] || '(ไม่มีสูตร)'));
+  out.push('  ช่องปรับลด (G) : ' + (f[1] || '(ไม่มีสูตร)'));
+  out.push('');
+  out.push('คำที่สูตรนับจริง');
+  out.push('  เข้าช่องรับเข้า : ' + (fx.up.length ? fx.up.join(' · ') : '(อ่านไม่ออก)'));
+  out.push('  เข้าช่องปรับลด : ' + (fx.down.length ? fx.down.join(' · ') : '(อ่านไม่ออก)'));
+  out.push('');
+
+  out.push('ประเภทในดรอปดาวน์ของชีท ' + SH.cfg.name + ' (' + types.length + ' ตัว)');
+  var orphan = [];
+  for (var i = 0; i < types.length; i++) {
+    var t = String(types[i]);
+    var inUp = fx.up.some(function (w) { return t.indexOf(w) > -1 || w.indexOf(t) > -1 });
+    var inDn = fx.down.some(function (w) { return t.indexOf(w) > -1 || w.indexOf(t) > -1 });
+    var where = inUp ? 'นับเข้า "รับเข้า"' : (inDn ? 'นับเข้า "ปรับลด"' : '⚠ ไม่มีสูตรไหนนับเลย');
+    if (!inUp && !inDn) orphan.push(t);
+    out.push('  ' + t + '  →  ' + where);
+  }
+
+  out.push('');
+  var up = pickWord_(types, fx.up.concat(['ปรับเพิ่ม', 'รับเข้า', 'ซื้อ']));
+  var dn = pickWord_(types, fx.down.concat(['ปรับลด']));
+  out.push('ตอนนับสต๊อก ระบบจะใช้');
+  out.push('  เพิ่มยอด : ' + (up || '⚠ ไม่มีคำที่ใช้ได้เลย'));
+  out.push('  ลดยอด   : ' + (dn || '⚠ ไม่มีคำที่ใช้ได้เลย'));
+
+  if (orphan.length) {
+    out.push('');
+    out.push('⚠ ประเภทที่ลงไปแล้วยอดไม่ขยับ: ' + orphan.join(' · '));
+    out.push('  ลงประเภทพวกนี้ในชีท ' + SH.recv.name + ' ได้ แต่ ' + SH.stock.name +
+      ' จะไม่นับให้ ยอดคงเหลือจึงไม่เปลี่ยน');
+    out.push('  ถ้าตั้งใจให้นับ ต้องไปเติมคำนั้นในสูตรของชีท ' + SH.stock.name + ' เอง');
+    out.push('  (ระบบไม่แก้สูตรให้ เพราะสูตรเป็นของเจ้าของร้าน เดาผิดคือยอดทั้งชีทเพี้ยน)');
+  }
+
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
 }

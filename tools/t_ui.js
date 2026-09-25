@@ -889,6 +889,32 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   var edStart = await page.locator('#ed-rows .edrow').count();
   truthy('เปิดมาแล้วเห็นรายการเดิมของใบนั้น', edStart > 0);
 
+  /* เคยมีคลาส .edrow ของหน้าโหมดแก้ไขไปชนกับแถวนี้ แล้วตั้ง display:flex
+     ทุกอย่างในแถวเลยเรียงแนวนอน ช่องเลือกสินค้าเหลือกว้างสามตัวอักษร
+     และข้อความช่องติ๊กตกบรรทัดทีละตัว — บนมือถือใช้งานไม่ได้เลย
+     ข้อสอบนี้วัดความกว้างจริงบนจอ 390px ไม่ใช่ดูแค่ว่ามี element อยู่ */
+  console.log('\n   แถวสินค้าในกล่องนี้ต้องอ่านออกบนมือถือ');
+  var lay = await page.evaluate(function () {
+    var row = document.querySelector('#ed-rows .edrow');
+    var box = row.getBoundingClientRect();
+    var sel = row.querySelector('.i-sku').getBoundingClientRect();
+    var cks = [].map.call(row.querySelectorAll('.giftck'), function (el) {
+      var r = el.getBoundingClientRect();
+      return { w: r.width, h: r.height, x: r.left };
+    });
+    var qty = row.querySelector('.i-qty').getBoundingClientRect();
+    return { boxW: box.width, selW: sel.width, qtyW: qty.width, cks: cks };
+  });
+  truthy('ช่องเลือกสินค้ากว้างเกือบเต็มแถว (' + Math.round(lay.selW) + ' จาก ' +
+    Math.round(lay.boxW) + ')', lay.selW > lay.boxW * 0.8);
+  truthy('ช่องจำนวนกว้างพอพิมพ์ (' + Math.round(lay.qtyW) + 'px)', lay.qtyW > 100);
+  eq('ช่องติ๊กมีสองช่อง', lay.cks.length, 2);
+  lay.cks.forEach(function (c, i) {
+    truthy('ข้อความช่องติ๊กที่ ' + (i + 1) + ' ไม่ถูกบีบเป็นคอลัมน์ (กว้าง ' +
+      Math.round(c.w) + 'px สูง ' + Math.round(c.h) + 'px)',
+      c.w > lay.boxW * 0.8 && c.h < 90);
+  });
+
   console.log('\n   กดเพิ่มสินค้าแล้วต้องมีบรรทัดใหม่ให้กรอก');
   await page.click('#ed-add');
   await page.waitForTimeout(200);
@@ -2807,7 +2833,9 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
         icons: q('.acts .sqic').length,
         lines: Object.keys(tops).length,
         srcs: q('.acts .sqic').map(function (im) { return im.getAttribute('src').slice(-40) }),
-        iconW: btns.length ? Math.round(r.querySelector('.sqic').getBoundingClientRect().width) : 0
+        iconW: btns.length ? Math.round(r.querySelector('.sqic').getBoundingClientRect().width) : 0,
+        sqW: btns.length ? Math.round(btns[0].getBoundingClientRect().width) : 0,
+        sqH: btns.length ? Math.round(btns[0].getBoundingClientRect().height) : 0
       });
     });
     return out;
@@ -2837,9 +2865,16 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
      ล็อกเลขไว้ที่ 8 ตั้งใจ — วันที่ได้รูปมาแล้วข้อสอบข้อนี้จะเตือนให้มาแก้เป็น 9 */
   eq('แปดปุ่มเดิมยังเป็นรูปจริง ไม่มีปุ่มไหนตกกลับไปเป็นตัวอักษร',
     seen40.rows.slice(0, 4).map(function (r) { return r.icons }), [8, 8, 8, 8]);
-  /* ปุ่มตกบรรทัด = ปุ่มสุดท้ายลอยเดี่ยวใต้แถว ดูเหมือนปุ่มแปลกที่ไม่เข้าพวก */
-  eq('ปุ่มทั้งเก้าอยู่บรรทัดเดียวกันบนจอมือถือ',
-    seen40.rows.slice(0, 4).map(function (r) { return r.lines }), [1, 1, 1, 1]);
+  /* เดิมข้อนี้บังคับให้เก้าปุ่มอยู่บรรทัดเดียว เพราะกลัวปุ่มสุดท้ายลอยเดี่ยวดูไม่เข้าพวก
+     แต่บนมือถือมันแปลว่าปุ่มละ 35px เล็กกว่าปลายนิ้ว และพอกด ก+ แถวนี้กว้างเกินจอ
+     เบราว์เซอร์จึงย่อทั้งหน้าลงมาให้พอดี — กดขยายตัวอักษรแล้วได้หน้าเล็กลง
+     ตอนนี้จัดเป็นตาราง 5 ช่อง ได้สองแถวเท่า ๆ กัน 5+4 ปุ่มใหญ่ขึ้นเกือบเท่าตัว
+     ข้อสอบจึงเปลี่ยนไปวัดสิ่งที่สำคัญกว่า: ต้องเป็นแถวที่ตรงกันเป็นตาราง ไม่เกินสองแถว */
+  eq('ปุ่มเรียงเป็นตารางไม่เกินสองแถวบนจอมือถือ',
+    seen40.rows.slice(0, 4).map(function (r) { return r.lines }), [2, 2, 2, 2]);
+  truthy('ปุ่มใหญ่พอให้นิ้วกด ไม่ใช่แถบบาง ๆ',
+    seen40.rows.slice(0, 4).every(function (r) { return r.sqW >= 38 && r.sqH >= 38 }),
+    JSON.stringify(seen40.rows.slice(0, 4).map(function (r) { return r.sqW + 'x' + r.sqH })));
   eq('รูปแปดอันต้องเป็นคนละรูปกันทั้งหมด ไม่มีปุ่มไหนใช้รูปซ้ำ',
     seen40.rows[0].srcs.filter(function (s, i, a) { return a.indexOf(s) === i }).length, 8);
   truthy('ไอคอนใหญ่พอให้เห็นว่าเป็นรูปอะไร ไม่ใช่จุดเล็ก ๆ',
@@ -4713,6 +4748,51 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     await page.evaluate(function (no) {
       return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
     }, incl.no), incl.total);
+
+  console.log('\n20.9 คำขอสั่งซื้อจากหน้าเว็บ');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(400);
+  eq('ปุ่มบอกจำนวนคำขอที่ยังค้าง',
+     (await page.textContent('#web-badge')).trim(), '(1)');
+  await page.click('#btn-web');
+  await page.waitForTimeout(600);
+  truthy('เข้าหน้าคำขอได้', await page.isVisible('#pg-web'));
+  eq('เห็นคำขอสองใบ', await page.locator('#web-list .row').count(), 2);
+  eq('ใบที่รอมีปุ่มรับเป็นออเดอร์', await page.locator('[data-acc]').count(), 1);
+  eq('ใบที่รับไปแล้วไม่มีปุ่ม', await page.locator('[data-rej]').count(), 1);
+  truthy('โชว์ที่อยู่ที่ลูกค้ากรอกมา',
+     (await page.textContent('#web-list')).indexOf('เนินพระ') > -1);
+  truthy('โชว์รายการสินค้า',
+     (await page.textContent('#web-list')).indexOf('Acetone 1000 ml x1') > -1);
+
+  /* กดรับ — ที่อยู่ต้องถูกเติมมาให้แล้ว พนักงานไม่ต้องพิมพ์ใหม่ */
+  await page.click('[data-acc]');
+  await page.waitForTimeout(400);
+  eq('ชื่อผู้รับถูกเติมมาให้', await page.inputValue('#wa-cust'), 'มานี ใจดี');
+  eq('เบอร์ถูกเติมมาให้', await page.inputValue('#wa-tel'), '0812345678');
+  truthy('ที่อยู่ถูกเติมมาให้',
+     (await page.inputValue('#wa-addr')).indexOf('เนินพระ') > -1);
+  await page.fill('#wa-car', 'Flash Express');
+  await page.click('#wa-go');
+  await page.waitForTimeout(900);
+  var accSent = await page.evaluate(function () {
+    return window.SENT.filter(function (x) { return x.fn === 'acceptRequest' })[0];
+  });
+  truthy('ส่งคำสั่งรับไปจริง', !!accSent);
+  eq('ส่งเลขคำขอไปถูกใบ', accSent.p.no, 'REQ-690920-001');
+  eq('ส่งขนส่งที่เลือกไปด้วย', accSent.p.carrier, 'Flash Express');
+  eq('ตอนนี้ไม่มีใบรออยู่แล้ว', await page.locator('[data-acc]').count(), 0);
+
+  console.log('\n20ข. เวลาที่คีย์ขึ้นในรายการออเดอร์');
+  await page.locator('.tabs button[data-go="list"]').click();
+  await page.waitForTimeout(700);
+  /* ข้อก่อนหน้าเปลี่ยนชุดออเดอร์ไปแล้ว ติดเวลาให้ใบแรกเองแล้ววาดใหม่ */
+  await page.evaluate(() => { ORDERS[0].keyedAt = '14:07'; renderOrders(); });
+  await page.waitForTimeout(400);
+  var txt20b = await page.locator('#list').innerText();
+  truthy('ใบที่มีเวลาที่คีย์ โชว์เวลาต่อท้ายวันที่', /14:07 น\./.test(txt20b));
+  eq('ใบที่ไม่มีเวลา ไม่ขึ้นเวลามั่ว ๆ ให้',
+     (txt20b.match(/ น\./g) || []).length, 1);
 
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

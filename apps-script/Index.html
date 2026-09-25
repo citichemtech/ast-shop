@@ -44,7 +44,7 @@ body{margin:0;background:var(--bg);color:var(--ink);
 
 /* ปุ่มมุมขวาบน — มีคำกำกับใต้ปุ่ม เพราะ "?" กับ "ก−" ลำพังเดาหน้าที่ไม่ออก
    คำกำกับวาดด้วย ::after จาก data-cap จึงไม่ต้องเพิ่ม element ให้ HTML รก */
-.fsz{margin-left:auto;display:flex;gap:7px;flex:none;align-items:flex-start}
+.fsz{margin-left:auto;display:flex;gap:9px;flex:none;align-items:flex-start}
 .fsz button{position:relative;width:40px;height:40px;border:1px solid rgba(255,255,255,.5);
   border-radius:11px;background:rgba(255,255,255,.16);color:#fff;font-weight:800;
   font-size:0.9rem;padding:0;line-height:1;display:block}
@@ -53,7 +53,10 @@ body{margin:0;background:var(--bg);color:var(--ink);
 .fsz button:active{background:rgba(255,255,255,.32)}
 h1,h2,h3{margin:0}
 button{font:inherit;cursor:pointer}
-input,select,textarea{font:inherit;width:100%;padding:13px 14px;border:1px solid var(--line);
+/* min-width:0 ไม่ใช่ของประดับ — ช่องวันที่ (type=date) มีความกว้างขั้นต่ำในตัวเอง
+   ตามขนาดตัวอักษร พอกด ก+ จนสุด ช่องเดียวกินไป 271px สองช่องในแถวเดียวกันจึง
+   กว้าง 550px+ ดันหน้าให้ล้นจอ แล้วเบราว์เซอร์ย่อทั้งหน้าลงมา กลายเป็นกดขยายแล้วได้เล็กลง */
+input,select,textarea{font:inherit;width:100%;min-width:0;padding:13px 14px;border:1px solid var(--line);
   border-radius:10px;background:#fff;color:var(--ink)}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
 textarea{resize:vertical}
@@ -94,6 +97,9 @@ textarea{resize:vertical}
 /* สองช่องเรียงข้างกัน — พอป้ายเป็นสองภาษาพร้อมไอคอน ช่องละครึ่งจอแคบเกินไป
    ชื่อป้ายจะตกบรรทัดจนสองช่องสูงไม่เท่ากันและอ่านยาก บนมือถือจึงเรียงลงมาแทน */
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* ช่องในตารางยุบได้ ไม่งั้นช่องที่มีความกว้างขั้นต่ำในตัว (วันที่ · ตัวเลข)
+   จะดันคอลัมน์ให้กว้างกว่าที่แบ่งไว้ แล้วทั้งแถวล้นออกนอกจอ */
+.two>*{min-width:0}
 @media (max-width:430px){ .two{grid-template-columns:1fr;gap:0} }
 .hint{font-size:0.8rem;color:var(--gray);margin-top:5px;line-height:1.5}
 .subhd{font-size:0.85rem;font-weight:700;color:var(--gray);margin:16px 0 8px;letter-spacing:.02em}
@@ -191,9 +197,13 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
 .row .i b{display:block}
 .row .i span{font-size:0.82rem;color:var(--gray)}
 .row .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-/* จอแคบ: ปุ่มห้าอันเบียดจนชื่อลูกค้ากับเลขออเดอร์ตกบรรทัดทีละคำ อ่านยาก
-   ให้ปุ่มลงไปอยู่แถวของตัวเองเต็มความกว้างแทน ข้อความจะได้เต็มบรรทัด */
-@media (max-width:430px){
+/* จอแคบ: ปุ่มเบียดจนชื่อลูกค้ากับเลขออเดอร์ตกบรรทัดทีละคำ อ่านยาก
+   ให้ปุ่มลงไปอยู่แถวของตัวเองเต็มความกว้างแทน ข้อความจะได้เต็มบรรทัด
+
+   เส้นแบ่งอยู่ที่ 560px เท่ากับกฎจัดปุ่มข้างล่าง เมื่อก่อนเป็น 430 กับ 520 คนละที่
+   ช่วง 431–520 จึงตกร่อง: ปุ่มถูกสั่งให้ยืดเต็มแถว (flex:1 1 0) ทั้งที่แถวยัง
+   ไม่ได้กว้างเต็มจอ กล่องปุ่มเลยยุบเหลือ 307px แทนที่จะเป็น 372px ปุ่มแบนลงทันที */
+@media (max-width:560px){
   .row .i{flex:0 0 100%}
   .row .acts{flex:0 0 100%;justify-content:flex-start;margin-top:8px}
 }
@@ -206,18 +216,25 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
 /* ป้ายสถานะเป็นชิปกลม ๆ ต้องอยู่ต่อท้ายยอดเงินในบรรทัดเดียวกัน
    กฎ span+span ด้านบนมีไว้ให้ที่อยู่ขึ้นบรรทัดใหม่ ไม่ได้ตั้งใจให้ชิปยืดเต็มแถว */
 .row .i span+span.tag{display:inline-block;margin-top:0}
-.sq{width:42px;height:42px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
+/* ขนาดปุ่มผูกกับตัวอักษรของตัวเอง ปุ่ม ก+ ก− จึงขยายปุ่มทั้งใบ ไม่ใช่ขยายแต่รูปข้างใน
+   มี min ไว้กันปุ่มเล็กกว่านิ้วคน ถึงจะย่อตัวอักษรจนสุดก็ยังกดติด */
+.sq{width:2.2em;height:2.2em;min-width:40px;min-height:40px;
+  border:1px solid var(--line);background:#fff;border-radius:9px;font-size:0.94rem;padding:0}
 .sq.red{color:var(--red);border-color:#f0c9c9}
-/* ปุ่มบนแถวออเดอร์ใช้รูปจริง ขนาดผูกกับตัวอักษร ปุ่ม ก+ ก− จึงขยายไอคอนตามไปด้วย */
-.sq .sqic{width:1.5em;height:1.5em;object-fit:contain;display:block;margin:0 auto}
+/* max ไว้กันรูปดันปุ่มให้กว้างกว่าช่องที่มี — รูปที่ดันปุ่มจนล้นจอคือต้นเหตุที่
+   กด ก+ แล้วทั้งหน้ากลับเล็กลง เพราะเบราว์เซอร์ต้องย่อทุกอย่างลงมาให้พอดีจอ */
+.sq .sqic{width:1.5em;height:1.5em;max-width:100%;max-height:100%;
+  object-fit:contain;display:block;margin:0 auto}
 .sq{display:flex;align-items:center;justify-content:center}
-/* แปดปุ่มต้องอยู่แถวเดียวกันเสมอ ถ้าตกบรรทัดหนึ่งปุ่มจะดูเหมือนปุ่มแปลกที่ไม่เข้าพวก
-   บนจอแคบจึงให้ปุ่มยืดหดเท่า ๆ กันเต็มความกว้างแถวแทนการขึ้นบรรทัดใหม่
-   เจาะจงเฉพาะแถวออเดอร์ ไม่ใช่ทุกแถวที่มีปุ่ม — แถวรายการเอกสารใช้ปุ่มตัวหนังสือ
-   ถ้าโดนบีบไม่ให้ตกบรรทัด คำว่า "ทำเป็นออเดอร์" จะถูกหั่นเป็นตัวละบรรทัด */
-@media (max-width:520px){
-  #list .row .acts{flex-wrap:nowrap;gap:5px}
-  #list .row .acts .sq{flex:1 1 0;width:auto;min-width:0}
+/* เก้าปุ่มเรียงแถวเดียวบนมือถือ แปลว่าปุ่มละ 35px ซึ่งเล็กกว่าปลายนิ้ว และพอกด ก+
+   ให้ตัวหนังสือใหญ่ขึ้น แถวนี้จะกว้าง 460px บนจอ 411px — ล้นจอ เบราว์เซอร์จึงย่อ
+   ทั้งหน้าลงครึ่งหนึ่งให้พอดี ยิ่งกดขยายยิ่งได้หน้าเล็กลง
+
+   เปลี่ยนเป็นตาราง 5 ช่อง ได้สองแถว 5+4 ปุ่มละ 67px กดถนัดกว่าเดิมเกือบเท่าตัว
+   และไม่ล้นจอที่ขนาดตัวอักษรไหนเลย · จอกว้างพอค่อยกลับไปเป็นแถวเดียวเก้าช่อง */
+@media (max-width:560px){
+  #list .row .acts{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+  #list .row .acts .sq{width:auto;min-width:0}
 }
 /* ปุ่มตัวหนังสือบนแถวเอกสาร กว้างเท่าที่ข้อความต้องการ ล้นก็ตกบรรทัดทั้งปุ่ม */
 .row .acts .mini{flex:0 0 auto;white-space:nowrap}
@@ -257,6 +274,109 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
 .pv .r b{flex:1;font-weight:600;word-break:break-word}
 .pv .r.miss b{color:var(--red);font-weight:500}
 .pv .r.opt i{opacity:.65}
+
+/* ---------- โหมดแก้ไขร้าน ----------
+   หน้าตาตามแบบที่เจ้าของร้านวางไว้ — แถบฟ้าท้องฟ้า · สองเมนูหลักมีตราร้าน ·
+   กลุ่มเมนูรองอยู่ในกล่องฟ้าอ่อน · ไอคอนกลมสีน้ำเงินทุกอัน
+   ไอคอนวาดด้วย SVG ในไฟล์ ไม่ใช้รูปจากข้างนอก จึงคมทุกจอและไม่ต้องรอโหลด */
+.edhero{position:relative;border-radius:18px;overflow:hidden;margin-bottom:14px;
+  padding:20px 18px 22px;color:#0b2d5c;
+  background:linear-gradient(160deg,#cfe8ff 0%,#eaf5ff 45%,#f7fbff 100%)}
+.edhero::after{content:"";position:absolute;right:-30px;top:-40px;width:190px;height:190px;
+  border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff,rgba(255,255,255,0));
+  opacity:.85}
+.edhero h2{position:relative;font-size:1.5rem;font-weight:800;letter-spacing:-.01em}
+.edhero .sub{position:relative;display:inline-block;margin-top:6px;background:rgba(255,255,255,.75);
+  border-radius:999px;padding:4px 13px;font-size:0.78rem;font-weight:600;color:#2a5b9c}
+.edhero .slog{position:relative;margin-top:12px;font-size:0.9rem;font-style:italic;
+  color:#2f6ab5;line-height:1.35}
+
+.edmenu{display:flex;flex-direction:column;gap:11px}
+.edmenu button{display:flex;align-items:center;gap:13px;width:100%;text-align:left;
+  padding:14px 42px 14px 14px;border:1px solid var(--line);border-radius:16px;
+  background:#fff;position:relative;box-shadow:0 1px 4px rgba(20,50,100,.06)}
+.edmenu button:active{background:#f3f7ff}
+.edmenu .tx{flex:1;min-width:0}
+.edmenu b{display:block;font-size:1.02rem;font-weight:800;color:#123a7a;line-height:1.3}
+.edmenu em{display:block;font-style:normal;font-size:0.76rem;color:#5a7196;margin-top:3px;
+  line-height:1.45}
+.edmenu button::after{content:"";position:absolute;right:13px;top:50%;
+  transform:translateY(-50%);width:28px;height:28px;border-radius:50%;
+  background:var(--blue) url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' \
+stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M9 5l7 7-7 7'/></svg>\
+") center/14px no-repeat}
+
+/* ไอคอนกลม — ตราร้านเป็นรูปจริง ส่วนเมนูรองเป็น SVG สีขาวบนวงน้ำเงิน */
+.edmenu .ic{flex:none;width:46px;height:46px;border-radius:50%;display:flex;
+  align-items:center;justify-content:center;background:var(--blue);
+  box-shadow:0 2px 8px rgba(18,70,173,.25)}
+.edmenu .ic svg{width:24px;height:24px;stroke:#fff;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.edmenu .ic.logo{background:#fff;overflow:hidden;border:2px solid #cfe1ff;
+  width:52px;height:52px}
+.edmenu .ic.logo img{width:100%;height:100%;object-fit:contain}
+
+/* สองเมนูหลักเด่นกว่าเพื่อน — ขอบทองกับขอบฟ้าตามแบบ */
+.edmenu button.lead{padding:16px 46px 16px 14px;border-width:2px}
+.edmenu button.gold{border-color:#e3b93f;background:linear-gradient(180deg,#fffdf5,#fff)}
+.edmenu button.blue{border-color:#8fc0f5;background:linear-gradient(180deg,#f5faff,#fff)}
+
+/* กลุ่มเมนูรอง อยู่ในกล่องฟ้าอ่อนเหมือนแบบ */
+.edgroup{background:#e8f3ff;border-radius:18px;padding:12px;margin:14px 0}
+.edgroup .edmenu button{border-color:#fff;box-shadow:0 1px 5px rgba(20,50,100,.07)}
+
+.edlink{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;
+  background:#f4f8ff;border:1px solid #dae7fb;margin-bottom:9px}
+.edlink .t{flex:1;min-width:0}
+.edlink b{display:block;font-size:0.9rem;font-weight:700;color:#123a7a}
+.edlink .u{font-size:0.7rem;color:var(--gray);word-break:break-all;line-height:1.4;margin-top:2px}
+.edlink .go{flex:none;border:0;border-radius:10px;background:var(--blue);color:#fff;
+  padding:9px 13px;font-size:0.8rem;font-weight:700}
+.edlink .cp{flex:none;border:1px solid var(--line);border-radius:10px;background:#fff;
+  color:var(--ink);padding:9px 11px;font-size:0.8rem;font-weight:700}
+
+.edfoot{margin-top:16px;text-align:center;padding:18px 12px 6px;
+  border-radius:18px;background:linear-gradient(180deg,#f7fbff,#e8f3ff)}
+.edfoot .slog{font-size:0.95rem;font-style:italic;color:#2f6ab5;line-height:1.35}
+.edfoot .thx{margin-top:8px;font-size:0.8rem;color:#5a7196}
+
+/* ชื่อคลาสนี้เคยเป็น .edrow แล้วชนกับแถวสินค้าในกล่อง "แก้รายการสินค้า"
+   ซึ่งใช้ class="it edrow" มาก่อน — พอตั้ง display:flex ลูกทุกตัวในแถวนั้น
+   (หัวข้อ · ช่องเลือกสินค้า · จำนวน · ราคา · ช่องติ๊กสองช่อง) เรียงเป็นแนวนอน
+   บนมือถือจึงบีบจนตัวหนังสือตกบรรทัดทีละตัว อ่านไม่ออกเลย ห้ามตั้งชื่อชนกันอีก */
+.edpick{display:flex;gap:11px;align-items:flex-start;padding:12px;border:1px solid var(--line);
+  border-radius:13px;background:#fff;margin-bottom:9px;width:100%;text-align:left}
+.edpick .th{width:56px;height:56px;border-radius:10px;background:#f1f4f8;flex:none;
+  overflow:hidden;display:flex;align-items:center;justify-content:center;
+  font-size:0.62rem;color:#9aa8b8;text-align:center;padding:3px}
+.edpick .th img{width:100%;height:100%;object-fit:cover}
+.edpick .bd{flex:1;min-width:0}
+.edpick .bd b{display:block;font-size:0.9rem;font-weight:700;line-height:1.35}
+.edpick .bd .sub{font-size:0.74rem;color:var(--gray);margin-top:2px}
+.edpick .bd .pills{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.edpick .bd .pills span{font-size:0.66rem;font-weight:700;padding:2px 8px;border-radius:999px;
+  background:#eaf1ff;color:#1e4f9c}
+.edpick .bd .pills span.off{background:#fbe9e9;color:#8f1d1d}
+.edpick .bd .pills span.on{background:#e6f5ec;color:#0a6b3c}
+
+.tagpick{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 2px}
+.tagpick button{padding:8px 15px;border-radius:999px;border:1px solid var(--line);
+  background:#fff;font-size:0.82rem;font-weight:600;color:var(--gray)}
+.tagpick button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+
+.mprev{width:100%;max-height:170px;object-fit:contain;border-radius:10px;
+  background:#f1f4f8;margin:6px 0 2px;display:block}
+
+/* ช่องลิงก์รูป + ปุ่มเลือกรูปจากเครื่อง อยู่บรรทัดเดียวกัน
+   ปุ่มไม่ยุบตามช่อง เพราะข้อความ "เลือกรูป" หายไปแล้วไม่มีใครรู้ว่ากดอะไรได้ */
+.picrow{display:flex;gap:8px;align-items:stretch}
+.picrow input{flex:1;min-width:0}
+.picbtn{flex:none;white-space:nowrap;padding:0 14px;border-radius:10px;
+  border:1px solid var(--blue);background:#eef4ff;color:#1246ad;
+  font-size:0.84rem;font-weight:700}
+.picbtn:active{background:#dbe7ff}
+.picbtn[disabled]{opacity:.5}
 
 .msg{padding:11px 12px;border-radius:10px;font-size:0.8rem;line-height:1.6;margin-bottom:11px;display:none}
 .msg.on{display:block}
@@ -536,6 +656,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
     <span class="who" id="who"></span>
   </div>
   <div class="fsz">
+    <button id="fs-edit" title="โหมดแก้ไขร้าน" aria-label="โหมดแก้ไขร้าน" data-cap="ร้าน">✎</button>
     <button id="fs-help" title="คู่มือใช้งาน" aria-label="คู่มือใช้งาน" data-cap="ช่วยเหลือ">?</button>
     <button id="fs-dn" title="ตัวอักษรเล็กลง" aria-label="ตัวอักษรเล็กลง" data-cap="ย่อ">ก−</button>
     <button id="fs-up" title="ตัวอักษรใหญ่ขึ้น" aria-label="ตัวอักษรใหญ่ขึ้น" data-cap="ขยาย">ก+</button>
@@ -679,6 +800,7 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
       <button class="btn ghost" id="btn-shop" style="margin-top:10px">
         <img id="btn-shop-ic" alt="" style="height:1.15em;vertical-align:-0.18em;margin-right:7px">
         นำเข้าออเดอร์จาก Shopee</button>
+      <button class="btn ghost" id="btn-web" style="margin-top:8px">🛒 คำขอจากหน้าเว็บ<span id="web-badge"></span></button>
       <button class="btn ghost" id="btn-cust" style="margin-top:8px">👥 ลูกค้าทั้งหมด</button>
     </div>
     <div class="card" id="list"><div class="load">กำลังโหลด…</div></div>
@@ -687,6 +809,26 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
   <!-- ------------------------------------------------------------- หน้าลูกค้า
        ไม่ทำเป็นแท็บ แถบล่างเต็มแล้ว เข้าจากปุ่มบนหน้าออเดอร์ทั้งหมด
        เหมือนหน้านำเข้า Shopee แท็บ "ออเดอร์" จึงยังติดไฟค้างไว้ -->
+  <!-- --------------------------------------------------- คำขอสั่งซื้อจากหน้าเว็บ
+       ลูกค้ากรอกเข้ามาเอง ยังไม่ใช่ออเดอร์ ยังไม่ตัดสต๊อก
+       พนักงานตรวจแล้วกด "รับเป็นออเดอร์" ถึงจะข้ามฝั่งไปเป็นใบจริง
+       เข้าจากหน้าออเดอร์ทั้งหมด เหมือนหน้านำเข้า Shopee เพราะแถบล่างเต็มแล้ว -->
+  <section id="pg-web" style="display:none">
+    <div class="card">
+      <div class="banner">
+        <span class="bn-ic">🛒</span>
+        <span class="bn-tx"><b>คำขอสั่งซื้อจากหน้าเว็บ</b>
+          <em>Web Requests · ลูกค้ากรอกชื่อที่อยู่มาให้แล้ว ตรวจแล้วกดรับเป็นออเดอร์</em></span>
+      </div>
+      <div class="hint" style="padding:0 2px 10px">
+        ของพวกนี้<b>ยังไม่ใช่ออเดอร์</b> ยังไม่กินเลข ยังไม่ตัดสต๊อก
+        กด “รับเป็นออเดอร์” แล้วระบบจะคีย์ให้ตามที่ลูกค้ากรอก คิดราคาใหม่จากชีทวันนี้
+      </div>
+      <button class="btn ghost" id="web-back">‹ กลับไปหน้าออเดอร์</button>
+    </div>
+    <div class="card" id="web-list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
   <section id="pg-cust" style="display:none">
     <div class="card">
       <div class="sec-hd"><h2>ลูกค้าทั้งหมด</h2></div>
@@ -701,6 +843,120 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
   <!-- ---------------------------------------------------------- คู่มือใช้งาน
        ไม่ทำเป็นแท็บ เพราะแถบล่างเต็มแล้ว และคู่มือเป็นของที่เปิดนาน ๆ ครั้ง
        เข้าจากปุ่ม ? บนหัวจอ ซึ่งเห็นได้จากทุกหน้า -->
+  <!-- โหมดแก้ไขร้าน — หน้ารวมเมนู แล้วแยกไปหน้าย่อยสี่หน้า -->
+  <section id="pg-edit" style="display:none">
+    <div class="card">
+      <div class="edhero">
+        <h2>โหมดแก้ไข</h2>
+        <div class="sub">ศูนย์รวมงานขายและสต็อก</div>
+        <div class="slog">Good Tools<br>Better Tomorrow ♡</div>
+      </div>
+      <div class="hint" style="padding:0 2px 12px">
+        ทุกอย่างในนี้แก้แล้วขึ้นหน้าร้านทันที ลูกค้ารีเฟรชก็เห็นเลย
+        · แก้ในชีทโดยตรงก็ยังได้เหมือนเดิม สองทางใช้สลับกันได้</div>
+      <div class="edmenu">
+        <button class="lead gold" data-edgo="new">
+          <span class="ic logo" id="ed-ic1"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></span>
+          <span class="tx"><b>ระบบคีย์ ออเดอร์</b>
+            <em>บันทึกคำสั่งซื้อ · ตัดสต็อก · ตรวจสอบยอด</em></span></button>
+
+        <button class="lead blue" data-edgo="eprod">
+          <span class="ic logo" id="ed-ic2"><svg viewBox="0 0 24 24"><path d="M3 9l1.5-4.5h15L21 9"/><path d="M4 9v10h16V9"/><path d="M9 19v-5h6v5"/></svg></span>
+          <span class="tx"><b>ข้อมูลร้าน</b>
+            <em>ข้อมูลสินค้า · ราคา · รูปภาพ · หมวดหมู่</em></span></button>
+      </div>
+
+      <div class="edgroup"><div class="edmenu">
+        <button data-edgo="eban">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 5 5L15 16l-3 3-4-4 3-3z"/><path d="M6 18l-2 2"/></svg></span>
+          <span class="tx"><b>แก้ไขแบนเนอร์</b>
+            <em>ปรับแต่งภาพ · สร้างแบนเนอร์ · งานกราฟิก</em></span></button>
+
+        <button data-edgo="etag">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 1 4 10.5V16H8v-2.5A6 6 0 0 1 12 3z"/></svg></span>
+          <span class="tx"><b>สินค้าแนะนำ</b>
+            <em>สินค้าใหม่ · สินค้าขายดี · โปรโมชั่น</em></span></button>
+
+        <button data-edgo="ecat">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg></span>
+          <span class="tx"><b>หมวดหมู่</b>
+            <em>จัดหมวดหมู่สินค้า · ดูทั้งหมด · ค้นหาง่าย</em></span></button>
+
+        <button data-edgo="elook">
+          <span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3.5"/></svg></span>
+          <span class="tx"><b>หน้าตาหัวร้าน</b>
+            <em>โลโก้ · ภาพพื้นหลัง · แผนที่</em></span></button>
+      </div></div>
+
+      <div class="edmenu">
+        <button data-edgo="file">
+          <span class="ic"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></svg></span>
+          <span class="tx"><b>ไฟล์ต่างๆ</b>
+            <em>เอกสาร · แบบฟอร์ม · เทมเพลต</em></span></button>
+      </div>
+
+      <div class="card" id="ed-links" style="margin-top:14px">
+        <div class="sec-hd"><h2>ลิงก์หน้าร้าน</h2></div>
+        <div id="ed-links-bd"><div class="load">กำลังโหลด…</div></div>
+      </div>
+
+      <div class="edfoot">
+        <div class="slog">Good Tools<br>Better Tomorrow ♡</div>
+        <div class="thx">ขอบคุณที่เป็นส่วนหนึ่งของทีมเรา ♡</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pg-eprod" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2 id="ep-title">ข้อมูลร้าน</h2></div>
+      <div class="msg err" id="ep-err"></div>
+      <div class="msg ok" id="ep-ok"></div>
+      <input id="ep-q" placeholder="ค้นหา — ชื่อสินค้า หรือรหัส SKU" autocomplete="off">
+      <div class="hint" id="ep-hint">แตะสินค้าเพื่อแก้รูป ราคา และการโชว์บนหน้าร้าน</div>
+      <button class="btn ghost" id="ep-back" style="margin-top:10px">← กลับโหมดแก้ไข</button>
+    </div>
+    <div id="ep-list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <section id="pg-eban" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>แก้ไขแบนเนอร์</h2></div>
+      <div class="msg err" id="eb-err"></div>
+      <div class="msg ok" id="eb-ok"></div>
+      <div class="hint" style="padding:0 2px 10px">
+        รูปต้องเปิดดูได้จากข้างนอก — ลิงก์แชร์ไดรฟ์ใช้ได้
+        แต่ต้องตั้งเป็น <b>"ทุกคนที่มีลิงก์"</b> ไม่งั้นลูกค้าเห็นกรอบเปล่า</div>
+      <button class="btn" id="eb-add">＋ เพิ่มแบนเนอร์</button>
+      <button class="btn ghost" id="eb-back" style="margin-top:8px">← กลับโหมดแก้ไข</button>
+    </div>
+    <div id="eb-list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <section id="pg-ecat" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>หมวดหมู่</h2></div>
+      <div class="msg err" id="ec-err"></div>
+      <div class="msg ok" id="ec-ok"></div>
+      <div class="hint" style="padding:0 2px 10px">
+        ชื่อหมวดมาจากคอลัมน์ <b>หมวด</b> ของ ฐานสินค้า หน้านี้แก้ได้แค่รูปกับชื่อที่ลูกค้าเห็น
+        · <b>รูปไอคอน</b> ใช้บนหน้าแรก · <b>รูปปก</b> คือภาพใหญ่ตอนกดเข้าไปในหมวด</div>
+      <button class="btn" id="ec-add">＋ เพิ่มหมวดหมู่</button>
+      <button class="btn ghost" id="ec-back" style="margin-top:8px">← กลับโหมดแก้ไข</button>
+    </div>
+    <div id="ec-list"><div class="load">กำลังโหลด…</div></div>
+  </section>
+
+  <section id="pg-elook" style="display:none">
+    <div class="card">
+      <div class="sec-hd"><h2>หน้าตาหัวร้าน</h2></div>
+      <div class="msg err" id="el-err"></div>
+      <div class="msg ok" id="el-ok"></div>
+      <div id="el-form"><div class="load">กำลังโหลด…</div></div>
+      <button class="btn ghost" id="el-back" style="margin-top:8px">← กลับโหมดแก้ไข</button>
+    </div>
+  </section>
+
   <section id="pg-help" style="display:none">
     <div class="card hp">
       <div class="sec-hd"><h2>คู่มือใช้งาน</h2></div>

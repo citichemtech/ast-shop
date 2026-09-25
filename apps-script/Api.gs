@@ -77,6 +77,26 @@ function requireStaff_() {
 
 /* ------------------------------------------------------------------ หน้าเว็บ */
 
+/**
+ * ลิงก์ขอหน้าร้านมาไหม — รับทุกแบบที่คนพิมพ์จริง
+ *
+ * ?shop=1 · ?Shop=1 · ?SHOP=yes · ?shop=true ต้องได้หน้าร้านเหมือนกันหมด
+ * ของเดิมรับแค่ shop ตัวเล็กเป๊ะ ๆ พิมพ์ S ใหญ่ทีเดียวก็ตกไปเจอหน้าล็อกอินของหลังร้าน
+ * โดยไม่มีอะไรบอกว่าพิมพ์ผิดตรงไหน — เสียเวลาหาสาเหตุกันจริงมาแล้ว
+ *
+ * "0" กับ "false" ถือว่าไม่เอา เผื่อวันหลังมีลิงก์ที่ปิดหน้าร้านด้วยพารามิเตอร์
+ */
+function wantShop_(e) {
+  var par = e && e.parameter;
+  if (!par) return false;
+  for (var k in par) {
+    if (String(k).toLowerCase() !== 'shop') continue;
+    var v = String(par[k] == null ? '' : par[k]).trim().toLowerCase();
+    return !(v === '0' || v === 'false' || v === 'no');
+  }
+  return false;
+}
+
 function doGet(e) {
   /* มีกุญแจติดมาในลิงก์ = ลูกค้าเปิดหน้าจ่ายเงินของออเดอร์ใบหนึ่ง
      ไม่ใช่พนักงานเปิดหลังร้าน — คนละหน้า คนละสิทธิ์ คนละข้อมูลที่เห็น
@@ -86,6 +106,11 @@ function doGet(e) {
      ของหลังร้าน ซึ่งจะทำให้ลูกค้าเห็นว่ามีระบบหลังร้านอยู่ตรงนี้ */
   var key = (e && e.parameter && e.parameter.p) ? String(e.parameter.p) : '';
   if (key) return pubPage_(key);
+
+  /* ?shop=1 = หน้าร้านที่ลูกค้าเปิดเอง — ไม่ต้องล็อกอิน ไม่ต้องมีกุญแจ
+     ต้องมาก่อนด่าน requireStaff_ ข้างล่าง ไม่งั้นลูกค้าจะเจอหน้าให้ล็อกอิน
+     แล้วรู้ว่ามีระบบหลังร้านซ่อนอยู่ที่ลิงก์นี้ */
+  if (wantShop_(e)) return shopPage_();
 
   var email;
   try {
@@ -144,9 +169,33 @@ function getBootstrap() {
   });
 }
 
-function readProducts_() {
+/**
+ * สินค้าทั้งหมดจากชีท ฐานสินค้า
+ *
+ * skipStock = ข้ามการอ่านชีท สต๊อกคงเหลือ สำหรับคนเรียกที่ไม่ได้ใช้ยอดคงเหลือ
+ * (หน้าแก้ข้อมูลร้านเป็นตัวอย่าง — ต้องการแค่ชื่อ ราคา รูป)
+ * ชีทสต๊อกเป็นสูตรทั้งใบ อ่านทีหนึ่งกินเวลาพอ ๆ กับอ่านฐานสินค้าทั้งชีท
+ */
+/**
+ * เวลาจากช่องวันเวลา เอาแค่ ชม.:นาที
+ *
+ * ชีทคืนค่ามาเป็น Date ถ้าช่องตั้งรูปแบบเป็นวันเวลา แต่ถ้าเคยถูกพิมพ์ทับด้วยมือ
+ * จะได้เป็นข้อความ จึงรับทั้งสองแบบ อ่านไม่ออกคืนค่าว่าง ไม่เดาเป็นเที่ยงคืน
+ */
+function hhmm_(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, tz_(), 'HH:mm');
+  }
+  var t = String(v == null ? '' : v).trim();
+  if (!t) return '';
+  var m = /(\d{1,2}):(\d{2})/.exec(t);
+  if (!m) return '';
+  return ('0' + m[1]).slice(-2) + ':' + m[2];
+}
+
+function readProducts_(skipStock) {
   var rows = readAll_('prod');
-  var stock = readStock_();
+  var stock = skipStock ? {} : readStock_();
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     var sku = String(rows[i][SH.prod.IN.sku - 1] || '').trim();
@@ -172,8 +221,117 @@ function readProducts_() {
                 rows[i][SH.prod.IN.reorder - 1] === null ||
                 rows[i][SH.prod.IN.reorder - 1] === undefined)
                  ? null : Number(rows[i][SH.prod.IN.reorder - 1] || 0),
-      remain: stock[sku] === undefined ? null : stock[sku]
+      remain: stock[sku] === undefined ? null : stock[sku],
+      /* สี่ช่องนี้ใช้เฉพาะหน้าร้านที่ลูกค้าเปิดเอง ชีทเก่าที่ยังไม่มีคอลัมน์จะได้ค่าว่าง */
+      web: rows[i][SH.prod.IN.web - 1],
+      img: String(rows[i][SH.prod.IN.img - 1] || ''),
+      img2: String(rows[i][SH.prod.IN.img2 - 1] || ''),
+      tag: String(rows[i][SH.prod.IN.tag - 1] || '')
     });
+  }
+  return out;
+}
+
+/**
+ * กางหลักฐานให้ดูว่าเขียนอะไรลงไป และสูตรของชีทนับอะไร
+ *
+ * มีไว้ให้ข้อความ error ตอนนับสต๊อกไม่ผ่าน บอกได้พอที่จะลงมือแก้ต่อ
+ * ไม่ใช่บอกว่า "อาจจะเพราะ..." แล้วทิ้งให้ไปเดาเอง
+ */
+function countWhyDump_(plan, upType, dnType, wrRecv) {
+  var out = [];
+  out.push('ระบบลงอะไรไปในชีท ' + SH.recv.name);
+  for (var i = 0; i < plan.lines.length; i++) {
+    var L = plan.lines[i];
+    if (!L.diff) { out.push('  ' + L.sku + ' : ส่วนต่าง 0 ไม่ต้องลงแถว'); continue; }
+    out.push('  ' + L.sku + ' : ประเภท "' + (L.diff > 0 ? upType : dnType) +
+      '" จำนวน ' + Math.abs(L.diff) + ' (ยอดเดิม ' + L.was + ' → ' + L.counted + ')');
+  }
+  out.push('  รวม ' + wrRecv.length + ' แถว แถวที่ ' + (wrRecv.join(', ') || '-'));
+
+  var fx = stockTypeWords_();
+  out.push('');
+  out.push('สูตรของชีท ' + SH.stock.name + ' นับคำพวกนี้');
+  out.push('  ช่องรับเข้า : ' + (fx.up.length ? fx.up.join(' · ') : '(อ่านสูตรไม่ออก)'));
+  out.push('  ช่องปรับลด : ' + (fx.down.length ? fx.down.join(' · ') : '(อ่านสูตรไม่ออก)'));
+
+  /* แถวที่สูตรพัง (#REF!) คือกรณีที่เกิดจริงกับชีทนี้มาแล้ว ตอนลบแถวออกจาก ฐานสินค้า
+     แถวแบบนั้นจะนิ่งค้างตลอด ลงอะไรไปยอดก็ไม่ขยับ — ต้องฟ้องให้เห็น */
+  var broke = countBrokenRows_(plan.lines);
+  if (broke.length) {
+    out.push('');
+    out.push('⚠ แถวในชีท ' + SH.stock.name + ' ที่สูตรพังอยู่');
+    for (var b = 0; b < broke.length; b++) out.push('  ' + broke[b]);
+    out.push('  แถวที่สูตรขึ้น #REF! จะนิ่งค้างตลอด ลงอะไรไปยอดก็ไม่ขยับ');
+    out.push('  ต้องซ่อมสูตรแถวนั้นในชีทก่อน (ลากสูตรจากแถวที่ยังดีลงมาทับ)');
+  }
+  return out.join('\n');
+}
+
+/** แถวของ SKU พวกนี้ในชีทสต๊อก มีสูตรที่พังอยู่ไหม */
+function countBrokenRows_(lines) {
+  var out = [];
+  try {
+    var s = sheet_('stock');
+    var last = s.getLastRow();
+    if (last < DATA_ROW) return out;
+    var n = last - DATA_ROW + 1;
+    var want = {};
+    for (var i = 0; i < lines.length; i++) want[lines[i].sku] = 1;
+    var v = s.getRange(DATA_ROW, 1, n, SH.stock.remain).getValues();
+    var f = s.getRange(DATA_ROW, 1, n, SH.stock.remain).getFormulas();
+    for (var r = 0; r < n; r++) {
+      var sku = String(v[r][SH.stock.sku - 1] || '').trim();
+      if (!sku || !want[sku]) continue;
+      var hit = [];
+      for (var c = 0; c < f[r].length; c++) {
+        if (String(f[r][c]).indexOf('#REF!') > -1) hit.push(colLetter_(c + 1));
+      }
+      if (hit.length) {
+        out.push(sku + ' อยู่แถว ' + (DATA_ROW + r) + ' — สูตรพังที่คอลัมน์ ' + hit.join(', '));
+      }
+    }
+  } catch (e) {
+    Logger.log('ตรวจแถวสูตรพังไม่ได้: ' + e.message);
+  }
+  return out;
+}
+
+/**
+ * คำที่สูตรของชีท สต๊อกคงเหลือ นับเข้าช่อง "รับเข้า" กับช่อง "ปรับลด" จริง ๆ
+ *
+ * ทำไมต้องอ่านสูตร: ชีทเป็นของเจ้าของร้าน เราไม่ได้เป็นคนเขียนสูตรนั้น
+ * และห้ามไปแก้ด้วย คำที่ดรอปดาวน์มีให้เลือก กับคำที่สูตรนับ ไม่จำเป็นต้องตรงกัน
+ * ของจริงที่เจอ: ดรอปดาวน์มี "ปรับเพิ่ม" แต่สูตรช่องรับเข้าไม่ได้นับคำนั้น
+ * ลงไปเท่าไรยอดก็ไม่ขึ้น ด่านตรวจถอยคืนทุกครั้ง นับสต๊อกจึงทำไม่ได้เลย
+ *
+ * วิธีที่ถูกคือถามชีทว่า "แกนับคำไหน" แล้วใช้คำนั้น ไม่ใช่เดาจากชื่อที่ดูเข้าท่า
+ * อ่านไม่ออก (สูตรเขียนคนละแบบ) คืนชุดว่าง ให้คนเรียกถอยไปใช้ค่าเดาเหมือนเดิม
+ */
+function stockTypeWords_() {
+  var out = { up: [], down: [] };
+  try {
+    var s = sheet_('stock');
+    /* F = รับเข้า · G = ปรับลด ตามที่ checkLotStock อ่านอยู่แล้ว */
+    var f = s.getRange(DATA_ROW, 6, 1, 2).getFormulas()[0];
+    out.up = formulaWords_(f[0]);
+    out.down = formulaWords_(f[1]);
+  } catch (e) {
+    Logger.log('อ่านสูตรชีทสต๊อกไม่ได้: ' + e.message);
+  }
+  return out;
+}
+
+/** คำในเครื่องหมายคำพูดของสูตร — ตัดตัวที่เป็นที่อยู่ช่องหรือเครื่องหมายเปรียบเทียบทิ้ง */
+function formulaWords_(formula) {
+  var t = String(formula || '');
+  var out = [], m, re = /"([^"]*)"/g;
+  while ((m = re.exec(t)) !== null) {
+    var w = m[1].trim();
+    if (!w) continue;
+    if (/^[<>=!]+$/.test(w)) continue;          // ">" "<=" ฯลฯ
+    if (/^[A-Za-z]{1,3}\d+$/.test(w)) continue;  // ที่อยู่ช่องอย่าง B6
+    if (out.indexOf(w) < 0) out.push(w);
   }
   return out;
 }
@@ -398,6 +556,8 @@ function readOrders_(opts) {
            กำไรที่ชีทคิดในช่อง P ยังไม่ได้หักสองก้อนนี้ หน้าจอจึงต้องเห็นเพื่อหักเอง */
         fee: Number(hcell(hv[i], SH.head.IN.fee) || 0),
         shipCost: Number(hcell(hv[i], SH.head.IN.shipCost) || 0),
+        /* ว่าง = ออเดอร์เก่าที่คีย์ก่อนมีช่องนี้ หน้าจอต้องไม่โชว์เวลามั่ว ๆ แทน */
+        keyedAt: hhmm_(hcell(hv[i], SH.head.IN.keyedAt)),
         items: []
       };
 
@@ -704,8 +864,14 @@ function issueDoc(payload) {
     if (orderNo && !p.allowDup) {
       var dup = used.byOrder[orderNo + '|' + t.key];
       if (dup) {
-        throw new Error('ออเดอร์ ' + orderNo + ' ออก' + t.th + 'ไปแล้วเป็นใบ ' + dup +
-          ' — ถ้าจะออกใหม่ ต้องยกเลิกใบเดิมในชีท เอกสาร ก่อน');
+        /* ของเดิมบอกให้ไปยกเลิกในชีท ซึ่งไม่จำเป็นเลย — ปุ่มอยู่ในหน้าจอนี้อยู่แล้ว
+           และทางที่ดีกว่ามักเป็น "แก้ไขใบ" ซึ่งเก็บเลขเดิมไว้ ไม่เผาเลขทิ้ง
+           ข้อความที่ชี้ไปที่ชีททำให้คนไปนั่งหาในชีทโดยไม่จำเป็น แล้วเสี่ยงแก้มือผิดช่อง */
+        throw new Error('ออเดอร์ ' + orderNo + ' ออก' + t.th + 'ไปแล้วเป็นใบ ' + dup + '\n\n' +
+          'เลื่อนลงไปที่รายการ "เอกสารที่ออกไปแล้ว" ข้างล่างนี้ แล้วเลือกทางใดทางหนึ่ง\n' +
+          '  • ใบยังไม่ได้กด "ส่งแล้ว" → กด "แก้ไขใบ" ระบบแก้ยอดให้โดยใช้เลขเดิม ' +
+          'ไม่ต้องออกใบใหม่\n' +
+          '  • ลูกค้าถือใบไปแล้ว → กด "ยกเลิก" (ใส่เหตุผลด้วย) แล้วค่อยออกใบใหม่');
       }
     }
 
@@ -3386,7 +3552,10 @@ function commitOrder_(plan) {
       tel: plan.tel, addr: plan.addr, carrier: plan.carrier, track: plan.track,
       vat: plan.vat, discount: plan.discount, ship: plan.ship,
       status: plan.status, staff: plan.staff, note: plan.note,
-      fee: plan.fee, shipCost: plan.shipCost
+      fee: plan.fee, shipCost: plan.shipCost,
+      /* เวลาที่กดบันทึกจริง ระบบเขียนเอง ไม่รับจากฝั่งหน้าจอ
+         ถ้ารับจากหน้าจอ เวลาจะเป็นของนาฬิกาเครื่องที่คีย์ ซึ่งเพี้ยนได้และแก้ได้ */
+      keyedAt: new Date()
     });
     written.head = hRow;
   }
@@ -3416,6 +3585,10 @@ function commitOrder_(plan) {
       written.cut.push(cRows[j]);
     }
   }
+
+  /* ขายของออกไปแล้ว ยอดคงเหลือเปลี่ยน ป้าย "สินค้าหมด" บนหน้าร้านจึงอาจเปลี่ยนตาม
+     ถ้าไม่ล้างแคช ลูกค้าคนถัดไปยังเห็นว่ามีของอยู่ กดสั่งแล้วเจอ error ตอนบันทึก */
+  try { shopCacheBust_(); } catch (e) {}
 
   return written;
 }
@@ -4205,8 +4378,14 @@ function countStock(payload) {
 
     var plan = planCount_(p, email);
     var lists = cfgLists_();
-    var upType = pickWord_(lists.recvType, ['ปรับเพิ่ม', 'รับเข้า', 'ซื้อ']);
-    var dnType = pickWord_(lists.recvType, ['ปรับลด']);
+
+    /* เลือกคำที่ "สูตรของชีทนับจริง" ไม่ใช่คำที่เราคิดว่าน่าจะใช่
+       ของเดิมเลือก ปรับเพิ่ม เพราะมีในดรอปดาวน์ แต่สูตรช่องรับเข้าของชีทนี้
+       ไม่ได้นับคำนั้น ยอดจึงไม่ขึ้นตาม แล้วด่านตรวจก็ถอยคืนทุกครั้ง
+       — นับสต๊อกจึงทำไม่สำเร็จสักที โดยไม่มีอะไรบอกว่าติดตรงไหน */
+    var fx = stockTypeWords_();
+    var upType = pickStockType_(lists.recvType, ['ปรับเพิ่ม', 'รับเข้า', 'ซื้อ'], fx.up);
+    var dnType = pickStockType_(lists.recvType, ['ปรับลด'], fx.down);
     if (!dnType) {
       throw new Error('ชีท ' + SH.cfg.name + ' ไม่มีประเภท "ปรับลด" ให้เลือก ' +
         '— ลดยอดไม่ได้เลยถ้าไม่มีคำนี้ ต้องเติมในชีทก่อน');
@@ -4273,9 +4452,12 @@ function countStock(payload) {
       }
     }
     if (bad.length) {
+      /* ข้อความนี้คือทั้งหมดที่คนอ่านจะได้เห็น — ต้องพอให้ลงมือแก้ได้เลย
+         ของเดิมบอกแค่ "สาเหตุที่เป็นไปได้" แล้วทิ้งให้ไปเดาเอง
+         ของจริงเจอว่าเจ้าของร้านลองซ้ำสองรอบ ได้เลขเดิมเป๊ะทั้งสองรอบ
+         ซึ่งเป็นเบาะแสว่าแถวที่ลงไปไม่ถูกนับเลย แต่ข้อความไม่ได้ช่วยให้เห็นเลย */
       throw new Error('ตั้งยอดแล้วชีทไม่ได้ยอดตามที่นับ — ถอยคืนให้หมดแล้ว ไม่แตะอะไรทั้งนั้น\n' +
-        bad.join('\n') + '\nสาเหตุที่เป็นไปได้: สูตรช่องรับเข้า/ปรับลด ของชีทไม่ได้นับ "' +
-        upType + '" หรือ "' + dnType + '" เข้าไปด้วย');
+        bad.join('\n') + '\n\n' + countWhyDump_(plan, upType, dnType, wrRecv));
     }
 
     var res = { ok: true, date: ymd_(plan.date), preview: countPreview_(plan),
@@ -4310,6 +4492,39 @@ function countStock(payload) {
 }
 
 /** หาคำแรกในรายการของชีทที่ตรงกับคำที่อยากได้ — ไม่ฮาร์ดโค้ด เพราะร้านแก้ชีทเองได้ */
+/**
+ * เลือกประเภทที่จะลงในชีท รับเข้า ให้สูตรของชีทสต๊อกนับให้จริง
+ *
+ * ลำดับการเลือก
+ *   1. คำที่เราชอบ และสูตรนับด้วย        ← ปกติได้ตัวนี้
+ *   2. คำอะไรก็ได้ที่สูตรนับ              ← สูตรของร้านนี้ใช้คำอื่น
+ *   3. คำที่เราชอบ โดยไม่สนสูตร           ← อ่านสูตรไม่ออก ถอยไปใช้ค่าเดาเหมือนเดิม
+ *
+ * ข้อ 2 คือหัวใจ — ของเดิมมีแต่ข้อ 1 กับ 3 พอสูตรของร้านไม่ได้นับคำที่เราชอบ
+ * ยอดก็ไม่ขยับ ด่านตรวจถอยคืนทุกครั้ง แล้วนับสต๊อกทำไม่สำเร็จเลยสักที
+ */
+function pickStockType_(types, prefer, counted) {
+  counted = counted || [];
+  function counts(word) {
+    for (var c = 0; c < counted.length; c++) {
+      if (String(counted[c]).indexOf(word) > -1 || word.indexOf(String(counted[c])) > -1) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (counted.length) {
+    for (var i = 0; i < prefer.length; i++) {
+      if (!counts(prefer[i])) continue;
+      var hit = pickWord_(types, [prefer[i]]);
+      if (hit) return hit;
+    }
+    var any = pickWord_(types, counted);
+    if (any) return any;
+  }
+  return pickWord_(types, prefer);
+}
+
 function pickWord_(list, wants) {
   list = list || [];
   for (var w = 0; w < wants.length; w++) {
