@@ -204,6 +204,8 @@ function editLook_() {
  */
 function saveShopProduct(p) {
   var email = requireStaff_();
+  /* ของที่ลูกค้าเห็นกำลังจะเปลี่ยน ล้างแคชหน้าร้านทิ้ง ไม่งั้นลูกค้ายังเห็นของเก่าอีกห้านาที */
+  shopCacheBust_();
   if (!p || !p.sku) throw new Error('ไม่ได้บอกว่าจะแก้สินค้าตัวไหน');
 
   var sku = String(p.sku).trim();
@@ -289,6 +291,8 @@ var MOVE_MAX = 200;
 
 function moveShopCategory(p) {
   var email = requireStaff_();
+  /* ของที่ลูกค้าเห็นกำลังจะเปลี่ยน ล้างแคชหน้าร้านทิ้ง ไม่งั้นลูกค้ายังเห็นของเก่าอีกห้านาที */
+  shopCacheBust_();
   if (!p || !p.skus || !p.skus.length) throw new Error('ยังไม่ได้เลือกสินค้า');
   var group = shopGroupName_(p.group);
   if (!group) throw new Error('ยังไม่ได้ใส่ชื่อหมวด');
@@ -321,6 +325,8 @@ function moveShopCategory(p) {
 
 function saveShopBanner(b) {
   var email = requireStaff_();
+  /* ของที่ลูกค้าเห็นกำลังจะเปลี่ยน ล้างแคชหน้าร้านทิ้ง ไม่งั้นลูกค้ายังเห็นของเก่าอีกห้านาที */
+  shopCacheBust_();
   if (!b) throw new Error('ไม่มีข้อมูลแบนเนอร์');
 
   var slot = pickFrom_(b.slot, BAN_SLOTS, 'ตำแหน่งแบนเนอร์');
@@ -362,6 +368,8 @@ function saveShopBanner(b) {
  */
 function deleteShopBanner(row) {
   var email = requireStaff_();
+  /* ของที่ลูกค้าเห็นกำลังจะเปลี่ยน ล้างแคชหน้าร้านทิ้ง ไม่งั้นลูกค้ายังเห็นของเก่าอีกห้านาที */
+  shopCacheBust_();
   var r = editBanRow_(row);
   if (!r) throw new Error('ไม่เจอแบนเนอร์แถวนี้');
   var was = sheet_('ban').getRange(r, SH.ban.IN.slot).getValue();
@@ -404,6 +412,8 @@ function editFreeRow_(key, col, lastRow) {
  */
 function saveShopCat(c) {
   var email = requireStaff_();
+  /* ของที่ลูกค้าเห็นกำลังจะเปลี่ยน ล้างแคชหน้าร้านทิ้ง ไม่งั้นลูกค้ายังเห็นของเก่าอีกห้านาที */
+  shopCacheBust_();
   if (!c || !String(c.group || '').trim()) throw new Error('ไม่ได้บอกว่าจะแก้หมวดไหน');
   var group = String(c.group).trim();
 
@@ -442,6 +452,8 @@ function saveShopCat(c) {
 /** โลโก้ ภาพหัว ลิงก์แผนที่ — สามแถวในชีท ตั้งค่าแอป */
 function saveShopLook(v) {
   var email = requireStaff_();
+  /* ของที่ลูกค้าเห็นกำลังจะเปลี่ยน ล้างแคชหน้าร้านทิ้ง ไม่งั้นลูกค้ายังเห็นของเก่าอีกห้านาที */
+  shopCacheBust_();
   if (!v) throw new Error('ไม่มีข้อมูล');
 
   var WANT = [

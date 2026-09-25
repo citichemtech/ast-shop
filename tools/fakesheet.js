@@ -554,12 +554,24 @@ function load(fixture, opts) {
      จำเป็นเพราะ SHEET_ID อ่าน property ตั้งแต่ตอนไฟล์ถูกโหลด ถ้าตั้งทีหลังจะไม่ทัน */
   var props = {};
   for (var pk in (opts.props || {})) props[pk] = String(opts.props[pk]);
-  var cache = {};
+  /* แคชของ Apps Script เป็นของสคริปต์ ไม่ใช่ของแต่ละ execution
+     พนักงานกดบันทึกแล้วล้างแคช ลูกค้าที่เปิดถัดไปต้องได้ของใหม่
+     ถ้าจำลองให้แต่ละ context มีแคชของตัวเอง ข้อสอบจะผ่านทั้งที่ของจริงไม่ล้างให้ */
+  var cache = fixture.CACHE || (fixture.CACHE = {});
   var lockHeld = { v: false };
   function cacheStub_() {
     return {
-      get: function (k) { return Object.prototype.hasOwnProperty.call(cache, k) ? cache[k] : null; },
-      put: function (k, v) { cache[k] = String(v); }
+      get: function (k) {
+        if (ctx.__cacheOff) return null;          /* จำลองแคชหมดอายุหรือโดนล้าง */
+        return Object.prototype.hasOwnProperty.call(cache, k) ? cache[k] : null;
+      },
+      put: function (k, v) {
+        /* ของจริงเก็บได้ไม่เกิน 100 KB ต่อคีย์ เกินแล้วโยน error
+           ถ้าจำลองให้เก็บได้ไม่จำกัด ข้อสอบจะผ่านทั้งที่ของจริงพัง */
+        if (String(v).length > 100 * 1024) throw new Error('Argument too large: value');
+        cache[k] = String(v);
+      },
+      remove: function (k) { delete cache[k]; }
     };
   }
   var ctx = {

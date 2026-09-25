@@ -147,7 +147,47 @@ function shopCats_(items) {
  * เรียกทีเดียวจบเพราะ google.script.run แต่ละครั้งกินเวลาเป็นวินาที
  * ยิงสามครั้งแยกกันแปลว่าลูกค้ามองจอเปล่าสามวินาที
  */
+/* ------------------------------------------------- แคชข้อมูลหน้าร้าน
+
+   ลูกค้าเปิดหน้าร้านทีหนึ่ง ระบบต้องอ่าน ฐานสินค้า 118 แถว + ชีทสต๊อกซึ่งเป็นสูตร
+   ทั้งใบ + แบนเนอร์ + หมวด + สินค้าขายดี ทุกครั้ง แม้ไม่มีอะไรเปลี่ยนเลย
+   ของจริงบนมือถือค้างอยู่ที่ "กำลังโหลดสินค้าจากระบบ…" หลายวินาที
+   ซึ่งบนหน้าร้านคือการเสียลูกค้า ไม่ใช่แค่ช้า — คนกดปิดก่อนของจะขึ้น
+
+   เก็บก้อนคำตอบไว้ในแคชของสคริปต์ คนถัดไปที่เปิดจึงได้ทันที
+   อายุสั้น (5 นาที) และล้างทิ้งทุกครั้งที่พนักงานแก้อะไรที่ลูกค้าเห็น
+   หรือมีออเดอร์ตัดสต๊อก ป้ายของหมดจึงไม่ค้างนานกว่านั้น                    */
+var SHOP_CACHE_KEY = 'shopData1';
+var SHOP_CACHE_SEC = 300;
+
+/** ล้างแคชหน้าร้าน — เรียกทุกครั้งที่ของที่ลูกค้าเห็นเปลี่ยน */
+function shopCacheBust_() {
+  try { CacheService.getScriptCache().remove(SHOP_CACHE_KEY); } catch (e) {}
+}
+
 function shopData() {
+  var cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) {}
+  if (cache) {
+    var hit = null;
+    try { hit = cache.get(SHOP_CACHE_KEY); } catch (e) {}
+    if (hit) {
+      try { return JSON.parse(hit); } catch (e) { /* ของในแคชเสีย อ่านใหม่จากชีท */ }
+    }
+  }
+
+  var out = shopDataFresh_();
+
+  /* แคชของ Apps Script เก็บได้ไม่เกิน 100 KB ต่อคีย์ สินค้าเยอะ ๆ อาจเกิน
+     เกินแล้วต้องไม่ล้ม แค่ไม่ได้แคชรอบนั้น หน้าร้านต้องขึ้นเหมือนเดิม */
+  if (cache) {
+    try { cache.put(SHOP_CACHE_KEY, JSON.stringify(out), SHOP_CACHE_SEC); }
+    catch (e) { Logger.log('แคชหน้าร้านไม่ได้ (' + e.message + ') — ข้อมูลยังส่งให้ตามปกติ'); }
+  }
+  return out;
+}
+
+function shopDataFresh_() {
   var c = appCfg_();
   var items = shopItems_();
   return {

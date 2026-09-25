@@ -36,6 +36,15 @@ function throws(label, fn, needle) {
     (msg === null ? 'ไม่ได้ error เลย' : 'error: ' + String(msg).slice(0, 80)));
 }
 
+/* ข้อสอบชุด 21–23 แก้ค่าในชีทตรง ๆ แล้วอ่านหน้าร้านซ้ำทันที
+   ของจริงหน้าร้านมีแคช 5 นาที คนที่ไปพิมพ์ในชีทเองจึงต้องรอถึงจะเห็นผล
+   (แก้ผ่านโหมดแก้ไขในแอปล้างแคชให้เอง ไม่ต้องรอ)
+   ข้อสอบพวกนี้สนใจว่าอ่านค่าถูกไหม ไม่ได้สนใจเรื่องแคช จึงล้างก่อนอ่านทุกครั้ง */
+function shopSeeOn(ctx) {
+  ctx.shopSee = function () { ctx.shopCacheBust_(); return ctx.shopData() };
+  return ctx;
+}
+
 /* พนักงานเตรียมชีทให้พร้อมก่อน แล้วค่อยจำลองลูกค้าเปิดลิงก์เดียวกัน */
 function shopFixture(mode) {
   var fx = FS.build();
@@ -55,7 +64,7 @@ function shopFixture(mode) {
   }
   /* ลูกค้า = ไม่มีอีเมล เพราะ deploy ตัวสาธารณะรันในนามเจ้าของ
      Session.getActiveUser() จึงคืนค่าว่างให้คนที่ไม่ได้ล็อกอิน */
-  var guest = FS.load(fx, { email: '' });
+  var guest = shopSeeOn(FS.load(fx, { email: '' }));
   return { fx: fx, staff: staff, guest: guest, prod: fx.sheets['ฐานสินค้า'] };
 }
 
@@ -84,8 +93,8 @@ truthy('สถานะของหมดเป็น true/false ไม่ใช
 /* ============================================ 3. ซ่อนสินค้าที่ไม่อยากขายหน้าเว็บ */
 console.log('\n3. ช่อง "ขายหน้าเว็บ" — เว้นว่างคือขาย พิมพ์ "ไม่" คือซ่อน');
 var s3 = shopFixture();
-var before3 = s3.guest.shopData().items.length;
-var sku3 = s3.guest.shopData().items[0].sku;
+var before3 = s3.guest.shopSee().items.length;
+var sku3 = s3.guest.shopSee().items[0].sku;
 /* หาแถวของสินค้าตัวแรกแล้วปิดขายหน้าเว็บ */
 var prodSheet = s3.prod, row3 = 0;
 for (var r = DATA_ROW; r <= prodSheet.getMaxRows(); r++) {
@@ -93,11 +102,11 @@ for (var r = DATA_ROW; r <= prodSheet.getMaxRows(); r++) {
 }
 truthy('หาแถวของสินค้าเจอ', row3 > 0);
 prodSheet.cell(row3, 14).v = 'ไม่';
-var after3 = s3.guest.shopData().items;
+var after3 = s3.guest.shopSee().items;
 eq('สินค้าหายไปหนึ่งตัว', after3.length, before3 - 1);
 truthy('และตัวที่ปิดไม่โผล่แล้ว', after3.every(function (x) { return x.sku !== sku3 }));
 prodSheet.cell(row3, 14).v = '';
-eq('ลบคำว่า "ไม่" ออก แล้วกลับมาขายเหมือนเดิม', s3.guest.shopData().items.length, before3);
+eq('ลบคำว่า "ไม่" ออก แล้วกลับมาขายเหมือนเดิม', s3.guest.shopSee().items.length, before3);
 
 /* ============================================ 4. สวิตช์ปิดร้าน */
 console.log('\n4. สวิตช์ปิดรับออเดอร์หน้าเว็บ');
@@ -403,12 +412,12 @@ eq('ลิงก์ http ธรรมดา (ไม่ใช่ https) ไม่
 /* ต้องต่อถึงหน้าร้านจริง ไม่ใช่แค่ฟังก์ชันลอย ๆ */
 var s21 = shopFixture();
 var prod21 = s21.fx.sheets['ฐานสินค้า'];
-var sku21 = s21.guest.shopData().items[0].sku, row21 = 0;
+var sku21 = s21.guest.shopSee().items[0].sku, row21 = 0;
 for (var r21 = DATA_ROW; r21 <= prod21.getMaxRows(); r21++) {
   if (String(prod21.cell(r21, 2).v || '').trim() === sku21) { row21 = r21; break; }
 }
 prod21.cell(row21, 15).v = 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUv/view?usp=sharing';
-var got21 = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+var got21 = s21.guest.shopSee().items.filter(function (x) { return x.sku === sku21 })[0];
 eq('วางลิงก์ไดรฟ์ในชีทแล้วหน้าร้านได้ที่อยู่รูปจริง', got21.img, THUMB);
 eq('รูปเดียวได้ชุดรูปยาวหนึ่ง', got21.imgs, [THUMB]);
 
@@ -416,26 +425,26 @@ eq('รูปเดียวได้ชุดรูปยาวหนึ่ง'
 console.log('\n22. รูปสองรูปต่อสินค้า — ลูกค้ากดดูแล้วเลื่อนได้');
 var THUMB2 = 'https://drive.google.com/thumbnail?id=2ZyXwVuTsRqPoNmLkJiHgF&sz=w1000';
 prod21.cell(row21, 16).v = 'https://drive.google.com/file/d/2ZyXwVuTsRqPoNmLkJiHgF/view';
-var got22 = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+var got22 = s21.guest.shopSee().items.filter(function (x) { return x.sku === sku21 })[0];
 eq('ได้รูปครบสองรูปตามลำดับคอลัมน์ O แล้ว P', got22.imgs, [THUMB, THUMB2]);
 eq('รูปเล็กในตะกร้ายังเป็นรูปแรกเสมอ', got22.img, THUMB);
 
 prod21.cell(row21, 15).v = '';
-var got22b = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+var got22b = s21.guest.shopSee().items.filter(function (x) { return x.sku === sku21 })[0];
 eq('เว้นรูปแรกไว้ รูปที่สองเลื่อนขึ้นมาเป็นรูปหลัก ไม่มีช่องว่างคั่น',
    got22b.imgs, [THUMB2]);
 
 prod21.cell(row21, 15).v = 'https://drive.google.com/file/d/2ZyXwVuTsRqPoNmLkJiHgF/view';
-var got22c = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+var got22c = s21.guest.shopSee().items.filter(function (x) { return x.sku === sku21 })[0];
 eq('ก๊อปลิงก์เดียวกันลงสองช่อง ไม่โชว์ซ้ำสองรูป', got22c.imgs, [THUMB2]);
 
 prod21.cell(row21, 16).v = 'ถ่ายไว้ในมือถือ';
-var got22d = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+var got22d = s21.guest.shopSee().items.filter(function (x) { return x.sku === sku21 })[0];
 eq('รูปที่สองใส่มั่ว ตกไปเงียบ ๆ เหลือรูปเดียว ไม่ปล่อยรูปแตก', got22d.imgs, [THUMB2]);
 
 prod21.cell(row21, 15).v = '';
 prod21.cell(row21, 16).v = '';
-var got22e = s21.guest.shopData().items.filter(function (x) { return x.sku === sku21 })[0];
+var got22e = s21.guest.shopSee().items.filter(function (x) { return x.sku === sku21 })[0];
 eq('ไม่ใส่รูปเลยได้ชุดว่าง หน้าร้านขึ้นกรอบชื่อสินค้าแทน', got22e.imgs, []);
 eq('ไม่ใส่รูปเลย img ก็ว่าง', got22e.img, '');
 
@@ -452,7 +461,7 @@ var scat23 = fx23.sheets['หมวดหน้าร้าน'];
 truthy('setup สร้างชีท หมวดหน้าร้าน ให้', !!scat23);
 
 eq('ยังไม่กรอกอะไร แบนเนอร์เป็นก้อนว่าง หน้าร้านไม่พัง',
-   s23.guest.shopData().banners, {});
+   s23.guest.shopSee().banners, {});
 
 /* แถวที่ยังไม่เปิดใช้ ต้องไม่โผล่ */
 ban23.cell(DATA_ROW, 2).v = 'โปรโมชั่นเด่น';
@@ -460,10 +469,10 @@ ban23.cell(DATA_ROW, 3).v = 'โปรกันยา';
 ban23.cell(DATA_ROW, 4).v = IMG_A;
 ban23.cell(DATA_ROW, 5).v = 'Buy Now';
 ban23.cell(DATA_ROW, 6).v = 'หมวด:TOOLING';
-eq('ยังไม่พิมพ์ เปิด แบนเนอร์ไม่ขึ้น', s23.guest.shopData().banners, {});
+eq('ยังไม่พิมพ์ เปิด แบนเนอร์ไม่ขึ้น', s23.guest.shopSee().banners, {});
 
 ban23.cell(DATA_ROW, 7).v = 'เปิด';
-var b23 = s23.guest.shopData().banners;
+var b23 = s23.guest.shopSee().banners;
 eq('พิมพ์ เปิด แล้วขึ้นในแถบที่ตั้งไว้', (b23['โปรโมชั่นเด่น'] || []).length, 1);
 eq('ลิงก์รูปถูกแปลงเป็นที่อยู่รูปจริง', b23['โปรโมชั่นเด่น'][0].img, THUMB_A);
 eq('ลิงก์ปุ่มแบบหมวด แปลงเป็นคำสั่งเข้าหน้าหมวด',
@@ -473,7 +482,7 @@ ban23.cell(DATA_ROW + 1, 2).v = 'ติดต่อเรา';
 ban23.cell(DATA_ROW + 1, 4).v = 'ยังไม่ได้อัปโหลด';
 ban23.cell(DATA_ROW + 1, 7).v = 'เปิด';
 eq('เปิดใช้แต่ลิงก์รูปมั่ว ตกไปเงียบ ๆ ไม่เหลือกรอบเปล่า',
-   (s23.guest.shopData().banners['ติดต่อเรา'] || []).length, 0);
+   (s23.guest.shopSee().banners['ติดต่อเรา'] || []).length, 0);
 
 eq('ลิงก์ปุ่มเป็นที่อยู่เว็บ', s23.guest.shopHref_('https://ast.example/promo'),
    { kind: 'url', v: 'https://ast.example/promo' });
@@ -484,7 +493,7 @@ eq('ลิงก์ปุ่มมั่ว = ไม่มีปุ่ม ไม
 eq('ไม่รับ http ธรรมดา', s23.guest.shopHref_('http://ast.example'), null);
 
 /* หมวด — setup เติมชื่อหมวดจาก ฐานสินค้า ให้แล้ว */
-var cc23 = s23.guest.shopData().catCards;
+var cc23 = s23.guest.shopSee().catCards;
 truthy('มีการ์ดหมวดอย่างน้อยหนึ่งใบ', cc23.length > 0);
 truthy('การ์ดหมวดมีจำนวนสินค้าติดมาด้วย', cc23[0].n > 0);
 eq('ยังไม่ใส่รูป ไอคอนเป็นค่าว่าง ไม่ใช่ลิงก์เสีย', cc23[0].icon, '');
@@ -497,40 +506,40 @@ truthy('setup เติมชื่อหมวดลงชีท หมวด�
 scat23.cell(row23, 3).v = 'เครื่องมือตัด';
 scat23.cell(row23, 4).v = IMG_A;
 scat23.cell(row23, 5).v = IMG_A;
-var cc23b = s23.guest.shopData().catCards.filter(function (c) { return c.group === g23 })[0];
+var cc23b = s23.guest.shopSee().catCards.filter(function (c) { return c.group === g23 })[0];
 eq('ตั้งชื่อที่โชว์เองได้ ไม่ต้องแก้ชื่อหมวดในฐานสินค้า', cc23b.label, 'เครื่องมือตัด');
 eq('รูปไอคอนแปลงให้แล้ว', cc23b.icon, THUMB_A);
 eq('รูปปกแปลงให้แล้ว', cc23b.cover, THUMB_A);
 
 scat23.cell(row23, 6).v = 'ซ่อน';
 eq('พิมพ์ ซ่อน แล้วการ์ดหมวดหาย',
-   s23.guest.shopData().catCards.filter(function (c) { return c.group === g23 }).length, 0);
+   s23.guest.shopSee().catCards.filter(function (c) { return c.group === g23 }).length, 0);
 truthy('แต่สินค้าในหมวดนั้นยังขายอยู่ ไม่ได้หายไปจากหน้าร้าน',
-   s23.guest.shopData().items.some(function (p) { return p.group === g23 }));
+   s23.guest.shopSee().items.some(function (p) { return p.group === g23 }));
 scat23.cell(row23, 6).v = 'โชว์';
 
 /* ป้ายหน้าร้าน */
 var prod23 = fx23.sheets['ฐานสินค้า'];
-var sku23 = s23.guest.shopData().items[0].sku, prow23 = 0;
+var sku23 = s23.guest.shopSee().items[0].sku, prow23 = 0;
 for (var q23 = DATA_ROW; q23 <= prod23.getMaxRows(); q23++) {
   if (String(prod23.cell(q23, 2).v || '').trim() === sku23) { prow23 = q23; break; }
 }
 eq('ไม่ติดป้าย ได้ชุดว่าง',
-   s23.guest.shopData().items.filter(function (p) { return p.sku === sku23 })[0].tags, []);
+   s23.guest.shopSee().items.filter(function (p) { return p.sku === sku23 })[0].tags, []);
 prod23.cell(prow23, 17).v = 'ใหม่, โปรโมชั่น';
 eq('ติดสองป้ายคั่นด้วยจุลภาค แยกให้ถูกและตัดช่องว่างให้',
-   s23.guest.shopData().items.filter(function (p) { return p.sku === sku23 })[0].tags,
+   s23.guest.shopSee().items.filter(function (p) { return p.sku === sku23 })[0].tags,
    ['ใหม่', 'โปรโมชั่น']);
 
 /* ขายดี — ต้องมาจากยอดขายจริง ไม่ใช่ลำดับในชีท และห้ามบอกจำนวนที่ขายได้ */
-var best23 = s23.guest.shopData().best;
+var best23 = s23.guest.shopSee().best;
 truthy('ขายดีเป็นรายการรหัสสินค้า', Array.isArray(best23));
 truthy('ขายดีไม่เกินจำนวนที่ตั้งไว้', best23.length <= 8);
 truthy('ขายดีมีแต่ของที่ยังขายอยู่', best23.every(function (sku) {
-  return s23.guest.shopData().items.some(function (p) { return p.sku === sku });
+  return s23.guest.shopSee().items.some(function (p) { return p.sku === sku });
 }));
 truthy('คำตอบทั้งก้อนไม่มีจำนวนที่ขายได้ติดไปด้วย',
-   JSON.stringify(s23.guest.shopData()).indexOf('"sold"') < 0);
+   JSON.stringify(s23.guest.shopSee()).indexOf('"sold"') < 0);
 
 /* แผนที่ — ไม่ได้ใส่ลิงก์เอง ต้องได้ลิงก์ค้นหาจากที่อยู่ */
 var app23 = fx23.sheets['ตั้งค่าแอป'];
@@ -540,7 +549,7 @@ for (var a23 = DATA_ROW; a23 <= app23.getMaxRows(); a23++) {
     break;
   }
 }
-var m23 = s23.guest.shopData().map;
+var m23 = s23.guest.shopSee().map;
 truthy('ได้ลิงก์แผนที่จากที่อยู่ผู้ส่ง', /^https:\/\/www\.google\.com\/maps/.test(m23.url));
 eq('ป้ายบนแถบเอาแค่บรรทัดแรก ที่อยู่เต็มยาวเกินกว่าจะอ่านบนแถบเตี้ย ๆ',
    m23.label, '2/1 ซ.ตัวอย่าง');
@@ -553,7 +562,7 @@ for (var a24 = DATA_ROW; a24 <= app23.getMaxRows(); a24++) {
   }
 }
 eq('ใส่ลิงก์แผนที่เองแล้วใช้ตัวนั้น',
-   s23.guest.shopData().map.url, 'https://maps.app.goo.gl/abcdef');
+   s23.guest.shopSee().map.url, 'https://maps.app.goo.gl/abcdef');
 
 /* ====================================== 24. อีเมลแจ้งร้านทันทีที่มีคนสั่ง
 
@@ -689,6 +698,58 @@ for (var q25 = DATA_ROW; q25 <= app25.getMaxRows(); q25++) {
   dup25[d25] = 1;
 }
 eq('สั่ง setup ซ้ำ ไม่มีแถวไหนซ้ำ', dupes, []);
+
+/* ====================================== 26. แคชหน้าร้าน — เปิดครั้งที่สองต้องไว
+
+   ของจริง: ลูกค้าเปิดหน้าร้านแล้วค้างอยู่ที่ "กำลังโหลดสินค้าจากระบบ…" หลายวินาที
+   เพราะทุกครั้งที่มีคนเปิด ระบบอ่าน ฐานสินค้า 118 แถว + ชีทสต๊อกซึ่งเป็นสูตรทั้งใบ
+   + แบนเนอร์ + หมวด + ขายดี ใหม่หมด ทั้งที่ไม่มีอะไรเปลี่ยนเลย
+   บนหน้าร้าน ช้าคือเสียลูกค้า ไม่ใช่แค่รอนาน                                */
+console.log('\n26. แคชหน้าร้าน — คนที่สองต้องไม่ต้องรออ่านชีทใหม่');
+var s26 = shopFixture();
+
+FS.CELLS_READ.n = 0;
+var d26a = s26.guest.shopData();
+var read1 = FS.CELLS_READ.n;
+
+FS.CELLS_READ.n = 0;
+var d26b = s26.guest.shopData();
+var read2 = FS.CELLS_READ.n;
+
+truthy('เปิดครั้งแรกต้องอ่านชีทจริง (' + read1 + ' ช่อง)', read1 > 100);
+eq('เปิดครั้งที่สอง ไม่แตะชีทเลย', read2, 0);
+eq('และได้ข้อมูลชุดเดียวกันเป๊ะ', JSON.stringify(d26b), JSON.stringify(d26a));
+
+console.log('\n   พนักงานแก้อะไรที่ลูกค้าเห็น ต้องล้างแคชทันที');
+/* ไม่ล้าง = ลูกค้ายังเห็นราคาเก่าไปอีกห้านาที ซึ่งแย่กว่าช้า */
+var sku26 = d26a.items[0].sku;
+s26.staff.saveShopProduct({ sku: sku26, price: 4321 });
+FS.CELLS_READ.n = 0;
+var d26c = s26.guest.shopData();
+truthy('แก้ราคาแล้วอ่านชีทใหม่จริง', FS.CELLS_READ.n > 100);
+eq('ลูกค้าเห็นราคาใหม่ทันที ไม่ต้องรอแคชหมดอายุ',
+   d26c.items.filter(function (x) { return x.sku === sku26 })[0].price, 4321);
+
+console.log('\n   ขายของออกไปแล้ว ป้ายของหมดต้องไม่ค้าง');
+var s26b = shopFixture('direct');
+var shelf26 = s26b.guest.shopData().items;
+FS.CELLS_READ.n = 0;
+s26b.guest.shopData();
+eq('ยืนยันว่าแคชติดแล้ว', FS.CELLS_READ.n, 0);
+s26b.guest.shopOrder({
+  clientKey: 'web-cache-1', cust: 'ลูกค้าทดสอบ', tel: '0812345678',
+  addr: '5 ถ.ทดสอบ ต.เนินพระ อ.เมือง จ.ระยอง 21000',
+  items: [{ sku: shelf26[0].sku, qty: 1 }]
+});
+FS.CELLS_READ.n = 0;
+s26b.guest.shopData();
+truthy('หลังมีออเดอร์ ต้องอ่านชีทใหม่', FS.CELLS_READ.n > 100);
+
+console.log('\n   แคชพังหรือใหญ่เกิน ต้องไม่ทำให้หน้าร้านล่ม');
+var s26c = shopFixture();
+s26c.guest.__cacheOff = true;      /* อ่านแคชไม่ได้เลย */
+truthy('อ่านแคชไม่ได้ ก็ยังส่งข้อมูลให้ตามปกติ',
+   (s26c.guest.shopData().items || []).length > 0);
 
 console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
 process.exit(fails ? 1 : 0);

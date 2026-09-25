@@ -14,7 +14,14 @@ body{font-family:'Prompt',system-ui,-apple-system,"Noto Sans Thai",sans-serif;
   color:var(--ink);background:#EEF1F4;font-size:15px;line-height:1.6}
 #app{max-width:var(--appw);margin:0 auto;background:#fff;min-height:100vh;
   position:relative;overflow:hidden}
-@media (min-width:600px){ :root{--appw:100%} }
+/* จอคอมเคยปล่อยให้ยืดเต็มจอ (--appw:100%) ซึ่งพังเรื่องสัดส่วน
+   แบนเนอร์อัตราส่วน 2:1 ยืดไปกว้าง 1900px สูงเกือบพันพิกเซล กินทั้งจอ
+   ขณะที่โลโก้ยังเท่าเดิม 52px กับชื่อร้าน 20px ลอยอยู่ในแถบสีฟ้าโล่ง ๆ
+   ของจริงเจ้าของร้านเปิดบนโน้ตบุ๊กแล้วบอกว่า "ไม่มีความบาลานซ์"
+
+   หน้าร้านนี้ออกแบบมาเป็นแอปมือถือ วิธีที่ถูกคือคุมความกว้างไว้แล้ววางกลางจอ
+   เหมือนแอปร้านค้าทั่วไป ไม่ใช่ยืดจนสัดส่วนที่ออกแบบไว้เสียหมด */
+@media (min-width:600px){ :root{ --appw:900px } }
 button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
 input{font-family:inherit;font-size:16px}
 img{display:block;max-width:100%}
@@ -79,7 +86,9 @@ img{display:block;max-width:100%}
 .bans::-webkit-scrollbar{display:none}
 .ban{position:relative;flex:0 0 100%;scroll-snap-align:center;border-radius:18px;
   overflow:hidden;background:var(--soft);box-shadow:0 2px 12px rgba(20,24,33,.10)}
-.ban img{width:100%;height:auto;display:block}
+/* max-height กันรูปที่อัดมาเป็นแนวตั้ง — แบนเนอร์ 2:1 ปกติไม่โดนตัด
+   แต่ถ้าใครอัปรูปจัตุรัสหรือแนวตั้งมา จะกินไปสามหน้าจอ เลื่อนหาสินค้าไม่เจอ */
+.ban img{width:100%;height:auto;max-height:56vh;object-fit:cover;display:block}
 .ban .bbtn{position:absolute;right:14px;bottom:14px;background:var(--red);color:#fff;
   padding:10px 22px;border-radius:999px;font-size:14.5px;font-weight:700;
   box-shadow:0 3px 12px rgba(0,0,0,.28)}
@@ -309,6 +318,23 @@ button.card-img{width:100%;cursor:zoom-in;padding:0;border-radius:0;display:flex
   color:#fff;padding:12px 20px;border-radius:12px;font-size:14px;opacity:0;
   pointer-events:none;transition:.25s;z-index:50;max-width:88%;text-align:center}
 .toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* --------------------------------------------------- จอคอม (กว้างกว่า 600px)
+
+   ต้องอยู่ท้ายสุดของสไตล์ชีต เพราะกฎพื้นฐานของ .logo และ .hdr h1 ประกาศไว้
+   ข้างล่างจุดที่ตั้ง --appw ถ้าเขียนไว้ตรงนั้น กฎพื้นฐานจะทับกลับทั้งหมด
+   (คนละที่ ความเจาะจงเท่ากัน ตัวที่อยู่ล่างกว่าชนะ)                        */
+@media (min-width:600px){
+  #app{ box-shadow:0 0 40px rgba(20,40,70,.10) }
+  /* หัวร้านบนจอกว้างมีที่ว่างเยอะ ถ้าไม่ขยายตาม โลโก้ 52px กับชื่อร้าน 20px
+     จะลอยอยู่ในแถบสีฟ้าโล่ง ๆ เหนือแบนเนอร์ยักษ์ ดูไม่สมกัน */
+  .hdr{ padding:26px 26px 30px }
+  .logo{ width:74px;height:74px;font-size:20px }
+  .hdr h1{ font-size:30px }
+  .hdr .sub{ font-size:15px }
+  .hdr-top{ gap:16px }
+  .searchrow{ margin-top:20px }
+}
 </style>
 </head>
 <body>
