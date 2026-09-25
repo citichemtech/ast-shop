@@ -241,6 +241,8 @@ button.card-img{width:100%;cursor:zoom-in;padding:0;border-radius:0;display:flex
 /* ---------- ตะกร้าและหน้าสั่งซื้อ ---------- */
 .page{display:none}.page.on{display:block}
 #app{padding-bottom:calc(74px + env(safe-area-inset-bottom))}
+/* สองหน้านี้ซ่อนแถบล่าง จึงไม่ต้องเว้นที่ให้แถบ แต่ยังเว้นพอให้ปุ่มไม่ชิดขอบจอ */
+#app:has(#pg-pay.on),#app:has(#pg-done.on){padding-bottom:calc(28px + env(safe-area-inset-bottom))}
 #app.has-bar{padding-bottom:calc(148px + env(safe-area-inset-bottom))}
 
 /* แถบยอดรวมนั่งทับแถบล่างอีกที — ต้องเผื่อความสูงแถบล่างไว้ ไม่งั้นบังกัน */
@@ -335,6 +337,66 @@ button.card-img{width:100%;cursor:zoom-in;padding:0;border-radius:0;display:flex
   .hdr-top{ gap:16px }
   .searchrow{ margin-top:20px }
 }
+
+/* ------------------------------------------------- หน้ากรอกที่อยู่จัดส่ง
+
+   แบบที่เจ้าของร้านวางไว้: ป้ายอยู่ซ้ายของช่อง ช่องเป็นทรงแคปซูล
+   กล่องสรุปยอดมีกรอบอยู่ทางขวา ยอดรวมทั้งสิ้นอยู่นอกกรอบ
+   แล้วปุ่มยืนยันทรงแคปซูลมีวงแหวนน้ำเงินด้านซ้าย
+
+   บนมือถือยุบเป็นคอลัมน์เดียว ป้ายขึ้นไปอยู่เหนือช่องตามเดิม
+   เพราะป้ายซ้าย-ช่องขวาบนจอ 390px จะเหลือที่พิมพ์ไม่ถึงครึ่ง            */
+.ckwrap{padding:4px 20px 24px}
+.cktitle{text-align:center;font-size:21px;font-weight:800;margin:8px 0 20px}
+.ckgrid{display:grid;grid-template-columns:1fr;gap:22px}
+
+.ckform .fld{margin-bottom:13px}
+.ckin{min-width:0}
+.ckform input,.ckform textarea{width:100%;border:1.5px solid #9AA6B4;border-radius:999px;
+  padding:13px 20px;background:#fff;outline:0;color:var(--ink);font-size:15px}
+.ckform textarea{border-radius:22px;resize:vertical;line-height:1.55}
+.ckform input:focus,.ckform textarea:focus{border-color:var(--blue);
+  box-shadow:0 0 0 3px rgba(61,139,255,.16)}
+.ckform .fld.bad input,.ckform .fld.bad textarea{border-color:var(--red);background:#FDF4F4}
+.ckform .hint{padding-left:20px}
+.ckform .err{padding-left:20px}
+
+/* กล่องสรุปยอด — กรอบบางสีเข้มกับเงาทิ้งลงมา ตามแบบที่วางไว้ */
+.sumbox{border:1.5px solid #2B3240;border-radius:6px;padding:14px 18px;
+  box-shadow:6px 6px 0 rgba(43,50,64,.10);background:#fff}
+.sumbox .srow{display:flex;justify-content:space-between;align-items:baseline;
+  gap:14px;padding:7px 0;font-size:15px}
+.sumbox .srow b{font-weight:700;white-space:nowrap}
+.grand{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+  margin:18px 2px 20px;font-size:17px;font-weight:800}
+.grand b{font-size:19px;white-space:nowrap}
+
+/* ปุ่มยืนยัน — วงแหวนน้ำเงินซ้ายกับตัวปุ่มสีอ่อน ตามแบบ
+   ทำด้วย border-radius กับ box-shadow ล้วน ไม่ใช้ไฟล์รูป จะได้คมทุกจอ */
+.pillgo{position:relative;display:block;width:100%;min-height:58px;
+  border-radius:999px;background:linear-gradient(180deg,#FFF 0%,#E9ECF1 100%);
+  border:none;padding:16px 22px 16px 74px;text-align:center;
+  font-size:17px;font-weight:800;color:var(--ink);
+  box-shadow:0 6px 16px rgba(37,70,150,.22)}
+.pillgo::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:58px;height:58px;border-radius:50%;border:11px solid #2645C8;background:#EDEFF3}
+.pillgo:active{transform:translateY(1px)}
+.pillgo:disabled{background:#E3E7EC;color:#9AA6B4;box-shadow:none;cursor:not-allowed}
+.pillgo:disabled::before{border-color:#B9C2CD}
+
+.ckfoot{text-align:center;margin-top:14px;color:var(--gray);
+  font-size:12.5px;line-height:1.7}
+
+/* จอกว้างพอ: ฟอร์มซ้าย สรุปยอดขวา และป้ายไปอยู่ซ้ายของช่อง */
+@media (min-width:640px){
+  .ckwrap{padding:4px 28px 28px}
+  .ckgrid{grid-template-columns:minmax(0,1.35fr) minmax(280px,1fr);gap:34px;align-items:start}
+  .ckform .ckrow{display:grid;grid-template-columns:118px minmax(0,1fr);
+    align-items:center;gap:14px;margin-bottom:15px}
+  .ckform .ckrow label{margin:0;text-align:right;font-size:15px;font-weight:700}
+  .ckform .ckrow:has(textarea) label{align-self:start;padding-top:13px}
+  .cksum{position:sticky;top:14px}
+}
 </style>
 </head>
 <body>
@@ -390,24 +452,38 @@ button.card-img{width:100%;cursor:zoom-in;padding:0;border-radius:0;display:flex
       <h2>ที่อยู่จัดส่ง</h2><span style="width:40px"></span>
     </div>
     <div class="warn" id="send-err"></div>
-    <div class="form">
-      <div class="fld" id="f-name"><label>ชื่อผู้รับ *</label>
-        <input id="i-name" autocomplete="name" placeholder="ชื่อ นามสกุล">
-        <div class="err">กรุณาใส่ชื่อผู้รับ</div></div>
-      <div class="fld" id="f-tel"><label>เบอร์โทร *</label>
-        <input id="i-tel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="0812345678">
-        <div class="err">ใส่เบอร์มือถือ 10 หลัก</div>
-        <div class="hint">คนส่งของใช้เบอร์นี้ติดต่อตอนไปส่ง</div></div>
-      <div class="fld" id="f-addr"><label>ที่อยู่จัดส่ง *</label>
-        <textarea id="i-addr" rows="4" autocomplete="street-address"
-          placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"></textarea>
-        <div class="err">ใส่ที่อยู่ให้ครบ รวมรหัสไปรษณีย์</div></div>
-      <div class="fld"><label>ข้อความถึงร้าน</label>
-        <textarea id="i-note" rows="2" placeholder="เช่น ขอใบกำกับภาษี / ฝากส่งเร็วหน่อย"></textarea></div>
-      <div class="sums" id="pay-sums" style="padding-left:0;padding-right:0"></div>
-      <button class="go" id="btn-send">ยืนยันสั่งซื้อ</button>
-      <div class="hint" style="text-align:center;margin-top:12px;color:var(--gray);font-size:12.5px">
-        กดยืนยันแล้วระบบจะออกเลขออเดอร์ให้ แล้วค่อยโอนเงินในขั้นถัดไป</div>
+    <div class="ckwrap">
+      <h3 class="cktitle">กรอกที่อยู่จัดส่ง</h3>
+      <div class="ckgrid">
+        <div class="ckform">
+          <div class="fld ckrow" id="f-name"><label>ชื่อผู้รับ</label>
+            <div class="ckin">
+              <input id="i-name" autocomplete="name" placeholder="ชื่อ / นามสกุล">
+              <div class="err">กรุณาใส่ชื่อผู้รับ</div></div></div>
+          <div class="fld ckrow" id="f-tel"><label>เบอร์โทร</label>
+            <div class="ckin">
+              <input id="i-tel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="0812345678">
+              <div class="err">ใส่เบอร์มือถือ 10 หลัก</div>
+              <div class="hint">คนส่งของใช้เบอร์นี้ติดต่อตอนไปส่ง</div></div></div>
+          <div class="fld ckrow" id="f-addr"><label>ที่อยู่จัดส่ง</label>
+            <div class="ckin">
+              <textarea id="i-addr" rows="3" autocomplete="street-address"
+                placeholder="บ้านเลขที่ / ถนน / ตำบล / อำเภอ / จังหวัด / รหัสไปรษณีย์"></textarea>
+              <div class="err">ใส่ที่อยู่ให้ครบ รวมรหัสไปรษณีย์</div></div></div>
+          <div class="fld ckrow"><label>ข้อความถึงร้าน</label>
+            <div class="ckin">
+              <textarea id="i-note" rows="2" placeholder="เช่น ขอใบกำกับภาษี / จัดส่งรวดเร็ว"></textarea></div></div>
+        </div>
+
+        <aside class="cksum">
+          <div class="sumbox" id="pay-sums"></div>
+          <div class="grand" id="pay-grand"></div>
+          <button class="pillgo" id="btn-send"><span>ยืนยันการสั่งซื้อ</span></button>
+          <div class="ckfoot">กดยืนยันแล้วระบบจะออกเลขออเดอร์ให้
+            แล้วค่อยโอนเงินในขั้นถัดไป · ถ้าต้องการเก็บเงินปลายทาง
+            พิมพ์บอกในช่อง “ข้อความถึงร้าน” ได้เลย</div>
+        </aside>
+      </div>
     </div>
   </div>
 
@@ -685,13 +761,34 @@ function drawCart() {
     + '<div class="form"><button class="go" data-go="pay">สั่งซื้อ · กรอกที่อยู่</button></div>';
 }
 
-function drawPaySums() { $('#pay-sums').innerHTML = sumRows(cartSub()) }
+/* หน้าเช็คเอาต์แยก "ยอดรวมทั้งสิ้น" ออกมาไว้นอกกรอบ ตามแบบที่เจ้าของร้านวางไว้
+   ในกรอบเหลือแค่ยอดสินค้ากับค่าจัดส่ง ตัวเลขที่ลูกค้าต้องจ่ายจริงจึงเด่นที่สุด */
+function drawPaySums() {
+  var sub = cartSub(), ship = shipOf(sub);
+  $('#pay-sums').innerHTML =
+      '<div class="srow"><span>ยอดสินค้า</span><b>' + baht(sub) + '</b></div>'
+    + '<div class="srow"><span>ค่าจัดส่ง</span><b>' + (ship ? baht(ship) : 'ฟรี') + '</b></div>';
+  $('#pay-grand').innerHTML = '<span>ยอดรวมทั้งสิ้น</span><b>' + baht(sub + ship) + '</b>';
+}
 
 function go(page) {
   PAGE = page;
   /* หน้าหมวดมีรูปปกของตัวเอง ไม่ต้องมีหัวฟ้าของหน้าแรกซ้อนอยู่ข้างบนอีกชั้น */
   $('.hdr').style.display = (page === 'cat') ? 'none' : '';
   $('#app').classList.toggle('inner', page !== 'shop');
+  /* หน้ากรอกที่อยู่กับหน้าสั่งสำเร็จ ซ่อนแถบล่างทิ้ง
+
+     เหตุผลแรกคือของจริง: แถบล่างลอยทับปุ่ม "ยืนยันการสั่งซื้อ" บนเครื่องของ
+     เจ้าของร้าน ทั้งที่ในเบราว์เซอร์ทดสอบยังเหลือที่ว่างใต้ปุ่มตั้ง 31px
+     ความสูงของช่องมองเห็นบนมือถือจริงเปลี่ยนไปมาตามแถบที่อยู่เว็บที่ยุบ-ยืด
+     และหน้านี้อยู่ใน iframe ของ Apps Script อีกชั้น จะกะระยะเผื่อเป็นพิกเซล
+     ให้พอดีทุกเครื่องไม่ได้ ซ่อนไปเลยจึงไม่มีทางทับ ไม่ใช่เดาตัวเลขให้พอดี
+
+     เหตุผลที่สองคือถูกต้องอยู่แล้ว: คนกำลังกรอกที่อยู่เพื่อจ่ายเงิน
+     ปุ่มหน้าแรก/หมวดหมู่/ตะกร้า มีแต่จะพาออกจากขั้นตอนที่ใกล้ปิดการขายที่สุด
+     ร้านออนไลน์ทั่วโลกซ่อนเมนูตอนเช็คเอาต์ด้วยเหตุผลเดียวกัน
+     ปุ่มย้อนกลับบนหัวหน้ายังอยู่ ถ้าจะกลับไปแก้ตะกร้าก็ยังกลับได้ */
+  $('#nav').style.display = (page === 'pay' || page === 'done') ? 'none' : '';
   ['shop', 'cat', 'cart', 'pay', 'done'].forEach(function (x) {
     $('#pg-' + x).classList.toggle('on', x === page);
   });

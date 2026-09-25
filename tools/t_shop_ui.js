@@ -284,6 +284,45 @@ function ok(label, cond, extra) {
   ok('ขึ้นที่อยู่แบบสั้น',
      (await pg.locator('#map-txt').innerText()).trim() === '2/1 ซ.ตัวอย่าง');
 
+  /* ---------------------------------------- หน้ากรอกที่อยู่ ต้องไม่มีอะไรโดนตัด
+
+     ของจริง: แถบล่างลอยทับปุ่ม "ยืนยันการสั่งซื้อ" บนมือถือของเจ้าของร้าน
+     ทั้งที่ในเบราว์เซอร์ทดสอบยังเหลือที่ว่างใต้ปุ่ม 31px — ความสูงของช่องมองเห็น
+     บนมือถือจริงเปลี่ยนตามแถบที่อยู่เว็บที่ยุบ-ยืด และหน้านี้อยู่ใน iframe
+     ของ Apps Script อีกชั้น กะระยะเผื่อเป็นพิกเซลให้พอดีทุกเครื่องไม่ได้
+     ทางที่แน่นอนคือหน้านี้ไม่มีแถบล่างเลย                                    */
+  console.log('\n' + (fails ? '' : '') + 'x. หน้ากรอกที่อยู่ — ปุ่มยืนยันต้องไม่โดนแถบล่างทับ');
+  for (var vp of [{ w: 390, h: 844 }, { w: 390, h: 700 }, { w: 430, h: 932 }]) {
+    var cp = await b.newPage({ viewport: { width: vp.w, height: vp.h } });
+    await cp.goto('file:///home/user/ast-shop/out/shop.html');
+    await cp.waitForTimeout(900);
+    await cp.locator('#pg-shop .grid .plus').first().click();
+    await cp.waitForTimeout(200);
+    await cp.locator('#nav-cart').click();
+    await cp.waitForTimeout(350);
+    await cp.locator('[data-go="pay"]').first().click();
+    await cp.waitForTimeout(350);
+    await cp.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await cp.waitForTimeout(250);
+    var m = await cp.evaluate(() => {
+      var nav = document.querySelector('.nav');
+      var navOn = getComputedStyle(nav).display !== 'none';
+      var foot = document.querySelector('.ckfoot').getBoundingClientRect();
+      var btn = document.querySelector('#btn-send').getBoundingClientRect();
+      return { navOn: navOn, navTop: navOn ? nav.getBoundingClientRect().top : 1e9,
+               footBottom: foot.bottom, btnBottom: btn.bottom,
+               btnW: btn.width, vh: window.innerHeight };
+    });
+    var lim = Math.min(m.navTop, m.vh);
+    ok('จอ ' + vp.w + 'x' + vp.h + ' — ไม่มีแถบล่างมาทับหน้านี้', !m.navOn);
+    ok('จอ ' + vp.w + 'x' + vp.h + ' — ปุ่มกับข้อความท้ายอยู่ครบในจอ (' +
+       Math.round(m.footBottom) + ' ไม่เกิน ' + Math.round(lim) + ')',
+       m.footBottom <= lim + 1);
+    ok('จอ ' + vp.w + 'x' + vp.h + ' — ปุ่มยืนยันกว้างเต็มแถว กดพลาดยาก (' +
+       Math.round(m.btnW) + 'px)', m.btnW > vp.w * 0.7);
+    await cp.close();
+  }
+
   ok('ไม่มี error สะสมตลอดการทดสอบ', errs.length === 0, errs.join(' | '));
   await b.close();
   console.log(fails ? '\nตก ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');
