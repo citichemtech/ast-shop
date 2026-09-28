@@ -127,7 +127,10 @@ console.log('\n5. ลูกค้าเรียกของฝั่งพน�
 var s5 = shopFixture();
 var g5 = s5.guest;
 var GATED = ['getOrders', 'createOrder', 'setTracking', 'issueDoc', 'previewDoc', 'getDoc',
-  'emailDoc', 'checkProductLinks', 'fixProductLinks', 'growProducts', 'setupShopColumns'];
+  'emailDoc', 'checkProductLinks', 'fixProductLinks', 'growProducts', 'setupShopColumns',
+  /* รับของเข้าสร้างแถวใน ฐานสินค้า ได้แล้ว ถ้าด่านนี้หลุด คนนอกเติมสินค้าผี
+     เข้าชีทได้ไม่จำกัด แล้วดรอปดาวน์ของพนักงานจะเต็มไปด้วยของที่ไม่มีจริง */
+  'receiveStock'];
 GATED.forEach(function (fn) {
   if (typeof g5[fn] !== 'function') { fails++; console.log('  FAIL ไม่เจอฟังก์ชัน ' + fn); return; }
   throws('ลูกค้าเรียก ' + fn + ' ไม่ได้', function () { g5[fn]({}); }, 'ระบบไม่ทราบว่าคุณเป็นใคร');

@@ -3771,12 +3771,50 @@ function receiveStock(payload) {
     throw new Error('มีคนกำลังบันทึกอยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
   }
 
-  var written = { recv: 0, lot: 0 };
+  var written = { recv: 0, lot: 0, prod: 0 };
   try {
     done = props.getProperty('rs_' + clientKey);
     if (done) return jsonSafe_(JSON.parse(done));
 
     var plan = planReceive_(p, email);
+
+    /* สินค้าใหม่ต้องลงฐานสินค้าก่อนเพื่อนเสมอ ไม่งั้นแถวรับเข้าจะอ้างรหัสที่ไม่มีจริง
+       และสูตร สต๊อกคงเหลือ จะไม่มีแถวให้เกาะ ของก็หายเข้าไปในชีทเฉย ๆ */
+    if (plan.fresh) {
+      var pRow = nextRow_('prod', SH.prod.IN.sku);
+      if (!pRow) throw new Error('ชีท ' + SH.prod.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
+        formulaLimit_('prod') + ')\n' +
+        'แก้ได้โดยสั่งฟังก์ชัน growProducts หนึ่งครั้งที่หน้าแก้ไขสคริปต์ ' +
+        'แล้วกลับมากดบันทึกใหม่ — ข้อมูลในฟอร์มยังอยู่ครบ');
+      /* สต๊อกคงเหลือ ผูกกับ ฐานสินค้า แบบแถวต่อแถว เลยแถวสุดท้ายที่มีสูตรเมื่อไร
+         สินค้าตัวใหม่จะไม่มียอดคงเหลือ และไม่มีอะไรฟ้อง — เคยเกิดมาแล้ว กันไว้ตรงนี้ */
+      var stockLimit = formulaLimit_('stock');
+      if (pRow > stockLimit) {
+        throw new Error('ชีท ' + SH.stock.name + ' มีสูตรถึงแถว ' + stockLimit +
+          ' แต่สินค้าใหม่จะลงแถว ' + pRow + ' — สินค้าตัวใหม่จะไม่มียอดคงเหลือ\n' +
+          'แก้ได้โดยสั่งฟังก์ชัน repairStockSheet หนึ่งครั้ง แล้วกลับมากดบันทึกใหม่');
+      }
+      var fields = {
+        sku: plan.fresh.sku, group: plan.fresh.group, name: plan.fresh.name,
+        perPack: plan.fresh.perPack, unit: plan.fresh.unit,
+        cost: plan.fresh.cost, price: plan.fresh.price,
+        /* ยอดยกมาเป็นศูนย์เสมอ ของก้อนนี้เข้าทางแถว รับเข้า ไม่ใช่ทางยอดยกมา
+           ถ้าใส่ทั้งสองที่ ของก้อนเดียวจะถูกนับสองรอบ */
+        opening: 0, reorder: ''
+      };
+      /* ช่อง "ขายบนเว็บ" มีเฉพาะชีทที่ผ่าน setupShopColumns มาแล้ว
+         ชีทเก่าที่ยังไม่มีคอลัมน์นั้น เขียนลงไปจะพังทั้งการรับของ
+         ซึ่งไม่คุ้มกันเลย — ของเข้าสต๊อกสำคัญกว่าธงหน้าร้าน
+
+         แต่ห้ามโกหกว่าซ่อนให้แล้ว: ชีทที่ไม่มีคอลัมน์นี้ หน้าร้านอ่านได้ค่าว่าง
+         ซึ่งแปลว่า "ขาย" อยู่ดี (ดู shopHidden_) ของตัวใหม่จึงขึ้นหน้าร้านจริง ๆ
+         ต้องรายงานตามนั้น ไม่ใช่ตามที่ตั้งใจไว้ */
+      if (sheet_('prod').getMaxColumns() >= SH.prod.IN.web) fields.web = plan.fresh.web;
+      else plan.fresh.web = '';
+      plan.fresh.onWeb = plan.fresh.web !== 'ไม่';
+      writeRow_('prod', pRow, fields);
+      written.prod = pRow;
+    }
 
     var rRow = nextRow_('recv', SH.recv.IN.sku);
     if (!rRow) throw new Error('ชีท ' + SH.recv.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
@@ -3812,19 +3850,39 @@ function receiveStock(payload) {
       lotNo: plan.lotNo, exp: p.exp || '',
       remain: stock[plan.sku] === undefined ? null : stock[plan.sku],
       lotRemain: plan.lotNo ? lotLeft : null,
-      recvRow: written.recv, lotRow: written.lot
+      recvRow: written.recv, lotRow: written.lot,
+      newProd: plan.fresh ? { sku: plan.fresh.sku, name: plan.fresh.name,
+                              group: plan.fresh.group, row: written.prod,
+                              onWeb: !!plan.fresh.onWeb } : null
     };
+
+    /* สินค้าใหม่ที่ตั้งให้ขึ้นหน้าร้าน ต้องโผล่ทันที ไม่ใช่รอแคชหมดอายุห้านาที */
+    if (plan.fresh && plan.fresh.onWeb) {
+      try { shopCacheBust_(); } catch (e) {}
+    }
 
     props.setProperty('rs_' + clientKey, JSON.stringify(res));
     writeLog_(email, 'รับของเข้า', SH.recv.name, plan.doc,
       plan.sku + (plan.lotNo ? ' ล็อต ' + plan.lotNo : ''), '', plan.qty,
       'รับของเข้าจากแอป โดย ' + plan.staff + ' (บัญชี ' + email + ')');
+    /* สินค้าใหม่ลงเป็นคนละบรรทัดใน บันทึกการใช้งาน เพราะเป็นคนละเรื่องกับการรับของ
+       วันหลังถ้าต้องไล่ว่าแถวนี้ในฐานสินค้ามาจากไหน จะเจอว่าใครสร้างเมื่อไร */
+    if (plan.fresh) {
+      writeLog_(email, 'เพิ่มสินค้าใหม่', SH.prod.name, plan.fresh.sku,
+        'พิมพ์เองตอนรับของเข้า', '', plan.fresh.name,
+        'หมวด ' + plan.fresh.group + ' · ' +
+        (plan.fresh.onWeb ? 'ขึ้นหน้าร้านด้วย' : 'ยังไม่ขึ้นหน้าร้าน') +
+        ' (แถว ' + written.prod + ')');
+    }
 
     return jsonSafe_(res);
   } catch (err) {
     try {
       if (written.lot) clearRow_('lot', written.lot);
       if (written.recv) clearRow_('recv', written.recv);
+      /* แถวฐานสินค้าต้องถอยด้วย ไม่งั้นเหลือสินค้าผีที่ไม่มีของสักชิ้นค้างอยู่ในระบบ
+           แล้วคนก็จะเลือกมันไปคีย์ออเดอร์ได้ ทั้งที่ไม่มีของจริง */
+      if (written.prod) clearRow_('prod', written.prod);
       SpreadsheetApp.flush();
     } catch (e) {
       Logger.log('ถอยกลับการรับของไม่สำเร็จ: ' + e.message + ' ' + JSON.stringify(written));
@@ -3844,13 +3902,22 @@ function receiveStock(payload) {
 function planReceive_(p, email) {
   var lists = cfgLists_();
 
-  var sku = String(p.sku || '').trim();
-  if (!sku) throw new Error('ยังไม่ได้เลือกสินค้า');
-
   var prods = readProducts_();
+
+  /* ของที่เพิ่งซื้อเข้ามาครั้งแรก ยังไม่มีในฐานสินค้า — พิมพ์รหัสกับชื่อเอาเองได้
+     เตรียมแถวฐานสินค้าไว้ตรงนี้ แต่ยังไม่เขียน เพราะต้องตรวจให้ครบก่อนทุกอย่าง */
+  var fresh = null, sku = '';
+  if (p.newProd) {
+    fresh = planNewProduct_(p.newProd, prods);
+    sku = fresh.sku;
+  } else {
+    sku = String(p.sku || '').trim();
+    if (!sku) throw new Error('ยังไม่ได้เลือกสินค้า');
+  }
+
   var prod = null;
   for (var i = 0; i < prods.length; i++) if (prods[i].sku === sku) { prod = prods[i]; break; }
-  if (!prod) throw new Error('ไม่มีรหัส ' + sku + ' ในชีท ' + SH.prod.name);
+  if (!prod && !fresh) throw new Error('ไม่มีรหัส ' + sku + ' ในชีท ' + SH.prod.name);
 
   var qty = Number(p.qty);
   if (!isFinite(qty) || qty <= 0) throw new Error('จำนวนที่รับเข้าต้องมากกว่า 0');
@@ -3887,12 +3954,106 @@ function planReceive_(p, email) {
     }
   }
 
+  /* ต้นทุนของแถวฐานสินค้าใหม่ = ต้นทุนของก้อนที่รับเข้ามานี่แหละ
+     เป็นตัวเลขเดียวที่รู้จริงตอนนี้ และเป็นตัวที่สูตรกำไรจะใช้ต่อไป */
+  if (fresh && fresh.cost === null) fresh.cost = cost;
+
   return {
-    sku: sku, name: prod.name, qty: qty, cost: cost, type: type, date: date,
+    sku: sku, name: (prod ? prod.name : fresh.name), qty: qty, cost: cost,
+    type: type, date: date,
     doc: String(p.doc || '').trim(), ref: String(p.ref || '').trim(),
     note: String(p.note || '').trim(),
     staff: String(p.staff || '').trim() || email,
-    lotNo: lotNo, exp: exp
+    lotNo: lotNo, exp: exp, fresh: fresh
+  };
+}
+
+/* ===========================================================================
+   สินค้าใหม่ที่พิมพ์เองตอนรับของเข้า
+   ===========================================================================
+
+   ของจริง: เจ้าของร้านสั่งของเข้ามาล็อตใหม่ แล้วในดรอปดาวน์ไม่มีตัวนั้น
+   เพราะยังไม่เคยขาย ก่อนหน้านี้ต้องไปเปิดชีท ฐานสินค้า พิมพ์แถวเองก่อน
+   แล้วค่อยกลับมารับเข้า — ซึ่งเป็นขั้นตอนที่คนข้ามแล้วของหายเข้าระบบไม่ได้
+
+   ที่ต้องระวังที่สุดคือ "ไปทับแถวเดิม" ช่องต้นทุนกับราคาใน ฐานสินค้า
+   ถูกสูตรของ ออเดอร์_รายการ ดึงไปคิดกำไรของ "ทุกใบ" ที่ใช้รหัสนั้น
+   เขียนทับรหัสเดิมหนึ่งครั้ง = กำไรของออเดอร์ที่ปิดไปแล้วเปลี่ยนตามทันที
+   โดยไม่มีอะไรฟ้อง ฟังก์ชันนี้จึงสร้างได้อย่างเดียว ไม่แก้ของเดิมเลยสักช่อง   */
+
+/** หมวดตั้งต้นของสินค้าที่พิมพ์เองตอนรับเข้า — หาเจอง่ายตอนไล่จัดหมวดทีหลัง */
+var RECV_NEW_GROUP_ = 'ยังไม่จัดหมวด';
+
+/** รหัสถัดไปแบบ SKU-nnn จากที่มีอยู่แล้วในชีท */
+function nextPlainSku_(plist) {
+  var max = 0;
+  for (var i = 0; i < plist.length; i++) {
+    var m = /^SKU-(\d+)$/.exec(String(plist[i].sku || '').trim());
+    if (m) { var n = Number(m[1]); if (n > max) max = n; }
+  }
+  var next = max + 1;
+  return 'SKU-' + (next < 1000 ? ('00' + next).slice(-3) : next);
+}
+
+function planNewProduct_(np, plist) {
+  np = np || {};
+
+  var name = String(np.name || '').trim().replace(/\s+/g, ' ');
+  if (name.length < 2) throw new Error('ใส่ชื่อสินค้าใหม่ด้วย อย่างน้อย 2 ตัวอักษร');
+  if (name.length > 120) throw new Error('ชื่อสินค้ายาวเกินไป (เกิน 120 ตัวอักษร)');
+
+  /* รหัสเว้นว่างได้ ระบบตั้งให้แบบ SKU-nnn ต่อจากเลขสูงสุดที่มีอยู่
+     คนที่รีบรับของเข้าไม่ควรต้องหยุดคิดว่าจะตั้งรหัสว่าอะไร */
+  var sku = String(np.sku || '').trim().replace(/\s+/g, '');
+  if (!sku) sku = nextPlainSku_(plist);
+  if (sku.length > 40) throw new Error('รหัสสินค้ายาวเกินไป (เกิน 40 ตัวอักษร)');
+  /* ห้ามมี · เพราะเป็นตัวคั่นที่ชีทอื่นใช้ต่อสตริงหลายรายการไว้ในช่องเดียว */
+  if (/[·\n\r\t]/.test(sku)) throw new Error('รหัสสินค้ามีอักขระที่ใช้ไม่ได้ (· หรือขึ้นบรรทัดใหม่)');
+
+  /* รหัสซ้ำ = ห้ามเด็ดขาด ไม่มีทางเลือกให้ยืนยันทับ
+     ทับรหัสเดิมคือเขียนทับต้นทุนกับราคาของสินค้าที่ขายไปแล้ว */
+  var low = sku.toLowerCase();
+  for (var i = 0; i < plist.length; i++) {
+    if (String(plist[i].sku || '').trim().toLowerCase() === low) {
+      throw new Error('รหัส ' + plist[i].sku + ' มีอยู่แล้วในชีท ' + SH.prod.name +
+        ' (' + plist[i].name + ') — เลือกตัวนั้นจากรายการแทน หรือตั้งรหัสใหม่ที่ไม่ซ้ำ');
+    }
+  }
+
+  /* ชื่อซ้ำ = เตือน ไม่ห้าม ของบางอย่างชื่อเหมือนกันจริงแต่คนละขนาดคนละยี่ห้อ
+     แต่ถ้าเผลอสร้างซ้ำ สต๊อกของตัวเดียวกันจะแตกเป็นสองแถว แล้วยอดไม่มีวันตรง
+     จึงต้องให้คนกดยืนยันอีกที ไม่ใช่ปล่อยผ่านเงียบ ๆ */
+  if (!np.sure) {
+    var key = name.toLowerCase();
+    for (var k = 0; k < plist.length; k++) {
+      if (String(plist[k].name || '').trim().toLowerCase() === key) {
+        throw new Error('DUP_NAME|มี "' + plist[k].name + '" อยู่แล้วในรหัส ' + plist[k].sku +
+          ' — ถ้าเป็นตัวเดียวกัน ให้เลือกรหัสนั้นจากรายการ ของจะได้ไม่แตกเป็นสองแถว\n' +
+          'ถ้าคนละตัวจริง ๆ (คนละขนาด คนละยี่ห้อ) กดยืนยันสร้างใหม่ได้');
+      }
+    }
+  }
+
+  var price = 0;
+  if (np.price !== '' && np.price !== null && np.price !== undefined) {
+    price = Number(np.price);
+    if (!isFinite(price) || price < 0) throw new Error('ราคาขายของสินค้าใหม่ไม่ถูกต้อง');
+  }
+
+  var perPack = Number(np.perPack);
+  if (!isFinite(perPack) || perPack <= 0) perPack = 1;
+
+  return {
+    sku: sku,
+    name: name,
+    group: String(np.group || '').trim() || RECV_NEW_GROUP_,
+    unit: String(np.unit || '').trim() || 'ชิ้น',
+    perPack: perPack,
+    price: price,
+    cost: null,                 /* เติมจากต้นทุนของก้อนที่รับเข้าใน planReceive_ */
+    /* ไม่ขึ้นหน้าร้านให้เอง — เจ้าของร้านสั่งไว้ว่าลูกค้าเห็นเฉพาะที่ตั้งใจให้เห็น
+       ของที่เพิ่งรับเข้ายังไม่มีรูป ยังไม่ได้ตั้งราคาจริง ขึ้นไปก็มีแต่เสีย */
+    web: np.web ? '' : 'ไม่'
   };
 }
 

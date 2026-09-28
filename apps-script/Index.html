@@ -1564,6 +1564,44 @@ stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M9 5l7 
         <select id="r-sku"></select>
         <div class="hint" id="r-now">เลือกสินค้าก่อน</div>
       </div>
+
+      <!-- ของที่เพิ่งซื้อเข้ามาครั้งแรกยังไม่มีในรายการ พิมพ์รหัสกับชื่อเอาเองได้เลย
+           ก่อนหน้านี้ต้องไปเปิดชีท ฐานสินค้า พิมพ์แถวเองก่อนแล้วค่อยกลับมารับเข้า
+           ซึ่งเป็นขั้นตอนที่คนข้ามแล้วของหายเข้าระบบไม่ได้ -->
+      <div id="r-new" style="display:none">
+        <div class="two">
+          <div class="fld">
+            <label>รหัสสินค้า (SKU)</label>
+            <input id="rn-sku" placeholder="เว้นว่าง = ระบบตั้งให้">
+          </div>
+          <div class="fld">
+            <label>หมวดสินค้า</label>
+            <input id="rn-group" list="rn-groups" placeholder="ยังไม่จัดหมวด">
+            <datalist id="rn-groups"></datalist>
+          </div>
+        </div>
+        <div class="fld">
+          <label>ชื่อสินค้า</label>
+          <input id="rn-name" placeholder="ชื่อที่จะขึ้นในใบเสร็จและรายงาน">
+        </div>
+        <div class="two">
+          <div class="fld">
+            <label>หน่วยนับ</label>
+            <input id="rn-unit" placeholder="ชิ้น">
+          </div>
+          <div class="fld">
+            <label>ราคาขายต่อหน่วย</label>
+            <input id="rn-price" type="number" inputmode="decimal" min="0" step="any"
+                   placeholder="ยังไม่ตั้งก็เว้นว่างได้">
+          </div>
+        </div>
+        <label class="giftck"><input type="checkbox" id="rn-web">
+          ให้ลูกค้าเห็นตัวนี้ในหน้าร้านออนไลน์ด้วย</label>
+        <div class="hint" style="padding:4px 2px 0">
+          ไม่ติ๊ก = เก็บไว้ใช้ในร้านอย่างเดียว ลูกค้าไม่เห็น ·
+          ต้นทุนใช้ช่อง “ต้นทุนต่อหน่วย” ข้างล่างนี้
+        </div>
+      </div>
       <div class="two">
         <div class="fld">
           <label>จำนวนที่รับเข้า</label>

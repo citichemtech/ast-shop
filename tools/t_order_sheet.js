@@ -2353,6 +2353,126 @@ truthy2('มีแถวรับของเข้าใน Log', rowsWith(fx43
   return String(fx43.sheets['Log'].cell(r, api43.SH.log.IN.type).v) === 'รับของเข้า';
 }));
 
+/* ------------------------------------ 43ข. ของที่เพิ่งซื้อเข้ามา ยังไม่มีในฐานสินค้า
+
+   ของจริง: เจ้าของร้านสั่งของล็อตใหม่เข้ามา แล้วในดรอปดาวน์ไม่มีตัวนั้น
+   เพราะยังไม่เคยขาย ก่อนหน้านี้ต้องไปเปิดชีท ฐานสินค้า พิมพ์แถวเองก่อน
+   แล้วค่อยกลับมารับเข้า — ขั้นตอนที่คนข้ามแล้วของหายเข้าระบบไม่ได้
+
+   ด่านที่สำคัญที่สุดของหมวดนี้คือ "ห้ามไปทับแถวเดิม" เพราะช่องต้นทุนกับราคา
+   ใน ฐานสินค้า ถูกสูตรของ ออเดอร์_รายการ ดึงไปคิดกำไรของทุกใบที่ใช้รหัสนั้น */
+console.log('\n43ข. พิมพ์ชื่อกับรหัสสินค้าใหม่ตอนรับของเข้า');
+
+var P43 = fx43.sheets['ฐานสินค้า'];
+function skuRows43() { return rowsWith(P43, api43.SH.prod.IN.sku) }
+var before43 = skuRows43().length;
+
+var new43 = api43.receiveStock(recvPayload({
+  sku: '', lotNo: '', exp: '',
+  newProd: { sku: 'AB-900', name: 'จารบีทนความร้อน 1kg', group: 'เคมีภัณฑ์',
+             unit: 'กระปุก', price: 450 },
+  qty: 6, cost: 300
+}));
+truthy2('บันทึกผ่าน', new43.ok === true);
+eq('ได้รหัสตามที่พิมพ์', new43.newProd.sku, 'AB-900');
+eq('ฐานสินค้าเพิ่มมาหนึ่งแถว ไม่ใช่ทับของเดิม', skuRows43().length, before43 + 1);
+
+var nRow43 = new43.newProd.row;
+eq('เขียนครบทุกช่องที่ต้องมี',
+  [P43.cell(nRow43, api43.SH.prod.IN.sku).v, P43.cell(nRow43, api43.SH.prod.IN.name).v,
+   P43.cell(nRow43, api43.SH.prod.IN.group).v, P43.cell(nRow43, api43.SH.prod.IN.unit).v,
+   P43.cell(nRow43, api43.SH.prod.IN.price).v, P43.cell(nRow43, api43.SH.prod.IN.perPack).v],
+  ['AB-900', 'จารบีทนความร้อน 1kg', 'เคมีภัณฑ์', 'กระปุก', 450, 1]);
+eq('ต้นทุนในฐานสินค้าใช้ต้นทุนของก้อนที่รับเข้ามานี่แหละ',
+   P43.cell(nRow43, api43.SH.prod.IN.cost).v, 300);
+/* ของก้อนนี้เข้าทางแถว รับเข้า ถ้าใส่ยอดยกมาด้วยจะถูกนับสองรอบ */
+eq('ยอดยกมาเป็นศูนย์ ไม่นับของก้อนเดียวกันสองรอบ',
+   P43.cell(nRow43, api43.SH.prod.IN.opening).v, 0);
+/* เจ้าของร้านสั่งไว้ว่า "ลูกค้าดูแค่สินค้าที่อยากให้เห็นเท่านั้น"
+   ของที่เพิ่งรับเข้ายังไม่มีรูป ยังไม่ได้ตั้งราคาจริง ไม่ควรโผล่หน้าร้านเอง */
+eq('ไม่ขึ้นหน้าร้านให้เอง', P43.cell(nRow43, api43.SH.prod.IN.web).v, 'ไม่');
+eq('และบอกหน้าจอไปด้วยว่ายังไม่ขึ้นหน้าร้าน', new43.newProd.onWeb, false);
+
+var rNew43 = rowsWith(R43, api43.SH.recv.IN.sku).slice(-1)[0];
+eq('แถวรับเข้าอ้างรหัสใหม่ถูกต้อง',
+  [R43.cell(rNew43, api43.SH.recv.IN.sku).v, R43.cell(rNew43, api43.SH.recv.IN.qty).v],
+  ['AB-900', 6]);
+
+console.log('\n   ขายตัวที่เพิ่งสร้างได้ทันที ไม่ต้องรอเปิดชีทไปเพิ่มเอง');
+truthy2('คีย์ออเดอร์ของรหัสใหม่ผ่าน', !!api43.createOrder(order({
+  cust: 'ลูกค้าของใหม่', items: [{ sku: 'AB-900', qty: 2, price: 450 }]
+})).no);
+
+console.log('\n   เว้นรหัสว่าง ระบบตั้งให้เอง');
+var auto43 = api43.receiveStock(recvPayload({
+  sku: '', lotNo: '', exp: '',
+  newProd: { name: 'ผ้าเช็ดอเนกประสงค์ แพ็ค 50' }, qty: 4, cost: 90
+}));
+truthy2('ได้รหัสแบบ SKU-nnn มาให้', /^SKU-\d{3,}$/.test(auto43.newProd.sku));
+eq('หมวดตั้งต้นหาเจอง่ายตอนไล่จัดหมวดทีหลัง', auto43.newProd.group, 'ยังไม่จัดหมวด');
+eq('รหัสที่ตั้งให้ต้องไม่ชนของเดิม', skuRows43().filter(function (r) {
+  return String(P43.cell(r, api43.SH.prod.IN.sku).v) === auto43.newProd.sku;
+}).length, 1);
+
+console.log('\n   รหัสซ้ำของเดิม = ห้ามเด็ดขาด ไม่มีทางให้ยืนยันทับ');
+/* ทับรหัสเดิม = เขียนทับต้นทุนกับราคาของสินค้าที่ขายไปแล้ว
+   กำไรของออเดอร์ที่ปิดไปแล้วจะเปลี่ยนตามทันทีโดยไม่มีอะไรฟ้อง */
+var costWas43 = P43.cell(nRow43, api43.SH.prod.IN.cost).v;
+throws('รหัสซ้ำต้องไม่ยอม', function () {
+  api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+    newProd: { sku: 'AB-900', name: 'ของคนละตัวแต่รหัสชน', price: 9999, sure: 1 } }));
+}, 'มีอยู่แล้วในชีท');
+eq('แถวเดิมต้องไม่ถูกแตะแม้แต่ช่องเดียว',
+   [P43.cell(nRow43, api43.SH.prod.IN.cost).v, P43.cell(nRow43, api43.SH.prod.IN.price).v],
+   [costWas43, 450]);
+throws('ติ๊กยืนยันมาก็ยังทับไม่ได้อยู่ดี', function () {
+  api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+    newProd: { sku: 'ab-900', name: 'พิมพ์ตัวเล็กก็คือรหัสเดียวกัน', sure: 1 } }));
+}, 'มีอยู่แล้วในชีท');
+
+console.log('\n   ชื่อซ้ำ = เตือน ไม่ห้าม แต่ต้องกดยืนยันก่อน');
+/* เผลอสร้างซ้ำ = สต๊อกของตัวเดียวกันแตกเป็นสองแถว ยอดไม่มีวันตรงอีกเลย
+   แต่ของคนละขนาดชื่อเหมือนกันก็มีจริง คนหน้าจอเป็นคนตัดสิน ไม่ใช่โค้ด */
+throws('ชื่อซ้ำครั้งแรกต้องเตือนก่อน', function () {
+  api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+    newProd: { sku: 'AB-901', name: 'จารบีทนความร้อน 1kg' } }));
+}, 'DUP_NAME|');
+eq('เตือนแล้วต้องไม่มีแถวใหม่หลุดลงชีท', skuRows43().filter(function (r) {
+  return String(P43.cell(r, api43.SH.prod.IN.sku).v) === 'AB-901';
+}).length, 0);
+var sure43 = api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+  newProd: { sku: 'AB-901', name: 'จารบีทนความร้อน 1kg', sure: 1 }, qty: 2, cost: 310 }));
+eq('กดยืนยันแล้วสร้างได้', sure43.newProd.sku, 'AB-901');
+
+console.log('\n   ติ๊กให้ขึ้นหน้าร้านได้ ถ้าตั้งใจ');
+var web43 = api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+  newProd: { sku: 'AB-902', name: 'น้ำยาล้างคราบ 5L', price: 590, web: 1 }, qty: 3, cost: 380 }));
+eq('ช่องขายบนเว็บว่างไว้ = ลูกค้าเห็น',
+   String(P43.cell(web43.newProd.row, api43.SH.prod.IN.web).v || ''), '');
+eq('และบอกหน้าจอว่าขึ้นหน้าร้านแล้ว', web43.newProd.onWeb, true);
+
+console.log('\n   ชื่อสั้นเกินไป ไม่รับ');
+throws('ชื่อว่างต้องไม่ยอม', function () {
+  api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '', newProd: { sku: 'AB-903' } }));
+}, 'ใส่ชื่อสินค้าใหม่');
+eq('และไม่ทิ้งแถวค้างไว้', skuRows43().filter(function (r) {
+  return String(P43.cell(r, api43.SH.prod.IN.sku).v) === 'AB-903';
+}).length, 0);
+
+console.log('\n   สินค้าใหม่ที่คุมล็อต ลงล็อตให้พร้อมกันในครั้งเดียว');
+var lot43 = api43.receiveStock(recvPayload({
+  sku: '', newProd: { sku: 'AB-904', name: 'ไอโซโพรพิล 5L' },
+  qty: 8, cost: 700, lotNo: 'L-ใหม่เอี่ยม', exp: '2028-01-31'
+}));
+eq('ได้ล็อตมาด้วย', lot43.lotNo, 'L-ใหม่เอี่ยม');
+eq('ยอดในล็อตตรงกับที่รับเข้า', lot43.lotRemain, 8);
+
+console.log('\n   ลง Log ไว้ว่าใครเพิ่มสินค้าตัวไหน');
+truthy2('มีแถว "เพิ่มสินค้าใหม่" ใน Log',
+  rowsWith(fx43.sheets['Log'], api43.SH.log.IN.type).some(function (r) {
+    return String(fx43.sheets['Log'].cell(r, api43.SH.log.IN.type).v) === 'เพิ่มสินค้าใหม่';
+  }));
+
 console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
 var over43 = [];
 for (var nm43 in fx43.sheets) over43 = over43.concat(fx43.sheets[nm43].overwrittenFormulas);

@@ -188,7 +188,10 @@ function itemRows(){ return $$("#items .it") }
 function refreshProdOptions(){
   $$(".i-sku, .q-sku, #r-sku").forEach(function(sel){
     var keep = sel.value;
-    sel.innerHTML = prodOptions(keep);
+    /* หน้ารับเข้ามีตัวเลือก "สินค้าใหม่" พิเศษอยู่หัวรายการ ถ้าเขียนทับด้วย
+       prodOptions เฉย ๆ ตัวเลือกนั้นจะหายไปทุกครั้งที่รายการสินค้าโหลดใหม่
+       (ซึ่งเกิดทุกครั้งที่รับของเข้าสำเร็จ) แล้วคนจะเพิ่มสินค้าใหม่ไม่ได้อีกเลย */
+    sel.innerHTML = (sel.id === "r-sku") ? recvProdOptions(keep) : prodOptions(keep);
     if(keep) sel.value = keep;
   });
 }
@@ -5401,11 +5404,24 @@ document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModa
 var RECV_KEY = "";     /* คีย์กันบันทึกซ้ำของครั้งนี้ ออกใหม่ทุกครั้งที่บันทึกสำเร็จ */
 var RECV_READY = false;
 
+/* รหัสสมมุติของตัวเลือก "สินค้าใหม่" ในดรอปดาวน์หน้ารับเข้า
+   ใช้คำที่เป็นรหัสสินค้าจริงไม่ได้แน่ ๆ จะได้ไม่มีวันชนกับของในชีท */
+var RECV_NEW = "__ใหม่__";
+
+/* ดรอปดาวน์ของหน้ารับเข้ามีตัวเลือกพิเศษเพิ่มมาหนึ่งอัน — หน้าอื่นไม่มี
+   หน้าคีย์ออเดอร์กับใบเสนอราคาขายของที่ยังไม่มีในระบบไม่ได้อยู่แล้ว
+   (ของพวกนั้นใช้ช่อง "ซื้อมาขายไป" ซึ่งคนละเรื่องกัน) */
+function recvProdOptions(sel){
+  return '<option value="' + RECV_NEW + '"' + (sel === RECV_NEW ? " selected" : "") + '>'
+       + '➕ สินค้าใหม่ — พิมพ์รหัสกับชื่อเอง</option>'
+       + prodOptions(sel);
+}
+
 function recvInit(){
   if(RECV_READY) return;
   RECV_READY = true;
 
-  $("#r-sku").innerHTML = prodOptions("");
+  $("#r-sku").innerHTML = recvProdOptions("");
   fillSelect("#r-type", (BOOT && BOOT.lists && BOOT.lists.recvType) || ["ซื้อเข้า"]);
   $("#r-date").value = todayISO();
 
@@ -5419,12 +5435,32 @@ function recvInit(){
 
   $("#r-sku").onchange = recvSkuChanged;
   $("#btn-recv").onclick = recvSave;
+  /* กดยืนยันว่า "ชื่อซ้ำแต่คนละตัว" ไว้กับชื่อหนึ่ง แล้วเปลี่ยนเป็นอีกชื่อ
+     การยืนยันเก่าต้องหมดอายุทันที ไม่งั้นชื่อใหม่ที่ซ้ำกับของอื่นจะผ่านไปเงียบ ๆ
+     ทั้งที่ไม่มีใครเคยเห็นคำเตือนของชื่อนั้นเลยสักครั้ง */
+  $("#rn-name").oninput = function(){ RECV_SURE = false };
 
   /* ปุ่มสลับโหมดผูกที่นี่ เพราะ recvInit ทำงานครั้งเดียวตอนเปิดหน้ารับเข้าครั้งแรก */
   $$("#rv-mode .chip").forEach(function(b2){
     b2.onclick = function(){ fillMode(this.dataset.rv) };
   });
   recvSkuChanged();
+}
+
+/* เคยกดยืนยันว่าชื่อซ้ำแล้วยังจะสร้างใหม่หรือยัง — รีเซ็ตทุกครั้งที่เปลี่ยนสินค้า */
+var RECV_SURE = false;
+/* รหัสที่เพิ่งสร้าง รอให้รายการสินค้าโหลดใหม่เสร็จแล้วค่อยเลือกให้ */
+var RECV_PICK = "";
+
+/** หมวดสินค้าที่มีอยู่แล้วในชีท เรียงตามที่เจอ ไม่ซ้ำ */
+function recvGroups(){
+  var seen = {}, out = [];
+  (CFG.products || []).forEach(function(p){
+    var g = String(p.group || "").trim();
+    if(!g || seen[g]) return;
+    seen[g] = 1; out.push(g);
+  });
+  return out;
 }
 
 /** ของตัวนี้คุมล็อตไหม เหลือเท่าไร — ตอบจากข้อมูลที่โหลดมาตอนเปิดแอป */
@@ -5436,6 +5472,25 @@ function recvLotInfo(sku){
 function recvSkuChanged(){
   var sku = $("#r-sku").value;
   var card = $("#r-lot-card");
+  var box = $("#r-new");
+
+  /* โหมดสินค้าใหม่ — เปิดช่องให้พิมพ์รหัสกับชื่อ และเสนอหมวดที่มีอยู่แล้วให้เลือก
+     สินค้าใหม่ยังไม่มีล็อตแน่นอน ล็อตจึงเป็นตัวเลือก ไม่ใช่ข้อบังคับ */
+  if(sku === RECV_NEW){
+    box.style.display = "";
+    RECV_SURE = false;
+    $("#rn-groups").innerHTML = recvGroups().map(function(g){
+      return '<option value="' + esc(g) + '">';
+    }).join("");
+    $("#r-now").textContent = "ของใหม่ที่ยังไม่มีในระบบ — ระบบจะสร้างแถวในฐานสินค้าให้เอง";
+    card.style.display = "";
+    $("#r-lot-why").innerHTML = "สินค้าใหม่ยังไม่มีล็อต จะใส่เลขล็อตก็ได้ ไม่ใส่ก็ได้"
+      + " — ถ้าเป็นเคมีที่มีวันหมดอายุ ใส่ไว้เลยดีกว่า จะได้ตัดของเก่าก่อนอัตโนมัติ";
+    return;
+  }
+  box.style.display = "none";
+  RECV_SURE = false;
+
   if(!sku){
     $("#r-now").textContent = "เลือกสินค้าก่อน";
     card.style.display = "none";
@@ -5463,7 +5518,24 @@ function recvSave(){
   if(!sku){ showErr("ยังไม่ได้เลือกสินค้า"); return }
   if(!(qty > 0)){ showErr("จำนวนที่รับเข้าต้องมากกว่า 0"); return }
 
-  var lot = recvLotInfo(sku);
+  /* สินค้าใหม่: รหัสเว้นว่างได้ (ระบบตั้งให้) แต่ชื่อเว้นไม่ได้
+     ชื่อคือสิ่งเดียวที่คนอ่านออกในใบเสร็จ ในรายงาน และในดรอปดาวน์ครั้งหน้า */
+  var fresh = null;
+  if(sku === RECV_NEW){
+    var nm = $("#rn-name").value.trim();
+    if(nm.length < 2){ showErr("ใส่ชื่อสินค้าใหม่ด้วย อย่างน้อย 2 ตัวอักษร"); return }
+    fresh = {
+      sku: $("#rn-sku").value.trim(),
+      name: nm,
+      group: $("#rn-group").value.trim(),
+      unit: $("#rn-unit").value.trim(),
+      price: $("#rn-price").value.trim(),
+      web: $("#rn-web").checked ? 1 : 0,
+      sure: RECV_SURE ? 1 : 0
+    };
+  }
+
+  var lot = sku === RECV_NEW ? null : recvLotInfo(sku);
   var lotNo = $("#r-lot").value.trim();
   if(lot && !lotNo){
     showErr("สินค้าตัวนี้คุมล็อต ต้องใส่เลขล็อตด้วย — ถ้าลงแต่จำนวน ของจะเข้าสต๊อกแต่ขายไม่ได้");
@@ -5476,7 +5548,7 @@ function recvSave(){
   var btn = $("#btn-recv");
   btn.disabled = true; btn.textContent = "กำลังบันทึก…";
   call("receiveStock", [{
-    clientKey: RECV_KEY, sku: sku, qty: qty,
+    clientKey: RECV_KEY, sku: fresh ? "" : sku, newProd: fresh, qty: qty,
     cost: $("#r-cost").value.trim(), date: $("#r-date").value,
     type: $("#r-type").value, doc: $("#r-doc").value.trim(),
     ref: $("#r-ref").value.trim(), note: $("#r-note").value.trim(),
@@ -5488,8 +5560,28 @@ function recvSave(){
     recvDone(res);
   }, function(m){
     btn.disabled = false; btn.textContent = "บันทึกรับของเข้า";
-    showErr(m);
+    recvErr(m);
   });
+}
+
+/* ชื่อสินค้าซ้ำของเดิม — ไม่ใช่ทางตัน แต่ก็ปล่อยผ่านเงียบ ๆ ไม่ได้
+   ของบางอย่างชื่อเหมือนกันจริงแต่คนละขนาด ส่วนที่เผลอสร้างซ้ำก็มีจริงเหมือนกัน
+   คนที่รู้ว่าอันไหนคืออันไหนคือคนหน้าจอ ไม่ใช่โค้ด — ยื่นปุ่มให้เขาตัดสิน */
+function recvErr(m){
+  var msg = String(m || "");
+  if(msg.indexOf("DUP_NAME|") !== 0){ showErr(msg); return }
+  showErr(msg.slice("DUP_NAME|".length));
+  /* ต่อปุ่มเป็น element จริง ไม่ใช่ต่อสตริง HTML เข้าไปในกล่อง
+     เพราะข้อความในกล่องมีชื่อสินค้าที่คนพิมพ์เองปนอยู่ ต้องถูก esc ไว้ตามเดิม */
+  var box = $("#err");
+  var go = document.createElement("button");
+  go.className = "btn ghost";
+  go.type = "button";
+  go.style.marginTop = "10px";
+  go.textContent = "ยืนยัน เป็นคนละตัว สร้างใหม่เลย";
+  go.onclick = function(){ RECV_SURE = true; clearMsg(); recvSave() };
+  box.appendChild(document.createElement("br"));
+  box.appendChild(go);
 }
 
 function recvDone(res){
@@ -5498,6 +5590,15 @@ function recvDone(res){
     "รับ " + esc(res.name || res.sku) + " เข้า " + res.qty + " ชิ้นแล้ว",
     res.lotNo ? "ลงล็อต " + esc(res.lotNo) + " ให้ด้วย" : "สินค้าตัวนี้ไม่ได้คุมล็อต ลงเฉพาะชีทรับเข้า"
   ];
+  /* บอกรหัสที่ได้ทุกครั้งที่สร้างสินค้าใหม่ โดยเฉพาะตอนเว้นว่างให้ระบบตั้งให้
+     ถ้าไม่บอก คนจะไม่รู้ว่าครั้งหน้าต้องหาตัวไหนในดรอปดาวน์ */
+  if(res.newProd){
+    lines.unshift("เพิ่มสินค้าใหม่ <b>" + esc(res.newProd.sku) + "</b> ลงฐานสินค้าให้แล้ว"
+      + " (หมวด " + esc(res.newProd.group) + ")");
+    lines.push(res.newProd.onWeb
+      ? "ตัวนี้ขึ้นหน้าร้านให้ลูกค้าเห็นแล้ว"
+      : "ยังไม่ขึ้นหน้าร้าน — เปิดได้ทีหลังที่หน้าแก้ไขสินค้า");
+  }
   if(res.remain !== null && res.remain !== undefined) lines.push("สต๊อกคงเหลือตอนนี้ " + res.remain);
   if(res.lotRemain !== null && res.lotRemain !== undefined) lines.push("ในล็อตรวม " + res.lotRemain);
   showOk(lines.join("<br>"));
@@ -5514,12 +5615,21 @@ function recvDone(res){
     });
     /* ยอดคงเหลือที่ติดมากับชื่อสินค้าเปลี่ยนไปแล้ว ทุกช่องที่เปิดค้างอยู่ต้องเห็นเลขใหม่ */
     refreshProdOptions();
+    if(RECV_PICK){ $("#r-sku").value = RECV_PICK; RECV_PICK = ""; }
     recvSkuChanged();
   }, function(){ /* โหลดยอดใหม่ไม่ได้ไม่ใช่เรื่องใหญ่ ของลงชีทไปแล้ว */ });
 
-  ["r-qty","r-cost","r-lot","r-exp","r-doc","r-ref","r-note"].forEach(function(id){
+  ["r-qty","r-cost","r-lot","r-exp","r-doc","r-ref","r-note",
+   "rn-sku","rn-name","rn-group","rn-unit","rn-price"].forEach(function(id){
     $("#"+id).value = "";
   });
+  $("#rn-web").checked = false;
+  RECV_SURE = false;
+
+  /* สร้างสินค้าใหม่เสร็จแล้ว เด้งดรอปดาวน์ไปที่ตัวที่เพิ่งสร้าง ไม่ใช่ค้างที่
+     "สินค้าใหม่" — ไม่งั้นกดบันทึกอีกทีจะได้แถวซ้ำอีกแถวโดยไม่ตั้งใจ
+     (ตัวเลือกจะมีจริงหลัง getBootstrap กลับมา จึงตั้งซ้ำอีกทีตรงนั้นด้วย) */
+  if(res.newProd) RECV_PICK = res.newProd.sku;
 }
 
 /* ------------------------------------------------- เติมน้ำยาประจำวัน (แบ่งจากถัง) */

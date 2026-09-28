@@ -1865,6 +1865,96 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       return $$('#items .it')[0].querySelector('.i-sku').innerHTML.indexOf('(เหลือ ' + n + ')') > -1;
     }, before29 + 12));
 
+  /* ---------- 29ข. ของที่เพิ่งซื้อเข้ามา ยังไม่มีในดรอปดาวน์ ----------
+
+     ของจริง: เจ้าของร้านเปิดหน้ารับเข้าสินค้า แล้วในรายการไม่มีตัวที่เพิ่งซื้อมา
+     เพราะยังไม่เคยขาย ก่อนหน้านี้ต้องไปเปิดชีท ฐานสินค้า พิมพ์แถวเองก่อน
+     แล้วค่อยกลับมารับเข้า — ขั้นตอนที่คนข้ามแล้วของหายเข้าระบบไม่ได้          */
+  console.log('\n29ข. พิมพ์ชื่อกับรหัสสินค้าใหม่ตอนรับของเข้า');
+  truthy('ดรอปดาวน์มีตัวเลือก "สินค้าใหม่" ให้เลือก',
+    await page.evaluate(function () {
+      var o = $('#r-sku').options[0];
+      return o && /สินค้าใหม่/.test(o.textContent);
+    }));
+  truthy('ยังไม่เลือก กล่องกรอกสินค้าใหม่ต้องซ่อนอยู่',
+    await page.evaluate(function () { return $('#r-new').style.display === 'none' }));
+
+  await page.selectOption('#r-sku', '__ใหม่__');
+  await page.waitForTimeout(250);
+  truthy('เลือกแล้วกล่องกรอกโผล่ขึ้นมา',
+    await page.evaluate(function () { return $('#r-new').style.display !== 'none' }));
+  truthy('เสนอหมวดที่มีอยู่แล้วให้เลือก ไม่ต้องพิมพ์ใหม่ทั้งคำ',
+    await page.evaluate(function () { return $('#rn-groups').options.length > 0 }));
+  /* สินค้าใหม่ไม่มีทางคุมล็อตอยู่แล้ว บังคับใส่เลขล็อตไม่ได้ */
+  truthy('ไม่บังคับเลขล็อตกับของที่เพิ่งสร้าง',
+    !/ต้องใส่เลขล็อต/.test(await page.textContent('#r-lot-why')));
+
+  console.log('\n   ลืมใส่ชื่อ ต้องกันไว้ก่อนถึงเซิร์ฟเวอร์');
+  await page.fill('#r-qty', '6');
+  var sentB4 = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#btn-recv');
+  await page.waitForTimeout(400);
+  truthy('ขึ้นคำเตือนเรื่องชื่อ',
+    /ใส่ชื่อสินค้าใหม่/.test(await page.textContent('#err')));
+  eq('ไม่ได้ยิงขึ้นชีทเลย',
+    await page.evaluate(function () { return window.SENT.length }), sentB4);
+
+  console.log('\n   ชื่อซ้ำของเดิม ต้องเตือนพร้อมปุ่มให้ยืนยัน ไม่ใช่ทางตัน');
+  var dupName = await page.evaluate(function () { return MOCK_BOOT.products[0].name });
+  await page.fill('#rn-name', dupName);
+  await page.click('#btn-recv');
+  await page.waitForTimeout(600);
+  truthy('บอกว่าชื่อนี้มีอยู่แล้ว พร้อมรหัสของเดิม',
+    /อยู่แล้วในรหัส/.test(await page.textContent('#err')));
+  truthy('ไม่โชว์รหัสลับ DUP_NAME ให้คนอ่าน',
+    !/DUP_NAME/.test(await page.textContent('#err')));
+  truthy('มีปุ่มยืนยันให้กดต่อได้',
+    /ยืนยัน เป็นคนละตัว/.test(await page.textContent('#err')));
+
+  console.log('\n   ตั้งชื่อใหม่ที่ไม่ซ้ำ แล้วบันทึกได้');
+  await page.fill('#rn-name', 'จารบีทนความร้อน 1kg');
+  await page.fill('#rn-sku', 'AB-900');
+  /* เลี่ยงหมวดที่มีคำว่า เคมี/น้ำยา เพราะหน้าเติมน้ำยาจับจากคำพวกนั้น
+     ตัวที่สร้างในข้อนี้จะไปโผล่ในข้อ 60 ด้วย แล้วสองข้อจะผูกกันโดยไม่จำเป็น */
+  await page.fill('#rn-group', 'จารบีและน้ำมัน');
+  await page.fill('#rn-unit', 'กระปุก');
+  await page.fill('#rn-price', '450');
+  await page.fill('#r-cost', '300');
+  await page.click('#btn-recv');
+  await page.waitForTimeout(1200);
+  var sentNew = await page.evaluate(function () { return window.SENT[window.SENT.length - 1] });
+  eq('ส่งรายละเอียดสินค้าใหม่ไปครบ',
+    [sentNew.newProd.sku, sentNew.newProd.name, sentNew.newProd.group,
+     sentNew.newProd.unit, sentNew.newProd.price, sentNew.qty],
+    ['AB-900', 'จารบีทนความร้อน 1kg', 'จารบีและน้ำมัน', 'กระปุก', '450', 6]);
+  eq('ไม่ส่งรหัสสมมุติของตัวเลือกขึ้นชีท', sentNew.sku, '');
+  eq('ไม่ติ๊กขึ้นหน้าร้าน = ส่ง 0 ไป', sentNew.newProd.web, 0);
+  truthy('บอกรหัสที่ได้ ครั้งหน้าจะได้หาเจอในรายการ',
+    /AB-900/.test(await page.textContent('#ok')));
+  truthy('และบอกว่ายังไม่ขึ้นหน้าร้าน',
+    /ยังไม่ขึ้นหน้าร้าน/.test(await page.textContent('#ok')));
+
+  console.log('\n   บันทึกเสร็จแล้วต้องไม่ค้างที่ "สินค้าใหม่" ไม่งั้นกดอีกทีได้แถวซ้ำ');
+  eq('ดรอปดาวน์เด้งไปที่ตัวที่เพิ่งสร้าง',
+    await page.evaluate(function () { return $('#r-sku').value }), 'AB-900');
+  truthy('กล่องกรอกสินค้าใหม่ปิดกลับไปแล้ว',
+    await page.evaluate(function () { return $('#r-new').style.display === 'none' }));
+  eq('ล้างช่องที่กรอกไว้ให้หมด',
+    await page.evaluate(function () {
+      return ['rn-sku', 'rn-name', 'rn-group', 'rn-unit', 'rn-price']
+        .map(function (id) { return $('#' + id).value });
+    }), ['', '', '', '', '']);
+  truthy('ตัวที่เพิ่งสร้างไปโผล่ในดรอปดาวน์ของหน้าคีย์ออเดอร์ด้วย',
+    await page.evaluate(function () {
+      return $$('#items .it')[0].querySelector('.i-sku').innerHTML.indexOf('AB-900') > -1;
+    }));
+  /* รายการสินค้าโหลดใหม่ทุกครั้งที่รับของสำเร็จ ตัวเลือกพิเศษต้องไม่หายไปด้วย */
+  truthy('ตัวเลือก "สินค้าใหม่" ยังอยู่หัวรายการ กดเพิ่มตัวต่อไปได้เลย',
+    await page.evaluate(function () {
+      var o = $('#r-sku').options[0];
+      return o && o.value === '__ใหม่__';
+    }));
+
   /* ---------- 30. นำเข้าออเดอร์จาก Shopee ---------- */
   console.log('\n30. นำเข้าออเดอร์จาก Shopee');
   await page.click('.tabs button[data-go="list"]');

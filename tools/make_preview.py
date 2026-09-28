@@ -1114,6 +1114,37 @@ window.google = { script: { run: (function(){
       window.SENT.push(p);
       reply(function(){
         if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        /* สินค้าใหม่ที่พิมพ์เอง — ล้อกติกาฝั่งชีทตัวจริง (planNewProduct_)
+           รหัสซ้ำห้ามเด็ดขาด · ชื่อซ้ำเตือนก่อนแล้วยืนยันได้ · เว้นรหัสว่างตั้งให้ */
+        var fresh = null;
+        if(p.newProd){
+          var np = p.newProd;
+          var nm = String(np.name||"").trim();
+          if(nm.length < 2) throw new Error("ใส่ชื่อสินค้าใหม่ด้วย อย่างน้อย 2 ตัวอักษร");
+          var sk = String(np.sku||"").trim();
+          if(!sk){
+            var mx = 0;
+            MOCK_BOOT.products.forEach(function(x){
+              var m = /^SKU-(\d+)$/.exec(String(x.sku||""));
+              if(m && Number(m[1]) > mx) mx = Number(m[1]);
+            });
+            sk = "SKU-" + ("00" + (mx+1)).slice(-3);
+          }
+          var clash = MOCK_BOOT.products.filter(function(x){
+            return String(x.sku).toLowerCase() === sk.toLowerCase() })[0];
+          if(clash) throw new Error("รหัส "+clash.sku+" มีอยู่แล้วในชีท ฐานสินค้า ("+clash.name+")");
+          if(!np.sure){
+            var same = MOCK_BOOT.products.filter(function(x){
+              return String(x.name||"").trim().toLowerCase() === nm.toLowerCase() })[0];
+            if(same) throw new Error('DUP_NAME|มี ' + same.name + ' อยู่แล้วในรหัส ' + same.sku);
+          }
+          fresh = { sku:sk, name:nm, group:String(np.group||"").trim()||"ยังไม่จัดหมวด",
+                    unit:String(np.unit||"").trim()||"ชิ้น", perPack:1,
+                    price:Number(np.price)||0, remain:0, reorder:null };
+          MOCK_BOOT.products.push(fresh);
+          p = JSON.parse(JSON.stringify(p));
+          p.sku = sk;
+        }
         var pr = MOCK_BOOT.products.filter(function(x){ return x.sku===p.sku })[0];
         if(!pr) throw new Error("ไม่มีรหัส "+p.sku+" ในชีท ฐานสินค้า");
         var qty = Number(p.qty)||0;
@@ -1127,7 +1158,9 @@ window.google = { script: { run: (function(){
         }
         return { ok:true, sku:p.sku, name:pr.name, qty:qty, lotNo:p.lotNo||"",
                  exp:p.exp||"", remain:(pr.remain===undefined?null:pr.remain),
-                 lotRemain:(p.lotNo && lot)?lot.total:null, recvRow:9, lotRow:p.lotNo?9:0 };
+                 lotRemain:(p.lotNo && lot)?lot.total:null, recvRow:9, lotRow:p.lotNo?9:0,
+                 newProd: fresh ? { sku:fresh.sku, name:fresh.name, group:fresh.group,
+                                    row:12, onWeb:!!(p.newProd && p.newProd.web) } : null };
       });
     },
     /* เติมน้ำยาประจำวัน — ล้อกติกาฝั่งชีทตัวจริง (planRefill_)
