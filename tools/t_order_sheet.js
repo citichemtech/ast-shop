@@ -3766,6 +3766,55 @@ throws('ไม่เลือกอะไรเลย', function () {
 }, 'ยังไม่ได้เลือก');
 
 console.log('\n   กดสองครั้งด้วยกุญแจเดิม ต้องได้ใบเดิม ไม่ใช่ใบใหม่');
+/* ------------------------------------------ แก้ใบวางบิลที่ยังไม่ได้ส่ง
+
+   ของจริง: เจ้าของร้านกด "แก้ไขใบ" กับ BL260928-001 แล้วขึ้น
+   "ใบ BL260928-001 ไม่ได้อ้างออเดอร์ไว้ จึงประกอบใหม่ให้ไม่ได้"
+   เพราะตัวแก้ใบวิ่งไปหาออเดอร์เสมอ แต่ใบวางบิลไม่ได้ผูกกับออเดอร์ใบเดียว
+   มันรวมใบขายหลายใบไว้ ทั้งที่ทุกอย่างที่ต้องใช้อยู่ในตัวใบเองอยู่แล้ว      */
+console.log('\n   แก้ใบวางบิลที่ยังไม่ได้ส่ง — เลขใบเดิม ยอดต้องไม่ขยับ');
+var docS58 = fx58.sheets['เอกสาร'];
+function docRowOf58(no) {
+  return rowsWith(docS58, api58.SH.doc.IN.no).filter(function (r) {
+    return String(docS58.cell(r, api58.SH.doc.IN.no).v) === no;
+  })[0];
+}
+var blRow58 = docRowOf58(made58d.no);
+var blTotalWas = Number(docS58.cell(blRow58, api58.SH.doc.IN.total).v);
+
+var rev58 = api58.reviseDoc({
+  no: made58d.no, why: 'เลข PO พิมพ์ตกไปหนึ่งหลัก',
+  po: 'PO26/08-0092', contact: 'K. จีรยา', contactTel: '038-538997-8',
+  by: 'AEY'
+});
+eq('แก้ได้ ไม่ตายเพราะไม่มีออเดอร์', rev58.no, made58d.no);
+eq('เลขใบไม่เปลี่ยน ไม่กินเลขใหม่',
+   String(docS58.cell(blRow58, api58.SH.doc.IN.no).v), made58d.no);
+/* ใบวางบิลต้องเท่ากับใบขายที่ลูกค้าถืออยู่เป๊ะ คิดใหม่จากออเดอร์เมื่อไรคือพัง */
+eq('ยอดไม่ขยับแม้แต่สตางค์เดียว',
+   Number(docS58.cell(blRow58, api58.SH.doc.IN.total).v), blTotalWas);
+eq('เลข PO ที่แก้ลงชีทจริง',
+   String(docS58.cell(blRow58, api58.SH.doc.IN.po).v), 'PO26/08-0092');
+truthy2('จดไว้ว่าแก้ครั้งที่เท่าไร เพราะอะไร',
+   /แก้ไขครั้งที่ 1/.test(String(docS58.cell(blRow58, api58.SH.doc.IN.revise).v)) &&
+   /พิมพ์ตกไปหนึ่งหลัก/.test(String(docS58.cell(blRow58, api58.SH.doc.IN.revise).v)));
+
+console.log('\n   แก้แล้วต้องยังพิมพ์ซ้ำได้ — ภาพถ่ายใบต้องเป็นรูปเดิม');
+/* เขียนภาพถ่ายผิดรูปเมื่อไร พิมพ์ซ้ำจะพัง และจะรู้ตอนลูกค้ารออยู่แล้ว */
+var back58 = api58.getDoc(made58d.no);
+eq('พิมพ์ซ้ำได้ และยังเป็นใบวางบิล', back58.doc.type, 'bill');
+eq('รายการใบที่รวมไว้ยังครบเหมือนเดิม', back58.doc.lines.length, 2);
+eq('ยอดในภาพถ่ายตรงกับที่บันทึกไว้', back58.doc.total, blTotalWas);
+eq('ผู้ติดต่อที่เพิ่งแก้ติดมากับใบด้วย', back58.meta.contact, 'K. จีรยา');
+
+console.log('\n   แก้เงื่อนไขชำระเงิน วันครบกำหนดต้องขยับตาม');
+var due58was = back58.doc.lines[0].due;
+api58.reviseDoc({ no: made58d.no, why: 'ลูกค้าขอเครดิต 60 วัน',
+                  terms: 'เครดิต 60 วัน', by: 'AEY' });
+var back58b = api58.getDoc(made58d.no);
+truthy2('วันครบกำหนดเลื่อนออกไปจริง', String(back58b.doc.lines[0].due) > String(due58was));
+eq('แต่ยอดยังเท่าเดิม', back58b.doc.total, blTotalWas);
+
 var again58 = api58.issueBill({ docs: [A58, B58], cust: 'บริษัท ก จำกัด',
   by: 'AEY', clientKey: 'bl-58-4' });
 eq('ได้เลขเดิม', again58.no, made58d.no);

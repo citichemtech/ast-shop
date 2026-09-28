@@ -1007,6 +1007,37 @@ function billCandidates(custName) {
  * ยอดทุกช่องอ่านจากชีทเอง ไม่รับยอดที่หน้าจอส่งมา — หน้าจออาจค้างข้อมูลเก่า
  * แล้วใบวางบิลจะเขียนยอดที่ไม่ตรงกับใบที่ลูกค้าถืออยู่ ซึ่งเป็นเรื่องที่แก้ทีหลังยาก
  */
+/**
+ * ภาพถ่ายของใบวางบิล — ต้องมีที่เดียว ใช้ร่วมกันทั้งตอนออกใบและตอนแก้ใบ
+ *
+ * getDoc อ่านภาพถ่ายนี้กลับมาวาดใบตอนพิมพ์ซ้ำ โดยดูจากรูปร่างของมัน
+ * (type === 'bill' และมีช่อง docs) ถ้าสองที่เขียนคนละรูป ใบที่แก้แล้วจะพิมพ์ซ้ำไม่ได้
+ * และจะไม่มีอะไรฟ้องจนกว่าจะมีคนกดพิมพ์ ซึ่งมักเป็นตอนลูกค้ารออยู่แล้ว
+ */
+function billSnap_(no, when, terms, d, extra, cust) {
+  extra = extra || {};
+  try {
+    return JSON.stringify({
+      v: 1, no: no, type: 'bill', date: isoDate_(when), terms: terms,
+      creditDays: d.creditDays, contact: String(extra.contact || ''),
+      contactTel: String(extra.contactTel || ''), note: String(extra.note || ''),
+      base: d.base, vat: d.vat, total: d.total, totalText: d.totalText,
+      cust: {
+        name: String((cust && cust.name) || ''), taxId: String((cust && cust.taxId) || ''),
+        branch: String((cust && cust.branch) || ''), addr: String((cust && cust.addr) || ''),
+        tel: String((cust && cust.tel) || '')
+      },
+      docs: d.lines.map(function (l) {
+        return { no: l.no, date: isoDate_(l.date), po: l.po,
+                 due: isoDate_(l.due), base: l.base, vat: l.vat, total: l.total };
+      })
+    });
+  } catch (e) {
+    Logger.log('เก็บภาพถ่ายใบวางบิลไม่ได้: ' + e.message);
+    return '';
+  }
+}
+
 function issueBill(payload) {
   var email = requireStaff_();
   var p = payload || {};
@@ -1076,25 +1107,12 @@ function issueBill(payload) {
     if (!row) throw new Error('ชีท เอกสาร เต็มแล้ว — สั่ง setup() อีกครั้งเพื่อขยายแถว');
 
     var head = chosen[0];
-    var snap = '';
-    try {
-      snap = JSON.stringify({
-        v: 1, no: no, type: 'bill', date: isoDate_(when), terms: terms,
-        creditDays: d.creditDays, contact: String(p.contact || ''),
-        contactTel: String(p.contactTel || ''), note: String(p.note || ''),
-        base: d.base, vat: d.vat, total: d.total, totalText: d.totalText,
-        cust: {
-          name: head.custName, taxId: head.custTaxId, branch: head.custBranch,
-          addr: head.custAddr, tel: head.custTel
-        },
-        docs: d.lines.map(function (l) {
-          return { no: l.no, date: isoDate_(l.date), po: l.po,
-                   due: isoDate_(l.due), base: l.base, vat: l.vat, total: l.total };
-        })
-      });
-    } catch (e) {
-      Logger.log('เก็บภาพถ่ายใบวางบิลไม่ได้: ' + e.message);
-    }
+    var snap = billSnap_(no, when, terms, d, {
+      contact: p.contact, contactTel: p.contactTel, note: p.note
+    }, {
+      name: head.custName, taxId: head.custTaxId, branch: head.custBranch,
+      addr: head.custAddr, tel: head.custTel
+    });
 
     writeRow_('doc', row, {
       no: no, type: t.th, date: when, orderNo: '',
@@ -1194,8 +1212,33 @@ function reviseRow_(row, why, p, email) {
   var oldSnap = null;
   try { oldSnap = JSON.parse(String(cur.snap || '')); } catch (e) { oldSnap = null; }
 
-  var src;
-  if (t.quote) {
+  /* ช่องที่คนแก้ได้ ต้องรู้ค่าก่อนประกอบใบ เพราะใบวางบิลเอา "เงื่อนไขชำระเงิน"
+     ไปคิดวันครบกำหนดของทุกบรรทัด แก้เป็นเครดิต 60 วัน วันครบกำหนดต้องขยับตาม */
+  var has = function (k) { return p[k] !== undefined && p[k] !== null; };
+  var cu = p.cust || {
+    name: cur.custName, taxId: cur.custTaxId, branch: cur.custBranch,
+    addr: cur.custAddr, tel: cur.custTel, email: cur.custEmail
+  };
+  var po = has('po') ? p.po : cur.po;
+  var terms = has('terms') ? p.terms : cur.terms;
+  var form = has('form') ? p.form : ((oldSnap && oldSnap.form) || []);
+  var date = (cur.date instanceof Date) ? isoDate_(cur.date) : String(cur.date || '');
+
+  var src = null, isBill = (t.key === 'bill');
+  if (isBill) {
+    /* ใบวางบิลไม่ได้ผูกกับออเดอร์ใบเดียว มันรวมใบขายหลายใบไว้ด้วยกัน
+       ของเดิมจึงวิ่งไปหาออเดอร์แล้วตาย ทั้งที่ใบนี้มีทุกอย่างอยู่ในตัวเองแล้ว
+
+       ยอดเงินเอาจากภาพถ่ายของใบเดิมทั้งก้อน ไม่คิดใหม่จากออเดอร์เด็ดขาด —
+       ใบวางบิลต้องเท่ากับใบขายที่ลูกค้าถืออยู่เป๊ะ ถ้าไปคิดใหม่แล้วราคาสินค้า
+       ในชีทเปลี่ยนไปตอนไหน ยอดสองใบจะไม่ตรงกันเงียบ ๆ แล้วทวงเงินไม่ได้
+       ที่แก้ได้จริงจึงมีแต่ตัวหนังสือ: ชื่อผู้ซื้อ · PO · เงื่อนไข · ผู้ติดต่อ · หมายเหตุ */
+    if (!oldSnap || !oldSnap.docs || !oldSnap.docs.length) {
+      throw new Error('ใบวางบิล ' + no + ' ไม่มีรายการใบที่รวมไว้เก็บอยู่ในระบบ ' +
+        '(ออกก่อนระบบเริ่มเก็บ) — แก้ไม่ได้ ให้ยกเลิกใบนี้แล้ววางบิลใหม่ ' +
+        'ใบขายที่อยู่ในนั้นจะกลับมาวางบิลได้เองหลังยกเลิก');
+    }
+  } else if (t.quote) {
     src = { items: p.items || (oldSnap && oldSnap.lines) || [], ship: p.ship, discount: p.discount };
   } else {
     if (!orderNo) throw new Error('ใบ ' + no + ' ไม่ได้อ้างออเดอร์ไว้ จึงประกอบใหม่ให้ไม่ได้');
@@ -1218,17 +1261,9 @@ function reviseRow_(row, why, p, email) {
       'ให้ยกเลิกใบนี้ แล้วออกใหม่เป็น "บิลเงินสด" ซึ่งมีชุดเลขของตัวเอง');
   }
   var vatMode = p.vatMode || (oldSnap && oldSnap.vatMode) || appCfg_().vatMode;
-  var d = buildDoc_(t.key, src, { vatRate: novat ? 0 : cfgGet_().vatRate, vatMode: vatMode });
-
-  var has = function (k) { return p[k] !== undefined && p[k] !== null; };
-  var cu = p.cust || {
-    name: cur.custName, taxId: cur.custTaxId, branch: cur.custBranch,
-    addr: cur.custAddr, tel: cur.custTel, email: cur.custEmail
-  };
-  var po = has('po') ? p.po : cur.po;
-  var terms = has('terms') ? p.terms : cur.terms;
-  var form = has('form') ? p.form : ((oldSnap && oldSnap.form) || []);
-  var date = (cur.date instanceof Date) ? isoDate_(cur.date) : String(cur.date || '');
+  var d = isBill
+    ? buildBill_(oldSnap.docs, { terms: terms, creditDays: appCfg_().creditDays })
+    : buildDoc_(t.key, src, { vatRate: novat ? 0 : cfgGet_().vatRate, vatMode: vatMode });
 
   /* นับว่าแก้เป็นครั้งที่เท่าไร จากร่องรอยที่จดไว้ในช่องประวัติการแก้ใบ
      ใบเก่าที่จดไว้ในหมายเหตุตั้งแต่ก่อนแยกคอลัมน์ ก็ยังนับต่อจากของเดิมได้ถูก
@@ -1276,10 +1311,18 @@ function reviseRow_(row, why, p, email) {
     base: d.base, vat: d.vat, total: d.total,
     staff: who.slice(0, 40),
     note: note, revise: trail,
-    snap: docSnap_(d, {
-      cust: cu, po: po, terms: terms, date: date, note: note, form: form,
-      validTo: (oldSnap && oldSnap.validTo) || '', vatMode: vatMode, novat: novat
-    }, no, t)
+    /* ใบวางบิลเก็บภาพถ่ายคนละรูปกับใบสินค้า (เก็บรายการเอกสาร ไม่ใช่รายการสินค้า)
+       เขียนผิดรูปเมื่อไร ใบที่แก้แล้วจะพิมพ์ซ้ำไม่ได้ และจะรู้ตอนลูกค้ารออยู่ */
+    snap: isBill
+      ? billSnap_(no, parseDate_(date) || cur.date || new Date(), terms, d, {
+          contact: has('contact') ? p.contact : (oldSnap && oldSnap.contact),
+          contactTel: has('contactTel') ? p.contactTel : (oldSnap && oldSnap.contactTel),
+          note: note
+        }, cu)
+      : docSnap_(d, {
+          cust: cu, po: po, terms: terms, date: date, note: note, form: form,
+          validTo: (oldSnap && oldSnap.validTo) || '', vatMode: vatMode, novat: novat
+        }, no, t)
   });
 
   writeLog_(email, 'แก้ไขเอกสาร', SH.doc.name, no, t.th, oldTotal, d.total,
