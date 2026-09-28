@@ -1562,20 +1562,62 @@ function custList(cb){
   call("getCustomers", [400], done, function(){ done([]) });
 }
 
+/* คำที่ชื่อบริษัทแทบทุกชื่อมีเหมือนกันหมด — ใช้ชี้ตัวไม่ได้
+
+   ของเดิมเทียบชื่อแบบตรงตัวทั้งสตริง พิมพ์ "บริษัท คิวพาธ" แล้วไม่ขึ้น
+   ทั้งที่ลูกค้ารายนั้นอยู่ในชีท เพราะชื่อในชีทเขียนได้อีกหลายแบบ:
+     บริษัท  คิวพาธ จำกัด   (เคาะวรรคสองที)
+     คิวพาธ จำกัด           (ไม่มีคำว่าบริษัทนำหน้า)
+     บจก. คิวพาธ            (ใช้ตัวย่อ)
+     บริษัทคิวพาธ จำกัด     (ไม่เคาะวรรคเลย)
+   สี่แบบนี้ของเดิมหาไม่เจอสักแบบ ทั้งที่คนพิมพ์หมายถึงรายเดียวกันแท้ ๆ
+   คนที่หาไม่เจอก็พิมพ์ชื่อใหม่เอง แล้วชีทก็ได้ลูกค้ารายเดิมเพิ่มมาอีกชื่อ    */
+var CUST_CO_WORDS = {
+  'บริษัท':1, 'บจก':1, 'บมจ':1, 'หจก':1, 'หสน':1,
+  'ห้างหุ้นส่วนจำกัด':1, 'ห้างหุ้นส่วนสามัญ':1,
+  'จำกัด':1, 'จก':1, 'มหาชน':1, 'สำนักงานใหญ่':1, 'สาขา':1,
+  'co':1, 'ltd':1, 'company':1, 'limited':1, 'public':1, 'part':1, 'inc':1
+};
+
+/* ตัดสิ่งที่ไม่ได้ช่วยชี้ตัวออก: วรรคตอน วงเล็บ และวรรคซ้ำ ๆ */
+function custNorm(s){
+  return String(s == null ? "" : s).toLowerCase()
+    .replace(/[().,\-–—_"'`\/]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/* เหลือเฉพาะคำที่ใช้ชี้ตัวได้จริง — ถ้าพิมพ์มาแต่คำโหล ๆ จะได้ลิสต์ว่าง */
+function custKeyWords(s){
+  return custNorm(s).split(" ").filter(function(w){
+    return w && !CUST_CO_WORDS[w];
+  });
+}
+
 function custFind(q){
-  q = String(q||"").trim().toLowerCase();
-  if(q.length < 2) return [];
-  var qd = q.replace(/\D/g,"");
+  var raw = String(q||"").trim();
+  if(raw.length < 2) return [];
+  var nq = custNorm(raw);
+  var qd = raw.replace(/\D/g,"");
+  var qw = custKeyWords(raw);
+  /* พิมพ์มาแต่คำว่า "บริษัท" เฉย ๆ ต้องไม่เหมารวมทั้งชีทขึ้นมา */
+  var qwTight = qw.join("");
   var list = CUSTS || [], hit = [];
   for(var i=0;i<list.length;i++){
     var c = list[i];
-    var name = String(c.name||"").toLowerCase();
+    var name = custNorm(c.name);
+    /* ชื่อที่ไม่เคาะวรรคเลย ("บริษัทคิวพาธ") ต้องเจอด้วยคำที่พิมพ์แบบเคาะวรรค */
+    var tight = name.replace(/ /g,"");
     var tel = String(c.tel||"").replace(/\D/g,"");
     var score = -1;
-    if(name.indexOf(q)===0) score = 0;
+    if(name.indexOf(nq)===0) score = 0;
     else if(qd.length>2 && tel.indexOf(qd)===0) score = 1;
-    else if(name.indexOf(q)>0) score = 2;
+    else if(name.indexOf(nq)>0) score = 2;
     else if(qd.length>2 && tel.indexOf(qd)>0) score = 3;
+    /* ทุกคำสำคัญที่พิมพ์มา ต้องอยู่ในชื่อครบ — สลับลำดับหรือมีคำอื่นคั่นก็ยังเจอ
+       ใช้ "อยู่ในชื่อ" ไม่ใช่ "ตรงทั้งคำ" คนพิมพ์ค้างกลางคำก็ยังเจอ */
+    else if(qw.length && qw.every(function(w){ return tight.indexOf(w) > -1 })) score = 4;
+    else if(qwTight && tight.indexOf(qwTight) > -1) score = 4;
     if(score>=0) hit.push([score,i,c]);
   }
   /* รายชื่อเรียงคนซื้อล่าสุดมาก่อนอยู่แล้ว ลำดับเดิมจึงเป็นตัวตัดสินเมื่อคะแนนเท่ากัน */
@@ -1593,7 +1635,17 @@ function bindCustFind(inSel, hitSel, fill){
       /* พิมพ์ต่อไปแล้วระหว่างรอโหลด ผลของคำเก่าต้องไม่เด้งขึ้นมาทับ */
       if(el.value.trim() !== q) return;
       var hits = custFind(q);
-      if(!hits.length){ box.innerHTML = ""; return }
+      if(!hits.length){
+        /* เงียบไปเฉย ๆ ทำให้แยกไม่ออกว่า "ไม่มีลูกค้าชื่อนี้" กับ "รายชื่อโหลดไม่ขึ้น"
+           สองอย่างนี้ต้องทำคนละอย่างกัน จึงต้องบอกให้รู้ว่าเป็นแบบไหน */
+        box.innerHTML = (CUSTS && CUSTS.length)
+          ? '<div class="none">ไม่เจอ “' + esc(q) + '” ในลูกค้าเก่า '
+            + '(ค้นจาก ' + CUSTS.length + ' ราย) — พิมพ์ต่อได้เลย '
+            + 'ระบบจะบันทึกเป็นลูกค้าใหม่ให้</div>'
+          : '<div class="none">ยังโหลดรายชื่อลูกค้าเก่าไม่ได้ — '
+            + 'พิมพ์ชื่อเองได้ตามปกติ ออเดอร์ลงชีทได้เหมือนเดิม</div>';
+        return;
+      }
       box.innerHTML = hits.map(function(c,i){
         var addr = String(c.addr || c.taxAddr || "").replace(/\s+/g," ").trim();
         return '<button type="button" data-cu="'+i+'"><b>'+esc(c.name)+'</b>'

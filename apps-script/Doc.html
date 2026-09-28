@@ -355,7 +355,15 @@ async function buildDocPage(d, m, cfg, copy) {
     x.font = docFont(F_BODY, 500);
     var nm = wrapText(x, ln.name, COLS[1].w - 30).slice(0, 2);
     nm.forEach(function (t2, k) { fitLeft(x, t2, xs[1] + 16, ry2 + k * 26, COLS[1].w - 30, F_BODY); });
-    if (ln.po) fitLeft(x, ln.po, xs[2] + 10, ry2, COLS[2].w - 16, pt(9.5));
+    /* ช่อง Customer/PO — บรรทัดไหนมี PO ของตัวเองใช้ตัวนั้น ไม่มีก็ใช้ PO ของทั้งใบ
+
+       ของเดิมวาดเฉพาะ PO รายบรรทัด ซึ่งไม่มีหน้าจอไหนใส่ให้เลยสักที่
+       ช่องนี้จึงว่างทุกใบที่เคยพิมพ์ออกไป ทั้งที่หัวใบมีเลข PO อยู่แล้ว
+       ลูกค้าฝ่ายจัดซื้อใช้ช่องนี้จับคู่ใบกับ PO ของเขา ว่างไว้ = เขาต้องไล่หาเอง
+
+       ค่าจัดส่งกับส่วนลด (extra) ไม่เติมให้ เพราะไม่ได้สั่งมาตาม PO */
+    var lnPo = ln.po || (ln.extra ? "" : (m.po || ""));
+    if (lnPo) fitLeft(x, lnPo, xs[2] + 10, ry2, COLS[2].w - 16, pt(9.5));
     /* หน่วยเขียนติดกับจำนวนในช่องเดียว ใบจริงไม่มีคอลัมน์หน่วยแยก
        qtyUnit กันกรณีหน่วยขึ้นต้นด้วยตัวเลข ไม่งั้น "1" กับ "10" อ่านติดเป็น 110 */
     fitCenter(x, qtyUnit(ln.qty, ln.unit),

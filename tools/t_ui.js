@@ -1113,6 +1113,79 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     Number(s2[1].replace(/,/g,'')) + Number(p2[1].replace(/,/g,'')),
     Number(n2[1].replace(/,/g,'')));
 
+  /* ---------- ช่อง Customer/PO บนใบพิมพ์ ----------
+
+     ของจริง: เจ้าของร้านวงแดงช่องนี้ในใบ ONIV26-00319 แล้วบอกว่า "ตรงนี้ไม่ใส่ po ให้"
+     หัวใบมี "หมายเลขคำสั่งซื้อ: PO26/08-0093" อยู่แล้ว แต่ช่องในตารางว่าง
+     เพราะของเดิมวาดเฉพาะ PO รายบรรทัด ซึ่งไม่มีหน้าจอไหนใส่ให้เลยสักที่
+     ฝ่ายจัดซื้อของลูกค้าใช้ช่องนี้จับคู่ใบกับ PO ของเขา ว่างไว้ = เขาต้องไล่หาเอง  */
+  console.log('\n   ช่อง Customer/PO ในตาราง ต้องเติมเลข PO ของใบให้');
+  var poInk = await page.evaluate(async function () {
+    /* นับหมึกทั้งหน้า แล้วเทียบใบที่เหมือนกันเป๊ะ ต่างกันแค่มี PO กับไม่มี
+       ไม่ต้องเดาพิกัดช่อง — หมึกที่เพิ่มขึ้นคือเลข PO ที่ถูกวาดลงไปล้วน ๆ */
+    function ink(url) {
+      return new Promise(function (res) {
+        var im = new Image();
+        im.onload = function () {
+          var c = document.createElement('canvas');
+          c.width = im.width; c.height = im.height;
+          var g = c.getContext('2d');
+          g.drawImage(im, 0, 0);
+          var p = g.getImageData(0, 0, im.width, im.height).data, n = 0;
+          for (var i = 0; i < p.length; i += 4) if (p[i] < 170) n++;
+          res(n);
+        };
+        im.onerror = function () { res(-1) };
+        im.src = url;
+      });
+    }
+    function meta(po) {
+      return { no: 'ONIV26-00319', date: '2026-09-28', po: po,
+               cust: { name: 'บริษัท ไทยโคโพลี อุสาหกรรมพลาสติก จำกัด' } };
+    }
+    function doc(lines) {
+      return { no: 'ONIV26-00319', type: 'ใบเสร็จรับเงิน', vatRate: 0.07, lines: lines,
+               base: 7500, vat: 525, total: 8025, totalText: 'แปดพันยี่สิบห้าบาทถ้วน' };
+    }
+    var goods = [{ name: 'Set Single Flute 1F 3.175-32-3.175-55L(10pcs)',
+                   po: '', qty: 5, unit: 'ชิ้น', price: 1500, amount: 7500 }];
+    /* บรรทัดที่ไม่ใช่ตัวสินค้า — ค่าจัดส่งไม่ได้สั่งมาตาม PO จึงต้องไม่ถูกเติมให้ */
+    var shipOnly = [{ name: 'ค่าจัดส่ง', po: '', extra: true,
+                      qty: 1, unit: 'ครั้ง', price: 50, amount: 50 }];
+
+    var cfg = { co: {} };
+    return {
+      goodsNo:   await ink(await buildDocPage(doc(goods),    meta(''),              cfg, 'ต้นฉบับ')),
+      goodsYes:  await ink(await buildDocPage(doc(goods),    meta('PO26/08-0093'),  cfg, 'ต้นฉบับ')),
+      shipNo:    await ink(await buildDocPage(doc(shipOnly), meta(''),              cfg, 'ต้นฉบับ')),
+      shipYes:   await ink(await buildDocPage(doc(shipOnly), meta('PO26/08-0093'),  cfg, 'ต้นฉบับ')),
+      /* PO ที่ติดมากับบรรทัดเอง ต้องถูกวาดให้แม้ใบไม่มี PO
+         ใช้ชื่อสินค้าเดิมเป๊ะ เทียบกับ goodsNo ได้ตรง ๆ ต่างกันแค่ช่อง po */
+      ownPo:     await ink(await buildDocPage(
+                    doc([{ name: 'Set Single Flute 1F 3.175-32-3.175-55L(10pcs)',
+                           po: 'PO26/08-0093', qty: 5, unit: 'ชิ้น',
+                           price: 1500, amount: 7500 }]),
+                    meta(''), cfg, 'ต้นฉบับ'))
+    };
+  });
+  truthy('วาดใบได้ ไม่ error', poInk.goodsNo > 0 && poInk.goodsYes > 0);
+  truthy('ใส่ PO แล้วมีหมึกเพิ่มขึ้นในใบจริง (' + poInk.goodsNo + ' → ' + poInk.goodsYes + ')',
+    poInk.goodsYes > poInk.goodsNo);
+  /* หัวใบมีช่อง "หมายเลขคำสั่งซื้อ" อยู่แล้ว หมึกจึงเพิ่มสองที่ = เลขถูกวาดในตารางด้วย
+     ถ้าวาดแต่หัวใบอย่างเดียว ส่วนต่างจะราวครึ่งเดียวของนี้ */
+  truthy('หมึกที่เพิ่มมากพอที่จะเป็นเลข PO สองที่ (หัวใบ + ในตาราง)',
+    poInk.goodsYes - poInk.goodsNo > 300,
+    'เพิ่มแค่ ' + (poInk.goodsYes - poInk.goodsNo));
+  truthy('บรรทัดค่าจัดส่งไม่ถูกเติม PO ให้ — ส่วนต่างเท่ากับเลขบนหัวใบเท่านั้น',
+    (poInk.shipYes - poInk.shipNo) < (poInk.goodsYes - poInk.goodsNo) * 0.7,
+    'ค่าจัดส่งเพิ่ม ' + (poInk.shipYes - poInk.shipNo)
+      + ' · สินค้าเพิ่ม ' + (poInk.goodsYes - poInk.goodsNo));
+  /* ใบไม่มี PO แต่บรรทัดมีของตัวเอง — หมึกต้องเพิ่มจากบรรทัดนั้นบรรทัดเดียว
+     จึงน้อยกว่าตอนที่ใบมี PO ด้วย (ซึ่งวาดทั้งหัวใบและในตาราง) */
+  truthy('บรรทัดที่มี PO ของตัวเองก็ยังวาดให้ แม้หัวใบจะไม่มี PO ('
+    + poInk.goodsNo + ' → ' + poInk.ownPo + ')',
+    poInk.ownPo > poInk.goodsNo && poInk.ownPo < poInk.goodsYes);
+
   console.log('\n   ไฟล์เอกสารต้องเล็กพอส่งในไลน์ได้ ไม่ต้องเอาไปบีบเอง');
   var fsz = await page.evaluate(async function () {
     var d = { no:'X', type:'ใบเสร็จรับเงิน', vatRate:0.07,
@@ -1304,6 +1377,71 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     'ส่งที่หน้างานโครงการใหม่ 99 ถ.สมมติ');
   truthy('แต่เบอร์ที่ยังว่างอยู่ยังเติมให้',
     /^0\d{8,9}$/.test(await page.inputValue('#f-tel')));
+
+  /* ---------- 23ข. ชื่อบริษัทเขียนได้หลายแบบ ต้องหาเจอทุกแบบ ----------
+
+     ของจริง: พิมพ์ "บริษัท คิวพาธ" แล้วไม่ขึ้นสักราย ทั้งที่ลูกค้ารายนั้นอยู่ในชีท
+     เพราะของเดิมเทียบชื่อแบบตรงตัวทั้งสตริง แต่ชื่อในชีทเขียนได้อีกหลายแบบ
+     คนที่หาไม่เจอก็พิมพ์ชื่อใหม่เอง แล้วชีทก็ได้ลูกค้ารายเดิมเพิ่มมาอีกชื่อ    */
+  console.log('\n23ข. ชื่อบริษัทเขียนคนละแบบ ต้องยังหาเจอ');
+  await page.click('.tabs button[data-go="new"]');
+  await page.evaluate(function () { resetForm() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () {
+    CUSTS = [
+      { name: 'บริษัท  คิวพาธ จำกัด', tel: '0812345678', addr: 'ที่อยู่ ก 10250', n: 2 },
+      { name: 'คิวพาธ จำกัด',          tel: '0823456789', addr: 'ที่อยู่ ข 10250', n: 1 },
+      { name: 'บจก. คิวพาธ',           tel: '0834567890', addr: 'ที่อยู่ ค 10250', n: 1 },
+      { name: 'บริษัทคิวพาธ จำกัด',    tel: '0845678901', addr: 'ที่อยู่ ง 10250', n: 1 },
+      { name: 'บริษัท คิวพาธ จำกัด (สำนักงานใหญ่)', tel: '0856789012', addr: 'ที่อยู่ จ 10250', n: 1 },
+      { name: 'บริษัท ไทยโคโพลี อุสาหกรรมพลาสติก จำกัด', tel: '0867890123', addr: 'ที่อยู่ ฉ 24130', n: 3 }
+    ];
+  });
+
+  async function custHits(q) {
+    await page.fill('#f-cust', '');
+    await page.waitForTimeout(120);
+    await page.fill('#f-cust', q);
+    await page.waitForTimeout(450);
+    return await page.evaluate(function () {
+      return Array.prototype.map.call(
+        document.querySelectorAll('#f-cust-hit button b'),
+        function (b) { return b.textContent });
+    });
+  }
+
+  var h1 = await custHits('บริษัท คิวพาธ');
+  eq('พิมพ์ "บริษัท คิวพาธ" เจอครบทั้ง 5 แบบที่เขียนต่างกัน', h1.length, 5);
+  truthy('เจอแบบเคาะวรรคสองที', h1.indexOf('บริษัท  คิวพาธ จำกัด') > -1, h1.join(' | '));
+  truthy('เจอแบบไม่มีคำว่าบริษัทนำหน้า', h1.indexOf('คิวพาธ จำกัด') > -1, h1.join(' | '));
+  truthy('เจอแบบใช้ตัวย่อ บจก.', h1.indexOf('บจก. คิวพาธ') > -1, h1.join(' | '));
+  truthy('เจอแบบไม่เคาะวรรคเลย', h1.indexOf('บริษัทคิวพาธ จำกัด') > -1, h1.join(' | '));
+  truthy('ไม่ลากรายอื่นที่ไม่เกี่ยวมาด้วย',
+    h1.indexOf('บริษัท ไทยโคโพลี อุสาหกรรมพลาสติก จำกัด') < 0, h1.join(' | '));
+
+  var h2 = await custHits('คิวพาธ');
+  eq('พิมพ์เฉพาะคำเด่นก็เจอครบเหมือนกัน', h2.length, 5);
+  var h3 = await custHits('บริษัท คิวพา');
+  eq('พิมพ์ค้างกลางคำก็ยังเจอ', h3.length, 5);
+  var h4 = await custHits('ไทยโคโพลี');
+  eq('คำเด่นของอีกรายต้องได้รายนั้นรายเดียว', h4, ['บริษัท ไทยโคโพลี อุสาหกรรมพลาสติก จำกัด']);
+
+  console.log('\n   หาไม่เจอ ต้องบอกให้รู้ ไม่ใช่เงียบ');
+  /* เงียบไปเฉย ๆ ทำให้แยกไม่ออกว่า "ไม่มีลูกค้าชื่อนี้" กับ "รายชื่อโหลดไม่ขึ้น" */
+  await custHits('ไม่มีบริษัทชื่อนี้แน่นอน');
+  var miss = await page.textContent('#f-cust-hit');
+  truthy('บอกว่าไม่เจอ พร้อมจำนวนที่ค้นจาก', /ไม่เจอ/.test(miss) && /6 ราย/.test(miss), miss);
+  truthy('และบอกว่าพิมพ์ต่อได้ จะบันทึกเป็นลูกค้าใหม่', /ลูกค้าใหม่/.test(miss), miss);
+
+  console.log('\n   รายชื่อโหลดไม่ขึ้น ต้องบอกคนละอย่างกับ "ไม่เจอ"');
+  await page.evaluate(function () { CUSTS = [] });
+  await custHits('บริษัท คิวพาธ');
+  var down = await page.textContent('#f-cust-hit');
+  truthy('บอกว่าโหลดรายชื่อไม่ได้ ไม่ใช่บอกว่าไม่มีลูกค้ารายนี้',
+    /โหลดรายชื่อลูกค้าเก่าไม่ได้/.test(down), down);
+  truthy('และย้ำว่ายังคีย์ออเดอร์ได้ตามปกติ', /ลงชีทได้เหมือนเดิม/.test(down), down);
+  await page.evaluate(function () { CUSTS = null; resetForm() });
+  await page.waitForTimeout(200);
 
   console.log('\n   ใบเสนอราคาก็ดึงลูกค้าเก่าได้เหมือนกัน');
   await page.click('.tabs button[data-go="quote"]');
