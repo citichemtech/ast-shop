@@ -1383,7 +1383,11 @@ window.google = { script: { run: (function(){
   function reply(make){
     var s=ok, f=bad; ok=null; bad=null;
     setTimeout(function(){
+      /* จำลองอาการ "ชีทรับงานไปแล้วแต่คำตอบหายระหว่างทาง"
+         ของจริง google.script.run ยิงเข้า success handler พร้อมค่า null
+         งานฝั่งชีทยังเดินจนจบตามปกติ ตัวปลอมจึงต้องเรียก make() ด้วย */
       var r; try{ r=make() }catch(e){ if(f) f(e); return }
+      if(window.MOCK_NULL){ if(s) s(null); return }
       if(s) s(r);
     }, 10);
   }

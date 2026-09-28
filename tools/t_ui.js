@@ -1955,6 +1955,68 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       return o && o.value === '__ใหม่__';
     }));
 
+  /* ---------- 29ค. คำตอบหายระหว่างทาง ต้องไม่พังเป็นภาษาโปรแกรมเมอร์ ----------
+
+     ของจริงที่เจ้าของร้านเจอสองครั้ง: กดออกใบวางบิลแล้วขึ้น
+     "Cannot read properties of null (reading 'no')" และตอนคีย์ออเดอร์ขึ้น
+     "... (reading 'net')" — ทั้งสองครั้งงานลงชีทไปเรียบร้อยแล้ว
+     แต่คำตอบไม่กลับมาถึงหน้าจอ (เปิดหน้าค้างไว้นาน / เพิ่งปล่อยเวอร์ชันใหม่)
+
+     ข้อความแบบนั้นบอกอะไรคนหน้าร้านไม่ได้เลย และที่แย่กว่าคือมันอ่านเหมือน
+     "ไม่สำเร็จ" ทั้งที่สำเร็จแล้ว คนจะคีย์ใหม่ทั้งที่ไม่ต้อง                */
+  console.log('\n29ค. คำตอบจากชีทหายระหว่างทาง');
+  await page.click('.tabs button[data-go="recv"]');
+  await page.waitForTimeout(400);
+  await page.evaluate(function () { window.MOCK_NULL = 1 });
+
+  var okSku = await page.evaluate(function () {
+    for (var i = 0; i < MOCK_BOOT.products.length; i++) {
+      if (!MOCK_BOOT.lots[MOCK_BOOT.products[i].sku]) return MOCK_BOOT.products[i].sku;
+    }
+    return '';
+  });
+  await page.selectOption('#r-sku', okSku);
+  await page.fill('#r-qty', '5');
+  await page.click('#btn-recv');
+  await page.waitForTimeout(900);
+
+  var errTx = await page.textContent('#err');
+  truthy('ไม่โชว์ข้อความภาษาโปรแกรมเมอร์ให้คนหน้าร้านอ่าน',
+    !/Cannot read propert|null|undefined/.test(errTx), errTx);
+  truthy('บอกว่าชีทรับงานไปแล้ว คำตอบหายระหว่างทาง',
+    /คำตอบหายระหว่างทาง/.test(errTx), errTx);
+  /* สำคัญที่สุด: ห้ามอ่านเหมือน "ไม่สำเร็จ" เพราะของลงชีทไปแล้วจริง ๆ */
+  truthy('บอกให้อย่าเพิ่งทำใหม่ — ของอาจลงชีทไปแล้ว',
+    /อย่าเพิ่งทำใหม่/.test(errTx), errTx);
+  truthy('และบอกว่ากดซ้ำได้ ระบบกันงานซ้ำไว้แล้ว',
+    /กันงานซ้ำ/.test(errTx), errTx);
+  truthy('บอกชื่อฟังก์ชันไว้ด้วย เผื่อต้องไล่ใน Executions',
+    /receiveStock/.test(errTx), errTx);
+  truthy('ปุ่มกลับมากดได้ ไม่ค้างที่ "กำลังบันทึก…"',
+    !(await page.locator('#btn-recv').isDisabled()));
+  eq('ปุ่มกลับไปเป็นข้อความเดิม',
+    (await page.textContent('#btn-recv')).trim(), 'บันทึกรับของเข้า');
+
+  console.log('\n   งานฝั่งชีทต้องเดินจนจบตามปกติ ไม่ได้ถูกยกเลิกไปด้วย');
+  /* นี่คือหัวใจของเรื่อง — ถ้าคนกดใหม่เพราะเข้าใจว่าล้มเหลว จะได้ของสองก้อน */
+  truthy('ของเข้าสต๊อกไปแล้วจริง แม้คำตอบจะหาย',
+    await page.evaluate(function (sku) {
+      return MOCK_BOOT.products.filter(function (p) { return p.sku === sku })[0].remain >= 5;
+    }, okSku));
+
+  console.log('\n   กดซ้ำด้วยกุญแจเดิม ต้องไม่ได้ของสองก้อน');
+  var keyBefore = await page.evaluate(function () {
+    return window.SENT[window.SENT.length - 1].clientKey;
+  });
+  await page.evaluate(function () { window.MOCK_NULL = 0 });
+  await page.click('#btn-recv');
+  await page.waitForTimeout(900);
+  eq('กุญแจกันซ้ำยังเป็นอันเดิม ชีทจึงรู้ว่าเป็นงานเดิม',
+    await page.evaluate(function () {
+      return window.SENT[window.SENT.length - 1].clientKey;
+    }), keyBefore);
+  await page.evaluate(function () { window.MOCK_NULL = 0 });
+
   /* ---------- 30. นำเข้าออเดอร์จาก Shopee ---------- */
   console.log('\n30. นำเข้าออเดอร์จาก Shopee');
   await page.click('.tabs button[data-go="list"]');
