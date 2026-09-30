@@ -144,24 +144,35 @@ async function buildDocPage(d, m, cfg, copy) {
   }
 
   /* ตราชุดเอกสารมุมขวาบน — ใบชุดหนึ่งพิมพ์สองใบ ต้นฉบับให้ลูกค้า สำเนาเก็บบัญชี
-     ถ้าไม่ติดป้ายไว้ ใบสองใบหน้าตาเหมือนกันจนแยกไม่ออกว่าใบไหนของใคร */
-  var bw = 186, bx = W - pad - bw;
-  x.fillStyle = C_BAND; roundRect(x, bx, 44, bw, 54, 26); x.fill();
-  x.strokeStyle = "#7f9dbb"; roundRect(x, bx, 44, bw, 54, 26); x.stroke();
-  x.fillStyle = "#0b2545";
-  fitCenter(x, isDraft ? "ตัวอย่าง" : (isCopy ? "สำเนา" : "ต้นฉบับ"),
-    bx + bw / 2, 50, bw - 20, pt(11), 700);
-  fitCenter(x, isDraft ? "(Draft — ยังไม่ออกเลข)" : (isCopy ? "(Copy)" : "(Original)"),
-    bx + bw / 2, 76, bw - 20, F_SMALL, 400);
-  x.strokeStyle = "#000"; x.lineWidth = 1.1;
-  x.strokeRect(bx, 106, bw, 46);
-  x.fillStyle = "#000";
-  fitCenter(x, isCopy ? "สำหรับบริษัท" : "สำหรับลูกค้า", bx + bw / 2, 111, bw - 12, pt(9), 400);
-  fitCenter(x, "เอกสารออกเป็นชุด", bx + bw / 2, 132, bw - 12, F_SMALL, 400);
-  x.lineWidth = 1.3;
+     ถ้าไม่ติดป้ายไว้ ใบสองใบหน้าตาเหมือนกันจนแยกไม่ออกว่าใบไหนของใคร
 
-  /* ชื่อและที่อยู่ผู้ขาย จัดกึ่งกลางระหว่างโลโก้กับตราชุด */
-  var hx = pad + 236, hw = bx - 12 - hx, hc = hx + hw / 2;
+     ใบเสนอราคาไม่ติดตรานี้ — ยังไม่ได้ขาย ไม่ได้ออกเป็นชุดต้นฉบับ/สำเนา และไม่ใช่
+     เอกสารภาษี คำว่า "ต้นฉบับ / เอกสารออกเป็นชุด" บนใบเสนอราคาจึงไม่เป็นความจริง
+     ที่ว่างที่ได้คืนยกให้ชื่อและที่อยู่ผู้ขายใช้เต็มความกว้างแทน
+
+     ใบกำกับภาษียังต้องมีตรานี้เสมอ เอกสารที่ออกเป็นชุดต้องระบุไว้บนใบ
+     ห้ามขยายการซ่อนนี้ไปถึงใบเสร็จ/ใบกำกับภาษีโดยไม่ถามฝ่ายบัญชีก่อน */
+  var noStamp = String((d && d.type) || "") === "quote";
+  var bw = 186, bx = W - pad - bw;
+  if (!noStamp) {
+    x.fillStyle = C_BAND; roundRect(x, bx, 44, bw, 54, 26); x.fill();
+    x.strokeStyle = "#7f9dbb"; roundRect(x, bx, 44, bw, 54, 26); x.stroke();
+    x.fillStyle = "#0b2545";
+    fitCenter(x, isDraft ? "ตัวอย่าง" : (isCopy ? "สำเนา" : "ต้นฉบับ"),
+      bx + bw / 2, 50, bw - 20, pt(11), 700);
+    fitCenter(x, isDraft ? "(Draft — ยังไม่ออกเลข)" : (isCopy ? "(Copy)" : "(Original)"),
+      bx + bw / 2, 76, bw - 20, F_SMALL, 400);
+    x.strokeStyle = "#000"; x.lineWidth = 1.1;
+    x.strokeRect(bx, 106, bw, 46);
+    x.fillStyle = "#000";
+    fitCenter(x, isCopy ? "สำหรับบริษัท" : "สำหรับลูกค้า", bx + bw / 2, 111, bw - 12, pt(9), 400);
+    fitCenter(x, "เอกสารออกเป็นชุด", bx + bw / 2, 132, bw - 12, F_SMALL, 400);
+    x.lineWidth = 1.3;
+  }
+
+  /* ชื่อและที่อยู่ผู้ขาย จัดกึ่งกลางระหว่างโลโก้กับตราชุด
+     ใบที่ไม่มีตราชุด กินพื้นที่ไปจนถึงขอบขวาได้เลย ไม่ต้องเว้นช่องว่างไว้เฉย ๆ */
+  var hx = pad + 236, hw = (noStamp ? W - pad : bx - 12) - hx, hc = hx + hw / 2;
   x.fillStyle = "#000";
   fitCenter(x, co.nameEn || "", hc, 50, hw, pt(13), 700, true);
   fitCenter(x, (co.name || "") + (co.branch ? " (" + co.branch + ")" : ""), hc, 84, hw, pt(10.5), 400);
