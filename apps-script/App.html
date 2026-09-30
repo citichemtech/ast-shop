@@ -96,6 +96,11 @@ function api(fn){
 
 function boot(){
   $("#who").textContent = STAFF_EMAIL;
+  /* APP_BUILD ถูกประทับตอน bundle — ถ้าไม่มีแปลว่ารันจากไฟล์ต้นฉบับตรง ๆ */
+  if ($("#ver")) {
+    $("#ver").textContent = (typeof APP_BUILD !== "undefined" && APP_BUILD)
+      ? "รุ่น " + APP_BUILD : "รุ่น (ยังไม่ผ่าน bundle)";
+  }
   $("#btn-paste-open").onclick = function(){
     var b = $("#paste-box"), open = b.style.display === "";
     b.style.display = open ? "none" : "";
@@ -5535,6 +5540,9 @@ function recvInit(){
      การยืนยันเก่าต้องหมดอายุทันที ไม่งั้นชื่อใหม่ที่ซ้ำกับของอื่นจะผ่านไปเงียบ ๆ
      ทั้งที่ไม่มีใครเคยเห็นคำเตือนของชื่อนั้นเลยสักครั้ง */
   $("#rn-name").oninput = function(){ RECV_SURE = false };
+  /* เปลี่ยนหมวดแล้วรหัสที่จะได้เปลี่ยนตาม ต้องอัปเดตให้เห็นทันที */
+  $("#rn-group").oninput = recvSkuHint;
+  $("#rn-group").onchange = recvSkuHint;
 
   /* ปุ่มสลับโหมดผูกที่นี่ เพราะ recvInit ทำงานครั้งเดียวตอนเปิดหน้ารับเข้าครั้งแรก */
   $$("#rv-mode .chip").forEach(function(b2){
@@ -5547,6 +5555,50 @@ function recvInit(){
 var RECV_SURE = false;
 /* รหัสที่เพิ่งสร้าง รอให้รายการสินค้าโหลดใหม่เสร็จแล้วค่อยเลือกให้ */
 var RECV_PICK = "";
+
+/* รหัสที่ระบบจะตั้งให้ถ้าเว้นว่าง — โชว์ให้เห็นก่อนกดบันทึก
+
+   เป็นแค่ "ตัวอย่าง" ฝั่งชีทเป็นคนตัดสินจริงตอนบันทึก (อ่านของสดจากชีท)
+   แต่การเห็นล่วงหน้าว่าจะได้ CHEM-008 ไม่ใช่ SKU-149 ทำให้รู้ทันทีว่า
+   เลือกหมวดถูกหรือยัง — ถ้าไม่โชว์ ต้องกดบันทึกไปก่อนแล้วค่อยรู้ */
+function recvSkuPreview(group){
+  var g = String(group || "").trim().toLowerCase();
+  function parts(sku){
+    var m = /^(.*?)(\d+)$/.exec(String(sku || "").trim());
+    return m ? { head:m[1], n:Number(m[2]), pad:m[2].length } : null;
+  }
+  var list = CFG.products || [], tally = {}, top = null;
+  if(g){
+    list.forEach(function(p){
+      if(String(p.group || "").trim().toLowerCase() !== g) return;
+      var pt = parts(p.sku);
+      if(!pt) return;
+      var t = tally[pt.head] || (tally[pt.head] = { head:pt.head, n:0, hi:0, pad:pt.pad });
+      t.n++;
+      if(pt.n > t.hi) t.hi = pt.n;
+      if(pt.pad > t.pad) t.pad = pt.pad;
+    });
+    for(var k in tally){
+      if(!top || tally[k].n > top.n || (tally[k].n === top.n && tally[k].hi > top.hi)) top = tally[k];
+    }
+  }
+  var head = top ? top.head : "SKU-";
+  var pad = top ? Math.max(top.pad, 3) : 3;
+  var max = 0;
+  list.forEach(function(p){
+    var q = parts(p.sku);
+    if(q && q.head === head && q.n > max) max = q.n;
+  });
+  var next = String(max + 1);
+  while(next.length < pad) next = "0" + next;
+  return head + next;
+}
+
+function recvSkuHint(){
+  var box = $("#rn-sku");
+  if(!box) return;
+  box.placeholder = "เว้นว่าง = ระบบตั้งให้ (" + recvSkuPreview($("#rn-group").value) + ")";
+}
 
 /** หมวดสินค้าที่มีอยู่แล้วในชีท เรียงตามที่เจอ ไม่ซ้ำ */
 function recvGroups(){
@@ -5578,6 +5630,7 @@ function recvSkuChanged(){
     $("#rn-groups").innerHTML = recvGroups().map(function(g){
       return '<option value="' + esc(g) + '">';
     }).join("");
+    recvSkuHint();
     $("#r-now").textContent = "ของใหม่ที่ยังไม่มีในระบบ — ระบบจะสร้างแถวในฐานสินค้าให้เอง";
     card.style.display = "";
     $("#r-lot-why").innerHTML = "สินค้าใหม่ยังไม่มีล็อต จะใส่เลขล็อตก็ได้ ไม่ใส่ก็ได้"

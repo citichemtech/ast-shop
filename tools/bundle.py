@@ -13,6 +13,7 @@ Apps Script อัปโหลดไฟล์ไม่ได้ ต้องค�
 ไฟล์ต้นฉบับใน apps-script/ ยังเป็นตัวจริงที่ใช้แก้ — รันสคริปต์นี้ใหม่ทุกครั้งที่แก้โค้ด
 """
 import pathlib
+import datetime
 import re
 import sys
 
@@ -36,6 +37,29 @@ SPLIT = [
     ("1c", ["Setup.gs"]),
     ("1d", ["Pay.gs", "Pub.gs", "Shop.gs", "ShopEdit.gs"]),
 ]
+
+
+def build_id():
+    """เลขรุ่นแบบอ่านออกด้วยตา: ปปดดวว-<commit สั้น>
+
+    ใช้ commit ของ git เป็นหลัก เพราะมันผูกกับโค้ดชุดนั้นจริง ๆ
+    ถ้าไม่มี git (ก๊อปโฟลเดอร์ไปเฉย ๆ) ตกมาใช้เวลาที่ bundle แทน
+    ยังตอบได้ว่า "ของที่วางไปรุ่นไหน" ซึ่งเป็นสิ่งเดียวที่ต้องการ
+    """
+    import subprocess
+    day = datetime.datetime.now().strftime("%y%m%d")
+    try:
+        sha = subprocess.run(["git", "rev-parse", "--short=7", "HEAD"],
+                             cwd=str(ROOT), capture_output=True, text=True,
+                             timeout=10, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain"],
+                               cwd=str(ROOT), capture_output=True, text=True,
+                               timeout=10, check=True).stdout.strip()
+        if sha:
+            return day + "-" + sha + ("+" if dirty else "")
+    except Exception:
+        pass
+    return day + "-" + datetime.datetime.now().strftime("%H%M")
 
 
 def main():
@@ -99,6 +123,14 @@ def main():
     page, k = re.subn(r"<!DOCTYPE html>", lambda m: m.group(0) + note, page, count=1)
     if not k:
         sys.exit("ไม่เจอ <!DOCTYPE html> ใน Index.html — หัวเอกสารหายไป")
+
+    # เลขรุ่นที่หน้าจอเอาไปโชว์ — ตอบคำถาม "วางโค้ดใหม่แล้วหรือยัง" ได้ในวินาทีเดียว
+    # วันที่ + เลข commit สั้น ๆ พอให้ชี้ได้ว่าเครื่องกำลังรันโค้ดชุดไหนอยู่
+    page, kb = re.subn(r"</head>",
+                       "<script>var APP_BUILD = %r;</script>\n</head>" % build_id(),
+                       page, count=1)
+    if not kb:
+        sys.exit("ไม่เจอ </head> ใน Index.html — ประทับเลขรุ่นไม่ได้")
     (out / "Index.html").write_text(page, encoding="utf-8")
 
     # ---- appsscript.json ----

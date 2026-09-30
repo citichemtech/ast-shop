@@ -2060,6 +2060,29 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     await page.evaluate(function () { return $('#r-new').style.display !== 'none' }));
   truthy('เสนอหมวดที่มีอยู่แล้วให้เลือก ไม่ต้องพิมพ์ใหม่ทั้งคำ',
     await page.evaluate(function () { return $('#rn-groups').options.length > 0 }));
+
+  /* รหัสที่จะได้ต้องโชว์ให้เห็นก่อนกดบันทึก และต้องเดินตามชุดของหมวดที่เลือก
+     เจ้าของร้านสั่งว่าของ TOOLING กับเคมีอยากให้เรียงติดกัน ไม่ใช่แทรกกัน */
+  var skuHint = await page.evaluate(function () {
+    /* ปลอมรายการสินค้าให้มีสองชุดรหัสเหมือนของจริงในชีท */
+    CFG.products = [
+      { sku: 'SKU-141', group: 'TOOLING', name: 'ก' },
+      { sku: 'SKU-148', group: 'TOOLING', name: 'ข' },
+      { sku: 'CHEM-001', group: 'เคมีภัณฑ์', name: 'ค' },
+      { sku: 'CHEM-007', group: 'เคมีภัณฑ์', name: 'ง' }
+    ];
+    function hintFor(g) {
+      $('#rn-group').value = g;
+      $('#rn-group').dispatchEvent(new Event('input'));
+      return $('#rn-sku').placeholder;
+    }
+    return { tool: hintFor('TOOLING'), chem: hintFor('เคมีภัณฑ์'), blank: hintFor('') };
+  });
+  truthy('หมวดเครื่องมือ บอกว่าจะได้ SKU-149', /SKU-149/.test(skuHint.tool), skuHint.tool);
+  truthy('หมวดเคมี บอกว่าจะได้ CHEM-008 ไม่ใช่ SKU-149',
+    /CHEM-008/.test(skuHint.chem) && !/SKU-/.test(skuHint.chem), skuHint.chem);
+  truthy('ยังไม่เลือกหมวด ใช้ชุดกลาง', /SKU-149/.test(skuHint.blank), skuHint.blank);
+  await page.evaluate(function () { $('#rn-group').value = '' });
   /* สินค้าใหม่ไม่มีทางคุมล็อตอยู่แล้ว บังคับใส่เลขล็อตไม่ได้ */
   truthy('ไม่บังคับเลขล็อตกับของที่เพิ่งสร้าง',
     !/ต้องใส่เลขล็อต/.test(await page.textContent('#r-lot-why')));

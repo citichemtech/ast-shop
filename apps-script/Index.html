@@ -87,6 +87,9 @@ textarea{resize:vertical}
 .top .who{display:block;margin-top:5px;font-size:0.8rem;opacity:.92;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .top .who::before{content:"✉ ";opacity:.85}
+/* เลขรุ่น — เล็กและจาง ไม่แย่งสายตาจากชื่อร้าน แต่ก๊อปหรือถ่ายรูปส่งได้ */
+.top .ver{display:block;margin-top:2px;font-size:0.68rem;opacity:.72;
+  letter-spacing:.02em;font-variant-numeric:tabular-nums}
 
 .wrap{padding:14px;max-width:720px;margin:0 auto}
 /* จอกว้าง (จอพับ แท็บเล็ต คอมออฟฟิศ) ใช้พื้นที่เต็ม ไม่เหลือขอบว่างสองข้าง */
@@ -654,6 +657,13 @@ stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M9 5l7 
     <b id="brand">AST Chem-Tooling</b>
     <span class="tag-en">Tools for a Better Tomorrow</span>
     <span class="who" id="who"></span>
+    <!-- รุ่นของโค้ดที่กำลังรันอยู่จริง — bundle.py ประทับเลขให้ตอนรวมไฟล์
+
+         มีไว้เพราะเสียเวลาไปหลายรอบกับคำถามเดียว: "วางโค้ดใหม่แล้วหรือยัง"
+         เดาจากหน้าจอไม่ได้ เพราะบางหน้าหน้าตาเหมือนเดิมทั้งที่โค้ดเปลี่ยนไปแล้ว
+         และ Apps Script ล็อกเวอร์ชันแยกกันต่อ deployment ทำให้ลิงก์พนักงานกับ
+         ลิงก์ลูกค้าเป็นคนละรุ่นกันได้ ตัวเลขตรงนี้ตอบได้ในวินาทีเดียว -->
+    <span class="ver" id="ver"></span>
   </div>
   <div class="fsz">
     <button id="fs-edit" title="โหมดแก้ไขร้าน" aria-label="โหมดแก้ไขร้าน" data-cap="ร้าน">✎</button>

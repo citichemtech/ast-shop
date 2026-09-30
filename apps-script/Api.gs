@@ -4027,15 +4027,62 @@ function planReceive_(p, email) {
 /** หมวดตั้งต้นของสินค้าที่พิมพ์เองตอนรับเข้า — หาเจอง่ายตอนไล่จัดหมวดทีหลัง */
 var RECV_NEW_GROUP_ = 'ยังไม่จัดหมวด';
 
-/** รหัสถัดไปแบบ SKU-nnn จากที่มีอยู่แล้วในชีท */
-function nextPlainSku_(plist) {
-  var max = 0;
-  for (var i = 0; i < plist.length; i++) {
-    var m = /^SKU-(\d+)$/.exec(String(plist[i].sku || '').trim());
-    if (m) { var n = Number(m[1]); if (n > max) max = n; }
+/** แยกรหัสเป็น "หัว" กับ "เลขท้าย" — SKU-141 -> {head:'SKU-', n:141, pad:3} */
+function skuParts_(sku) {
+  var m = /^(.*?)(\d+)$/.exec(String(sku || '').trim());
+  if (!m) return null;
+  return { head: m[1], n: Number(m[2]), pad: m[2].length };
+}
+
+/**
+ * รหัสถัดไปของสินค้าใหม่ — เดินตามชุดของ "หมวด" ที่เลือก
+ *
+ * เจ้าของร้านสั่งว่าของ TOOLING กับเคมีอยากให้เรียงติดกัน ซึ่งชีทก็ทำแบบนั้นอยู่แล้ว
+ * ของเครื่องมือใช้ SKU-141 SKU-143 ... ส่วนเคมีใช้ CHEM-001 ...
+ * ถ้าตั้งรหัสใหม่เป็น SKU-nnn ให้ทุกตัวไม่ว่าหมวดไหน เคมีตัวใหม่จะไปแทรก
+ * อยู่กลางกองเครื่องมือ แล้วเวลาเรียงตามรหัสในชีทก็หาไม่เจอว่ามันอยู่ไหน
+ *
+ * วิธีหา "หัวรหัส" ของหมวด: ดูจากของที่อยู่ในหมวดนั้นอยู่แล้ว ไม่ใช่ฮาร์ดโค้ดคู่
+ * TOOLING/CHEM ไว้ — เจ้าของร้านเพิ่มหมวดใหม่เองได้ตลอด และเคยตั้งชื่อหมวด
+ * ตามชื่อสินค้ามาแล้วหลายหมวด ระบบจึงต้องเรียนจากของจริงในชีท
+ *
+ * เลขนับต่อจาก "ทั้งชีท" ที่ใช้หัวเดียวกัน ไม่ใช่นับแค่ในหมวด
+ * เพราะหัวเดียวกันอาจถูกใช้ข้ามหมวด ถ้านับแค่ในหมวดจะได้รหัสชนของเดิม
+ */
+function nextSkuForGroup_(plist, group) {
+  var g = String(group || '').trim().toLowerCase();
+
+  /* หัวรหัสที่หมวดนี้ใช้อยู่ — เอาอันที่ใช้บ่อยสุด เท่ากันเอาอันที่เลขสูงกว่า
+     (หัวที่เพิ่งใช้ล่าสุดน่าจะเป็นอันที่ร้านใช้อยู่จริงในตอนนี้) */
+  var tally = {}, top = null;
+  if (g) {
+    for (var i = 0; i < plist.length; i++) {
+      if (String(plist[i].group || '').trim().toLowerCase() !== g) continue;
+      var pt = skuParts_(plist[i].sku);
+      if (!pt) continue;
+      var t = tally[pt.head] || (tally[pt.head] = { head: pt.head, n: 0, hi: 0, pad: pt.pad });
+      t.n++;
+      if (pt.n > t.hi) t.hi = pt.n;
+      if (pt.pad > t.pad) t.pad = pt.pad;
+    }
+    for (var k in tally) {
+      if (!top || tally[k].n > top.n || (tally[k].n === top.n && tally[k].hi > top.hi)) top = tally[k];
+    }
   }
-  var next = max + 1;
-  return 'SKU-' + (next < 1000 ? ('00' + next).slice(-3) : next);
+
+  /* หมวดใหม่ที่ยังไม่มีของสักตัว ใช้ชุดกลาง SKU-nnn ไปก่อน
+     ย้ายหมวดทีหลังได้ และรหัสไม่ใช่สิ่งที่ต้องสื่อความหมายอยู่แล้ว */
+  var head = top ? top.head : 'SKU-';
+  var pad = top ? Math.max(top.pad, 3) : 3;
+
+  var max = 0;
+  for (var j = 0; j < plist.length; j++) {
+    var q = skuParts_(plist[j].sku);
+    if (q && q.head === head && q.n > max) max = q.n;
+  }
+  var next = String(max + 1);
+  while (next.length < pad) next = '0' + next;
+  return head + next;
 }
 
 function planNewProduct_(np, plist) {
@@ -4048,7 +4095,7 @@ function planNewProduct_(np, plist) {
   /* รหัสเว้นว่างได้ ระบบตั้งให้แบบ SKU-nnn ต่อจากเลขสูงสุดที่มีอยู่
      คนที่รีบรับของเข้าไม่ควรต้องหยุดคิดว่าจะตั้งรหัสว่าอะไร */
   var sku = String(np.sku || '').trim().replace(/\s+/g, '');
-  if (!sku) sku = nextPlainSku_(plist);
+  if (!sku) sku = nextSkuForGroup_(plist, np.group);
   if (sku.length > 40) throw new Error('รหัสสินค้ายาวเกินไป (เกิน 40 ตัวอักษร)');
   /* ห้ามมี · เพราะเป็นตัวคั่นที่ชีทอื่นใช้ต่อสตริงหลายรายการไว้ในช่องเดียว */
   if (/[·\n\r\t]/.test(sku)) throw new Error('รหัสสินค้ามีอักขระที่ใช้ไม่ได้ (· หรือขึ้นบรรทัดใหม่)');
