@@ -512,6 +512,43 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('กดกลับแล้วได้ต้นฉบับใบเดิม ไม่ได้ออกเลขใหม่',
     (await page.getAttribute('img.docimg', 'src')) === docOrig, true);
 
+  /* ตราชุดเอกสารมุมขวาบน — เจ้าของร้านสั่งให้เอาคำว่า "ต้นฉบับ (Original)" ออก
+     ใบที่ไม่มีป้ายอะไรเลยคือใบจริง · ใบที่ต้องติดป้ายคือสำเนากับตัวอย่าง
+     เพราะสองอันนั้นถ้าไม่ติด จะแยกไม่ออกจากใบจริงเมื่อวางปนกันบนโต๊ะ */
+  console.log('\n   ตราชุดเอกสาร — ต้นฉบับไม่ต้องมีป้าย สำเนายังต้องมี');
+  /* ดักข้อความที่ถูกวาดลงกระดาษจริง ๆ แทนการนับหมึกในกรอบที่เดาพิกัดเอง
+     ตรงไปตรงมากว่า และไม่พังเวลาย้ายตำแหน่งตราหรือเปลี่ยนขนาดกระดาษ */
+  var badge = await page.evaluate(async function () {
+    function drawnText(copy) {
+      var seen = [], real = window.fitCenter;
+      window.fitCenter = function (x, t) { seen.push(String(t == null ? '' : t)); return real.apply(this, arguments) };
+      var d = { no: 'ONIV26-00001', type: 'ใบเสร็จรับเงิน', vatRate: 0.07,
+        lines: [{ name: 'ก', po: '', qty: 1, unit: 'ชิ้น', price: 100, amount: 100 }],
+        base: 100, vat: 7, total: 107, totalText: 'หนึ่งร้อยเจ็ดบาทถ้วน' };
+      var m = { no: 'ONIV26-00001', date: '2026-09-30', cust: { name: 'ก' } };
+      return buildDocPage(d, m, { co: {} }, copy).then(function () {
+        window.fitCenter = real;
+        return seen;
+      }, function (e) { window.fitCenter = real; throw e });
+    }
+    return { orig: await drawnText('ต้นฉบับ'),
+             copy: await drawnText('สำเนา'),
+             draft: await drawnText('ตัวอย่าง') };
+  });
+  truthy('ดักข้อความที่วาดได้จริง', badge.orig.length > 10);
+  eq('ใบต้นฉบับ ไม่มีคำว่า "ต้นฉบับ" บนกระดาษแล้ว',
+     badge.orig.indexOf('ต้นฉบับ'), -1);
+  eq('และไม่มีคำว่า "(Original)" ด้วย', badge.orig.indexOf('(Original)'), -1);
+  /* กรอบ "สำหรับลูกค้า · เอกสารออกเป็นชุด" บอกคนละเรื่อง ต้องยังอยู่ */
+  truthy('แต่ยังบอกว่าใบนี้ของลูกค้า', badge.orig.indexOf('สำหรับลูกค้า') > -1);
+  truthy('และยังบอกว่าเอกสารออกเป็นชุด', badge.orig.indexOf('เอกสารออกเป็นชุด') > -1);
+
+  /* สำเนากับตัวอย่างต้องยังติดป้าย ไม่งั้นแยกไม่ออกจากใบจริงเวลาวางปนกัน */
+  truthy('ใบสำเนา ยังมีคำว่า "สำเนา"', badge.copy.indexOf('สำเนา') > -1);
+  truthy('ใบสำเนา ยังมี "(Copy)"', badge.copy.indexOf('(Copy)') > -1);
+  truthy('และบอกว่าใบนี้เก็บที่บริษัท', badge.copy.indexOf('สำหรับบริษัท') > -1);
+  truthy('ใบตัวอย่าง ยังมีคำว่า "ตัวอย่าง"', badge.draft.indexOf('ตัวอย่าง') > -1);
+
   /* พิมพ์ซ้ำ — ใบที่ออกไปแล้วต้องเปิดกลับมาพิมพ์ใหม่ได้ โดยไม่ออกเลขใหม่
      ก่อนหน้านี้ทำไม่ได้เลย กดออกใหม่ก็โดนด่านกันใบซ้ำ คนเลยตัน */
   console.log('\n   พิมพ์ซ้ำใบที่ออกไปแล้ว');
@@ -4978,6 +5015,41 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     };
   });
   truthy('ช่องชื่อผู้ซื้อถูกเติมของเดิมไว้ให้แล้ว', pre.name.length > 0);
+
+  /* ---- อ่านของเดิมไม่ได้ ปุ่มต้องไม่ค้างกดไม่ได้ตลอดไป ----
+
+     ของจริง: กดแก้ใบเสนอราคา QO26-00012 แล้วช่องทุกช่องว่าง ปุ่ม "ยืนยันแก้ใบนี้"
+     กดไม่ได้ และไม่มีข้อความบอกอะไรเลย — คนหน้าจอได้แต่มองช่องว่าง ๆ แล้วงง
+     เพราะโค้ดเดิมเป็น .then(ok, err) ซึ่งไม่จับ error ที่เกิดข้างใน ok เอง
+     พอคำตอบจากชีทหายระหว่างทาง บรรทัด res.meta.po พังเงียบเป็น unhandled rejection */
+  console.log('\n   อ่านข้อมูลผู้ซื้อของใบเดิมไม่ได้ ต้องบอก ไม่ใช่ค้างเงียบ');
+  await page.evaluate(function () { document.querySelector('.rvbox .rv-no').click() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () { window.MOCK_NULL = 1 });
+  await page.evaluate(function (no) {
+    document.querySelector('#fl-docs [data-rv="' + no + '"]').click();
+  }, target);
+  await page.waitForTimeout(1500);
+  var stuck = await page.evaluate(function () {
+    var b = document.querySelector('.rvbox');
+    return { disabled: b.querySelector('.rv-go').disabled,
+             cust: b.querySelector('.rv-cust').textContent };
+  });
+  eq('ปุ่มกลับมากดได้ ไม่ค้างตลอดไป', stuck.disabled, false);
+  truthy('บอกตรง ๆ ว่าอ่านข้อมูลผู้ซื้อไม่ได้', /อ่านข้อมูลผู้ซื้อของใบเดิมไม่ได้/.test(stuck.cust),
+    stuck.cust);
+  /* สำคัญ: ต้องบอกด้วยว่าข้อมูลผู้ซื้อจะไม่ถูกแตะ ไม่งั้นคนจะไม่กล้ากดต่อ */
+  truthy('และบอกว่าข้อมูลผู้ซื้อจะคงไว้ตามเดิม', /คงไว้ตามเดิม/.test(stuck.cust), stuck.cust);
+  await page.evaluate(function () { window.MOCK_NULL = 0 });
+  await page.evaluate(function () { document.querySelector('.rvbox .rv-no').click() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function (no) {
+    document.querySelector('#fl-docs [data-rv="' + no + '"]').click();
+  }, target);
+  await page.waitForFunction(function () {
+    var g = document.querySelector('.rvbox .rv-go');
+    return g && !g.disabled;
+  }, null, { timeout: 15000 });
 
   await page.fill('.rvbox .rv-name', 'บริษัท แก้ชื่อถูกแล้ว จำกัด');
   await page.fill('.rvbox .rv-addr', '99/9 ถนนแก้ใหม่ กรุงเทพฯ 10240');

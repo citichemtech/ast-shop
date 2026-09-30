@@ -1909,6 +1909,12 @@ function askRevise(no, btn, redraw){
   var go = box.querySelector(".rv-go");
   go.disabled = true;
   var custReady = false;
+  /* ใช้ .catch ไม่ใช่ .then(ok, err) — สองแบบนี้ต่างกันตรงที่พังข้างใน ok เอง
+
+     ของเดิมเป็น .then(ok, err) ซึ่ง "ไม่จับ" error ที่เกิดข้างใน ok
+     พอชีทตอบกลับมาเป็นค่าว่าง (อาการคำตอบหายระหว่างทาง) บรรทัด res.meta.po
+     จะพังเงียบ ๆ เป็น unhandled rejection แล้วปุ่ม "ยืนยันแก้ใบนี้" ค้างกดไม่ได้
+     ตลอดไป โดยไม่มีข้อความบอกสักตัว คนหน้าจอได้แต่มองช่องว่าง ๆ แล้วงง */
   api("getDoc", no).then(function(res){
     var c = (res && res.meta && res.meta.cust) || {};
     box.querySelector(".rv-name").value = c.name || "";
@@ -1923,7 +1929,7 @@ function askRevise(no, btn, redraw){
       res.meta.novat ? "none" : (res.meta.vatMode === "incl" ? "incl" : "excl");
     custReady = true;
     go.disabled = false;
-  }, function(e){
+  }).catch(function(e){
     /* อ่านของเดิมไม่ได้ ก็ยังแก้ยอดได้ แต่ต้องไม่แตะข้อมูลผู้ซื้อเลย
        ส่งช่องว่างขึ้นไปคือลบชื่อลูกค้าออกจากใบ ซึ่งแย่กว่าไม่ได้แก้ */
     box.querySelector(".rv-cust").innerHTML =

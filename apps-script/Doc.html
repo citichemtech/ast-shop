@@ -143,16 +143,24 @@ async function buildDocPage(d, m, cfg, copy) {
     fitCenter(x, co.nameEn, pad + 109, 156, 226, 9, 400);
   }
 
-  /* ตราชุดเอกสารมุมขวาบน — ใบชุดหนึ่งพิมพ์สองใบ ต้นฉบับให้ลูกค้า สำเนาเก็บบัญชี
-     ถ้าไม่ติดป้ายไว้ ใบสองใบหน้าตาเหมือนกันจนแยกไม่ออกว่าใบไหนของใคร */
+  /* ตราชุดเอกสารมุมขวาบน
+
+     ใบที่ต้องติดป้ายคือใบที่ "ไม่ใช่ตัวจริง" — สำเนาเก็บบัญชี กับตัวอย่างที่ยังไม่ออกเลข
+     สองอันนี้ถ้าไม่ติดไว้ จะแยกไม่ออกจากใบจริงเมื่อวางปนกันบนโต๊ะ
+
+     ส่วนใบต้นฉบับ เจ้าของร้านสั่งให้เอาคำว่า "ต้นฉบับ (Original)" ออก —
+     ใบที่ไม่มีป้ายอะไรเลยคือใบจริง ซึ่งอ่านง่ายกว่าและตรงกับฟอร์มที่ร้านใช้อยู่
+     กรอบ "สำหรับลูกค้า · เอกสารออกเป็นชุด" ยังอยู่ เพราะมันบอกคนละเรื่องกัน */
   var bw = 186, bx = W - pad - bw;
-  x.fillStyle = C_BAND; roundRect(x, bx, 44, bw, 54, 26); x.fill();
-  x.strokeStyle = "#7f9dbb"; roundRect(x, bx, 44, bw, 54, 26); x.stroke();
-  x.fillStyle = "#0b2545";
-  fitCenter(x, isDraft ? "ตัวอย่าง" : (isCopy ? "สำเนา" : "ต้นฉบับ"),
-    bx + bw / 2, 50, bw - 20, pt(11), 700);
-  fitCenter(x, isDraft ? "(Draft — ยังไม่ออกเลข)" : (isCopy ? "(Copy)" : "(Original)"),
-    bx + bw / 2, 76, bw - 20, F_SMALL, 400);
+  var mark = isDraft ? "ตัวอย่าง" : (isCopy ? "สำเนา" : "");
+  if (mark) {
+    x.fillStyle = C_BAND; roundRect(x, bx, 44, bw, 54, 26); x.fill();
+    x.strokeStyle = "#7f9dbb"; roundRect(x, bx, 44, bw, 54, 26); x.stroke();
+    x.fillStyle = "#0b2545";
+    fitCenter(x, mark, bx + bw / 2, 50, bw - 20, pt(11), 700);
+    fitCenter(x, isDraft ? "(Draft — ยังไม่ออกเลข)" : "(Copy)",
+      bx + bw / 2, 76, bw - 20, F_SMALL, 400);
+  }
   x.strokeStyle = "#000"; x.lineWidth = 1.1;
   x.strokeRect(bx, 106, bw, 46);
   x.fillStyle = "#000";
