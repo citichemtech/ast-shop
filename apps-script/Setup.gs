@@ -570,7 +570,7 @@ function setupDocSheet_(ss) {
   if (fresh) s = ss.insertSheet(name);
 
   if (s.getMaxRows() < DOC_LAST) s.insertRowsAfter(s.getMaxRows(), DOC_LAST - s.getMaxRows());
-  if (s.getMaxColumns() < 24) s.insertColumnsAfter(s.getMaxColumns(), 24 - s.getMaxColumns());
+  if (s.getMaxColumns() < 25) s.insertColumnsAfter(s.getMaxColumns(), 25 - s.getMaxColumns());
 
   s.getRange('A2').setValue('ทะเบียนเอกสารขาย — ระบบเขียนให้เอง')
     .setFontWeight('bold').setFontSize(12);
@@ -587,7 +587,8 @@ function setupDocSheet_(ss) {
     'หมายเหตุ', 'เหตุผลที่ยกเลิก', 'รายการในใบ\n(ระบบใช้พิมพ์ซ้ำ ห้ามแก้)',
     'ลายเซ็นผู้รับของ\n(ลูกค้าเซ็นในแอป ห้ามแก้)',
     'ส่งให้ลูกค้าแล้วเมื่อ\n(ว่าง = ยังแก้ใบได้)',
-    'ประวัติการแก้ใบ\n(ระบบจดเอง ไม่พิมพ์ลงใบ)'];
+    'ประวัติการแก้ใบ\n(ระบบจดเอง ไม่พิมพ์ลงใบ)',
+    'ส่งบัญชีแล้วเมื่อ\n(เฉพาะใบที่ไม่มีออเดอร์)'];
   s.getRange(HEAD_ROW, 1, 1, head.length).setValues([head])
     .setBackground(C_HEAD_BG).setFontColor(C_HEAD_FG).setFontWeight('bold')
     .setVerticalAlignment('middle').setWrap(true);
@@ -596,7 +597,7 @@ function setupDocSheet_(ss) {
   fillFormula_(s, 1, n, '=IF($B6="","",COUNTA($B$6:$B6))');
 
   var inCols = [];
-  for (var c = 2; c <= 24; c++) inCols.push(c);
+  for (var c = 2; c <= 25; c++) inCols.push(c);
   paintCols_(s, n, inCols, [1]);
 
   s.getRange(DATA_ROW, SH.doc.IN.date, n, 1).setNumberFormat('dd/mm/yyyy');

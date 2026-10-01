@@ -1711,6 +1711,9 @@ function docRowHtml(d){
       /* ใบที่ยังไม่ได้ส่ง = ยังอยู่ในร้าน แก้ด้วยเลขเดิมได้ไม่จำกัด
          ใบที่กดส่งแล้ว = ลูกค้าถือกระดาษอยู่ ห้ามแก้ ต้องยกเลิกแล้วออกใหม่ */
       var sent = String(d.sentAt || "");
+      /* ใบที่ไม่มีเลขออเดอร์ผูกอยู่ — ใบเสนอราคายังไม่นับ เพราะยังไม่ใช่เอกสารขาย
+         ที่ต้องเข้าเล่มภาษี ส่วนที่เหลือคือเลขในเล่มที่ต้องส่งบัญชีให้ครบ */
+      var orphan = !d.orderNo && d.type !== "ใบเสนอราคา";
       return '<div class="row"><div class="i">'
         +'<b>'+esc(d.no)+'</b>'
         /* ประวัติที่ไม่มีชื่อลูกค้า หาใบที่ต้องการไม่เจอ — เลขใบอย่างเดียว
@@ -1730,8 +1733,19 @@ function docRowHtml(d){
         + (!dead && d.lastRevise
            ? '<span style="color:var(--blue)">'+esc(d.lastRevise)+'</span>' : '')
         + (!dead && sent ? '<span style="color:var(--gray)">ส่งเมื่อ '+esc(sent)+'</span>' : '')
+        /* ใบที่ไม่มีออเดอร์ (เลขที่เติมกลับเข้าเล่ม · ใบยกเลิกที่ไม่เคยมีออเดอร์)
+           สถานะบัญชีไม่ได้อยู่บนแถวออเดอร์ จึงต้องบอกตรงนี้ ไม่งั้นไม่มีทางรู้ว่า
+           เลขนี้ส่งบัญชีไปหรือยัง แล้วเล่มที่ส่งไปจะขาดเลขโดยไม่มีใครเห็น */
+        + (orphan
+           ? (d.acctAt
+              ? '<span style="color:var(--green)">ส่งบัญชีแล้ว ' + esc(d.acctAt) + '</span>'
+              : '<span style="color:var(--amber)">ยังไม่ส่งบัญชี</span>')
+           : '')
         +'</div><div class="acts">'
         +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
+        /* เล่มใบกำกับภาษีต้องมีเลขครบทุกเลข เลขที่ไม่ได้ใช้ก็ต้องส่งให้บัญชี
+           ของเดิมปุ่มส่งบัญชีอยู่แต่บนแถวออเดอร์ เลขพวกนี้จึงส่งไม่ได้เลย */
+        + (orphan ? '<button class="mini" data-ac="'+esc(d.no)+'">ส่งบัญชี</button>' : '')
         /* ใบเสนอราคาที่ลูกค้าตอบตกลงแล้ว ของเดิมต้องคีย์รายการใหม่ทั้งชุด
            ทั้งที่ข้อมูลอยู่ในใบครบแล้ว — พิมพ์ใหม่ทีคือพิมพ์ผิดได้ที */
         + (!dead && !d.orderNo && d.type === "ใบเสนอราคา"
@@ -1755,6 +1769,11 @@ function bindDocRows(box, outId, redraw){
   });
   box.querySelectorAll("[data-rv]").forEach(function(b){
     b.onclick = function(){ askRevise(b.getAttribute("data-rv"), b, redraw) };
+  });
+  /* ส่งบัญชีสำหรับใบที่ไม่มีออเดอร์ — ใช้กล่องเดียวกับของออเดอร์
+     openAcct อ่านแค่ .no แล้วที่เหลือมาจาก acctPack ฝั่งชีท จึงส่งเลขใบไปตรง ๆ ได้ */
+  box.querySelectorAll("[data-ac]").forEach(function(b){
+    b.onclick = function(){ openAcct({ no: b.getAttribute("data-ac") }) };
   });
   box.querySelectorAll("[data-sd]").forEach(function(b){
     b.onclick = function(){

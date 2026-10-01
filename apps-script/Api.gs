@@ -1161,9 +1161,21 @@ function docTypeByTh_(th) {
  * แล้วด่านที่ห้ามแก้ใบที่ส่งไปแล้วก็เลิกทำงานเงียบ ๆ โดยไม่มีอะไรฟ้อง
  * คิดจาก SH.doc.IN เอาเองแบบนี้ เพิ่มคอลัมน์อีกกี่ครั้งก็ไม่พังซ้ำรอยเดิม
  */
+/**
+ * ช่วงคอลัมน์ของชีทเอกสารที่ "อ่านได้จริง"
+ *
+ * ตัดให้ไม่เกินความกว้างจริงของชีท เพราะชีทที่ยังไม่ได้สั่ง setup หลังอัปเดต
+ * จะยังไม่มีคอลัมน์ที่เพิ่งเพิ่มเข้ามา แล้ว getRange เลยขอบจะโยน error ทันที
+ * ผลคือแฟ้มเอกสารทั้งหน้าเปิดไม่ขึ้น เพราะคอลัมน์เดียวที่ยังไม่มี
+ * ซึ่งแย่กว่าการไม่มีข้อมูลช่องนั้นมาก — ช่องที่ยังไม่มีอ่านได้เป็นค่าว่างก็พอ
+ */
 function docSpan_() {
   var C = SH.doc.IN, hi = C.no;
   for (var f in C) if (C[f] > hi) hi = C[f];
+  try {
+    var wide = sheet_('doc').getMaxColumns();
+    if (wide < hi) hi = wide;
+  } catch (e) { /* อ่านความกว้างไม่ได้ ใช้ค่าตามผังไปก่อน */ }
   return { lo: C.no, hi: hi, len: hi - C.no + 1 };
 }
 
@@ -1638,6 +1650,9 @@ function listDocs(orderNo) {
       revised: rvl.n, lastRevise: rvl.last,
       /* ส่งไปแล้วหรือยัง เป็นตัวตัดสินว่าหน้าจอจะโชว์ปุ่มแก้ใบให้ไหม */
       sentAt: String(v[i][at(C.sentAt)] || '').trim(),
+      /* ส่งบัญชีไปแล้วหรือยัง — เฉพาะใบที่ไม่มีออเดอร์ ใบที่มีออเดอร์
+         จดสถานะไว้บนแถวออเดอร์ หน้าจอจึงใช้ช่องนี้แค่กับใบที่ไม่มีออเดอร์ */
+      acctAt: String(v[i][at(C.acctAt)] || '').trim(),
       hasSnap: !!String(v[i][at(C.snap)] || '').trim()
     });
   }
@@ -1767,6 +1782,7 @@ function findDocs(p) {
       total: Number(v[i][at(C.total)] || 0),
       voidWhy: String(v[i][at(C.voidWhy)] || '').trim(),
       sentAt: String(v[i][at(C.sentAt)] || '').trim(),
+      acctAt: String(v[i][at(C.acctAt)] || '').trim(),
       revised: rv.n, lastRevise: rv.last,
       hasSnap: !!String(v[i][at(C.snap)] || '').trim()
     };
