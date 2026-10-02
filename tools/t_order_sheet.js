@@ -13,6 +13,19 @@ var FS = require('./fakesheet');
 var DATA_ROW = FS.DATA_ROW;
 var SH_TEL = 5;   // ออเดอร์_หัวบิล คอลัมน์ E = เบอร์โทรลูกค้า
 
+/* วันหมดอายุของล็อตในชุดทดสอบ ต้องนับจากวันที่รันจริง ไม่ใช่เขียนปีตายตัว
+   ของเดิมเขียน '2026-10-01' ไว้เป็นล็อต "หมดอายุก่อน แต่ยังขายได้"
+   พอถึงวันนั้นจริง ด่านกันของหมดอายุก็เริ่มปัดล็อตนั้นออก ชุดทดสอบจึงตกเองทั้งชุด
+   ทั้งที่โค้ดไม่ได้เปลี่ยนอะไรเลย — ซึ่งกลบของจริงที่อาจพังอยู่ */
+function expIn(days) {
+  var d = new Date();
+  d.setDate(d.getDate() + days);
+  function p(n) { return n < 10 ? '0' + n : '' + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+var EXP_SOON = expIn(30);    /* ใกล้หมดอายุ แต่ยังขายได้ — ตัวที่ FEFO ต้องหยิบก่อน */
+var EXP_LATER = expIn(200);  /* ยังอีกนาน — ตัวที่ต้องถูกหยิบทีหลัง */
+
 var fails = 0;
 function eq(label, got, want) {
   var ok = JSON.stringify(got) === JSON.stringify(want);
@@ -106,8 +119,8 @@ throws('ปฏิเสธคำขอที่ไม่มี clientKey', funct
 console.log('\n4. ตัดล็อตแบบ FEFO');
 var fx4 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'L-2703', exp: '2027-03-31', recv: '2026-01-10', qty: 10 },
-    { sku: 'CHEM-001', lotNo: 'L-2610', exp: '2026-10-31', recv: '2026-02-20', qty: 4 }
+    { sku: 'CHEM-001', lotNo: 'L-2703', exp: EXP_LATER, recv: '2026-01-10', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'L-2610', exp: EXP_SOON, recv: '2026-02-20', qty: 4 }
   ]
 });
 var api4 = FS.load(fx4);
@@ -532,7 +545,7 @@ function isoToday() {
 }
 
 var fx17 = FS.build({
-  lots: [{ sku: 'CHEM-001', lotNo: 'L-2610', exp: '2026-10-31', recv: '2026-08-01', qty: 50 }]
+  lots: [{ sku: 'CHEM-001', lotNo: 'L-2610', exp: EXP_SOON, recv: '2026-08-01', qty: 50 }]
 });
 var api17 = FS.load(fx17);
 var TODAY = isoToday();
@@ -1077,8 +1090,8 @@ var SH_HEAD_CUST = 4, SH_HEAD_SHIP = 12;
 
 var fx30 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'L-EARLY', exp: '2026-10-01', recv: '2026-08-01', qty: 3 },
-    { sku: 'CHEM-001', lotNo: 'L-LATE',  exp: '2027-03-01', recv: '2026-08-01', qty: 50 }
+    { sku: 'CHEM-001', lotNo: 'L-EARLY', exp: EXP_SOON, recv: '2026-08-01', qty: 3 },
+    { sku: 'CHEM-001', lotNo: 'L-LATE',  exp: EXP_LATER, recv: '2026-08-01', qty: 50 }
   ]
 });
 var api30 = FS.load(fx30, {});
@@ -1190,8 +1203,8 @@ var SH_HEAD_STATUS = 17, SH_HEAD_NOTE = 20, SH_HEAD_DISC = 11, SH_HEAD_NET = 14;
 
 var fx31 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'L-A', exp: '2026-10-01', recv: '2026-08-01', qty: 10 },
-    { sku: 'CHEM-001', lotNo: 'L-B', exp: '2027-03-01', recv: '2026-08-01', qty: 10 }
+    { sku: 'CHEM-001', lotNo: 'L-A', exp: EXP_SOON, recv: '2026-08-01', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'L-B', exp: EXP_LATER, recv: '2026-08-01', qty: 10 }
   ]
 });
 var api31 = FS.load(fx31, {});
@@ -2285,7 +2298,7 @@ function recvPayload(extra) {
   return o;
 }
 
-var fx43 = FS.build({ lots: [{ sku: 'CHEM-001', lotNo: 'L-เดิม', exp: '2026-10-01', recv: '2026-08-01', qty: 3 }] });
+var fx43 = FS.build({ lots: [{ sku: 'CHEM-001', lotNo: 'L-เดิม', exp: EXP_SOON, recv: '2026-08-01', qty: 3 }] });
 var api43 = FS.load(fx43, {});
 api43.setup();
 
@@ -2896,8 +2909,8 @@ console.log('\n50. ลูกค้าคืนของ / ของตีกล�
 
 var fx50 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'R-A', exp: '2026-10-01', recv: '2026-08-01', qty: 10 },
-    { sku: 'CHEM-001', lotNo: 'R-B', exp: '2027-03-01', recv: '2026-08-01', qty: 10 }
+    { sku: 'CHEM-001', lotNo: 'R-A', exp: EXP_SOON, recv: '2026-08-01', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'R-B', exp: EXP_LATER, recv: '2026-08-01', qty: 10 }
   ]
 });
 var api50 = FS.load(fx50, {});

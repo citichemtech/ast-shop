@@ -801,6 +801,23 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   });
   eq('ใบที่ยกเลิกวาดออกมาไม่เหมือนใบปกติ', stamped.same, false);
   truthy('และยังเป็นรูปที่มีเนื้อหาจริง', stamped.len > 30000);
+
+  /* เลขที่เติมกลับเข้าเล่ม (fillDocGaps) ไม่เคยออกใบจริง จึงไม่มีรายการสักบรรทัด
+     ชีทส่ง lines: [] มาให้ หน้าจอต้องวาดกระดาษออกมาได้ ไม่ใช่ตายกลางทาง
+     ถ้าวาดไม่ได้ ปุ่มส่งบัญชีก็ส่งไม่ได้ เพราะไฟล์ที่ส่งคือรูปที่วาดตรงนี้ */
+  var empty = await page.evaluate(async function () {
+    var d = { lines: [], base: 0, vat: 0, vatRate: 0, total: 0,
+              totalText: 'ศูนย์บาทถ้วน' };
+    var m = { no: 'ONIV26-00248', date: '', type: 'ใบเสร็จรับเงิน',
+              cust: { name: '' }, voidWhy: 'ไม่ได้ใช้เลขนี้ — เติมกลับเข้าเล่มให้เลขครบ' };
+    var url = await buildDocPage(d, m, CFG.doc || {}, 'สำเนา');
+    var plain = await buildDocPage(d, { no: 'ONIV26-00248', date: '',
+      type: 'ใบเสร็จรับเงิน', cust: { name: '' } }, CFG.doc || {}, 'สำเนา');
+    return { len: url.length, png: url.slice(0, 15), stamped: url !== plain };
+  });
+  eq('ใบเปล่าวาดออกมาเป็นรูปจริง', empty.png, 'data:image/png;');
+  truthy('ไม่ใช่กระดาษเปล่าโล่ง ๆ — ยังมีหัวใบ เลขที่ และช่องเซ็น', empty.len > 30000);
+  truthy('และมีตรา ยกเลิก ปั๊มทับ หยิบไปใช้เป็นใบจริงไม่ได้', empty.stamped);
   await page.screenshot({ path: 'out/ui-void.png' });
   await page.evaluate(function () { closeModal(); });
   await page.waitForTimeout(200);
