@@ -13,6 +13,19 @@ var FS = require('./fakesheet');
 var DATA_ROW = FS.DATA_ROW;
 var SH_TEL = 5;   // ออเดอร์_หัวบิล คอลัมน์ E = เบอร์โทรลูกค้า
 
+/* วันหมดอายุของล็อตในชุดทดสอบ ต้องนับจากวันที่รันจริง ไม่ใช่เขียนปีตายตัว
+   ของเดิมเขียน '2026-10-01' ไว้เป็นล็อต "หมดอายุก่อน แต่ยังขายได้"
+   พอถึงวันนั้นจริง ด่านกันของหมดอายุก็เริ่มปัดล็อตนั้นออก ชุดทดสอบจึงตกเองทั้งชุด
+   ทั้งที่โค้ดไม่ได้เปลี่ยนอะไรเลย — ซึ่งกลบของจริงที่อาจพังอยู่ */
+function expIn(days) {
+  var d = new Date();
+  d.setDate(d.getDate() + days);
+  function p(n) { return n < 10 ? '0' + n : '' + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+var EXP_SOON = expIn(30);    /* ใกล้หมดอายุ แต่ยังขายได้ — ตัวที่ FEFO ต้องหยิบก่อน */
+var EXP_LATER = expIn(200);  /* ยังอีกนาน — ตัวที่ต้องถูกหยิบทีหลัง */
+
 var fails = 0;
 function eq(label, got, want) {
   var ok = JSON.stringify(got) === JSON.stringify(want);
@@ -106,8 +119,8 @@ throws('ปฏิเสธคำขอที่ไม่มี clientKey', funct
 console.log('\n4. ตัดล็อตแบบ FEFO');
 var fx4 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'L-2703', exp: '2027-03-31', recv: '2026-01-10', qty: 10 },
-    { sku: 'CHEM-001', lotNo: 'L-2610', exp: '2026-10-31', recv: '2026-02-20', qty: 4 }
+    { sku: 'CHEM-001', lotNo: 'L-2703', exp: EXP_LATER, recv: '2026-01-10', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'L-2610', exp: EXP_SOON, recv: '2026-02-20', qty: 4 }
   ]
 });
 var api4 = FS.load(fx4);
@@ -532,7 +545,7 @@ function isoToday() {
 }
 
 var fx17 = FS.build({
-  lots: [{ sku: 'CHEM-001', lotNo: 'L-2610', exp: '2026-10-31', recv: '2026-08-01', qty: 50 }]
+  lots: [{ sku: 'CHEM-001', lotNo: 'L-2610', exp: EXP_SOON, recv: '2026-08-01', qty: 50 }]
 });
 var api17 = FS.load(fx17);
 var TODAY = isoToday();
@@ -1077,8 +1090,8 @@ var SH_HEAD_CUST = 4, SH_HEAD_SHIP = 12;
 
 var fx30 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'L-EARLY', exp: '2026-10-01', recv: '2026-08-01', qty: 3 },
-    { sku: 'CHEM-001', lotNo: 'L-LATE',  exp: '2027-03-01', recv: '2026-08-01', qty: 50 }
+    { sku: 'CHEM-001', lotNo: 'L-EARLY', exp: EXP_SOON, recv: '2026-08-01', qty: 3 },
+    { sku: 'CHEM-001', lotNo: 'L-LATE',  exp: EXP_LATER, recv: '2026-08-01', qty: 50 }
   ]
 });
 var api30 = FS.load(fx30, {});
@@ -1190,8 +1203,8 @@ var SH_HEAD_STATUS = 17, SH_HEAD_NOTE = 20, SH_HEAD_DISC = 11, SH_HEAD_NET = 14;
 
 var fx31 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'L-A', exp: '2026-10-01', recv: '2026-08-01', qty: 10 },
-    { sku: 'CHEM-001', lotNo: 'L-B', exp: '2027-03-01', recv: '2026-08-01', qty: 10 }
+    { sku: 'CHEM-001', lotNo: 'L-A', exp: EXP_SOON, recv: '2026-08-01', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'L-B', exp: EXP_LATER, recv: '2026-08-01', qty: 10 }
   ]
 });
 var api31 = FS.load(fx31, {});
@@ -2285,7 +2298,7 @@ function recvPayload(extra) {
   return o;
 }
 
-var fx43 = FS.build({ lots: [{ sku: 'CHEM-001', lotNo: 'L-เดิม', exp: '2026-10-01', recv: '2026-08-01', qty: 3 }] });
+var fx43 = FS.build({ lots: [{ sku: 'CHEM-001', lotNo: 'L-เดิม', exp: EXP_SOON, recv: '2026-08-01', qty: 3 }] });
 var api43 = FS.load(fx43, {});
 api43.setup();
 
@@ -2352,6 +2365,156 @@ console.log('\n   ต้องลงบันทึกว่าใครรั�
 truthy2('มีแถวรับของเข้าใน Log', rowsWith(fx43.sheets['Log'], api43.SH.log.IN.type).some(function (r) {
   return String(fx43.sheets['Log'].cell(r, api43.SH.log.IN.type).v) === 'รับของเข้า';
 }));
+
+/* ------------------------------------ 43ข. ของที่เพิ่งซื้อเข้ามา ยังไม่มีในฐานสินค้า
+
+   ของจริง: เจ้าของร้านสั่งของล็อตใหม่เข้ามา แล้วในดรอปดาวน์ไม่มีตัวนั้น
+   เพราะยังไม่เคยขาย ก่อนหน้านี้ต้องไปเปิดชีท ฐานสินค้า พิมพ์แถวเองก่อน
+   แล้วค่อยกลับมารับเข้า — ขั้นตอนที่คนข้ามแล้วของหายเข้าระบบไม่ได้
+
+   ด่านที่สำคัญที่สุดของหมวดนี้คือ "ห้ามไปทับแถวเดิม" เพราะช่องต้นทุนกับราคา
+   ใน ฐานสินค้า ถูกสูตรของ ออเดอร์_รายการ ดึงไปคิดกำไรของทุกใบที่ใช้รหัสนั้น */
+console.log('\n43ข. พิมพ์ชื่อกับรหัสสินค้าใหม่ตอนรับของเข้า');
+
+var P43 = fx43.sheets['ฐานสินค้า'];
+function skuRows43() { return rowsWith(P43, api43.SH.prod.IN.sku) }
+var before43 = skuRows43().length;
+
+var new43 = api43.receiveStock(recvPayload({
+  sku: '', lotNo: '', exp: '',
+  newProd: { sku: 'AB-900', name: 'จารบีทนความร้อน 1kg', group: 'เคมีภัณฑ์',
+             unit: 'กระปุก', price: 450 },
+  qty: 6, cost: 300
+}));
+truthy2('บันทึกผ่าน', new43.ok === true);
+eq('ได้รหัสตามที่พิมพ์', new43.newProd.sku, 'AB-900');
+eq('ฐานสินค้าเพิ่มมาหนึ่งแถว ไม่ใช่ทับของเดิม', skuRows43().length, before43 + 1);
+
+var nRow43 = new43.newProd.row;
+eq('เขียนครบทุกช่องที่ต้องมี',
+  [P43.cell(nRow43, api43.SH.prod.IN.sku).v, P43.cell(nRow43, api43.SH.prod.IN.name).v,
+   P43.cell(nRow43, api43.SH.prod.IN.group).v, P43.cell(nRow43, api43.SH.prod.IN.unit).v,
+   P43.cell(nRow43, api43.SH.prod.IN.price).v, P43.cell(nRow43, api43.SH.prod.IN.perPack).v],
+  ['AB-900', 'จารบีทนความร้อน 1kg', 'เคมีภัณฑ์', 'กระปุก', 450, 1]);
+eq('ต้นทุนในฐานสินค้าใช้ต้นทุนของก้อนที่รับเข้ามานี่แหละ',
+   P43.cell(nRow43, api43.SH.prod.IN.cost).v, 300);
+/* ของก้อนนี้เข้าทางแถว รับเข้า ถ้าใส่ยอดยกมาด้วยจะถูกนับสองรอบ */
+eq('ยอดยกมาเป็นศูนย์ ไม่นับของก้อนเดียวกันสองรอบ',
+   P43.cell(nRow43, api43.SH.prod.IN.opening).v, 0);
+/* เจ้าของร้านสั่งไว้ว่า "ลูกค้าดูแค่สินค้าที่อยากให้เห็นเท่านั้น"
+   ของที่เพิ่งรับเข้ายังไม่มีรูป ยังไม่ได้ตั้งราคาจริง ไม่ควรโผล่หน้าร้านเอง */
+eq('ไม่ขึ้นหน้าร้านให้เอง', P43.cell(nRow43, api43.SH.prod.IN.web).v, 'ไม่');
+eq('และบอกหน้าจอไปด้วยว่ายังไม่ขึ้นหน้าร้าน', new43.newProd.onWeb, false);
+
+var rNew43 = rowsWith(R43, api43.SH.recv.IN.sku).slice(-1)[0];
+eq('แถวรับเข้าอ้างรหัสใหม่ถูกต้อง',
+  [R43.cell(rNew43, api43.SH.recv.IN.sku).v, R43.cell(rNew43, api43.SH.recv.IN.qty).v],
+  ['AB-900', 6]);
+
+console.log('\n   ขายตัวที่เพิ่งสร้างได้ทันที ไม่ต้องรอเปิดชีทไปเพิ่มเอง');
+truthy2('คีย์ออเดอร์ของรหัสใหม่ผ่าน', !!api43.createOrder(order({
+  cust: 'ลูกค้าของใหม่', items: [{ sku: 'AB-900', qty: 2, price: 450 }]
+})).no);
+
+console.log('\n   เว้นรหัสว่าง ระบบตั้งให้เอง — ต้องเดินตามชุดของหมวดนั้น');
+/* เจ้าของร้านสั่งว่าของ TOOLING กับเคมีอยากให้เรียงติดกัน ซึ่งชีทก็ทำแบบนั้นอยู่
+   เครื่องมือใช้ SKU-nnn เคมีใช้ CHEM-nnn ถ้าตั้ง SKU-nnn ให้ทุกตัวไม่ว่าหมวดไหน
+   เคมีตัวใหม่จะไปแทรกกลางกองเครื่องมือ แล้วเรียงตามรหัสในชีทก็หาไม่เจอ */
+var series43 = [
+  { sku: 'SKU-141', group: 'TOOLING' }, { sku: 'SKU-143', group: 'TOOLING' },
+  { sku: 'SKU-148', group: 'TOOLING' },
+  { sku: 'CHEM-001', group: 'เคมีภัณฑ์' }, { sku: 'CHEM-007', group: 'เคมีภัณฑ์' },
+  { sku: 'AB-900', group: 'จารบีและน้ำมัน' }
+];
+eq('หมวดเครื่องมือ ต่อจาก SKU-148', api43.nextSkuForGroup_(series43, 'TOOLING'), 'SKU-149');
+eq('หมวดเคมี ต่อจาก CHEM-007 ไม่ใช่ SKU-149',
+   api43.nextSkuForGroup_(series43, 'เคมีภัณฑ์'), 'CHEM-008');
+eq('พิมพ์หมวดตัวเล็กตัวใหญ่ไม่ตรงกัน ก็ยังรู้ว่าหมวดเดียวกัน',
+   api43.nextSkuForGroup_(series43, 'tooling'), 'SKU-149');
+eq('หมวดที่ใช้หัวรหัสของตัวเอง ก็เดินตามหัวนั้น',
+   api43.nextSkuForGroup_(series43, 'จารบีและน้ำมัน'), 'AB-901');
+/* หมวดใหม่ที่ยังไม่มีของสักตัว ไม่มีอะไรให้เรียนรู้ ใช้ชุดกลางไปก่อน */
+eq('หมวดใหม่ที่ยังไม่มีของ ใช้ชุดกลาง SKU-nnn',
+   api43.nextSkuForGroup_(series43, 'หมวดที่เพิ่งตั้ง'), 'SKU-149');
+eq('ไม่ระบุหมวด ก็ใช้ชุดกลาง', api43.nextSkuForGroup_(series43, ''), 'SKU-149');
+/* เลขต้องนับต่อจากทั้งชีทที่ใช้หัวเดียวกัน ไม่ใช่นับแค่ในหมวด
+   หัวเดียวกันข้ามหมวดได้ ถ้านับแค่ในหมวดจะได้รหัสชนของเดิม */
+eq('หัวเดียวกันอยู่คนละหมวด ต้องไม่ตั้งรหัสชนกัน',
+   api43.nextSkuForGroup_(series43.concat([{ sku: 'CHEM-020', group: 'น้ำยาล้าง' }]),
+     'เคมีภัณฑ์'), 'CHEM-021');
+/* รหัสที่เติมศูนย์หน้าไว้กี่หลัก ต้องรักษาความกว้างเดิม ไม่งั้นเรียงในชีทสลับ */
+eq('รักษาจำนวนหลักตามของเดิม',
+   api43.nextSkuForGroup_([{ sku: 'CH-0009', group: 'ก' }], 'ก'), 'CH-0010');
+
+console.log('\n   เว้นรหัสว่าง ระบบตั้งให้เอง');
+var auto43 = api43.receiveStock(recvPayload({
+  sku: '', lotNo: '', exp: '',
+  newProd: { name: 'ผ้าเช็ดอเนกประสงค์ แพ็ค 50' }, qty: 4, cost: 90
+}));
+truthy2('ได้รหัสแบบ SKU-nnn มาให้', /^SKU-\d{3,}$/.test(auto43.newProd.sku));
+eq('หมวดตั้งต้นหาเจอง่ายตอนไล่จัดหมวดทีหลัง', auto43.newProd.group, 'ยังไม่จัดหมวด');
+eq('รหัสที่ตั้งให้ต้องไม่ชนของเดิม', skuRows43().filter(function (r) {
+  return String(P43.cell(r, api43.SH.prod.IN.sku).v) === auto43.newProd.sku;
+}).length, 1);
+
+console.log('\n   รหัสซ้ำของเดิม = ห้ามเด็ดขาด ไม่มีทางให้ยืนยันทับ');
+/* ทับรหัสเดิม = เขียนทับต้นทุนกับราคาของสินค้าที่ขายไปแล้ว
+   กำไรของออเดอร์ที่ปิดไปแล้วจะเปลี่ยนตามทันทีโดยไม่มีอะไรฟ้อง */
+var costWas43 = P43.cell(nRow43, api43.SH.prod.IN.cost).v;
+throws('รหัสซ้ำต้องไม่ยอม', function () {
+  api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+    newProd: { sku: 'AB-900', name: 'ของคนละตัวแต่รหัสชน', price: 9999, sure: 1 } }));
+}, 'มีอยู่แล้วในชีท');
+eq('แถวเดิมต้องไม่ถูกแตะแม้แต่ช่องเดียว',
+   [P43.cell(nRow43, api43.SH.prod.IN.cost).v, P43.cell(nRow43, api43.SH.prod.IN.price).v],
+   [costWas43, 450]);
+throws('ติ๊กยืนยันมาก็ยังทับไม่ได้อยู่ดี', function () {
+  api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+    newProd: { sku: 'ab-900', name: 'พิมพ์ตัวเล็กก็คือรหัสเดียวกัน', sure: 1 } }));
+}, 'มีอยู่แล้วในชีท');
+
+console.log('\n   ชื่อซ้ำ = เตือน ไม่ห้าม แต่ต้องกดยืนยันก่อน');
+/* เผลอสร้างซ้ำ = สต๊อกของตัวเดียวกันแตกเป็นสองแถว ยอดไม่มีวันตรงอีกเลย
+   แต่ของคนละขนาดชื่อเหมือนกันก็มีจริง คนหน้าจอเป็นคนตัดสิน ไม่ใช่โค้ด */
+throws('ชื่อซ้ำครั้งแรกต้องเตือนก่อน', function () {
+  api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+    newProd: { sku: 'AB-901', name: 'จารบีทนความร้อน 1kg' } }));
+}, 'DUP_NAME|');
+eq('เตือนแล้วต้องไม่มีแถวใหม่หลุดลงชีท', skuRows43().filter(function (r) {
+  return String(P43.cell(r, api43.SH.prod.IN.sku).v) === 'AB-901';
+}).length, 0);
+var sure43 = api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+  newProd: { sku: 'AB-901', name: 'จารบีทนความร้อน 1kg', sure: 1 }, qty: 2, cost: 310 }));
+eq('กดยืนยันแล้วสร้างได้', sure43.newProd.sku, 'AB-901');
+
+console.log('\n   ติ๊กให้ขึ้นหน้าร้านได้ ถ้าตั้งใจ');
+var web43 = api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '',
+  newProd: { sku: 'AB-902', name: 'น้ำยาล้างคราบ 5L', price: 590, web: 1 }, qty: 3, cost: 380 }));
+eq('ช่องขายบนเว็บว่างไว้ = ลูกค้าเห็น',
+   String(P43.cell(web43.newProd.row, api43.SH.prod.IN.web).v || ''), '');
+eq('และบอกหน้าจอว่าขึ้นหน้าร้านแล้ว', web43.newProd.onWeb, true);
+
+console.log('\n   ชื่อสั้นเกินไป ไม่รับ');
+throws('ชื่อว่างต้องไม่ยอม', function () {
+  api43.receiveStock(recvPayload({ sku: '', lotNo: '', exp: '', newProd: { sku: 'AB-903' } }));
+}, 'ใส่ชื่อสินค้าใหม่');
+eq('และไม่ทิ้งแถวค้างไว้', skuRows43().filter(function (r) {
+  return String(P43.cell(r, api43.SH.prod.IN.sku).v) === 'AB-903';
+}).length, 0);
+
+console.log('\n   สินค้าใหม่ที่คุมล็อต ลงล็อตให้พร้อมกันในครั้งเดียว');
+var lot43 = api43.receiveStock(recvPayload({
+  sku: '', newProd: { sku: 'AB-904', name: 'ไอโซโพรพิล 5L' },
+  qty: 8, cost: 700, lotNo: 'L-ใหม่เอี่ยม', exp: '2028-01-31'
+}));
+eq('ได้ล็อตมาด้วย', lot43.lotNo, 'L-ใหม่เอี่ยม');
+eq('ยอดในล็อตตรงกับที่รับเข้า', lot43.lotRemain, 8);
+
+console.log('\n   ลง Log ไว้ว่าใครเพิ่มสินค้าตัวไหน');
+truthy2('มีแถว "เพิ่มสินค้าใหม่" ใน Log',
+  rowsWith(fx43.sheets['Log'], api43.SH.log.IN.type).some(function (r) {
+    return String(fx43.sheets['Log'].cell(r, api43.SH.log.IN.type).v) === 'เพิ่มสินค้าใหม่';
+  }));
 
 console.log('\n   ไม่มีสูตรถูกเขียนทับเลยตลอดหมวดนี้');
 var over43 = [];
@@ -2746,8 +2909,8 @@ console.log('\n50. ลูกค้าคืนของ / ของตีกล�
 
 var fx50 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'R-A', exp: '2026-10-01', recv: '2026-08-01', qty: 10 },
-    { sku: 'CHEM-001', lotNo: 'R-B', exp: '2027-03-01', recv: '2026-08-01', qty: 10 }
+    { sku: 'CHEM-001', lotNo: 'R-A', exp: EXP_SOON, recv: '2026-08-01', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'R-B', exp: EXP_LATER, recv: '2026-08-01', qty: 10 }
   ]
 });
 var api50 = FS.load(fx50, {});
@@ -3441,7 +3604,12 @@ eq('บัญชีรับเงินอยู่ท้ายรายกา�
     'เลขบัญชี บิลไม่มี VAT', 'พร้อมเพย์ บิลไม่มี VAT',
     'ลิงก์แอพธนาคาร บิลมี VAT', 'ลิงก์แอพธนาคาร บิลไม่มี VAT',
     'คำนำหน้าเลขใบวางบิล', 'เครดิตกี่วัน (ใบวางบิล)',
-   'ลิงก์เว็บแอปสำหรับลูกค้า']);
+    'ลิงก์เว็บแอปสำหรับลูกค้า',
+    /* แถวตั้งค่าหน้าร้าน เดิมมีแต่ setupShopPages ที่สร้างให้ setup ไม่เคยเรียก
+       คนที่สั่ง setup ตามที่บอกจึงไม่ได้แถวเหล่านี้เลย ต่อท้ายให้ setup ด้วยแล้ว */
+    'เปิดรับออเดอร์หน้าเว็บ', 'ออเดอร์จากเว็บ', 'โลโก้ร้าน (ลิงก์รูป)',
+    'ภาพหัวหน้าร้าน (ลิงก์รูป)', 'ลิงก์แผนที่ร้าน',
+    'อีเมลแจ้งเตือนออเดอร์จากเว็บ', 'วงเงินสูงสุดเก็บเงินปลายทาง']);
 
 /* บัญชีชื่อบุคคลต้องไม่หลุดขึ้นโค้ดที่เปิดดูได้จากข้างนอก
    ค่าตั้งต้นของชุด "ไม่มี VAT" จึงต้องว่างทั้งสี่ช่อง ให้ไปกรอกในชีทเอา */
@@ -3641,6 +3809,55 @@ throws('ไม่เลือกอะไรเลย', function () {
 }, 'ยังไม่ได้เลือก');
 
 console.log('\n   กดสองครั้งด้วยกุญแจเดิม ต้องได้ใบเดิม ไม่ใช่ใบใหม่');
+/* ------------------------------------------ แก้ใบวางบิลที่ยังไม่ได้ส่ง
+
+   ของจริง: เจ้าของร้านกด "แก้ไขใบ" กับ BL260928-001 แล้วขึ้น
+   "ใบ BL260928-001 ไม่ได้อ้างออเดอร์ไว้ จึงประกอบใหม่ให้ไม่ได้"
+   เพราะตัวแก้ใบวิ่งไปหาออเดอร์เสมอ แต่ใบวางบิลไม่ได้ผูกกับออเดอร์ใบเดียว
+   มันรวมใบขายหลายใบไว้ ทั้งที่ทุกอย่างที่ต้องใช้อยู่ในตัวใบเองอยู่แล้ว      */
+console.log('\n   แก้ใบวางบิลที่ยังไม่ได้ส่ง — เลขใบเดิม ยอดต้องไม่ขยับ');
+var docS58 = fx58.sheets['เอกสาร'];
+function docRowOf58(no) {
+  return rowsWith(docS58, api58.SH.doc.IN.no).filter(function (r) {
+    return String(docS58.cell(r, api58.SH.doc.IN.no).v) === no;
+  })[0];
+}
+var blRow58 = docRowOf58(made58d.no);
+var blTotalWas = Number(docS58.cell(blRow58, api58.SH.doc.IN.total).v);
+
+var rev58 = api58.reviseDoc({
+  no: made58d.no, why: 'เลข PO พิมพ์ตกไปหนึ่งหลัก',
+  po: 'PO26/08-0092', contact: 'K. จีรยา', contactTel: '038-538997-8',
+  by: 'AEY'
+});
+eq('แก้ได้ ไม่ตายเพราะไม่มีออเดอร์', rev58.no, made58d.no);
+eq('เลขใบไม่เปลี่ยน ไม่กินเลขใหม่',
+   String(docS58.cell(blRow58, api58.SH.doc.IN.no).v), made58d.no);
+/* ใบวางบิลต้องเท่ากับใบขายที่ลูกค้าถืออยู่เป๊ะ คิดใหม่จากออเดอร์เมื่อไรคือพัง */
+eq('ยอดไม่ขยับแม้แต่สตางค์เดียว',
+   Number(docS58.cell(blRow58, api58.SH.doc.IN.total).v), blTotalWas);
+eq('เลข PO ที่แก้ลงชีทจริง',
+   String(docS58.cell(blRow58, api58.SH.doc.IN.po).v), 'PO26/08-0092');
+truthy2('จดไว้ว่าแก้ครั้งที่เท่าไร เพราะอะไร',
+   /แก้ไขครั้งที่ 1/.test(String(docS58.cell(blRow58, api58.SH.doc.IN.revise).v)) &&
+   /พิมพ์ตกไปหนึ่งหลัก/.test(String(docS58.cell(blRow58, api58.SH.doc.IN.revise).v)));
+
+console.log('\n   แก้แล้วต้องยังพิมพ์ซ้ำได้ — ภาพถ่ายใบต้องเป็นรูปเดิม');
+/* เขียนภาพถ่ายผิดรูปเมื่อไร พิมพ์ซ้ำจะพัง และจะรู้ตอนลูกค้ารออยู่แล้ว */
+var back58 = api58.getDoc(made58d.no);
+eq('พิมพ์ซ้ำได้ และยังเป็นใบวางบิล', back58.doc.type, 'bill');
+eq('รายการใบที่รวมไว้ยังครบเหมือนเดิม', back58.doc.lines.length, 2);
+eq('ยอดในภาพถ่ายตรงกับที่บันทึกไว้', back58.doc.total, blTotalWas);
+eq('ผู้ติดต่อที่เพิ่งแก้ติดมากับใบด้วย', back58.meta.contact, 'K. จีรยา');
+
+console.log('\n   แก้เงื่อนไขชำระเงิน วันครบกำหนดต้องขยับตาม');
+var due58was = back58.doc.lines[0].due;
+api58.reviseDoc({ no: made58d.no, why: 'ลูกค้าขอเครดิต 60 วัน',
+                  terms: 'เครดิต 60 วัน', by: 'AEY' });
+var back58b = api58.getDoc(made58d.no);
+truthy2('วันครบกำหนดเลื่อนออกไปจริง', String(back58b.doc.lines[0].due) > String(due58was));
+eq('แต่ยอดยังเท่าเดิม', back58b.doc.total, blTotalWas);
+
 var again58 = api58.issueBill({ docs: [A58, B58], cust: 'บริษัท ก จำกัด',
   by: 'AEY', clientKey: 'bl-58-4' });
 eq('ได้เลขเดิม', again58.no, made58d.no);
@@ -3835,6 +4052,53 @@ var over60 = [];
 for (var nm60 in fx60.sheets) over60 = over60.concat(fx60.sheets[nm60].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over60, []);
 
+/* -------------------------------------------- 60ข. เวลาที่คีย์เข้าระบบ */
+console.log('\n60ข. เวลาที่คีย์เข้าระบบ — คนละช่องกับวันที่ของออเดอร์');
+var fx60t = FS.build();
+var api60t = FS.load(fx60t);
+var head60t = fx60t.sheets['ออเดอร์_หัวบิล'];
+var C60t = api60t.SH.head.IN;
+
+var before60t = new Date();
+var r60t = api60t.createOrder({
+  clientKey: 'kt-1', date: '2026-09-01', channel: 'หน้าร้าน', cust: 'ลูกค้าทดสอบ',
+  tel: '0812345678', addr: 'ที่อยู่ทดสอบ 10000', staff: 'เอ๋',
+  items: [{ sku: 'SKU-141', qty: 1 }]
+});
+truthy2('บันทึกออเดอร์ผ่าน', r60t.ok === true);
+
+var row60t = 0;
+for (var q60 = DATA_ROW; q60 <= 400; q60++) {
+  if (String(head60t.cell(q60, C60t.no).v || '') === r60t.no) { row60t = q60; break; }
+}
+truthy2('เจอแถวของออเดอร์', row60t > 0);
+var at60t = head60t.cell(row60t, C60t.keyedAt).v;
+truthy2('ช่องเวลาที่คีย์ถูกเขียนเป็นวันเวลาจริง', at60t instanceof Date);
+truthy2('และเป็นเวลาตอนกดบันทึก ไม่ใช่วันที่ของออเดอร์',
+  at60t.getTime() >= before60t.getTime() - 2000);
+truthy2('วันที่ของออเดอร์ยังเป็นวันที่คนคีย์เลือก ไม่ถูกทับด้วยเวลาปัจจุบัน',
+  String(head60t.cell(row60t, C60t.date).v).indexOf('2026-09-01') > -1 ||
+  (head60t.cell(row60t, C60t.date).v instanceof Date &&
+   head60t.cell(row60t, C60t.date).v.getMonth() === 8));
+
+var got60t = api60t.getOrders().filter(function (o) { return o.no === r60t.no })[0];
+truthy2('อ่านกลับมาได้เป็น ชม.:นาที', /^\d{2}:\d{2}$/.test(got60t.keyedAt));
+
+/* ออเดอร์เก่าที่ยังไม่มีเวลา ต้องได้ค่าว่าง ไม่ใช่เที่ยงคืน */
+head60t.cell(row60t, C60t.keyedAt).v = '';
+var old60t = api60t.getOrders().filter(function (o) { return o.no === r60t.no })[0];
+eq('ช่องว่าง = ไม่รู้เวลา ไม่ใช่ 00:00', old60t.keyedAt, '');
+head60t.cell(row60t, C60t.keyedAt).v = '22/09/2569 10:23';
+var txt60t = api60t.getOrders().filter(function (o) { return o.no === r60t.no })[0];
+eq('ช่องที่ถูกพิมพ์ทับเป็นข้อความ ก็ยังอ่านเวลาออก', txt60t.keyedAt, '10:23');
+head60t.cell(row60t, C60t.keyedAt).v = 'อะไรก็ไม่รู้';
+var bad60t = api60t.getOrders().filter(function (o) { return o.no === r60t.no })[0];
+eq('อ่านไม่ออกคืนค่าว่าง ไม่เดา', bad60t.keyedAt, '');
+
+var over60t = [];
+for (var n60 in fx60t.sheets) over60t = over60t.concat(fx60t.sheets[n60].overwrittenFormulas);
+eq('เพิ่มช่องเวลาแล้วไม่มีช่องสูตรถูกเขียนทับ', over60t, []);
+
 /* -------------------------------------------- 61. นับสต๊อกตั้งต้น */
 console.log('\n61. นับสต๊อกตั้งต้น — ของที่ขายไปก่อนมีแอปไม่มีประวัติให้กู้');
 /* เจ้าของร้านชี้เอง: "ของพวกนี้ขายมาก่อนทำแอปเสร็จ การไปตัดออเดอร์เก่าคงไม่ใช่ทาง
@@ -3902,6 +4166,97 @@ throws('ไม่มี clientKey ตอนบันทึกจริงไม�
 throws('เว้นว่างทุกตัวคือยังไม่ได้นับ ไม่ใช่ให้ตั้งเป็นศูนย์', function () {
   api61.countStock({ clientKey: 'ct-3', lines: [{ sku: 'SKU-169', counted: '' }] });
 }, 'ยังไม่ได้ใส่จำนวนที่นับได้');
+
+/* ---------- ของจริง 21 ก.ย. 69: สูตรของชีทไม่ได้นับคำว่า "ปรับเพิ่ม" ----------
+   เจ้าของร้านนับ SKU-134 ตั้งไว้ 2,500 แต่ชีทคิดออกมาเป็น −2
+   เพราะช่องรับเข้าของชีทนับแต่ "ซื้อเข้า" กับ "คืนจากลูกค้า" ไม่มี "ปรับเพิ่ม"
+   ลงแถวไปเท่าไรยอดก็ไม่ขึ้น ด่านตรวจถอยคืนทุกครั้ง นับสต๊อกจึงทำไม่ได้เลยสักที
+   ระบบต้องถามชีทว่านับคำไหน แล้วใช้คำนั้น ไม่ใช่ยืนกรานใช้คำที่เราคิดว่าน่าจะใช่ */
+console.log('\n   สูตรของชีทไม่ได้นับคำที่ระบบชอบ — ต้องเปลี่ยนไปใช้คำที่สูตรนับ');
+var fx62 = FS.build({
+  products: [{ sku: 'SKU-134', name: 'Endmill Corn 3.0', price: 96, cost: 40, opening: 0 }]
+});
+var stock62 = fx62.sheets['สต๊อกคงเหลือ'];
+/* ตัด "ปรับเพิ่ม" ออกจากสูตร เหลือแต่ ซื้อเข้า กับ คืนจากลูกค้า — ตรงกับชีทของร้าน */
+for (var sr62 = DATA_ROW; sr62 <= 150; sr62++) {
+  stock62.cell(sr62, 6).f =
+    '=IF($B6="","",SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"ซื้อเข้า")+SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"คืนจากลูกค้า"))';
+}
+var api62 = FS.load(fx62);
+var recv62 = fx62.sheets['รับเข้า'];
+
+var fxw62 = api62.stockTypeWords_();
+truthy2('อ่านสูตรออกว่าช่องรับเข้านับคำไหน',
+  fxw62.up.indexOf('ซื้อเข้า') > -1 && fxw62.up.indexOf('ปรับเพิ่ม') < 0);
+truthy2('และช่องปรับลดนับคำว่าปรับลด', fxw62.down.indexOf('ปรับลด') > -1);
+
+var run62 = api62.countStock({ clientKey: 'ct62', date: '2026-09-21', staff: 'เอ๋',
+  lines: [{ sku: 'SKU-134', counted: 2500 }] });
+truthy2('นับสต๊อกผ่าน ไม่ถอยคืนอีกแล้ว', run62.ok === true);
+eq('ใช้คำที่สูตรนับ ไม่ใช่คำที่ระบบชอบ',
+  recv62.cell(6, api62.SH.recv.IN.type).v, 'ซื้อเข้า');
+eq('ยอดในชีทกลายเป็นยอดที่นับได้จริง', api62.getBootstrap().products
+  .filter(function (x) { return x.sku === 'SKU-134' })[0].remain, 2500);
+eq('และยังคงไม่มีช่องสูตรถูกเขียนทับ',
+  [].concat.apply([], Object.keys(fx62.sheets).map(function (n) {
+    return fx62.sheets[n].overwrittenFormulas;
+  })), []);
+
+/* ตัวตรวจต้องบอกให้ครบว่าสูตรนับคำไหน และคำไหนลงไปแล้วยอดไม่ขยับ */
+var chk62 = api62.checkStockTypes();
+truthy2('ตัวตรวจบอกคำที่สูตรนับ', /ซื้อเข้า/.test(chk62));
+truthy2('และเตือนว่าประเภทไหนลงไปแล้วยอดไม่ขยับ',
+  /ยอดไม่ขยับ|ไม่มีสูตรไหนนับเลย/.test(chk62));
+truthy2('และบอกว่าตอนนับสต๊อกจะใช้คำไหน', /เพิ่มยอด : ซื้อเข้า/.test(chk62));
+
+/* ---------- สูตรแถวนั้นพัง (#REF!) — ยอดไม่มีวันขยับ ต้องฟ้องให้เห็น ----------
+   ของจริงเคยเกิดกับชีทนี้แล้ว ตอนลบแถวออกจาก ฐานสินค้า สูตรของ สต๊อกคงเหลือ พังไป 38 แถว
+   แถวแบบนั้นลงอะไรไปยอดก็นิ่งค้าง — เจ้าของร้านลองสองรอบได้เลขเดิมเป๊ะทั้งสองรอบ */
+console.log('\n   แถวที่สูตรพัง ต้องบอกให้ชัด ไม่ใช่ปล่อยให้เดาเอง');
+var fx64 = FS.build({
+  products: [{ sku: 'SKU-134', name: 'Endmill Corn 3.0', price: 96, cost: 40, opening: 0 }]
+});
+var stock64 = fx64.sheets['สต๊อกคงเหลือ'];
+for (var sr64 = DATA_ROW; sr64 <= 150; sr64++) {
+  /* สูตรพังทั้งช่องรับเข้าและช่องคงเหลือ แบบเดียวกับที่เจอในชีทจริง */
+  stock64.cell(sr64, 6).f = '=IF(#REF!="","",#REF!)';
+  stock64.cell(sr64, 9).f = '=IF(#REF!="","",#REF!)';
+}
+/* ชีทที่พังจะนิ่งค้างที่ค่าเดิม ไม่ว่าจะลงแถวอะไรลงไป */
+stock64.cell(DATA_ROW, 9).v = -2;
+var api64 = FS.load(fx64);
+fx64.__freezeStock = true;
+var msg64 = '';
+try {
+  api64.countStock({ clientKey: 'ct64', date: '2026-09-21', staff: 'เอ๋',
+    lines: [{ sku: 'SKU-134', counted: 1500 }] });
+} catch (e64) { msg64 = e64.message; }
+truthy2('นับไม่ผ่านแล้วถอยคืน', /ถอยคืนให้หมดแล้ว/.test(msg64));
+truthy2('บอกว่าลงประเภทอะไรจำนวนเท่าไร', /ประเภท "/.test(msg64) && /1500/.test(msg64));
+truthy2('บอกว่าสูตรของชีทนับคำไหน', /สูตรของชีท สต๊อกคงเหลือ นับคำพวกนี้/.test(msg64));
+truthy2('และฟ้องว่าแถวนั้นสูตรพังอยู่', /สูตรพัง/.test(msg64) && /SKU-134/.test(msg64));
+truthy2('พร้อมบอกวิธีแก้', /ลากสูตรจากแถวที่ยังดี/.test(msg64));
+eq('และไม่เหลือแถวค้างในชีทรับเข้า',
+  rowsWith(fx64.sheets['รับเข้า'], api64.SH.recv.IN.sku), []);
+
+/* สูตรอ่านไม่ออก ต้องถอยไปใช้ค่าเดาเหมือนเดิม ไม่ใช่ล้ม */
+var fx63 = FS.build({
+  products: [{ sku: 'SKU-134', name: 'Endmill Corn 3.0', price: 96, cost: 40, opening: 0 }]
+});
+var stock63 = fx63.sheets['สต๊อกคงเหลือ'];
+for (var sr63 = DATA_ROW; sr63 <= 150; sr63++) {
+  stock63.cell(sr63, 6).f = '';
+  stock63.cell(sr63, 7).f = '';
+}
+var api63 = FS.load(fx63);
+eq('อ่านสูตรไม่ออก คืนชุดว่าง ไม่ล้ม', api63.stockTypeWords_(), { up: [], down: [] });
+var run63 = api63.countStock({ clientKey: 'ct63', date: '2026-09-21', staff: 'เอ๋',
+  lines: [{ sku: 'SKU-134', counted: 500 }] });
+truthy2('และยังนับสต๊อกได้ด้วยค่าเดาเหมือนเดิม', run63.ok === true);
+eq('ถอยไปใช้ ปรับเพิ่ม ตามเดิม',
+  fx63.sheets['รับเข้า'].cell(6, api63.SH.recv.IN.type).v, 'ปรับเพิ่ม');
 
 console.log('\n   ของที่ขายไปแล้วต้องไม่หายไปจากประวัติ ตอนลดยอดล็อต');
 /* ล็อตคงเหลือ = จำนวนรับ − ตัดออกแล้ว · ลดจำนวนรับต่ำกว่าที่ตัดขายไปแล้ว
@@ -4165,6 +4520,171 @@ console.log('\n   ไม่มีช่องสูตรถูกเขีย�
 var over67 = [];
 for (var nm67 in fx67.sheets) over67 = over67.concat(fx67.sheets[nm67].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over67, []);
+
+/* ============================================================ 68
+   ช่วงแถวในสูตรสั้นกว่าข้อมูล — ของที่กรอกใหม่หายเงียบ
+
+   ของจริงที่ร้านเจอ: เจ้าของร้านนับสต๊อกทุกวัน กรอกทุกวัน แล้วบอกว่า
+   "ใส่แล้วไม่ตัดให้ เลขมั่วไปหมด" ไล่ดูชีทจริงพบว่าแอปเขียนครบทุกแถว
+   แต่สูตรในชีท สต๊อกคงเหลือ เขียนช่วงไว้ตายตัวถึงแถว 16 ของชีท รับเข้า
+   ตั้งแต่ตอนที่ชีทยังมีข้อมูลไม่กี่แถว แถว 17 เป็นต้นไปจึงไม่ถูกนับเลย
+   รวมของที่หายไป 5,435 ชิ้น และยอดคงเหลือออกมาติดลบทั้งที่ของเต็มชั้น
+
+   อาการนี้เงียบกว่าทุกอย่างที่เคยเจอ — ไม่ error ไม่มี #REF! ไม่มีเลขนิ่ง
+   ตัวเลขยังดูปกติทุกช่อง แค่ "ไม่นับ" ของใหม่เท่านั้น                      */
+console.log('\n68. ช่วงแถวในสูตรสั้นกว่าข้อมูล — ของที่กรอกใหม่หายเงียบ');
+var fx68 = FS.build();
+var api68 = FS.load(fx68);
+api68.setup();
+var st68 = fx68.sheets['สต๊อกคงเหลือ'];
+var rv68 = fx68.sheets['รับเข้า'];
+var sku68 = fx68.sheets['ฐานสินค้า'].cell(DATA_ROW, 2).v;
+
+/* จำลองสูตรของเจ้าของร้านที่เขียนช่วงไว้ตายตัวถึงแถว 16 */
+var CUT = 16;
+[6, 7].forEach(function (c) {
+  for (var r = DATA_ROW; r <= 150; r++) {
+    var f = String(st68.cell(r, c).f || '');
+    st68.cell(r, c).f = f.replace(/(!\$[A-Z]{1,3}\$6:\$[A-Z]{1,3})(?!\d)/g, '$1' + CUT);
+  }
+});
+truthy2('ตั้งสูตรให้สั้นถึงแถว 16 ได้',
+  String(st68.cell(DATA_ROW, 6).f).indexOf('$H$6:$H16') > -1);
+
+/* กรอกรับเข้าจนเลยแถว 16 ไป — แถวก่อนหน้านั้นต้องนับได้ แถวหลังต้องหาย */
+function recvAt(row, sku, qty, type) {
+  rv68.cell(row, 2).v = new Date();
+  rv68.cell(row, 3).v = 'PO-' + row;
+  rv68.cell(row, 4).v = type || 'ซื้อเข้า';
+  rv68.cell(row, 6).v = sku;
+  rv68.cell(row, 8).v = qty;
+}
+recvAt(CUT, sku68, 40);        /* แถวสุดท้ายที่สูตรเห็น */
+recvAt(CUT + 1, sku68, 1500);  /* แถวแรกที่สูตรมองไม่เห็น */
+recvAt(CUT + 2, sku68, 230, 'ปรับเพิ่ม');
+fx68.recalc();
+
+function stockOf(sku) {
+  for (var r = DATA_ROW; r <= 150; r++) {
+    if (st68.cell(r, 2).v === sku) {
+      return { got: Number(st68.cell(r, 6).v || 0), left: Number(st68.cell(r, 9).v || 0) };
+    }
+  }
+  return null;
+}
+var bad68 = stockOf(sku68);
+eq('ก่อนซ่อม: นับได้แค่แถวที่สูตรเอื้อมถึง 40 ชิ้น', bad68.got, 40);
+truthy2('อีก 1,730 ชิ้นหายเงียบ ไม่มีอะไรฟ้อง', bad68.got < 40 + 1730);
+
+console.log('\n   สั่งซ่อมแล้วต้องนับครบ โดยไม่แตะเงื่อนไขในสูตรเดิม');
+var wordsBefore = String(st68.cell(DATA_ROW, 6).f).match(/"[^"]*"/g).join(',');
+var out68 = api68.fixStockSumRange();
+truthy2('บอกว่าขยายช่วงให้กี่คอลัมน์', /ขยายช่วงแถว/.test(out68));
+fx68.recalc();
+
+var good68 = stockOf(sku68);
+eq('หลังซ่อม: นับครบทั้ง 1,770 ชิ้น', good68.got, 40 + 1500 + 230);
+eq('เงื่อนไขในสูตรยังเป็นของเดิมทุกคำ ไม่ได้เขียนสูตรใหม่ทับ',
+  String(st68.cell(DATA_ROW, 6).f).match(/"[^"]*"/g).join(','), wordsBefore);
+truthy2('ขยายลงครบทุกแถว ไม่ใช่แค่แถว 6',
+  String(st68.cell(DATA_ROW + 40, 6).f).indexOf('$H16,') < 0 &&
+  String(st68.cell(DATA_ROW + 40, 6).f).indexOf('SUMIFS') > -1);
+
+console.log('\n   สั่งซ้ำต้องไม่ขยายซ้ำ และไม่มีช่องสูตรของเจ้าของร้านถูกเขียนใหม่');
+var again68 = api68.fixStockSumRange();
+truthy2('สั่งซ้ำแล้วบอกว่าครบอยู่แล้ว', /ครบอยู่แล้ว/.test(again68));
+
+/* ของจริงเข้าทาง setup ได้ด้วย เจ้าของร้านจะได้ไม่ต้องจำชื่อฟังก์ชันเพิ่มอีกตัว */
+var fx68b = FS.build();
+var api68b = FS.load(fx68b);
+api68b.setup();
+var st68b = fx68b.sheets['สต๊อกคงเหลือ'];
+for (var r68 = DATA_ROW; r68 <= 150; r68++) {
+  var f68 = String(st68b.cell(r68, 6).f || '');
+  st68b.cell(r68, 6).f = f68.replace(/(!\$[A-Z]{1,3}\$6:\$[A-Z]{1,3})(?!\d)/g, '$1' + CUT);
+}
+var rep68 = api68b.repairStockSheet();
+truthy2('สั่ง repairStockSheet ก็ขยายช่วงให้ด้วย', /ขยายช่วงแถว/.test(rep68));
+
+/* ============================================================ 69
+   ประเภทที่มีในดรอปดาวน์ แต่ไม่มีสูตรไหนนับ
+
+   ของจริง: ร้านกรอกน้ำยาจากถัง 200 ลิตรใส่ขวดขายทุกวัน ลงแถวประเภท "เติมน้ำยา"
+   คำนี้ระบบเป็นคนเติมเข้าดรอปดาวน์เองเพื่อไม่ให้ช่องขึ้นสามเหลี่ยมเตือน
+   แต่ไม่เคยมีใครเพิ่มเข้าไปในสูตรของชีท สต๊อกคงเหลือ ซึ่งนับแค่สามคำเดิม
+   น้ำยาทุกขวดที่เติมมาตลอดจึงไม่เคยถูกนับเข้าสต๊อกเลย IPA เติมไป 230 ขวด
+   ชีทแสดง รับเข้า = 0 คงเหลือ −19 แล้วหน้าร้านขึ้นว่าสินค้าหมด               */
+console.log('\n69. ประเภทที่มีให้เลือก แต่ไม่มีสูตรไหนนับ');
+var fx69 = FS.build();
+var api69 = FS.load(fx69);
+api69.setup();
+var st69 = fx69.sheets['สต๊อกคงเหลือ'];
+var rv69 = fx69.sheets['รับเข้า'];
+var sku69 = fx69.sheets['ฐานสินค้า'].cell(DATA_ROW, 2).v;
+
+truthy2('ดรอปดาวน์มีคำว่า เติมน้ำยา ให้เลือก',
+  JSON.stringify(api69.getBootstrap().lists.recvType).indexOf('เติมน้ำยา') > -1);
+
+/* setup เพิ่งซ่อมให้ไปแล้ว ถอดคำออกก่อนเพื่อจำลองชีทของจริงที่ยังไม่เคยซ่อม
+   (สูตรของร้านเขียนไว้ตั้งแต่ก่อนที่คำว่า "เติมน้ำยา" จะมีในดรอปดาวน์) */
+function dropTerm(col, word) {
+  for (var r = DATA_ROW; r <= 150; r++) {
+    var f = String(st69.cell(r, col).f || '');
+    if (f.indexOf(word) < 0) continue;
+    var at = f.indexOf('+SUMIFS(');
+    while (at > -1) {
+      var d = 0, e = -1;
+      for (var j = at + 7; j < f.length; j++) {
+        if (f.charAt(j) === '(') d++;
+        else if (f.charAt(j) === ')') { d--; if (!d) { e = j; break } }
+      }
+      if (e < 0) break;
+      if (f.slice(at, e + 1).indexOf(word) > -1) { f = f.slice(0, at) + f.slice(e + 1); at = f.indexOf('+SUMIFS('); }
+      else at = f.indexOf('+SUMIFS(', e);
+    }
+    st69.cell(r, col).f = f;
+  }
+}
+dropTerm(6, 'เติมน้ำยา');
+truthy2('แต่สูตรของร้านไม่ได้นับคำนี้',
+  String(st69.cell(DATA_ROW, 6).f).indexOf('เติมน้ำยา') < 0);
+
+rv69.cell(DATA_ROW, 2).v = new Date();
+rv69.cell(DATA_ROW, 4).v = 'เติมน้ำยา';
+rv69.cell(DATA_ROW, 6).v = sku69;
+rv69.cell(DATA_ROW, 8).v = 230;
+fx69.recalc();
+
+function got69() {
+  for (var r = DATA_ROW; r <= 150; r++) {
+    if (st69.cell(r, 2).v === sku69) return Number(st69.cell(r, 6).v || 0);
+  }
+  return null;
+}
+eq('ก่อนซ่อม: เติมน้ำยา 230 ขวด แต่สต๊อกนับได้ 0', got69(), 0);
+
+console.log('\n   สั่งซ่อมแล้วต้องนับให้ โดยไม่ประกอบสูตรใหม่ทับ');
+var rangeBefore = String(st69.cell(DATA_ROW, 6).f).match(/\$[A-Z]{1,3}\$6:\$[A-Z]{1,3}/g).join(',');
+var out69 = api69.fixStockRecvTypes();
+truthy2('บอกว่าเพิ่มคำไหนเข้าไป', /เติมน้ำยา/.test(out69));
+fx69.recalc();
+eq('หลังซ่อม: นับครบ 230 ขวด', got69(), 230);
+eq('ช่วงและคอลัมน์ที่อ้างยังเหมือนเดิมเป๊ะ ก๊อปก้อนเดิมมาไม่ได้เขียนใหม่',
+  String(st69.cell(DATA_ROW, 6).f).match(/\$[A-Z]{1,3}\$6:\$[A-Z]{1,3}/g).join(',').indexOf(rangeBefore), 0);
+truthy2('ลากลงครบทุกแถว',
+  String(st69.cell(DATA_ROW + 40, 6).f).indexOf('เติมน้ำยา') > -1);
+
+console.log('\n   ตรวจนับ ต้องไม่ถูกเติมเข้าสูตรบวก ไม่งั้นยอดเด้งสองเท่า');
+truthy2('สูตรไม่มีคำว่า ตรวจนับ',
+  String(st69.cell(DATA_ROW, 6).f).indexOf('ตรวจนับ') < 0);
+truthy2('และบอกไว้ว่าข้ามให้ตั้งใจ เพราะอะไร', /ข้ามให้ตั้งใจ/.test(out69));
+
+truthy2('สั่งซ้ำแล้วบอกว่าครบอยู่แล้ว',
+  /ครบอยู่แล้ว|มีสูตรนับให้อยู่แล้ว/.test(api69.fixStockRecvTypes()));
+
+var over69 = [];
+for (var n69 in fx69.sheets) over69 = over69.concat(fx69.sheets[n69].overwrittenFormulas);
+eq('ไม่มีช่องสูตรอื่นถูกเขียนทับ', over69, []);
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);
