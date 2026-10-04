@@ -229,6 +229,11 @@ window.google = { script: { run: (function(){
         if(p.tag !== undefined) hit.tag = p.tag;
         if(p.web !== undefined){ hit.web = p.web; hit.hidden = !!String(p.web||"").trim() }
         if(p.group !== undefined && p.group !== "") hit.group = p.group;
+        if(p.unit !== undefined){
+          var u = String(p.unit||"").replace(/\s+/g," ").trim();
+          if(u.length > 20) throw new Error("หน่วยนับยาวเกินไป (เกิน 20 ตัวอักษร)");
+          hit.unit = u;
+        }
         window.SENT.push({ fn:"saveShopProduct", p:p });
         return { ok:true, changed:1 };
       });
@@ -245,6 +250,22 @@ window.google = { script: { run: (function(){
         });
         window.SENT.push({ fn:"moveShopCategory", p:p });
         return { ok:true, moved:moved, same:same, miss:[], group:p.group };
+      });
+    },
+    setShopUnit: function(p){
+      reply(function(){
+        if(!p.skus || !p.skus.length) throw new Error("ยังไม่ได้เลือกสินค้า");
+        var u = String(p.unit||"").replace(/\s+/g," ").trim();
+        if(!u) throw new Error("ยังไม่ได้ใส่หน่วยนับ");
+        if(u.length > 20) throw new Error("หน่วยนับยาวเกินไป (เกิน 20 ตัวอักษร)");
+        var done = 0, same = 0;
+        p.skus.forEach(function(sku){
+          var hit = MOCK_ED.products.filter(function(x){ return x.sku === sku })[0];
+          if(!hit) return;
+          if(hit.unit === u) same++; else { hit.unit = u; done++ }
+        });
+        window.SENT.push({ fn:"setShopUnit", p:p });
+        return { ok:true, changed:done, same:same, miss:[], unit:u };
       });
     },
     saveShopBanner: function(b){

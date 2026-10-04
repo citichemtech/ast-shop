@@ -257,6 +257,13 @@ var head = mk('ออเดอร์_หัวบิล', 27, headLimit + 1);
   item.setFormulaDown(5, DATA_ROW, itemLimit,
     '=IF($D6="","",IFERROR(VLOOKUP($D6,\'ฐานสินค้า\'!$B$6:$D$' +
     (opts.nameLookupLast || 150) + ',3,FALSE),"ไม่พบ SKU"))');
+  /* ช่องหน่วยนับก็เป็น VLOOKUP เหมือนช่องชื่อ ไม่ใช่ค่านิ่ง
+     คำในช่องนี้ถูกพิมพ์ลงใบกำกับภาษีในช่อง "จำนวน (Quantity)" ตรง ๆ
+     ชีทจำลองเดิมปล่อยว่าง ข้อสอบจึงไม่มีทางจับได้ว่าหน่วยที่แก้ในแอป
+     เดินทางไปถึงกระดาษจริงหรือเปล่า */
+  item.setFormulaDown(6, DATA_ROW, itemLimit,
+    '=IF($D6="","",IFERROR(VLOOKUP($D6,\'ฐานสินค้า\'!$B$6:$F$' +
+    (opts.nameLookupLast || 150) + ',5,FALSE),""))');
 
   /* รับเข้า / Log */
   var recv = mk('รับเข้า', 13, 401);
@@ -289,7 +296,7 @@ var head = mk('ออเดอร์_หัวบิล', 27, headLimit + 1);
     /* ราคามาตรฐานอ่านจากชีท ฐานสินค้า ไม่ใช่จากรายการตั้งต้น
        เพราะแอปเพิ่มสินค้าเข้าฐานเองได้ (ของซื้อมาขายไปที่พิมพ์ชื่อเอง)
        ถ้าอ่านจากรายการตั้งต้น สินค้าที่เพิ่งเพิ่มจะหายไปจากสูตรของชีทจำลอง */
-    var std = {}, pname = {};
+    var std = {}, pname = {}, punit = {};
     /* ชื่อสินค้าอ่านได้แค่ในช่วงที่สูตรมองถึงจริง ๆ — อ่านช่วงนั้นจากตัวสูตรเอง
        เพื่อให้ fixProductLinks ที่ไปขยายช่วง มีผลกับชีทจำลองทันทีเหมือนของจริง */
     var nameLast = 150;
@@ -300,7 +307,10 @@ var head = mk('ออเดอร์_หัวบิล', 27, headLimit + 1);
       var psku = prod.cell(pr, 2).v;
       if (psku) {
         std[psku] = Number(prod.cell(pr, 8).v || 0);
-        if (pr <= nameLast) pname[psku] = String(prod.cell(pr, 4).v || '');
+        if (pr <= nameLast) {
+          pname[psku] = String(prod.cell(pr, 4).v || '');
+          punit[psku] = String(prod.cell(pr, 6).v || '');
+        }
       }
     }
 
@@ -316,6 +326,7 @@ var head = mk('ออเดอร์_หัวบิล', 27, headLimit + 1);
          ของจริงเป็นแบบนี้ และคำนั้นเคยไปพิมพ์บนใบกำกับภาษีที่ส่งลูกค้าจริง
          ชีทจำลองไม่เคยคิดช่องนี้เลย ข้อสอบจึงไม่มีทางจับได้ */
       item.cell(r, 5).v = (pname[sku] === undefined) ? 'ไม่พบ SKU' : pname[sku];
+      item.cell(r, 6).v = (punit[sku] === undefined) ? '' : punit[sku];
       item.cell(r, 8).v = Number(std[sku] || 0);
       item.cell(r, 10).v = Math.round(qty * unit * 100) / 100;
       seen[no] = (seen[no] || 0) + 1;

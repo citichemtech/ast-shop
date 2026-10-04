@@ -253,6 +253,12 @@ function saveShopProduct(p) {
       obj.price = price; changed.push(['ราคาขาย', hit.price, price]);
     }
   }
+  if (p.unit !== undefined) {
+    var unit = shopUnitName_(p.unit);
+    if (unit !== String(hit.unit || '').trim()) {
+      obj.unit = unit; changed.push(['หน่วยนับ', hit.unit, unit]);
+    }
+  }
 
   if (!changed.length) return { ok: true, changed: 0 };
 
@@ -275,6 +281,66 @@ function shopGroupName_(v) {
   var t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
   if (t.length > 60) throw new Error('ชื่อหมวดยาวเกินไป (เกิน 60 ตัวอักษร)');
   return t;
+}
+
+/**
+ * หน่วยนับที่ยอมให้บันทึก
+ *
+ * หน่วยถูกพิมพ์ลงใบกำกับภาษีตรง ๆ ในช่อง "จำนวน (Quantity)" จึงต้องสะอาด
+ * เว้นวรรคซ้อนหรือขึ้นบรรทัดใหม่ที่ติดมาจากการก๊อปวาง จะไปโผล่บนกระดาษจริง
+ *
+ * ปล่อยว่างได้ — ว่างแปลว่า "กลับไปใช้ค่าตั้งต้น" ซึ่งระบบอ่านเป็น ชิ้น
+ * ไม่ใช่ error เพราะเป็นคำสั่งที่ถูกต้อง
+ */
+function shopUnitName_(v) {
+  var t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  if (t.length > 20) {
+    throw new Error('หน่วยนับยาวเกินไป (เกิน 20 ตัวอักษร) — ' +
+      'ช่องนี้ถูกพิมพ์ลงใบกำกับภาษี ยาวกว่านี้จะล้นช่อง');
+  }
+  return t;
+}
+
+/**
+ * เปลี่ยนหน่วยนับของสินค้าหลายตัวในครั้งเดียว
+ *
+ * ทำไมต้องมี: หน่วยนับไปโผล่บนใบกำกับภาษีในช่อง "จำนวน (Quantity)"
+ * เขียนผิดคำเดียวก็ผิดทุกใบที่ขายสินค้าตัวนั้น และร้านนี้ใช้หน่วยเดียวกัน
+ * ทั้งหมวด (น้ำยาทุกตัวเป็น can) การแก้ทีละตัวคือหลายสิบรอบ ซึ่งไม่มีใครทำจริง
+ *
+ * ของเก่าที่ออกใบไปแล้วไม่ขยับตาม เพราะใบที่ออกแล้วเก็บภาพถ่ายของตัวเองไว้
+ * ซึ่งถูกแล้ว — ใบที่ลูกค้าถืออยู่ต้องตรงกับใบที่พิมพ์ซ้ำได้เสมอ
+ */
+function setShopUnit(p) {
+  var email = requireStaff_();
+  /* ของที่ลูกค้าเห็นกำลังจะเปลี่ยน ล้างแคชหน้าร้านทิ้ง ไม่งั้นลูกค้ายังเห็นของเก่าอีกห้านาที */
+  shopCacheBust_();
+  if (!p || !p.skus || !p.skus.length) throw new Error('ยังไม่ได้เลือกสินค้า');
+  var unit = shopUnitName_(p.unit);
+  if (!unit) throw new Error('ยังไม่ได้ใส่หน่วยนับ');
+  if (p.skus.length > MOVE_MAX) {
+    throw new Error('เปลี่ยนได้ครั้งละไม่เกิน ' + MOVE_MAX + ' ตัว — ' +
+      'ค้นให้แคบลงแล้วเปลี่ยนเป็นชุด ๆ');
+  }
+
+  var want = {};
+  for (var i = 0; i < p.skus.length; i++) want[String(p.skus[i]).trim()] = 1;
+
+  var all = readProducts_(true);
+  var done = 0, same = 0, miss = [];
+  var seen = {};
+  for (var k = 0; k < all.length; k++) {
+    if (!want[all[k].sku]) continue;
+    seen[all[k].sku] = 1;
+    if (String(all[k].unit || '').trim() === unit) { same++; continue; }
+    writeRow_('prod', all[k].row, { unit: unit });
+    writeLog_(email, 'แก้ไข', SH.prod.name, all[k].sku, 'หน่วยนับ',
+      all[k].unit, unit, 'เปลี่ยนหน่วยเป็นชุดจากโหมดแก้ไขร้าน');
+    done++;
+  }
+  for (var w in want) if (!seen[w]) miss.push(w);
+
+  return { ok: true, changed: done, same: same, miss: miss, unit: unit };
 }
 
 /**

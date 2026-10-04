@@ -4686,5 +4686,50 @@ var over69 = [];
 for (var n69 in fx69.sheets) over69 = over69.concat(fx69.sheets[n69].overwrittenFormulas);
 eq('ไม่มีช่องสูตรอื่นถูกเขียนทับ', over69, []);
 
+/* ============================= 70. หน่วยนับที่แก้ในแอป ต้องไปถึงกระดาษ
+
+   หน่วยนับถูกพิมพ์ลงใบกำกับภาษีในช่อง "จำนวน (Quantity)" ตรง ๆ
+   เจ้าของร้านแจ้ง 4 ต.ค. 69 ว่าใบขึ้นว่า "1 ขวด/แกลลอน" อยากให้เป็น "can"
+   เส้นทางที่ต้องถูกทั้งเส้น: ฐานสินค้า → ออเดอร์_รายการ (สูตร) → ใบที่พิมพ์
+
+   และข้อสำคัญที่สุด: ใบที่ออกไปแล้ว ต้องไม่เปลี่ยนตาม
+   ใบที่ลูกค้าถืออยู่กับใบที่พิมพ์ซ้ำ ต้องเป็นกระดาษใบเดียวกันเสมอ     */
+console.log('\n70. หน่วยนับที่แก้ในแอป ต้องไปโผล่บนใบที่พิมพ์');
+var fx70 = FS.build();
+var api70 = FS.load(fx70, {});
+api70.setup();
+api70.setupShopColumns();
+
+/* ออกใบก่อนเปลี่ยนหน่วย — ใบนี้คือใบที่ลูกค้าถืออยู่แล้ว */
+var o70a = api70.createOrder(order({ items: [{ sku: 'SKU-141', qty: 2, price: 100 }] }));
+var d70a = api70.issueDoc({ clientKey: 'u70a', type: 'rec', orderNo: o70a.no,
+                            cust: { name: 'บริษัท ทดสอบ จำกัด' } });
+var unitBefore = api70.getDoc(d70a.no).doc.lines[0].unit;
+truthy2('ใบแรกใช้หน่วยเดิมของสินค้า', !!unitBefore);
+
+console.log('\n   เปลี่ยนหน่วยเป็น can จากโหมดแก้ไขร้าน');
+var u70 = api70.setShopUnit({ unit: 'can', skus: ['SKU-141'] });
+eq('เปลี่ยนให้หนึ่งตัว', u70.changed, 1);
+
+/* ชีทออเดอร์_รายการ ดึงหน่วยมาจาก ฐานสินค้า ด้วยสูตร ของเก่าจึงขยับตามไปด้วย
+   ซึ่งถูกแล้วสำหรับหน้าจอ แต่กระดาษที่ออกไปแล้วต้องไม่ขยับ */
+console.log('\n   ใบที่ออกใหม่ ต้องขึ้นว่า can');
+var o70b = api70.createOrder(order({ items: [{ sku: 'SKU-141', qty: 2, price: 100 }] }));
+var d70b = api70.issueDoc({ clientKey: 'u70b', type: 'rec', orderNo: o70b.no,
+                            cust: { name: 'บริษัท ทดสอบ จำกัด' } });
+eq('บรรทัดสินค้าบนใบใหม่ใช้หน่วย can', api70.getDoc(d70b.no).doc.lines[0].unit, 'can');
+eq('ค่าจัดส่งยังเป็น ครั้ง ไม่ได้โดนเปลี่ยนตามไปด้วย',
+   api70.getDoc(d70b.no).doc.lines.filter(function (l) { return l.name === 'ค่าจัดส่ง' })[0].unit,
+   'ครั้ง');
+
+console.log('\n   แต่ใบเก่าที่ออกไปแล้ว ต้องพิมพ์ซ้ำได้เหมือนเดิมเป๊ะ');
+var again70 = api70.getDoc(d70a.no);
+eq('พิมพ์ซ้ำได้จากภาพถ่ายของใบ ไม่ได้ประกอบใหม่', again70.exact, true);
+eq('หน่วยบนใบเก่าไม่เปลี่ยนตาม', again70.doc.lines[0].unit, unitBefore);
+
+var over70 = [];
+for (var n70 in fx70.sheets) over70 = over70.concat(fx70.sheets[n70].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกเขียนทับตลอดข้อนี้', over70, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

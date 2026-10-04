@@ -54,6 +54,60 @@ function ok(l, v, x) { if (!v) { fails++; errs.push(l) } console.log((v?'  ok   
     return s && s.p.sku === 'SKU-Chem-102' && s.p.price === '135' && s.p.tag === 'แนะนำ';
   }));
 
+  /* ---------- 2ข. หน่วยนับ ----------
+     หน่วยนับถูกพิมพ์ลงใบกำกับภาษีในช่อง "จำนวน (Quantity)" ตรง ๆ
+     ของเดิมแก้ได้ทางเดียวคือเปิดชีท ฐานสินค้า เลื่อนไปคอลัมน์ F บนมือถือ
+     (เจ้าของร้านแจ้ง 4 ต.ค. 69: ใบขึ้นว่า "1 ขวด/แกลลอน" อยากให้เป็น "can") */
+  console.log('\n2ข. หน่วยนับ — แก้ทีละตัว และเปลี่ยนทั้งชุด');
+  ok('หน่วยเดิมขึ้นในรายการ ไม่ต้องเปิดดูทีละตัว',
+     (await pg.locator('[data-eprod="SKU-Chem-102"] .sub').innerText()).indexOf('ขวด') > -1);
+  await pg.locator('[data-eprod="SKU-Chem-102"]').click();
+  await pg.waitForTimeout(350);
+  ok('ช่องหน่วยนับมีค่าเดิมอยู่', (await pg.locator('#epm-unit').inputValue()) === 'ขวด');
+  /* สามคำที่เจ้าของร้านใช้จริง — น้ำยาเป็น can · ดอกเอ็นมิลเป็น pcs หรือ set
+     ต้องกดได้เลย ไม่ต้องพิมพ์เองทุกครั้ง เพราะพิมพ์เองคือพิมพ์ผิดได้ */
+  for (const u of ['can', 'pcs', 'set']) {
+    ok('มีปุ่มลัด ' + u + ' ให้กด',
+       (await pg.locator('#epm-unit-pick button', { hasText: new RegExp('^' + u + '$') })
+          .count()) === 1);
+  }
+  await pg.locator('#epm-unit-pick button', { hasText: 'can' }).click();
+  ok('กดปุ่มลัดแล้วช่องเปลี่ยนตาม', (await pg.locator('#epm-unit').inputValue()) === 'can');
+  await pg.locator('#epm-save').click();
+  await pg.waitForTimeout(800);
+  ok('ส่งหน่วยใหม่ไปด้วย', await pg.evaluate(() => {
+    var s = SENT.filter(x => x.fn === 'saveShopProduct').pop();
+    return s && s.p.sku === 'SKU-Chem-102' && s.p.unit === 'can';
+  }));
+  ok('รายการขึ้นหน่วยใหม่',
+     (await pg.locator('[data-eprod="SKU-Chem-102"] .sub').innerText()).indexOf('can') > -1);
+
+  console.log('\n   เปลี่ยนทั้งชุดที่ค้นเจอทีเดียว');
+  await pg.locator('#ep-q').fill('');
+  await pg.waitForTimeout(300);
+  ok('มีปุ่มเปลี่ยนหน่วยทั้งชุด', (await pg.locator('#ep-unit').count()) === 1);
+  await pg.locator('#ep-unit').click();
+  await pg.waitForTimeout(350);
+  ok('กล่องเปลี่ยนหน่วยเปิด', await pg.locator('#modal.on').isVisible());
+  ok('บอกด้วยว่าตอนนี้ใช้หน่วยอะไรอยู่บ้าง ก่อนจะไปทับ',
+     (await pg.locator('#modal').innerText()).indexOf('ตอนนี้ใช้อยู่') > -1);
+  await pg.locator('#euv-go').click();
+  await pg.waitForTimeout(300);
+  ok('ยังไม่ใส่หน่วยแล้วกด ต้องฟ้อง ไม่ใช่ส่งค่าว่างขึ้นไป',
+     (await pg.locator('#euv-err').innerText()).indexOf('ยังไม่ได้ใส่') > -1);
+  await pg.locator('#euv-unit').fill('can');
+  await pg.locator('#euv-go').click();
+  await pg.waitForTimeout(800);
+  ok('กล่องปิดหลังเปลี่ยน', !(await pg.locator('#modal.on').isVisible()));
+  ok('ส่งไปครบทุกตัวที่เห็นอยู่', await pg.evaluate(() => {
+    var s = SENT.filter(x => x.fn === 'setShopUnit').pop();
+    return s && s.p.unit === 'can' && s.p.skus.length === 3;
+  }));
+  ok('ทุกตัวในรายการเป็นหน่วยใหม่',
+     (await pg.locator('[data-eprod] .sub').allInnerTexts())
+       .every(t => t.indexOf('can') > -1));
+  await pg.screenshot({ path: OUT + '/E2b-unit.png', fullPage: true });
+
   console.log('\n3. สินค้าแนะนำ — โชว์แต่ตัวที่ติดป้าย');
   await pg.locator('#ep-back').click();
   await pg.waitForTimeout(300);

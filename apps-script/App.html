@@ -6721,6 +6721,50 @@ function groupValue(id){
   return on.dataset.grp;
 }
 
+/* ช่องหน่วยนับ — พิมพ์เองได้ พร้อมปุ่มลัดหน่วยที่ร้านใช้อยู่จริง
+   ไม่ทำเป็นดรอปดาวน์ตายตัว เพราะร้านเคมี/ทูลลิ่งใช้หน่วยไม่ซ้ำกันเลย
+   และหน่วยใหม่ต้องใส่ได้ทันทีโดยไม่ต้องรอแก้โค้ด */
+var UNIT_QUICK = ["can", "pcs", "set", "ขวด", "แกลลอน", "ถัง", "กล่อง", "ชุด", "ชิ้น", "กก."];
+
+function unitField(id, cur){
+  var now = String(cur || "").trim();
+  /* หน่วยที่ร้านใช้อยู่จริงต้องมาก่อนหน่วยที่เราเดาไว้ — เรียงตามที่ใช้บ่อย */
+  var seen = {}, list = [];
+  (ED.products || []).forEach(function(x){
+    var u = String(x.unit || "").trim();
+    if(!u) return;
+    seen[u] = (seen[u] || 0) + 1;
+  });
+  Object.keys(seen).sort(function(a,b){ return seen[b]-seen[a] }).forEach(function(u){
+    list.push(u);
+  });
+  UNIT_QUICK.forEach(function(u){ if(list.indexOf(u) < 0) list.push(u) });
+
+  return '<div class="fld"><label>หน่วยนับ</label>'
+    + '<input id="'+id+'" maxlength="20" value="'+esc(now)+'" placeholder="เช่น can">'
+    + '<div class="tagpick" id="'+id+'-pick">'
+      + list.slice(0,10).map(function(u){
+          return '<button type="button" data-unit="'+esc(u)+'"'
+            + (u===now ? ' class="on"' : "") + ">"+esc(u)+"</button>";
+        }).join("")
+    + '</div><div class="hint">คำนี้ถูกพิมพ์ลงใบกำกับภาษีในช่อง '
+    + '<b>จำนวน (Quantity)</b> ตรง ๆ — น้ำยาเป็น <b>2 can</b> · '
+    + 'ดอกเอ็นมิลเป็น <b>2 pcs</b> หรือ <b>2 set</b><br>'
+    + "ใบที่ออกไปแล้วไม่เปลี่ยนตาม — ใบที่ลูกค้าถืออยู่ต้องพิมพ์ซ้ำได้เหมือนเดิมเสมอ"
+    + "</div></div>";
+}
+
+function bindUnit(id){
+  if(!$("#"+id+"-pick")) return;
+  $$("#"+id+"-pick button").forEach(function(b){
+    b.onclick = function(){
+      $$("#"+id+"-pick button").forEach(function(x){ x.classList.remove("on") });
+      b.classList.add("on");
+      $("#"+id).value = b.dataset.unit;
+    };
+  });
+}
+
 function eprodInit(mode){
   EPMODE = mode || "all";
   $("#ep-title").textContent = (EPMODE==="tag") ? "สินค้าแนะนำ" : "ข้อมูลร้าน";
@@ -6792,6 +6836,65 @@ function eprodMove(){
   };
 }
 
+/**
+ * เปลี่ยนหน่วยนับทั้งชุดที่ค้นเจอ
+ *
+ * หน่วยไปโผล่บนใบกำกับภาษีในช่อง "จำนวน (Quantity)" ผิดคำเดียวก็ผิดทุกใบ
+ * และร้านนี้ใช้หน่วยเดียวกันทั้งหมวด (น้ำยาทุกตัวเป็น can)
+ * แก้ทีละตัวคือหลายสิบรอบ ซึ่งไม่มีใครทำจริง
+ */
+function eprodUnit(){
+  var list = eprodList();
+  if(!list.length){ toast("ไม่มีสินค้าให้เปลี่ยนหน่วย"); return }
+  var q = $("#ep-q").value.trim();
+
+  /* หน่วยที่ชุดนี้ใช้อยู่ ต้องเห็นก่อนกด ไม่งั้นไม่รู้ว่ากำลังจะทับอะไร */
+  var now = {};
+  list.forEach(function(p){ var u = String(p.unit||"").trim() || "(ว่าง)";
+                            now[u] = (now[u]||0) + 1 });
+  var nowTxt = Object.keys(now).map(function(u){
+    return esc(u) + " " + now[u] + " ตัว";
+  }).join(" · ");
+
+  openModal("เปลี่ยนหน่วยนับ " + list.length + " ตัว",
+    '<div class="hint" style="padding:0 2px 10px">'
+      + (q ? 'สินค้าที่ค้นด้วยคำว่า <b>' + esc(q) + '</b> ทั้ง ' + list.length + ' ตัว'
+           : "สินค้าทั้งหมด " + list.length + " ตัวที่เห็นอยู่ตอนนี้")
+      + " จะถูกเปลี่ยนเป็นหน่วยที่ใส่</div>"
+    + '<div class="hint" style="padding:0 2px 12px">ตอนนี้ใช้อยู่: ' + nowTxt + "</div>"
+    + '<div class="hint" style="padding:0 2px 12px;max-height:160px;overflow:auto">'
+      + list.slice(0,40).map(function(p){ return esc(p.name) }).join("<br>")
+      + (list.length>40 ? "<br>… และอีก " + (list.length-40) + " ตัว" : "")
+      + "</div>"
+    + unitField("euv-unit", "")
+    + '<div class="msg err" id="euv-err"></div>'
+    + '<button class="btn" id="euv-go">เปลี่ยนทั้งหมด</button>');
+
+  bindUnit("euv-unit");
+  $("#euv-go").onclick = function(){
+    var u = $("#euv-unit").value.trim();
+    var box = $("#euv-err");
+    if(!u){ box.textContent = "ยังไม่ได้ใส่หน่วยนับ"; box.classList.add("on"); return }
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังเปลี่ยน…";
+    google.script.run
+      .withSuccessHandler(function(r){
+        closeModal();
+        edLoad("prod", true, function(){
+          eprodDraw();
+          edNote("ep-ok","ep-err", true,
+            "เปลี่ยนหน่วยเป็น " + r.unit + " แล้ว " + r.changed + " ตัว"
+            + (r.same ? " (อีก " + r.same + " ตัวเป็นหน่วยนี้อยู่แล้ว)" : ""));
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "เปลี่ยนทั้งหมด";
+        box.textContent = e.message; box.classList.add("on");
+      })
+      .setShopUnit({ unit: u, skus: list.map(function(p){ return p.sku }) });
+  };
+}
+
 function eprodDraw(){
   var list = eprodList();
   if(!list.length){
@@ -6804,8 +6907,13 @@ function eprodDraw(){
   var moveBtn = (EPMODE !== "tag" && list.length > 1)
     ? '<div class="card"><button class="btn ghost" id="ep-move">'
         + "📂 ย้าย " + list.length + " ตัวที่เห็นอยู่ ไปหมวดเดียวกัน</button>"
-        + '<div class="hint">ค้นชื่อให้แคบลงก่อน แล้วย้ายทั้งชุดทีเดียว '
-        + "เร็วกว่าแก้ทีละตัวมาก</div></div>"
+        /* หน่วยนับไปอยู่บนใบกำกับภาษี แก้ทีละตัวคือหลายสิบรอบ
+           ปุ่มนี้อยู่คู่กับปุ่มย้ายหมวด เพราะเป็นงานท่าเดียวกัน — ค้นให้แคบแล้วทำทั้งชุด */
+        + '<button class="btn ghost" id="ep-unit" style="margin-top:9px">'
+        + "🧴 เปลี่ยนหน่วยนับ " + list.length + " ตัวที่เห็นอยู่</button>"
+        + '<div class="hint">ค้นชื่อให้แคบลงก่อน แล้วทำทั้งชุดทีเดียว '
+        + "เร็วกว่าแก้ทีละตัวมาก<br>"
+        + 'หน่วยนับคือคำที่พิมพ์ลงใบกำกับภาษีในช่อง <b>จำนวน (Quantity)</b></div></div>'
     : "";
 
   $("#ep-list").innerHTML = moveBtn + '<div class="card">' + list.slice(0,80).map(function(p){
@@ -6816,6 +6924,8 @@ function eprodDraw(){
           : "ยังไม่มีรูป") + "</span>"
       + '<span class="bd"><b>'+esc(p.name)+"</b>"
         + '<span class="sub">'+esc(p.sku)+" · "+baht(p.price)
+          /* หน่วยต้องเห็นตั้งแต่ในรายการ ไม่งั้นต้องเปิดทีละตัวถึงจะรู้ว่าตัวไหนยังผิด */
+          + " / " + esc(p.unit || "ชิ้น")
           + " · " + esc(p.group || "ไม่มีหมวด")
           + (p.show.length>1 ? " · 2 รูป" : "") + "</span>"
         + '<span class="pills">'
@@ -6840,6 +6950,10 @@ function eprodOpen(sku){
     + '<div class="fld"><label>ราคาขาย (บาท)</label>'
       + '<input id="epm-price" type="number" inputmode="decimal" step="0.01" min="0" value="'
         + Number(p.price) + '"></div>'
+    /* หน่วยนับถูกพิมพ์ลงใบกำกับภาษีในช่อง "จำนวน (Quantity)" ตรง ๆ
+       ของเดิมแก้ได้ทางเดียวคือเปิดชีท ฐานสินค้า แล้วเลื่อนไปคอลัมน์ F
+       ซึ่งบนมือถือทำไม่ได้จริง หน่วยเลยค้างผิดอยู่บนใบทุกใบที่ขายตัวนั้น */
+    + unitField("epm-unit", p.unit)
     + imgField("epm-img", "รูปที่ 1 (รูปหลัก)", "prod", p.img, p.show[0])
     + imgField("epm-img2", "รูปที่ 2 (ลูกค้ากดดูเพิ่มได้)", "prod", p.img2, p.show[1],
         "เว้นว่างได้ ถ้าเว้นก็มีรูปเดียว · " + IMG_HINT)
@@ -6860,6 +6974,7 @@ function eprodOpen(sku){
 
   bindPicks(p.sku);
   bindGroup("epm-grp");
+  bindUnit("epm-unit");
   $$("#epm-tags button").forEach(function(b){
     b.onclick = function(){ b.classList.toggle("on") };
   });
@@ -6891,6 +7006,7 @@ function eprodOpen(sku){
       .saveShopProduct({
         sku: p.sku,
         group: groupValue("epm-grp"),
+        unit: $("#epm-unit").value,
         price: $("#epm-price").value,
         img: $("#epm-img").value,
         img2: $("#epm-img2").value,
@@ -7230,6 +7346,7 @@ document.addEventListener("click", function(e){
 $("#ep-q").addEventListener("input", function(){ if(EDGOT.prod) eprodDraw() });
 document.addEventListener("click", function(e){
   if(e.target.closest("#ep-move")) eprodMove();
+  if(e.target.closest("#ep-unit")) eprodUnit();
 });
 ["ep","eb","ec","el"].forEach(function(k){
   var b = $("#"+k+"-back");

@@ -55,6 +55,7 @@ var f1 = fixture();
   ['saveShopProduct', function () { f1.guest.saveShopProduct({ sku: 'SKU-141', price: 1 }) }],
   ['saveShopBanner', function () { f1.guest.saveShopBanner({ slot: 'โปรโมชั่นเด่น', img: DRIVE }) }],
   ['deleteShopBanner', function () { f1.guest.deleteShopBanner(DATA_ROW) }],
+  ['setShopUnit', function () { f1.guest.setShopUnit({ unit: 'can', skus: ['SKU-141'] }) }],
   ['saveShopCat', function () { f1.guest.saveShopCat({ group: 'TOOLING' }) }],
   ['saveShopLook', function () { f1.guest.saveShopLook({ logo: DRIVE }) }]
 ].forEach(function (t) {
@@ -196,7 +197,9 @@ Object.keys(f7.fx.sheets).forEach(function (n) {
 });
 
 var sku7 = f7.staff.getShopEdit().products[0].sku;
-f7.staff.saveShopProduct({ sku: sku7, img: DRIVE, img2: DRIVE2, tag: 'แนะนำ', price: 199 });
+f7.staff.saveShopProduct({ sku: sku7, img: DRIVE, img2: DRIVE2, tag: 'แนะนำ', price: 199,
+                           unit: 'can' });
+f7.staff.setShopUnit({ unit: 'can', skus: [sku7] });
 var br7 = f7.staff.saveShopBanner({ slot: 'ติดต่อเรา', img: DRIVE, on: true, btn: 'แอดไลน์' });
 f7.staff.saveShopBanner({ row: br7.row, slot: 'ติดต่อเรา', img: DRIVE2, on: false });
 f7.staff.deleteShopBanner(br7.row);
@@ -435,6 +438,77 @@ eq('แต่ชื่อหมวดในชีทยังเป็นขอ�
    f11.staff.getShopEdit('prod').products
      .filter(function (x) { return many11.indexOf(x.sku) > -1 })[0].group,
    'Endmill Corn');
+
+/* ============================================ 11ข. หน่วยนับ
+
+   หน่วยนับถูกพิมพ์ลงใบกำกับภาษีในช่อง "จำนวน (Quantity)" ตรง ๆ
+   ของเดิมแก้ได้ทางเดียวคือเปิดชีท ฐานสินค้า แล้วเลื่อนไปคอลัมน์ F บนมือถือ
+   ซึ่งทำไม่ได้จริง หน่วยจึงค้างผิดอยู่บนใบทุกใบที่ขายสินค้าตัวนั้น
+   (เจ้าของร้านแจ้งเอง 4 ต.ค. 69: ใบขึ้นว่า "1 ขวด/แกลลอน" อยากให้เป็น "can") */
+console.log('\n11ข. หน่วยนับ — แก้ทีละตัว และเปลี่ยนทั้งชุดในครั้งเดียว');
+var f14 = fixture();
+var p14 = f14.staff.getShopEdit('prod').products;
+truthy('หน้าจอได้หน่วยนับมาด้วย จะได้เห็นว่าตัวไหนยังผิด',
+   p14.every(function (x) { return typeof x.unit === 'string' }));
+var sku14 = p14[0].sku;
+
+f14.staff.saveShopProduct({ sku: sku14, unit: 'can' });
+function unitOf(api, sku) {
+  return api.getShopEdit('prod').products.filter(function (x) { return x.sku === sku })[0].unit;
+}
+eq('เปลี่ยนหน่วยของตัวเดียวได้', unitOf(f14.staff, sku14), 'can');
+eq('ส่งค่าเดิมซ้ำ ไม่นับว่าแก้',
+   f14.staff.saveShopProduct({ sku: sku14, unit: 'can' }).changed, 0);
+f14.staff.saveShopProduct({ sku: sku14, unit: '  ขวด   เล็ก  ' });
+eq('เว้นวรรคเกินถูกตัดให้สะอาด เพราะคำนี้ลงกระดาษจริง',
+   unitOf(f14.staff, sku14), 'ขวด เล็ก');
+throws('หน่วยยาวเกินช่องบนใบ ต้องฟ้องก่อน ไม่ใช่ปล่อยให้ล้น',
+   function () {
+     f14.staff.saveShopProduct({ sku: sku14, unit: new Array(30).join('ก') });
+   }, 'ยาวเกินไป');
+
+/* ไม่ส่ง unit มาเลย = ไม่ได้แตะ ต้องไม่ถูกล้างทิ้งโดยไม่ตั้งใจ */
+f14.staff.saveShopProduct({ sku: sku14, price: 123 });
+eq('แก้ราคาอย่างเดียว หน่วยต้องไม่ถูกแตะ', unitOf(f14.staff, sku14), 'ขวด เล็ก');
+
+console.log('\n   เปลี่ยนทั้งชุดในครั้งเดียว — ท่าที่ใช้ได้จริงกับสินค้าร้อยกว่าตัว');
+var many14 = f14.staff.getShopEdit('prod').products.slice(0, 3)
+  .map(function (x) { return x.sku });
+var u14 = f14.staff.setShopUnit({ unit: 'can', skus: many14 });
+truthy('เปลี่ยนเป็นชุดได้', u14.ok === true);
+eq('บอกหน่วยที่ตั้งให้', u14.unit, 'can');
+eq('ทุกตัวในชุดเป็นหน่วยใหม่ครบ',
+   f14.staff.getShopEdit('prod').products
+     .filter(function (x) { return many14.indexOf(x.sku) > -1 })
+     .every(function (x) { return x.unit === 'can' }), true);
+
+var u14b = f14.staff.setShopUnit({ unit: 'can', skus: many14 });
+eq('ทำซ้ำด้วยหน่วยเดิม ไม่นับว่าแก้', u14b.changed, 0);
+eq('แต่บอกว่ามีกี่ตัวที่เป็นหน่วยนี้อยู่แล้ว', u14b.same, many14.length);
+
+var u14c = f14.staff.setShopUnit({ unit: 'can', skus: many14.concat(['SKU-ไม่มีจริง']) });
+eq('รหัสที่ไม่มีในชีท ถูกรายงานกลับมา ไม่เงียบหาย', u14c.miss, ['SKU-ไม่มีจริง']);
+
+throws('ไม่เลือกสินค้าเลย ต้องฟ้อง',
+   function () { f14.staff.setShopUnit({ unit: 'can', skus: [] }) }, 'ยังไม่ได้เลือก');
+throws('ไม่ใส่หน่วย ต้องฟ้อง',
+   function () { f14.staff.setShopUnit({ unit: '  ', skus: many14 }) }, 'หน่วยนับ');
+throws('เปลี่ยนทีละเป็นพัน ต้องฟ้องก่อน ไม่ใช่ปล่อยให้หมดเวลากลางทาง',
+   function () {
+     var big = [];
+     for (var i = 0; i < 300; i++) big.push('SKU-' + i);
+     f14.staff.setShopUnit({ unit: 'can', skus: big });
+   }, 'ไม่เกิน');
+
+console.log('\n   หน้าร้านที่ลูกค้าเห็น ต้องใช้หน่วยใหม่ด้วย');
+/* ล้างแคชก่อนอ่าน เพราะหน้าร้านแคชไว้ห้านาที — setShopUnit ล้างให้แล้ว
+   แต่ชุดทดสอบอ่านผ่าน context คนละตัว จึงต้องล้างซ้ำให้แน่ */
+f14.guest.shopCacheBust_();
+var shown14 = f14.guest.shopData().items
+  .filter(function (x) { return many14.indexOf(x.sku) > -1 });
+truthy('มีสินค้าที่เพิ่งเปลี่ยนหน่วย ขึ้นหน้าร้านอยู่จริง', shown14.length > 0);
+eq('และหน่วยบนหน้าร้านเป็นหน่วยใหม่ทุกตัว',
+   shown14.every(function (x) { return x.unit === 'can' }), true);
 
 /* ============================================ 12. ลิงก์หน้าร้าน */
 console.log('\n12. สองลิงก์ของหน้าร้าน — ตัวดูเอง กับตัวที่ส่งให้ลูกค้า');
