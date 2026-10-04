@@ -1882,7 +1882,7 @@ function askRevise(no, btn, redraw){
           ? 'ใบวางบิล <b>ยอดไม่เปลี่ยน</b> ล็อกไว้เท่าใบขายที่รวมอยู่ในนั้น · '
             + 'แก้ได้เฉพาะชื่อผู้ซื้อ ที่อยู่ PO เงื่อนไขชำระเงิน และผู้ติดต่อ<br>'
           : 'ยอดคิดใหม่จากออเดอร์ตอนนี้ ส่วนชื่อและที่อยู่ผู้ซื้อแก้ได้ในช่องข้างล่างนี้เลย<br>')
-      +'<b>วันที่กับชนิดเอกสารไม่เปลี่ยน</b> · ยอดเดิมถูกจดไว้ในหมายเหตุของใบทุกครั้ง<br>'
+      +'<b>ชนิดเอกสารไม่เปลี่ยน</b> · ยอดเดิมและวันที่เดิมถูกจดไว้ทุกครั้ง<br>'
       +'<b style="color:var(--red)">แก้ได้จนกว่าจะกดปุ่ม "ส่งแล้ว"</b> — '
       +'พอกดส่งแล้ว ใบนี้จะแก้ไม่ได้อีก ต้องยกเลิกแล้วออกใบใหม่แทน</div>'
     /* ชื่อกับที่อยู่ผู้ซื้ออยู่ตรงนี้เลย ไม่ใช่ต้องไปเปิดหน้าออกเอกสารค้างไว้ก่อน
@@ -1912,6 +1912,15 @@ function askRevise(no, btn, redraw){
         +'<input class="rv-po" placeholder="หมายเลขคำสั่งซื้อ (PO)" style="flex:2">'
         +'<input class="rv-terms" placeholder="เงื่อนไขชำระเงิน" style="flex:1">'
       +'</div>'
+      /* วันที่บนใบ — ของเดิมล็อกไว้ แก้ไม่ได้เลย พิมพ์วันผิดทีต้องเผาเลขทิ้งหนึ่งเลข
+         ใบที่ยังไม่ได้กด "ส่งแล้ว" ยังไม่มีใครถือ วันที่จึงยังไม่ได้มีผลกับใคร
+         (ของจริง: ใบ ONIV26-00342 ลงวันที่ 29 ก.ย. ตามวันที่สั่งซื้อ
+          ลูกค้าขอให้เป็นวันที่ออกจริง) */
+      +'<div style="display:flex;gap:6px;align-items:center">'
+        +'<input class="rv-date" type="date" style="flex:1">'
+        +'<button type="button" class="mini rv-today">ใช้วันนี้</button>'
+      +'</div>'
+      +'<div class="rv-datemsg hint"></div>'
       +'<select class="rv-vat">'
         +'<option value="excl">บวก VAT 7% จากราคา</option>'
         +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
@@ -1951,6 +1960,8 @@ function askRevise(no, btn, redraw){
     box.querySelector(".rv-terms").value = res.meta.terms || "";
     box.querySelector(".rv-vat").value =
       res.meta.novat ? "none" : (res.meta.vatMode === "incl" ? "incl" : "excl");
+    box.querySelector(".rv-date").value = String(res.meta.date || "").slice(0, 10);
+    rvDateCheck();
     custReady = true;
     go.disabled = false;
   }).catch(function(e){
@@ -1963,6 +1974,33 @@ function askRevise(no, btn, redraw){
     custReady = false;
     go.disabled = false;
   });
+  /* เตือนแบบเดียวกับตอนออกใบ — ย้ายวันข้ามเดือนคือย้ายยอดไปอีกเดือนภาษี
+     ต้องรู้ตอนที่ยังกดเปลี่ยนได้ ไม่ใช่ตอนกระดาษออกไปแล้ว */
+  function rvDateCheck(){
+    var el = box.querySelector(".rv-date"), out = box.querySelector(".rv-datemsg");
+    if(!el || !out) return;
+    var pick = String(el.value || "").slice(0, 10), now = todayISO();
+    out.style.color = "";
+    out.textContent = "";
+    if(!pick) return;
+    if(pick > now){
+      out.style.color = "var(--red)";
+      out.textContent = "ลงวันที่ล่วงหน้าไม่ได้ (" + dmy_(pick) + ")";
+      return;
+    }
+    if(pick.slice(0,7) !== now.slice(0,7)){
+      out.style.color = "var(--red)";
+      out.textContent = "วันที่ " + dmy_(pick) + " เป็นคนละเดือนกับวันนี้ — "
+        + "ยอดใบนี้จะไปอยู่ในภาษีขายของเดือน " + pick.slice(0,7)
+        + " ถ้ายื่น ภ.พ.30 เดือนนั้นไปแล้ว ต้องยื่นเพิ่มเติม";
+    }
+  }
+  box.querySelector(".rv-today").onclick = function(){
+    box.querySelector(".rv-date").value = todayISO();
+    rvDateCheck();
+  };
+  box.querySelector(".rv-date").addEventListener("change", rvDateCheck);
+
   why.focus();
   box.querySelector(".rv-no").onclick = function(){ box.remove() };
   why.onkeydown = function(e){ if (e.key === "Enter") box.querySelector(".rv-go").click() };
@@ -2009,10 +2047,14 @@ function askRevise(no, btn, redraw){
          ชำระเงินของใบเดิมทิ้งทุกครั้งที่กดแก้จากแฟ้มเอกสาร */
       send.po = box.querySelector(".rv-po").value.trim();
       send.terms = box.querySelector(".rv-terms").value.trim();
+      /* ส่งเฉพาะตอนที่มีค่าจริง ช่องว่าง = อ่านของเดิมไม่ได้ ห้ามสั่งให้ล้างวันที่ */
+      var rvd = box.querySelector(".rv-date").value.trim();
+      if(rvd) send.date = rvd;
     }
 
     api("reviseDoc", send).then(function(res){
-      toast("แก้ใบ " + no + " แล้ว · ยอดใหม่ " + baht(res.doc ? res.doc.total : 0));
+      toast("แก้ใบ " + no + " แล้ว · ยอดใหม่ " + baht(res.doc ? res.doc.total : 0)
+          + (res.dateMoved ? " · วันที่เป็น " + dmy_(res.date) : ""));
       redraw();
     }, function(e){
       go.disabled = false; go.textContent = "ยืนยันแก้ใบนี้";

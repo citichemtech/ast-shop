@@ -4731,5 +4731,93 @@ var over70 = [];
 for (var n70 in fx70.sheets) over70 = over70.concat(fx70.sheets[n70].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกเขียนทับตลอดข้อนี้', over70, []);
 
+/* ===================== 71. แก้วันที่บนใบ โดยไม่เผาเลขในเล่ม
+
+   ของเดิมล็อกวันที่ไว้ แก้ไม่ได้เลย เหตุผลคือ "วันที่คือจุดตั้งต้นทางภาษี"
+   ซึ่งจริง แต่ยอดเงินก็เป็นจุดตั้งต้นทางภาษีเหมือนกัน และยอดแก้ได้มาตลอด
+   เส้นแบ่งจริงของระบบคือ "ใบออกจากร้านไปหรือยัง" (ช่อง ส่งแล้ว)
+
+   ของจริง 4 ต.ค. 69: ใบ ONIV26-00342 ลงวันที่ 29 ก.ย. ตามวันที่สั่งซื้อ
+   ลูกค้าขอให้เป็นวันที่ออกจริง ถ้าแก้วันไม่ได้ ต้องยกเลิกแล้วออกใหม่
+   = เผาเลขในเล่มทิ้งหนึ่งเลขเพราะวันที่ ซึ่งปุ่มแก้ใบมีไว้เพื่อไม่ให้เกิด  */
+console.log('\n71. แก้วันที่บนใบ โดยใช้เลขเดิม');
+var fx71 = FS.build();
+var api71 = FS.load(fx71, {});
+api71.setup();
+var doc71 = fx71.sheets['เอกสาร'];
+
+var o71 = api71.createOrder(order({
+  cust: 'บริษัท เรือนเอกดีไซน์', ship: 0, discount: 0,
+  items: [{ sku: 'SKU-141', qty: 5, price: 75 }]
+}));
+var d71 = api71.issueDoc({
+  type: 'rec', orderNo: o71.no, cust: { name: 'บริษัท เรือนเอกดีไซน์' },
+  date: '2026-09-29', by: 'AEY', vatMode: 'excl', clientKey: 'dk-71-1'
+});
+var row71 = rowsWith(doc71, DOC_NO).filter(function (r) {
+  return doc71.cell(r, DOC_NO).v === d71.no;
+})[0];
+function date71() {
+  var v = doc71.cell(row71, DOC_DATE).v;
+  return api71.isoDate_(v);
+}
+eq('ใบออกมาลงวันที่ 29 ก.ย. ตามที่สั่ง', date71(), '2026-09-29');
+
+console.log('\n   ไม่ได้สั่งแก้วัน ต้องไม่ขยับเอง');
+api71.reviseDoc({ no: d71.no, why: 'แก้ชื่อผู้ซื้อให้ตรงทะเบียน', by: 'AEY',
+                  cust: { name: 'บริษัท เรือนเอกดีไซน์ จำกัด' }, clientKey: 'rk-71-0' });
+eq('วันที่ยังเป็นวันเดิม', date71(), '2026-09-29');
+
+console.log('\n   ลูกค้าขอให้เป็นวันที่ออกจริง — เลขใบต้องไม่เปลี่ยน');
+var today71 = api71.isoDate_(new Date());
+var r71 = api71.reviseDoc({
+  no: d71.no, why: 'ลูกค้าขอให้ลงวันที่ออกจริง ไม่ใช่วันที่สั่งซื้อ', by: 'AEY',
+  date: today71, clientKey: 'rk-71-1'
+});
+eq('ยังเป็นใบเลขเดิม ไม่ได้กินเลขใหม่', r71.no, d71.no);
+eq('ไม่มีแถวใบใหม่งอกขึ้นมา', rowsWith(doc71, DOC_NO).length, 1);
+eq('วันที่ในชีทเปลี่ยนแล้ว', date71(), today71);
+eq('บอกกลับไปว่าวันที่ขยับ', r71.dateMoved, true);
+eq('และบอกวันเดิมด้วย', r71.dateBefore, '2026-09-29');
+
+console.log('\n   วันเดิมต้องตามย้อนได้ ไม่ใช่หายไปกับการเขียนทับ');
+var rev71 = String(doc71.cell(row71, DOC_REV).v);
+truthy2('ประวัติการแก้ใบจดวันเดิมไว้', rev71.indexOf('วันที่เดิม 2026-09-29') > -1);
+truthy2('และจดวันใหม่ไว้ด้วย', rev71.indexOf(today71) > -1);
+truthy2('Log จดวันที่เปลี่ยนไว้ด้วย', (function () {
+  var lg = fx71.sheets['Log'];
+  for (var r = DATA_ROW; r <= lg.getMaxRows(); r++) {
+    if (String(lg.cell(r, 10).v || '').indexOf('2026-09-29 → ' + today71) > -1) return true;
+  }
+  return false;
+})());
+
+console.log('\n   ภาพถ่ายของใบต้องลงวันใหม่ด้วย ไม่งั้นพิมพ์ซ้ำได้วันเก่า');
+eq('พิมพ์ซ้ำแล้วได้วันใหม่', api71.getDoc(d71.no).meta.date, today71);
+truthy2('ยังเป็นใบที่มีภาพถ่ายจริง', api71.getDoc(d71.no).exact);
+
+console.log('\n   สิ่งที่ยังต้องห้าม');
+throws('ลงวันที่ล่วงหน้าไม่ได้', function () {
+  api71.reviseDoc({ no: d71.no, why: 'ลองลงวันหน้า', date: '2027-01-01',
+                    clientKey: 'rk-71-2' });
+}, 'ล่วงหน้า');
+throws('วันที่อ่านไม่ออก ต้องฟ้อง ไม่ใช่เงียบแล้วใช้ของเดิม', function () {
+  api71.reviseDoc({ no: d71.no, why: 'ลองวันมั่ว', date: 'เมื่อวาน',
+                    clientKey: 'rk-71-3' });
+}, 'อ่านไม่ออก');
+eq('ใบไม่ถูกแตะเลยหลังสองข้อที่ต้องห้าม', date71(), today71);
+
+console.log('\n   ใบที่ส่งให้ลูกค้าแล้ว ห้ามแก้วัน ต้องยกเลิกแล้วออกใหม่');
+api71.markSent(d71.no, 'AEY');
+throws('กดส่งแล้ว แก้วันไม่ได้อีก', function () {
+  api71.reviseDoc({ no: d71.no, why: 'ขอแก้วันอีกที', date: '2026-10-01',
+                    clientKey: 'rk-71-4' });
+}, 'ส่งให้ลูกค้าแล้ว');
+eq('วันที่ยังเป็นวันที่แก้ไว้ก่อนกดส่ง', date71(), today71);
+
+var over71 = [];
+for (var n71 in fx71.sheets) over71 = over71.concat(fx71.sheets[n71].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกเขียนทับตลอดข้อนี้', over71, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

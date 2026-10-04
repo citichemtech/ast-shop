@@ -765,9 +765,21 @@ window.google = { script: { run: (function(){
         f.before = f.doc.total;
         f.doc = JSON.parse(JSON.stringify(d));
         if(p.cust) f.cust = p.cust;
+        /* วันที่บนใบแก้ได้ตั้งแต่ 4 ต.ค. 69 — ลงวันที่ล่วงหน้ายังไม่ได้เหมือนของจริง */
+        var dBefore = f.date, moved = false;
+        if(p.date !== undefined && String(p.date).trim()){
+          var nd = String(p.date).slice(0,10);
+          var nowIso = (function(){ var x=new Date(), q=function(n){return n<10?"0"+n:""+n};
+            return x.getFullYear()+"-"+q(x.getMonth()+1)+"-"+q(x.getDate()) })();
+          if(nd > nowIso) throw new Error("ลงวันที่ล่วงหน้าไม่ได้ (" + nd + ")");
+          moved = (nd !== dBefore);
+          f.date = nd;
+        }
         f.note = (f.note ? f.note + " " : "")
-          + "[แก้ไขครั้งที่ " + f.times + ": " + p.why + " · ยอดเดิม " + f.before + "]";
-        return { ok:true, no:f.no, doc:d, times:f.times, before:f.before };
+          + "[แก้ไขครั้งที่ " + f.times + ": " + p.why + " · ยอดเดิม " + f.before
+          + (moved ? " · วันที่เดิม " + dBefore + " เปลี่ยนเป็น " + f.date : "") + "]";
+        return { ok:true, no:f.no, doc:d, times:f.times, before:f.before,
+                 date:f.date, dateBefore:dBefore, dateMoved:moved };
       });
     },
     /* ส่งใบทางอีเมล — ของจริงแปลงเป็น PDF แล้ว MailApp.sendEmail

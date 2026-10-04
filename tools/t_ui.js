@@ -5220,6 +5220,66 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
     }, incl.no), incl.total);
 
+  /* ---------- 20.95 แก้วันที่บนใบ โดยไม่เผาเลขในเล่ม ----------
+     ของเดิมล็อกวันที่ไว้ พิมพ์วันผิดทีต้องยกเลิกแล้วออกใหม่ = เผาเลขทิ้งหนึ่งเลข
+     (ของจริง: ใบ ONIV26-00342 ลงวันที่ 29 ก.ย. ตามวันที่สั่งซื้อ
+      ลูกค้าขอให้เป็นวันที่ออกจริง) */
+  console.log('\n20.95 แก้วันที่บนใบ ด้วยเลขเดิม');
+  var today20 = await page.evaluate(function () { return todayISO() });
+  var back20 = await page.evaluate(async function () {
+    var o = (MOCK_ORDERS || [])[0];
+    var r = await new Promise(function (res) {
+      google.script.run.withSuccessHandler(res)
+        .withFailureHandler(function (e) { res({ err: String(e) }) })
+        .issueDoc({ type: 'rec', orderNo: o.no, cust: { name: 'บริษัท ย้อนวัน จำกัด' },
+                    date: '2026-09-29', by: 'test',
+                    clientKey: 'ui-2095-' + Date.now() });
+    });
+    return r && r.no ? { no: r.no } : { err: String(r && r.err) };
+  });
+  truthy('ออกใบที่ลงวันย้อนไว้ได้', !!back20.no);
+  await page.evaluate(function () { drawFileDocs() });
+  await page.waitForTimeout(900);
+  await page.evaluate(function (no) {
+    document.querySelector('#fl-docs [data-rv="' + no + '"]').click();
+  }, back20.no);
+  await page.waitForFunction(function () {
+    var g = document.querySelector('.rvbox .rv-go');
+    return g && !g.disabled;
+  }, null, { timeout: 15000 });
+
+  eq('กล่องแก้ใบมีช่องวันที่ และเติมวันเดิมมาให้',
+    await page.inputValue('.rvbox .rv-date'), '2026-09-29');
+  var rvWarn = await page.textContent('.rvbox .rv-datemsg');
+  truthy('เตือนว่าวันเดิมอยู่คนละเดือนกับวันนี้', /คนละเดือนกับวันนี้/.test(rvWarn), rvWarn);
+  truthy('และบอกผลกับ ภ.พ.30', /ภ\.พ\.30/.test(rvWarn), rvWarn);
+  truthy('ไม่บอกว่าวันที่แก้ไม่ได้อีกแล้ว',
+    !/วันที่กับชนิดเอกสารไม่เปลี่ยน/.test(await page.textContent('.rvbox')));
+
+  await page.click('.rvbox .rv-today');
+  await page.waitForTimeout(150);
+  eq('กดใช้วันนี้แล้วช่องเปลี่ยนตาม', await page.inputValue('.rvbox .rv-date'), today20);
+  eq('คำเตือนหายไปเมื่อกลับมาเป็นเดือนนี้',
+    (await page.textContent('.rvbox .rv-datemsg')).trim(), '');
+
+  await page.fill('.rvbox .rv-why', 'ลูกค้าขอให้ลงวันที่ออกจริง');
+  page.once('dialog', function (d) { d.accept() });
+  await page.click('.rvbox .rv-go');
+  await page.waitForTimeout(1200);
+  eq('วันที่ในทะเบียนเปลี่ยนเป็นวันนี้',
+    await page.evaluate(function (no) {
+      return MOCK_DOCS.filter(function (d) { return d.no === no })[0].date;
+    }, back20.no), today20);
+  eq('ยังเป็นใบเลขเดิม ไม่ได้กินเลขใหม่',
+    await page.evaluate(function (no) {
+      return MOCK_DOCS.filter(function (d) { return d.no === no }).length;
+    }, back20.no), 1);
+  truthy('จดวันเดิมไว้ในประวัติการแก้ใบ',
+    await page.evaluate(function (no) {
+      return String(MOCK_DOCS.filter(function (d) { return d.no === no })[0].note || '')
+        .indexOf('วันที่เดิม 2026-09-29') > -1;
+    }, back20.no));
+
   console.log('\n20.9 คำขอสั่งซื้อจากหน้าเว็บ');
   await page.click('.tabs button[data-go="list"]');
   await page.waitForTimeout(400);

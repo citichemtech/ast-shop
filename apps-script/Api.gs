@@ -1238,7 +1238,39 @@ function reviseRow_(row, why, p, email) {
   var po = has('po') ? p.po : cur.po;
   var terms = has('terms') ? p.terms : cur.terms;
   var form = has('form') ? p.form : ((oldSnap && oldSnap.form) || []);
-  var date = (cur.date instanceof Date) ? isoDate_(cur.date) : String(cur.date || '');
+
+  /* วันที่บนใบ — แก้ได้เฉพาะใบที่ยังไม่ได้ส่งให้ลูกค้า (ด่านข้างบนกันไว้แล้ว)
+     ของเดิมล็อกไว้ตายตัวด้วยเหตุผลว่า "วันที่คือจุดตั้งต้นทางภาษี"
+     ซึ่งจริง แต่ยอดเงินก็เป็นจุดตั้งต้นทางภาษีเหมือนกัน และยอดแก้ได้มาตลอด
+     เส้นแบ่งจริงของไฟล์นี้คือ "ใบออกจากร้านไปหรือยัง" ไม่ใช่ว่าเป็นช่องไหน
+     ใบที่ยังไม่มีใครถือ วันที่ยังไม่ได้มีผลกับใคร
+
+     ของจริงที่ทำให้ต้องเปิด: ใบ ONIV26-00342 ออกวันที่ 4 ต.ค. แต่ระบบลงวันที่
+     29 ก.ย. ตามวันที่สั่งซื้อ ลูกค้าขอให้เป็นวันที่ออกจริง
+     ถ้าแก้วันไม่ได้ ต้องยกเลิกแล้วออกใหม่ = เผาเลขในเล่มทิ้งหนึ่งเลขเพราะวันที่
+     ซึ่งเป็นสิ่งที่ปุ่มแก้ใบมีไว้เพื่อไม่ให้เกิด */
+  var oldDate = (cur.date instanceof Date) ? isoDate_(cur.date) : String(cur.date || '');
+  var date = oldDate;
+  if (has('date') && String(p.date).trim()) {
+    /* ตรวจรูปแบบเองก่อน ห้ามพึ่ง parseDate_ ตรงนี้ — ตัวนั้นคืน "วันนี้"
+       ให้กับทุกอย่างที่อ่านไม่ออก ซึ่งเหมาะกับช่องที่เว้นว่างได้
+       แต่กับวันที่บนใบกำกับภาษีแปลว่าพิมพ์ผิดแล้วใบไปลงวันนี้เงียบ ๆ */
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.date).trim())) {
+      throw new Error('วันที่บนใบอ่านไม่ออก ("' + p.date + '") — ต้องเป็นแบบ 2026-10-04');
+    }
+    var pd = parseDate_(String(p.date).trim());
+    if (!pd) {
+      throw new Error('วันที่บนใบอ่านไม่ออก ("' + p.date + '") — ต้องเป็นแบบ 2026-10-04');
+    }
+    /* ลงวันที่ล่วงหน้าไม่ได้ ใบกำกับภาษีออกก่อนวันที่บนใบไม่ได้ */
+    var nd = isoDate_(pd);
+    if (nd > isoDate_(new Date())) {
+      throw new Error('ลงวันที่ล่วงหน้าไม่ได้ (' + nd + ') — ' +
+        'ใบกำกับภาษีลงวันที่ที่ยังมาไม่ถึงไม่ได้');
+    }
+    date = nd;
+  }
+  var dateMoved = (date !== oldDate);
 
   var src = null, isBill = (t.key === 'bill');
   if (isBill) {
@@ -1300,6 +1332,7 @@ function reviseRow_(row, why, p, email) {
   var times = top + 1;
   var who = String(p.by || '').trim() || email;
   var stamp = '[แก้ไขครั้งที่ ' + times + ': ' + why + ' · ยอดเดิม ' + oldTotal +
+    (dateMoved ? ' · วันที่เดิม ' + oldDate + ' เปลี่ยนเป็น ' + date : '') +
     ' โดย ' + who + ' ' + stampTime_() + ']';
 
   /* หมายเหตุเป็นของลูกค้า ไม่ใช่ของระบบ — ช่องนี้ถูกพิมพ์ลงกระดาษที่ส่งออกไปจริง
@@ -1318,7 +1351,7 @@ function reviseRow_(row, why, p, email) {
   var trail = (oldTrail ? oldTrail + ' ' : '') + stamp;
   if (trail.length > 2000) trail = trail.slice(trail.length - 2000);
 
-  writeRow_('doc', row, {
+  var upd = {
     custName: String(cu.name || ''), custTaxId: String(cu.taxId || ''),
     custBranch: String(cu.branch || ''), custAddr: String(cu.addr || ''),
     custTel: String(cu.tel || ''), custEmail: String(cu.email || ''),
@@ -1339,13 +1372,19 @@ function reviseRow_(row, why, p, email) {
           cust: cu, po: po, terms: terms, date: date, note: note, form: form,
           validTo: (oldSnap && oldSnap.validTo) || '', vatMode: vatMode, novat: novat
         }, no, t)
-  });
+  };
+  /* แตะช่องวันที่เฉพาะตอนที่เปลี่ยนจริง ใบที่ไม่ได้ขอแก้วันต้องไม่ถูกเขียนทับ
+     แม้จะเขียนค่าเดิมกลับไป ก็ยังเป็นการแตะช่องที่ไม่มีใครสั่งให้แตะ */
+  if (dateMoved) upd.date = parseDate_(date) || cur.date;
+  writeRow_('doc', row, upd);
 
   writeLog_(email, 'แก้ไขเอกสาร', SH.doc.name, no, t.th, oldTotal, d.total,
     why + ' · แก้ครั้งที่ ' + times + ' โดย ' + who + ' (บัญชี ' + email + ')' +
+    (dateMoved ? ' · วันที่ ' + oldDate + ' → ' + date : '') +
     (orderNo ? ' · ออเดอร์ ' + orderNo : ''));
 
-  return { no: no, doc: d, row: row, times: times, before: oldTotal, type: t.th };
+  return { no: no, doc: d, row: row, times: times, before: oldTotal, type: t.th,
+           date: date, dateBefore: oldDate, dateMoved: dateMoved };
 }
 
 /**
@@ -1357,8 +1396,15 @@ function reviseRow_(row, why, p, email) {
  *
  * สิ่งที่ไม่ถูกแตะเด็ดขาด
  *   เลขที่เอกสาร — ทั้งเล่มจึงยังเรียงครบ ไม่มีเลขข้ามและไม่มีเลขซ้ำ
- *   วันที่บนใบ   — วันที่คือจุดตั้งต้นทางภาษี ขยับไม่ได้ ถ้าจะเปลี่ยนวันต้องออกใบใหม่
  *   ชนิดเอกสาร   — ใบเสร็จแก้เป็นใบแจ้งหนี้ไม่ได้ คนละเล่มคนละชุดเลข
+ *
+ * วันที่บนใบแก้ได้ตั้งแต่ 4 ต.ค. 69 (เดิมล็อกไว้)
+ *   เหตุผลเดิมคือ "วันที่คือจุดตั้งต้นทางภาษี" ซึ่งจริง แต่ยอดเงินก็เป็นเหมือนกัน
+ *   และยอดแก้ได้มาตลอด เส้นแบ่งจริงคือใบออกจากร้านไปหรือยัง ซึ่งด่าน sentAt
+ *   ข้างบนกันไว้อยู่แล้ว ใบที่ยังไม่มีใครถือ วันที่ยังไม่ได้มีผลกับใคร
+ *   ถ้าล็อกไว้ การพิมพ์วันผิดจะต้องเผาเลขในเล่มทิ้งหนึ่งเลขทุกครั้ง
+ *   ซึ่งเป็นสิ่งที่ปุ่มนี้มีไว้เพื่อไม่ให้เกิด
+ *   วันที่เดิมถูกจดไว้ทั้งในประวัติการแก้ใบและใน Log ย้อนดูได้เสมอ
  *
  * ทุกครั้งที่แก้ ยอดเดิมถูกจดไว้ในช่องหมายเหตุของใบและใน Log
  * ใบที่แก้ไปแล้วกี่ครั้งจึงตรวจย้อนได้เสมอ ไม่ใช่เงียบหายไปกับการเขียนทับ
