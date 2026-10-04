@@ -484,8 +484,48 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   console.log('\n14. ต้นฉบับ / สำเนา ของเอกสารขาย');
   await page.evaluate(function () { go('list'); });
   await page.waitForTimeout(600);
+
+  /* ---------- 13ค. ออเดอร์ที่ไม่รับ VAT ต้องติ๊กบิลเงินสดให้เอง ----------
+     ของเดิมติ๊กใบเสร็จ/ใบกำกับภาษีไว้เสมอ ขายหน้าร้านทีก็กินเลขในเล่มใบกำกับภาษี
+     ไปหนึ่งเลขทุกครั้ง ทั้งที่ใบนั้นไม่ใช่ใบกำกับภาษี
+     (บิลเงินสดใช้เลขชุด CS จึงไม่กินเลขของเล่มภาษี) */
+  console.log('\n13ค. ออเดอร์ที่ไม่รับ VAT ต้องติ๊กบิลเงินสดให้เอง');
+  var vatOf = await page.evaluate(function () {
+    return (ORDERS || []).slice(0, 2).map(function (o) { return String(o.vat || '') });
+  });
+  eq('ข้อสอบนี้มีความหมาย — มีทั้งออเดอร์ที่ไม่รับและรับ VAT',
+    [vatOf[0].indexOf('ไม่') === 0, vatOf[1].indexOf('ไม่') === 0], [true, false]);
+
+  await page.evaluate(function () { openDoc((ORDERS || [])[0]); });
+  await page.waitForTimeout(400);
+  eq('ออเดอร์ที่ไม่รับ VAT ติ๊กบิลเงินสดมาให้',
+    await page.evaluate(function () {
+      return (document.querySelector('#dc-pick input[name=dctype]:checked') || {}).value;
+    }), 'cash');
+  var why13 = await page.textContent('#dc-pick, .modal');
+  truthy('บอกเหตุผลว่าทำไมถึงติ๊กบิลเงินสดให้', /ไม่รับ VAT/.test(why13), why13.slice(0, 200));
+  truthy('และบอกว่าไม่กินเลขในเล่มใบกำกับภาษี',
+    /ไม่กินเลขในเล่มใบกำกับภาษี/.test(why13));
+  eq('ช่อง VAT ถูกล็อกเป็นไม่คิด ตามชนิดใบ',
+    await page.inputValue('#dc-vat'), 'none');
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(250);
+
+  await page.evaluate(function () { openDoc((ORDERS || [])[1]); });
+  await page.waitForTimeout(400);
+  eq('ออเดอร์ที่รับ VAT ยังติ๊กใบเสร็จ/ใบกำกับภาษีเหมือนเดิม',
+    await page.evaluate(function () {
+      return (document.querySelector('#dc-pick input[name=dctype]:checked') || {}).value;
+    }), 'rec');
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(250);
+
   await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec'); });
   await page.waitForTimeout(400);
+  eq('สั่งชนิดมาตรง ๆ ต้องชนะค่าตั้งต้น',
+    await page.evaluate(function () {
+      return (document.querySelector('#dc-pick input[name=dctype]:checked') || {}).value;
+    }), 'rec');
   /* ชื่อบนหัวใบ — ติ๊กตั้งต้นตามชนิดเอกสาร แล้วคนออกใบเลือกเพิ่มเองได้
      ใบใบเดียวบางทีใช้เป็นทั้งใบส่งของและใบกำกับภาษี ระบบเดาแทนไม่ได้ */
   eq('ใบเสร็จ/ใบกำกับภาษี ติ๊กมาให้สองชื่อ',
@@ -493,6 +533,33 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.check('#dc-form .fchk-i[value="2"]');
   eq('ติ๊กใบส่งของเพิ่มได้เป็นสามชื่อ',
     await page.locator('#dc-form .fchk-i:checked').count(), 3);
+
+  /* ---------- 14ก. วันที่บนเอกสาร ----------
+     ของเดิมไม่มีช่องนี้ โค้ดยัดวันที่ของออเดอร์ลงไปเงียบ ๆ
+     ออเดอร์ 29 ก.ย. แต่ออกใบ 4 ต.ค. ใบเลยลงวันที่ 29 ก.ย. ทั้งที่เลขเป็นของตุลาคม
+     เล่มจึงมีเลขเดินหน้าแต่วันที่ถอยหลัง และยอดไปตกเดือนภาษีที่อาจยื่นไปแล้ว
+     (ใบ ONIV26-00342 ของจริง เจ้าของร้านเจอเอง 4 ต.ค. 69) */
+  console.log('\n14ก. วันที่บนเอกสาร ต้องเป็นวันที่ออกใบ ไม่ใช่วันที่สั่งซื้อ');
+  var today14 = await page.evaluate(function () { return todayISO() });
+  var ord14 = await page.evaluate(function () { return (ORDERS || [])[0].date });
+  truthy('ข้อสอบนี้มีความหมาย — ออเดอร์เป็นของเดือนก่อน', ord14.slice(0, 7) !== today14.slice(0, 7));
+  eq('มีช่องวันที่บนเอกสาร', await page.locator('#dc-date').count(), 1);
+  eq('ตั้งต้นเป็นวันนี้ ไม่ใช่วันที่สั่งซื้อ', await page.inputValue('#dc-date'), today14);
+
+  await page.click('#dc-date-ord');
+  await page.waitForTimeout(150);
+  eq('กดใช้วันที่สั่งซื้อแล้วช่องเปลี่ยนตาม', await page.inputValue('#dc-date'), ord14);
+  var warn14 = await page.textContent('#dc-datemsg');
+  truthy('เตือนว่าเป็นคนละเดือนกับวันนี้', /คนละเดือนกับวันนี้/.test(warn14), warn14);
+  truthy('บอกผลกับภาษีขาย/ภ.พ.30 ไม่ใช่แค่บอกว่าวันที่ต่าง',
+    /ภ\.พ\.30/.test(warn14), warn14);
+  truthy('บอกด้วยว่าเลขในเล่มแทรกย้อนหลังไม่ได้', /แทรกย้อนหลังไม่ได้/.test(warn14), warn14);
+
+  await page.click('#dc-date-today');
+  await page.waitForTimeout(150);
+  eq('กดใช้วันนี้แล้วกลับมาเป็นวันนี้', await page.inputValue('#dc-date'), today14);
+  eq('คำเตือนหายไปเมื่อวันที่กลับมาเป็นวันนี้',
+    await page.locator('#dc-datemsg').isVisible(), false);
 
   await page.click('#dc-make');
   await page.waitForSelector('#dc-copy', { timeout: 20000 });
@@ -502,6 +569,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     return document.querySelector('#dc-copy').disabled === false;
   }, null, { timeout: 20000 });
   var docCopy = await page.getAttribute('img.docimg', 'src');
+  eq('ใบที่ลงทะเบียนไว้ ลงวันที่วันนี้ ไม่ใช่วันที่สั่งซื้อ',
+    await page.evaluate(function () { return MOCK_DOCS[MOCK_DOCS.length - 1].date }), today14);
   truthy('กดสำเนาแล้วได้รูปคนละใบกับต้นฉบับ', docOrig !== docCopy);
   truthy('ปุ่มเปลี่ยนเป็นทางกลับให้เห็นว่ากำลังดูสำเนาอยู่',
     /ต้นฉบับ/.test(await page.textContent('#dc-copy')));

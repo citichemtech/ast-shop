@@ -885,8 +885,12 @@ function issueDoc(payload) {
     var row = nextRow_('doc', SH.doc.IN.no);
     if (!row) throw new Error('ชีท เอกสาร เต็มแล้ว — สั่ง setup() อีกครั้งเพื่อขยายแถว');
     var cu = p.cust || {};
+    /* วันที่ที่ลงชีทจริง ต้องส่งกลับไปให้หน้าจอวาดด้วย
+       ของเดิมหน้าจอวาดด้วยวันที่ของตัวเอง กระดาษกับชีทจึงไม่ผูกกัน
+       วันไหนสองค่าไม่ตรงกัน ใบที่ลูกค้าถือจะลงวันที่คนละวันกับในเล่ม */
+    var when = parseDate_(p.date) || new Date();
     writeRow_('doc', row, {
-      no: no, type: t.th, date: parseDate_(p.date) || new Date(), orderNo: orderNo,
+      no: no, type: t.th, date: when, orderNo: orderNo,
       custName: String(cu.name || ''), custTaxId: String(cu.taxId || ''),
       custBranch: String(cu.branch || ''), custAddr: String(cu.addr || ''),
       custTel: String(cu.tel || ''), custEmail: String(cu.email || ''),
@@ -901,7 +905,7 @@ function issueDoc(payload) {
     writeLog_(email, 'ออกเอกสาร', SH.doc.name, no, t.th, '', d.total,
       orderNo ? 'จากออเดอร์ ' + orderNo : 'ออกเดี่ยว');
 
-    return { ok: true, no: no, doc: d, row: row };
+    return { ok: true, no: no, date: isoDate_(when), doc: d, row: row };
   } finally {
     lock.releaseLock();
   }

@@ -2240,15 +2240,41 @@ function taxMemoSave(name, o){
   try{ localStorage.setItem("ast-tax-"+name, JSON.stringify(o)) }catch(e){}
 }
 
+/**
+ * ชนิดเอกสารที่ควรติ๊กไว้ให้ตั้งแต่เปิดกล่อง
+ *
+ * ออเดอร์ที่ลูกค้าไม่ได้ขอใบกำกับภาษี ต้องเป็นบิลเงินสด ไม่ใช่ใบเสร็จ/ใบกำกับภาษี
+ * ของเดิมติ๊กใบเสร็จ/ใบกำกับภาษีไว้เสมอ ขายหน้าร้านทีก็กินเลขในเล่มใบกำกับภาษี
+ * ไปหนึ่งเลขทุกครั้ง ทั้งที่ใบนั้นไม่ใช่ใบกำกับภาษี เล่มเลยบวมด้วยใบที่ไม่เกี่ยว
+ * (บิลเงินสดมีเลขคนละชุด CS จึงไม่กินเลขของเล่มภาษี)
+ *
+ * ดูจากช่อง VAT ของออเดอร์เท่านั้น ซึ่งเป็นสิ่งที่คนคีย์ตอบไว้ตอนรับออเดอร์
+ * ช่องว่าง = ยังไม่ได้ตอบ ไม่ใช่ "ไม่เอา" จึงคงใบเสร็จ/ใบกำกับภาษีไว้เหมือนเดิม
+ * ระบบเดาแทนคนในเรื่องภาษีไม่ได้ ได้แค่ติ๊กตัวที่ถูกบ่อยที่สุดไว้ให้
+ */
+function docDefType(o){
+  return String((o && o.vat) || "").indexOf("ไม่") === 0 ? "cash" : "rec";
+}
+
 function openDoc(o, preType){
   DC_KEY = newKey();
   var memo = taxMemo(o.cust) || {};
+  var want = String(preType || "") || docDefType(o);
+  var auto = !preType && want === "cash";
   openModal("ออกเอกสาร — "+o.no,
      '<div id="dc-old"></div>'
-    +'<div class="subhd">เลือกชนิดเอกสาร</div><div id="dc-pick">'
-    + DOC_BTN.filter(function(t){return t.key!=="quote"}).map(function(t,i){
+    +'<div class="subhd">เลือกชนิดเอกสาร</div>'
+    + (auto
+       ? '<div class="hint" style="margin:-4px 0 8px">ออเดอร์นี้คีย์ไว้ว่า '
+         + '<b>ไม่รับ VAT</b> จึงติ๊ก <b>บิลเงินสด</b> ให้แล้ว — '
+         + 'ใช้เลขคนละชุด ไม่กินเลขในเล่มใบกำกับภาษี<br>'
+         + 'ถ้าลูกค้าขอใบกำกับภาษีทีหลัง เลือกใบเสร็จ/ใบกำกับภาษีได้เลย</div>'
+       : '')
+    +'<div id="dc-pick">'
+    + DOC_BTN.filter(function(t){return t.key!=="quote"}).map(function(t){
         return '<label class="giftck" style="align-items:flex-start">'
-          +'<input type="radio" name="dctype" value="'+t.key+'"'+(i===0?" checked":"")+'>'
+          +'<input type="radio" name="dctype" value="'+t.key+'"'
+            +(t.key===want?" checked":"")+'>'
           +'<span><b style="color:var(--ink)">'+esc(t.label)+'</b><br>'
           +'<span style="font-size:12.5px">'+esc(t.hint)+'</span></span></label>';
       }).join("")
@@ -2285,6 +2311,19 @@ function openDoc(o, preType){
     +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
     +'<option value="none">ไม่คิด VAT (= บิลเงินสด)</option></select>'
     +'<div class="hint" id="dc-vatmsg"></div></div></div>'
+    /* วันที่บนเอกสาร — ของเดิมไม่มีช่องนี้ โค้ดยัดวันที่ของออเดอร์ลงไปเงียบ ๆ
+       ออเดอร์วันที่ 29 ก.ย. แต่มาออกใบวันที่ 4 ต.ค. ใบเลยลงวันที่ 29 ก.ย.
+       ทั้งที่เลขใบเป็นเลขของเดือนตุลาคม เล่มเลยมีเลขเดินหน้าแต่วันที่ถอยหลัง
+       และยอดไปตกเดือนภาษีที่อาจยื่น ภ.พ.30 ไปแล้ว
+       (เจ้าของร้านเจอเองกับใบ ONIV26-00342 เมื่อ 4 ต.ค. 69)
+
+       ตั้งต้นเป็นวันนี้ ซึ่งคือวันที่ออกใบจริง · กดใช้วันที่สั่งซื้อได้ถ้าตั้งใจ */
+    +'<div class="fld"><label>วันที่บนเอกสาร</label>'
+    +'<input type="date" id="dc-date" value="'+esc(todayISO())+'">'
+    +'<div class="hint">ออเดอร์นี้สั่งเมื่อ <b>'+esc(dmy_(o.date))+'</b> '
+    +'<button type="button" class="mini" id="dc-date-ord">ใช้วันที่สั่งซื้อ</button> '
+    +'<button type="button" class="mini" id="dc-date-today">ใช้วันนี้</button></div>'
+    +'<div class="msg" id="dc-datemsg" style="margin-top:8px"></div></div>'
     /* ดูก่อนออกเลข — เลขในเล่มใบกำกับภาษีเอาคืนไม่ได้ ต้องเห็นกระดาษก่อนเสมอ */
     +'<button class="btn ghost" id="dc-prev">👁 ดูตัวอย่างก่อน (ยังไม่กินเลข)</button>'
     +'<button class="btn" id="dc-make" style="margin-top:9px">ออกเอกสาร</button>'
@@ -2327,6 +2366,12 @@ function openDoc(o, preType){
       msg.style.color = "var(--amber)";
     }
   }
+  /* ชนิดที่ขอมาอาจไม่มีปุ่มให้ (เช่น quote ซึ่งไม่อยู่ในกล่องนี้)
+     ปล่อยไว้แล้วจะไม่มีปุ่มไหนถูกติ๊กเลย ซึ่งอ่านว่า "แอปพัง" ไม่ใช่ "ยังไม่ได้เลือก" */
+  if(!document.querySelector('#dc-pick input[name=dctype]:checked')){
+    var first = $("#dc-pick input[name=dctype]");
+    if(first) first.checked = true;
+  }
   formTick(); vatTick();
   $$("#dc-pick input[name=dctype]").forEach(function(r){
     r.addEventListener("change", function(){
@@ -2341,6 +2386,15 @@ function openDoc(o, preType){
   $$("#dc-form .fchk-i").forEach(function(c){
     c.addEventListener("change", function(){ DC_FORM_TOUCHED = true });
   });
+
+  $("#dc-date-ord").onclick = function(){
+    $("#dc-date").value = String(o.date || "").slice(0, 10); dcDateCheck();
+  };
+  $("#dc-date-today").onclick = function(){
+    $("#dc-date").value = todayISO(); dcDateCheck();
+  };
+  $("#dc-date").addEventListener("change", dcDateCheck);
+  dcDateCheck();
 
   /* ใบที่เคยออกให้ออเดอร์นี้ — ขึ้นไว้บนสุดพร้อมปุ่มพิมพ์ซ้ำ
      ก่อนหน้านี้ใบที่ออกไปแล้วเปิดกลับมาดูไม่ได้เลย กดออกใหม่ก็โดนกันใบซ้ำ
@@ -2411,7 +2465,7 @@ function openDoc(o, preType){
     $("#dc-out").innerHTML='<div class="load">กำลังออกเลขเอกสารและลงชีท…</div>';
     api("issueDoc", {
       type:type, orderNo:o.no, cust:cust, po:$("#dc-po").value.trim(),
-      terms:$("#dc-terms").value, date:o.date, by:byName(),
+      terms:$("#dc-terms").value, date:dcDate(), by:byName(),
       vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
       form: readFormTicks(),
       /* เน็ตหลุดตอนออกเอกสารคือกรณีที่แพงที่สุด เพราะเลขเอกสารอาจถูกใช้ไปแล้ว
@@ -2445,9 +2499,62 @@ function readFormTicks(){
 
    จงใจไม่ใส่ปุ่มแชร์/พิมพ์/บันทึกไว้ในหน้านี้ ตัวอย่างที่พิมพ์ออกไปได้
    คือใบกำกับภาษีที่ไม่มีเลข ซึ่งเป็นเอกสารที่ใช้ไม่ได้และอธิบายยากถ้าหลุดถึงลูกค้า */
+/* วันที่ที่จะไปอยู่บนกระดาษและในเล่ม — ช่องหาย (กล่องปิดไปแล้ว) คืนค่าว่าง
+   ให้คนเรียกตัดสินใจเองว่าจะถอยไปใช้อะไร ไม่เดาเป็นวันนี้เงียบ ๆ */
+function dcDate(){
+  var el = $("#dc-date");
+  return el ? String(el.value || "").slice(0, 10) : "";
+}
+
+/**
+ * เตือนเรื่องวันที่บนใบ ก่อนจะกินเลขในเล่ม
+ *
+ * เลขในเล่มเดินตามลำดับที่ออกจริงเสมอ เอาเลขกลับไปแทรกย้อนหลังไม่ได้
+ * ถ้าลงวันที่ย้อนไปเดือนก่อน เล่มจะมีเลขเดินหน้าแต่วันที่ถอยหลัง
+ * และยอดใบนั้นต้องไปอยู่ในภาษีขายของเดือนนั้น ซึ่งอาจยื่น ภ.พ.30 ไปแล้ว
+ * เรื่องนี้ต้องรู้ตอนที่ยังกดเปลี่ยนได้ ไม่ใช่ตอนกระดาษออกมาแล้ว
+ */
+function dcDateCheck(){
+  var box = $("#dc-datemsg");
+  if(!box) return;
+  var pick = dcDate(), now = todayISO();
+  box.className = "msg";
+  box.style.display = "none";
+  box.style.background = "";
+  box.innerHTML = "";
+  if(!pick) return;
+
+  if(pick > now){
+    box.className = "msg err";
+    box.style.display = "block";
+    box.innerHTML = "วันที่บนใบเป็น <b>วันข้างหน้า</b> (" + esc(dmy_(pick)) + ") — "
+      + "ใบกำกับภาษีลงวันที่ล่วงหน้าไม่ได้";
+    return;
+  }
+  if(pick.slice(0,7) !== now.slice(0,7)){
+    box.className = "msg err";
+    box.style.display = "block";
+    box.innerHTML = "ใบนี้จะลงวันที่ <b>" + esc(dmy_(pick)) + "</b> "
+      + "ซึ่งเป็นคนละเดือนกับวันนี้ (" + esc(dmy_(now)) + ")<br>"
+      + "• ยอดใบนี้ต้องไปอยู่ในภาษีขายของเดือน <b>" + esc(pick.slice(0,7)) + "</b> "
+      + "ถ้ายื่น ภ.พ.30 เดือนนั้นไปแล้ว ต้องยื่นเพิ่มเติม<br>"
+      + "• เลขในเล่มเดินตามลำดับที่ออกจริง แทรกย้อนหลังไม่ได้ "
+      + "เล่มจะมีเลขเดินหน้าแต่วันที่ถอยหลังหนึ่งใบ<br>"
+      + "ถ้าไม่ได้ตั้งใจ กด <b>ใช้วันนี้</b> ก่อนออกเอกสาร";
+    return;
+  }
+  if(pick !== now){
+    box.className = "msg";
+    box.style.display = "block";
+    box.style.background = "#fff8e1";
+    box.innerHTML = "ใบนี้จะลงวันที่ " + esc(dmy_(pick))
+      + " ไม่ใช่วันนี้ (" + esc(dmy_(now)) + ") — อยู่ในเดือนภาษีเดียวกัน จึงไม่กระทบการยื่น";
+  }
+}
+
 function drawDocPreview(r, o, f){
   if(!$("#dc-out")) return;
-  var m = { no:"(ตัวอย่าง — ยังไม่ออกเลข)", date:o.date, cust:f.cust, po:f.po,
+  var m = { no:"(ตัวอย่าง — ยังไม่ออกเลข)", date:(dcDate() || o.date), cust:f.cust, po:f.po,
             terms:f.terms, seller:CFG.docSeller||"", sellerEmail:CFG.docSellerEmail||"",
             note:"", form:f.form||[] };
   $("#dc-out").innerHTML='<div class="load">กำลังวาดตัวอย่าง…</div>';
@@ -2477,7 +2584,8 @@ function drawDoc(r, o, cust, type, form){
      ใบยังลงทะเบียนในชีทเรียบร้อยแล้ว ไม่ได้หายไปไหน กดพิมพ์ซ้ำจากแฟ้มเอกสารได้เลย
      จึงเงียบไปเฉย ๆ ดีกว่าโยน error ใส่หน้าจอที่ไม่มีใครดูอยู่แล้ว */
   if(!$("#dc-out")) return;
-  var m = { no:r.no, date:o.date, cust:cust, po:$("#dc-po")?$("#dc-po").value.trim():"",
+  var m = { no:r.no, date:(r.date || dcDate() || o.date), cust:cust,
+            po:$("#dc-po")?$("#dc-po").value.trim():"",
             terms:$("#dc-terms")?$("#dc-terms").value:"", seller:CFG.docSeller||"",
             sellerEmail:CFG.docSellerEmail||"", note:"", form:form||[] };
   $("#dc-out").innerHTML='<div class="load">กำลังวาดเอกสาร…</div>';

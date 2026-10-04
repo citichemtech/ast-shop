@@ -471,7 +471,9 @@ window.google = { script: { run: (function(){
                          cust:p.cust||{}, po:p.po||"", terms:p.terms||"", note:p.note||"",
                          form:p.form||[], vatMode:p.vatMode||"", novat:!!p.novat,
                          doc:JSON.parse(JSON.stringify(d)) });
-        return { ok:true, no: no, doc:d, row:7 };
+        /* วันที่ที่ลงทะเบียนจริง ต้องส่งกลับไปให้หน้าจอวาดด้วย เหมือนของจริง
+           ไม่งั้นข้อสอบจะมองไม่เห็นว่ากระดาษกับทะเบียนลงวันที่ตรงกันหรือเปล่า */
+        return { ok:true, no: no, date:(p.date||""), doc:d, row:7 };
       });
     },
     /* ทะเบียนเอกสารจำลอง — เก็บภาพถ่ายของใบเหมือนชีทจริง เพื่อทดสอบการพิมพ์ซ้ำ */
