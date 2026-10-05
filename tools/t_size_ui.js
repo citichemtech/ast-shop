@@ -24,7 +24,10 @@ function ok(label, cond, extra) {
 
 /* จอที่เจอจริง: 360 = มือถือรุ่นเล็ก · 411 = Galaxy ของเจ้าของร้าน · 430 = iPhone Pro Max
    431–560 คือช่วงที่เคยตกร่องระหว่างกฎ CSS สองข้อ จึงต้องมีในรายการ */
-var WIDTHS = [360, 390, 411, 430, 460, 520, 560, 640, 900];
+/* 561-720 คือช่วงที่เพิ่งเจอของจริง: ไม่เข้ากฎจอแคบ แต่ก็ไม่กว้างพอให้ปุ่มเก้าอัน
+   อยู่ข้างข้อความได้ ช่องชื่อลูกค้าเลยเหลือไม่กี่สิบพิกเซล แล้วตกบรรทัดทีละตัวอักษร
+   617 คือความกว้างแบบ CSS ของมือถือซัมซุงที่ตั้งขนาดการแสดงผลให้เล็ก */
+var WIDTHS = [360, 390, 411, 430, 460, 520, 560, 600, 617, 680, 720, 900];
 /* FS_MIN · FS_DEF · FS_MAX ของปุ่ม ก− ก+ */
 var FONTS = [17, 20, 30];
 var TABS = ['new', 'list', 'recv', 'quote', 'sum'];
@@ -104,6 +107,44 @@ var MIN_TAP = 38;   /* ต่ำกว่านี้นิ้วคนกดพ
   ok('ปุ่มไม่เล็กกว่า ' + MIN_TAP + 'px และรูปไม่ล้นปุ่ม เลยสักกรณี',
      small.length === 0, '\n     ' + small.join('\n     '));
   console.log('     ขนาดปุ่มที่วัดได้ (จอ/ตัวอักษร=กว้างxสูง):\n     ' + sizes.join('  '));
+
+  /* ---------- 2ข. ชื่อลูกค้าต้องอ่านออก ไม่ใช่ตกบรรทัดทีละตัวอักษร ----------
+
+     ข้อ 1 วัดแต่ "ล้นจอไหม" ซึ่งผ่านได้ทั้งที่ใช้งานจริงไม่ได้ — หน้าไม่ล้น
+     เพราะข้อความถูกบีบจนตกบรรทัดลงไปเรื่อย ๆ แทนที่จะดันขอบขวาออกไป
+     (เจ้าของร้านส่งรูปมา 5 ต.ค. 69: ชื่อ "เจ เอ สดับบลิว เซอร์วิส2023 จำกัด"
+      ขึ้นเป็นแนวตั้งทีละตัวอักษร อ่านไม่ออกเลย) */
+  console.log('\n2ข. ช่องชื่อลูกค้าต้องกว้างพอให้อ่านออกทุกความกว้างจอ');
+  var MIN_NAME = 200;   /* แคบกว่านี้ชื่อบริษัทไทยเริ่มตกบรรทัดทีละคำสองคำ */
+  var thin = [], widths2 = [];
+  for (var wk = 0; wk < WIDTHS.length; wk++) {
+    var w3 = WIDTHS[wk];
+    var p3 = await b.newPage({ viewport: { width: w3, height: 900 } });
+    await p3.goto('file:///home/user/ast-shop/out/preview.html');
+    await p3.waitForTimeout(700);
+    await p3.click('.tabs button[data-go="list"]');
+    await p3.waitForTimeout(400);
+    var n = await p3.evaluate(function () {
+      var i = document.querySelector('#list .row .i');
+      if (!i) return null;
+      var b = i.getBoundingClientRect();
+      var nm = i.querySelector('b');
+      /* จำนวนบรรทัดที่ชื่อใช้จริง — ชื่อสั้น ๆ ที่ใช้เกินสามบรรทัดคือชื่อที่ถูกบีบ */
+      var lh = parseFloat(getComputedStyle(nm || i).lineHeight) || 20;
+      var nb = nm ? nm.getBoundingClientRect() : { height: 0 };
+      return { w: Math.round(b.width), lines: Math.round(nb.height / lh) };
+    });
+    if (!n) { await p3.close(); continue }
+    widths2.push(w3 + '=' + n.w + 'px/' + n.lines + 'บรรทัด');
+    if (n.w < MIN_NAME)
+      thin.push('จอ ' + w3 + ' ช่องชื่อกว้างแค่ ' + n.w + 'px');
+    if (n.lines > 3)
+      thin.push('จอ ' + w3 + ' ชื่อลูกค้าตกบรรทัดถึง ' + n.lines + ' บรรทัด');
+    await p3.close();
+  }
+  ok('ช่องชื่อไม่แคบกว่า ' + MIN_NAME + 'px และชื่อไม่ตกเกิน 3 บรรทัด เลยสักจอ',
+     thin.length === 0, '\n     ' + thin.join('\n     '));
+  console.log('     ความกว้างช่องชื่อที่วัดได้ (จอ=กว้าง/บรรทัด):\n     ' + widths2.join('  '));
 
   console.log('\n3. กด ก+ แล้วต้องได้ตัวหนังสือใหญ่ขึ้นจริงบนจอ ไม่ใช่เล็กลง');
   /* วัดความสูงจริงของบรรทัดชื่อลูกค้า เทียบกับสัดส่วนของจอ
