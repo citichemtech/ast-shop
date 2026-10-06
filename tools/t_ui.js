@@ -405,6 +405,89 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     await page.evaluate(function () { return $('#lb-cod').checked }), false);
   await page.click('#m-close');
 
+  /* ---------- 10ข. แก้ชื่อ/เบอร์/ที่อยู่ผู้รับ จากกล่องใบปะหน้า ----------
+     จุดที่คนรู้ตัวว่าที่อยู่ผิดคือตอนกำลังจะแปะกล่อง ไม่ใช่ตอนนั่งหน้าคอม
+     ของเดิมต้องเปิดชีทแล้วเลื่อนไปคอลัมน์ F บนมือถือ ซึ่งทำไม่ได้จริงตอนยืนแพ็คของ
+     (เจ้าของร้านถามเอง 6 ต.ค. 69: "จะกดแก้ที่อยู่บนใบปะหน้ายังไง") */
+  console.log('\n10ข. แก้ที่อยู่ผู้รับจากกล่องใบปะหน้า');
+  await page.click('#list .row .sq[data-lb="0"]');
+  await page.waitForSelector('#lb-make', { timeout: 3000 });
+  var was10 = await page.evaluate(function () {
+    return { cust: ORDERS[0].cust, tel: ORDERS[0].tel, addr: ORDERS[0].addr };
+  });
+  eq('ช่องผู้รับเติมของเดิมมาให้ครบ', await page.evaluate(function () {
+    return [$('#lb-cust').value, $('#lb-tel').value, $('#lb-addr').value];
+  }), [was10.cust, was10.tel, was10.addr]);
+
+  console.log('\n   ลบที่อยู่ทิ้งแล้วกดสร้าง ต้องฟ้อง ไม่ใช่พิมพ์ใบที่ส่งไม่ถึง');
+  await page.fill('#lb-addr', '   ');
+  await page.click('#lb-make');
+  await page.waitForTimeout(300);
+  truthy('บอกว่ายังไม่ได้ใส่ที่อยู่', /ยังไม่ได้ใส่ที่อยู่/.test(await page.textContent('#lb-err')));
+  eq('และยังไม่ได้วาดใบให้', await page.locator('#lb-out img').count(), 0);
+  eq('ไม่ได้ยิงอะไรขึ้นชีทเลย', await page.evaluate(function () {
+    return SENT.filter(function (x) { return x.fn === 'setShipTo' }).length;
+  }), 0);
+
+  console.log('\n   แก้ที่อยู่แล้วกดสร้าง ต้องบันทึกลงชีทให้ด้วย');
+  await page.fill('#lb-cust', 'คุณ ศุภชัย ทองอนันต์');
+  await page.fill('#lb-tel', '0980692519');
+  await page.fill('#lb-addr', '134 ม.1 ต.พรุเตียว อ.เขาพนม จ.กระบี่ 81140');
+  await page.click('#lb-make');
+  await page.waitForSelector('#lb-out img', { timeout: 20000 });
+  var sent10 = await page.evaluate(function () {
+    return SENT.filter(function (x) { return x.fn === 'setShipTo' }).pop();
+  });
+  truthy('ยิง setShipTo ขึ้นชีทแล้ว', !!sent10);
+  eq('ส่งทั้งสามช่องไปครบ',
+    [sent10.p.cust, sent10.p.tel, sent10.p.addr],
+    ['คุณ ศุภชัย ทองอนันต์', '0980692519', '134 ม.1 ต.พรุเตียว อ.เขาพนม จ.กระบี่ 81140']);
+  eq('รายการออเดอร์บนหน้าจออัปเดตตาม', await page.evaluate(function () {
+    return [ORDERS[0].cust, ORDERS[0].addr];
+  }), ['คุณ ศุภชัย ทองอนันต์', '134 ม.1 ต.พรุเตียว อ.เขาพนม จ.กระบี่ 81140']);
+  truthy('และวาดใบปะหน้าออกมาให้', await page.locator('#lb-out img').count() > 0);
+
+  console.log('\n   กดสร้างซ้ำโดยไม่แก้อะไร ต้องไม่ยิงขึ้นชีทอีก');
+  var before10 = await page.evaluate(function () {
+    return SENT.filter(function (x) { return x.fn === 'setShipTo' }).length;
+  });
+  await page.click('#lb-make');
+  await page.waitForSelector('#lb-out img', { timeout: 20000 });
+  eq('ไม่มีการยิงซ้ำ', await page.evaluate(function () {
+    return SENT.filter(function (x) { return x.fn === 'setShipTo' }).length;
+  }), before10);
+
+  console.log('\n   วางที่อยู่จากแชทแล้วกดแยกให้');
+  await page.fill('#lb-addr',
+    'ชื่อ: คุณ มานี ใจดี\nโทร 0812345678\n55/1 ซ.ลาดพร้าว 5 ต.จอมพล อ.จตุจักร จ.กรุงเทพฯ 10900');
+  await page.click('#lb-parse');
+  await page.waitForTimeout(300);
+  var got10 = await page.evaluate(function () {
+    return { c: $('#lb-cust').value, t: $('#lb-tel').value, a: $('#lb-addr').value };
+  });
+  eq('แยกชื่อออกมาได้', got10.c, 'คุณ มานี ใจดี');
+  eq('แยกเบอร์ออกมาได้', got10.t, '0812345678');
+  truthy('ที่อยู่ยังมีบ้านเลขที่', got10.a.indexOf('55/1') > -1, got10.a);
+  /* ตัวแยกคืนที่อยู่เป็นชิ้น ๆ ถ้าหยิบไปแต่บรรทัดแรก ที่อยู่บนใบจะขาดครึ่งหลัง
+     แล้วของไปไม่ถึง — ต้องประกอบกลับมาให้ครบทั้งก้อน */
+  truthy('และมีรหัสไปรษณีย์ติดมาด้วย ไม่ได้ขาดครึ่งหลัง',
+    got10.a.indexOf('10900') > -1, got10.a);
+  await page.click('#m-close');
+  await page.waitForTimeout(200);
+  /* คืนผู้รับของออเดอร์ตัวอย่างกลับเป็นของเดิม — ข้อถัด ๆ ไปตรวจข้อความที่ส่งลูกค้า
+     เทียบกับชื่อและเบอร์ของข้อมูลจำลอง ถ้าปล่อยค่าที่เพิ่งแก้ไว้ ข้อพวกนั้นจะตก
+     ทั้งที่โค้ดไม่ได้พัง ซึ่งกลบของจริงที่อาจพังอยู่ */
+  await page.evaluate(function (w) {
+    [ORDERS, MOCK_ORDERS].forEach(function (list) {
+      (list || []).forEach(function (o) {
+        if (o.no !== w.no) return;
+        o.cust = w.cust; o.tel = w.tel; o.addr = w.addr;
+      });
+    });
+    renderOrders();
+  }, Object.assign({ no: await page.evaluate(function () { return ORDERS[0].no }) }, was10));
+  await page.waitForTimeout(200);
+
   /* ---------- 11. ข้อความส่งลูกค้า ---------- */
   console.log('\n11. ข้อความส่งลูกค้า');
   await page.click('#list .row .sq[data-sm="0"]');

@@ -426,6 +426,29 @@ window.google = { script: { run: (function(){
         return {ok:true,no:no,changed:true,track:cur.track||"",carrier:cur.carrier||""};
       });
     },
+    /* แก้ชื่อ/เบอร์/ที่อยู่ผู้รับ จากหน้าใบปะหน้าพัสดุ — กติกาเดียวกับของจริง
+       ไม่ส่งช่องไหนมา = ไม่ได้จะแก้ช่องนั้น · ชื่อกับที่อยู่ว่างไม่ได้ เบอร์ว่างได้ */
+    setShipTo: function(p){
+      window.SENT.push({fn:"setShipTo", p:p});
+      reply(function(){
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        var o = MOCK_ORDERS.filter(function(x){ return x.no===p.no })[0];
+        if(!o) throw new Error("ไม่พบออเดอร์ " + p.no + " ในชีท ออเดอร์_หัวบิล");
+        var n = 0;
+        function put(k, label, req){
+          if(p[k] === undefined || p[k] === null) return;
+          var v = String(p[k]).replace(/[ \t]+/g," ").trim();
+          if(req && !v) throw new Error(label + "ว่างไม่ได้ — ใบปะหน้าที่ไม่มี" + label
+            + " ขนส่งไม่รับพัสดุ");
+          if(v === String(o[k]||"").trim()) return;
+          o[k] = v; n++;
+        }
+        put("cust", "ชื่อผู้รับ", true);
+        put("tel", "เบอร์โทรผู้รับ", false);
+        put("addr", "ที่อยู่ผู้รับ", true);
+        return { ok:true, no:p.no, changed:n, cust:o.cust, tel:o.tel, addr:o.addr };
+      });
+    },
     /* ออกเอกสารแบบจำลอง — คิดเงินด้วยตรรกะเดียวกับ Doc.gs ตัวจริง
        (สคริปต์นี้แปะสำเนาของ buildDoc_ ไว้ให้หน้าเว็บใช้ ดูตัวแปร DOC_SRV ข้างล่าง) */
     /* ดูตัวอย่างก่อนออกเลข — ต้องไม่แตะทะเบียน ไม่กินเลข

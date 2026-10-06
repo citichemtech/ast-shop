@@ -773,6 +773,75 @@ function setTracking(no, track, status, carrier) {
   }
 }
 
+/**
+ * แก้ชื่อ เบอร์ ที่อยู่ "ผู้รับ" ของออเดอร์ — สำหรับหน้าใบปะหน้าพัสดุ
+ *
+ * ทำไมต้องมี: จุดที่คนรู้ตัวว่าที่อยู่ผิดคือตอนกำลังจะพิมพ์ใบปะหน้าแปะกล่อง
+ * ไม่ใช่ตอนนั่งหน้าคอม ของเดิมแก้ได้ทางเดียวคือเปิดชีท ออเดอร์_หัวบิล
+ * แล้วเลื่อนไปคอลัมน์ F บนมือถือ ซึ่งทำไม่ได้จริงตอนยืนแพ็คของ
+ * ผลคือพิมพ์ใบปะหน้าที่อยู่ผิดแล้วของไปผิดบ้าน ซึ่งเสียทั้งค่าส่งสองเที่ยวและลูกค้า
+ *
+ * แตะเฉพาะสามช่องนี้ และเฉพาะช่องที่ส่งมาจริง ๆ (undefined = ไม่ได้จะแก้)
+ * ไม่แตะยอดเงิน ไม่แตะสถานะ ไม่แตะสต๊อก — คนละเรื่องกันทั้งหมด
+ *
+ * ที่อยู่บนใบกำกับภาษีเป็นคนละช่อง (อยู่ในชีท เอกสาร) ไม่ขยับตามโดยตั้งใจ
+ * ใบที่ออกไปแล้วลูกค้าถืออยู่ ที่อยู่บนนั้นต้องตรงกับกระดาษเสมอ
+ */
+function setShipTo(p) {
+  var email = requireStaff_();
+  p = p || {};
+  var no = String(p.no || '').trim();
+  if (!no) throw new Error('ไม่ได้บอกว่าจะแก้ออเดอร์ไหน');
+
+  var has = function (k) { return p[k] !== undefined && p[k] !== null; };
+  if (!has('cust') && !has('tel') && !has('addr')) {
+    return { ok: true, no: no, changed: 0 };
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var found = findOrderRow_(no);
+    var sh = found.sheet, row = found.row, IN = SH.head.IN;
+
+    /* ชื่อผู้รับว่าง = ใบปะหน้าไม่มีชื่อคนรับ ขนส่งไม่รับพัสดุแบบนั้น
+       ที่อยู่ว่างก็เหมือนกัน — ยอมให้ลบทิ้งไม่ได้ ต่างจากเบอร์โทรที่เว้นได้ */
+    var patch = {}, changed = [];
+    function put(key, label, raw, required) {
+      if (!has(key)) return;
+      var v = String(raw).replace(/\r\n?/g, '\n').replace(/[ \t]+/g, ' ').trim();
+      if (required && !v) throw new Error(label + 'ว่างไม่ได้ — ใบปะหน้าที่ไม่มี' + label +
+        ' ขนส่งไม่รับพัสดุ');
+      if (v.length > 400) throw new Error(label + 'ยาวเกินไป (เกิน 400 ตัวอักษร)');
+      var before = String(sh.getRange(row, IN[key]).getValue() || '').trim();
+      if (v === before) return;
+      patch[key] = v;
+      changed.push([label, before || '(ว่าง)', v || '(ว่าง)']);
+    }
+    put('cust', 'ชื่อผู้รับ', p.cust, true);
+    put('tel', 'เบอร์โทรผู้รับ', p.tel, false);
+    put('addr', 'ที่อยู่ผู้รับ', p.addr, true);
+
+    if (!changed.length) return { ok: true, no: no, changed: 0 };
+
+    writeRow_('head', row, patch);
+    SpreadsheetApp.flush();
+    for (var i = 0; i < changed.length; i++) {
+      writeLog_(email, 'แก้ที่อยู่ผู้รับ', SH.head.name, no, changed[i][0],
+        changed[i][1], changed[i][2], 'แก้จากหน้าใบปะหน้าพัสดุโดย ' + email);
+    }
+    return { ok: true, no: no, changed: changed.length,
+             cust: patch.cust === undefined
+               ? String(sh.getRange(row, IN.cust).getValue() || '') : patch.cust,
+             tel: patch.tel === undefined
+               ? String(sh.getRange(row, IN.tel).getValue() || '') : patch.tel,
+             addr: patch.addr === undefined
+               ? String(sh.getRange(row, IN.addr).getValue() || '') : patch.addr };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /* ------------------------------------------------------------ เอกสารขาย */
 
 /**

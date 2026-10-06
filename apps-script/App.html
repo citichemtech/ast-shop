@@ -864,6 +864,17 @@ function doParse(){
   showPreview(d);
 }
 
+/* ประกอบที่อยู่เต็มจากชิ้นส่วนที่ตัวแยกข้อความคืนมา
+   ตัวแยกคืน addr เป็นแค่บรรทัดแรก (บ้านเลขที่ ซอย ถนน) ส่วนตำบล อำเภอ จังหวัด
+   รหัสไปรษณีย์ แยกคนละช่อง ถ้าหยิบไปแต่ addr ที่อยู่บนใบปะหน้าจะขาดครึ่งหลัง
+   แล้วของไปไม่ถึง — เคยเขียนไว้ในตัวพรีวิวที่เดียว ย้ายออกมาใช้ร่วมกัน */
+function addrText(d){
+  return [d.addr,
+    [d.tambon?"ต."+d.tambon:"", d.amphoe?"อ."+d.amphoe:""].filter(Boolean).join(" "),
+    [d.province?"จ."+d.province:"", d.zip||""].filter(Boolean).join(" ")
+  ].filter(function(x){ return x && x.trim() }).join("\n");
+}
+
 /* แสดงให้ตรวจก่อน ยังไม่แตะฟอร์มจนกว่าจะกด "ใช้ข้อมูลนี้" */
 function showPreview(d){
   var n=0, got=0;
@@ -873,10 +884,7 @@ function showPreview(d){
     return '<div class="r'+(ok?"":" miss")+(opt?" opt":"")+'"><i>'+esc(label)+'</i><b>'
       +(ok?esc(String(val)):"อ่านไม่ได้ — กรอกเอง")+'</b></div>';
   };
-  var addr=[d.addr,
-    [d.tambon?"ต."+d.tambon:"",d.amphoe?"อ."+d.amphoe:""].filter(Boolean).join(" "),
-    [d.province?"จ."+d.province:"",d.zip||""].filter(Boolean).join(" ")
-  ].filter(function(x){return x&&x.trim()}).join("\n");
+  var addr = addrText(d);
 
   var h = row("วันที่",d.date,true)
         + row("ชื่อลูกค้า",d.cust)
@@ -3217,6 +3225,24 @@ function openLabel(o){
        : '<div class="msg err" style="display:block">ยังไม่ได้กรอก '
          +'<b>ที่อยู่ผู้ส่ง</b> ในชีท <b>ตั้งค่าแอป</b> (คอลัมน์ A แถวที่เขียนว่า "ที่อยู่ผู้ส่ง" '
          +'ใส่ค่าที่คอลัมน์ B) — ใบปะหน้าจะพิมพ์ออกมาโดยไม่มีที่อยู่ผู้ส่ง</div>')
+    /* ชื่อ เบอร์ ที่อยู่ผู้รับ — แก้ตรงนี้ได้เลย
+
+       จุดที่คนรู้ตัวว่าที่อยู่ผิดคือตอนกำลังจะพิมพ์ใบปะหน้าแปะกล่อง ไม่ใช่ตอนนั่งหน้าคอม
+       ของเดิมต้องเปิดชีท ออเดอร์_หัวบิล แล้วเลื่อนไปคอลัมน์ F บนมือถือ ซึ่งทำไม่ได้จริง
+       ตอนยืนแพ็คของ ผลคือพิมพ์ใบที่อยู่ผิดแล้วของไปผิดบ้าน */
+    +'<div class="subhd" style="margin-top:14px">ผู้รับ</div>'
+    +'<div class="hint" style="margin:-4px 0 8px">แก้ตรงนี้แล้ว <b>บันทึกลงชีทให้ด้วย</b> '
+    +'ไม่ใช่เปลี่ยนแค่บนกระดาษ · ไม่กระทบที่อยู่บนใบกำกับภาษีที่ออกไปแล้ว</div>'
+    +'<div class="fld"><label>ชื่อผู้รับ</label>'
+    +'<input id="lb-cust" value="'+esc(o.cust||"")+'"></div>'
+    +'<div class="fld"><label>เบอร์โทร</label>'
+    +'<input id="lb-tel" inputmode="tel" value="'+esc(o.tel||"")+'"></div>'
+    +'<div class="fld"><label>ที่อยู่จัดส่ง</label>'
+    +'<textarea id="lb-addr" rows="3">'+esc(o.addr||"")+'</textarea>'
+    +'<div class="hint">วางที่อยู่จากแชทมาทั้งก้อนได้เลย แล้วกดปุ่มข้างล่างให้ระบบแยกให้</div>'
+    +'<button type="button" class="mini" id="lb-parse" style="margin-top:6px">'
+    +'แยกชื่อ/เบอร์/ที่อยู่ จากข้อความที่วาง</button></div>'
+    +'<div class="msg err" id="lb-err"></div>'
     +'<button class="btn" id="lb-make">สร้างใบปะหน้า</button>'
     +'<div id="lb-out" style="margin-top:12px"></div>');
 
@@ -3226,36 +3252,76 @@ function openLabel(o){
     if (carBox) carBox.style.display = ($("#lb-car").value === o.carrier) ? "none" : "";
   };
 
+  /* ใช้ตัวแยกที่อยู่ตัวเดียวกับหน้าคีย์ออเดอร์ ไม่เขียนใหม่ให้ผลต่างกันสองที่ */
+  $("#lb-parse").onclick = function(){
+    var raw = $("#lb-addr").value;
+    if(!raw.trim()){ toast("ยังไม่ได้วางข้อความ"); return }
+    var g = null;
+    try { g = parseAddressBlock(raw) } catch(e) { g = null }
+    if(!g || (!g.cust && !g.tel && !g.addr)){
+      toast("แยกไม่ออก พิมพ์เองได้เลยครับ"); return;
+    }
+    /* เขียนทับเฉพาะช่องที่แยกได้จริง ของเดิมที่ถูกอยู่แล้วต้องไม่โดนล้าง */
+    if(g.cust) $("#lb-cust").value = g.cust;
+    if(g.tel)  $("#lb-tel").value  = g.tel;
+    var full = addrText(g);
+    if(full) $("#lb-addr").value = full;
+    toast("แยกให้แล้ว — ตรวจอีกรอบก่อนพิมพ์");
+  };
+
   $("#lb-make").onclick = function(){
     var cod = $("#lb-cod").checked;
     var car = $("#lb-car").value;
     var clr = !!($("#lb-clr") && $("#lb-clr").checked && car !== o.carrier);
+    var err = $("#lb-err");
+
+    /* ตรวจก่อนวาด — ใบปะหน้าที่ไม่มีชื่อหรือที่อยู่ผู้รับ ขนส่งไม่รับพัสดุ
+       ฟ้องตรงนี้ดีกว่าให้รู้ตัวตอนยืนอยู่หน้าเคาน์เตอร์ขนส่งแล้ว */
+    var nCust = $("#lb-cust").value.trim();
+    var nAddr = $("#lb-addr").value.trim();
+    err.textContent = ""; err.classList.remove("on");
+    if(!nCust || !nAddr){
+      err.textContent = !nCust ? "ยังไม่ได้ใส่ชื่อผู้รับ" : "ยังไม่ได้ใส่ที่อยู่ผู้รับ";
+      err.classList.add("on");
+      ($("#lb-cust").value.trim() ? $("#lb-addr") : $("#lb-cust")).focus();
+      return;
+    }
+    var nTel = $("#lb-tel").value.trim();
+    var toMoved = (nCust !== String(o.cust||"").trim())
+               || (nTel  !== String(o.tel ||"").trim())
+               || (nAddr !== String(o.addr||"").trim());
+
     $("#lb-out").innerHTML='<div class="load">กำลังสร้าง…</div>';
 
-    /* บันทึกขนส่งใหม่ลงชีทก่อนวาดใบ ใบที่พิมพ์กับชีทจะได้ตรงกันเสมอ
+    /* บันทึกขนส่งกับที่อยู่ผู้รับลงชีทก่อนวาดใบ ใบที่พิมพ์กับชีทจะได้ตรงกันเสมอ
        บันทึกไม่สำเร็จก็ยังวาดใบให้ แต่บอกตรง ๆ ว่าชีทยังไม่ขยับ —
        ของต้องส่งวันนี้ ห้ามให้ระบบขวางงานหน้าร้านเพราะเน็ตสะดุด */
-    var saved = (car === o.carrier && !clr)
-      ? Promise.resolve(null)
-      : api("setTracking", o.no, clr ? "" : null, null, car);
+    var jobs = [];
+    if (car !== o.carrier || clr) jobs.push(api("setTracking", o.no, clr ? "" : null, null, car));
+    if (toMoved) jobs.push(api("setShipTo", { no: o.no, cust: nCust, tel: nTel, addr: nAddr }));
 
-    saved.then(function(r){
+    (jobs.length ? Promise.all(jobs) : Promise.resolve(null)).then(function(r){
       if (r) {
         o.carrier = car;
         if (clr) o.track = "";
+        if (toMoved) { o.cust = nCust; o.tel = nTel; o.addr = nAddr }
         for (var i=0;i<ORDERS.length;i++) if (ORDERS[i].no === o.no) {
           ORDERS[i].carrier = o.carrier; ORDERS[i].track = o.track;
+          if (toMoved) { ORDERS[i].cust = o.cust; ORDERS[i].tel = o.tel; ORDERS[i].addr = o.addr }
         }
         renderOrders();
       }
       return "";
     }, function(e){
-      return '<div class="msg err" style="display:block">ใบปะหน้าใช้ขนส่งใหม่แล้ว '
-           + 'แต่<b>บันทึกลงชีทไม่สำเร็จ</b> — ต้องไปแก้ช่องขนส่งของใบ '+esc(o.no)
+      return '<div class="msg err" style="display:block">ใบปะหน้าใช้ข้อมูลใหม่แล้ว '
+           + 'แต่<b>บันทึกลงชีทไม่สำเร็จ</b> — ต้องไปแก้ใบ '+esc(o.no)
            + ' ในชีทเอง<br>'+esc(e&&e.message?e.message:e)+'</div>';
     }).then(function(warn){
       o.carrier = car;
       if (clr) o.track = "";
+      /* วาดด้วยค่าที่อยู่ในช่องเสมอ ถึงบันทึกจะล้ม — กระดาษที่แปะกล่องต้องถูก
+         ส่วนชีทที่ยังไม่ขยับ มีคำเตือนข้างบนบอกให้ตามไปแก้แล้ว */
+      o.cust = nCust; o.tel = nTel; o.addr = nAddr;
       return buildLabel(labelData(o, cod)).then(function(url){ return [url, warn||""] });
     }).then(function(pair){
       var url = pair[0], warn = pair[1];
