@@ -13,8 +13,14 @@ var BY_NEW = "✎ พิมพ์ชื่อเอง…";   /* ตัวเล
 
 /* -------------------------------------------------------------- ข้อความแจ้ง */
 
-function showErr(msg){
-  var b=$("#err"); b.innerHTML=esc(msg); b.classList.add("on");
+/* msg เป็นข้อความธรรมดาโดยปริยาย และถูก esc ให้ — ที่เรียกส่วนใหญ่ส่งข้อความ
+   จากฝั่งชีทมาตรง ๆ ซึ่งมีชื่อลูกค้าหรือชื่อสินค้าปนอยู่ ปล่อยเป็น HTML ไม่ได้
+
+   ส่ง html=true เมื่อที่เรียกประกอบ HTML เองและ esc ส่วนที่เป็นข้อมูลมาแล้ว
+   ของเดิม esc ทั้งก้อนเสมอ หน้าจอเลยโชว์ <b> กับ <br> เป็นตัวหนังสือดิบ ๆ
+   แล้วข้อความยาว ๆ กลายเป็นพืดเดียวอ่านไม่ออก (เจอตอนนำเข้า Shopee 7 ต.ค. 69) */
+function showErr(msg, html){
+  var b=$("#err"); b.innerHTML = html ? String(msg) : esc(msg); b.classList.add("on");
   $("#ok").classList.remove("on");
   b.scrollIntoView({behavior:"smooth",block:"center"});
 }
@@ -745,7 +751,7 @@ function save(){
     var q=Number(items[i].qty);
     if(!(q>0)){ showErr("รายการที่ "+(i+1)+": ยังไม่ได้ใส่จำนวน"); return }
     if(items[i].free && items[i].price===""){
-      showErr("รายการที่ "+(i+1)+" ("+esc(items[i].name)+"): สินค้าที่พิมพ์ชื่อเอง"
+      showErr("รายการที่ "+(i+1)+" ("+items[i].name+"): สินค้าที่พิมพ์ชื่อเอง"
         +" ต้องใส่ราคาขายจริงด้วย เพราะไม่มีราคามาตรฐานในฐานสินค้าให้ดึง");
       return;
     }
