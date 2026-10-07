@@ -2864,7 +2864,15 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       dead:      payState({ status: 'ตีกลับ', date: back(9) }),
       codFresh:  payState({ status: 'เก็บเงินปลายทาง', date: back(2) }),
       codEdge:   payState({ status: 'เก็บเงินปลายทาง', date: back(7) }),
-      codLate:   payState({ status: 'เก็บเงินปลายทาง', date: back(12) })
+      codLate:   payState({ status: 'เก็บเงินปลายทาง', date: back(12) }),
+      /* ออเดอร์มาร์เก็ตเพลส เก็บเงินที่แพลตฟอร์มไปแล้วตั้งแต่ลูกค้ากดสั่ง
+         ใบที่นำเข้าลงสถานะเป็น "ส่งแล้ว" ซึ่งจริงตามการส่งของ แต่ไม่ใช่คำว่าชำระแล้ว
+         ของเดิมจึงไปกองอยู่ในค้างชำระทั้งหมด (ของจริง 7 ต.ค. 69: 58 ใบ ฿40,536) */
+      shopeeShipped: payState({ status: 'ส่งแล้ว', channel: 'Shopee', date: back(9) }),
+      shopeeThai:    payState({ status: 'รอชำระ', channel: 'ช้อปปี้', date: back(40) }),
+      lazada:        payState({ status: 'รอชำระ', channel: 'Lazada', date: back(40) }),
+      shopeeDead:    payState({ status: 'ตีกลับ', channel: 'Shopee', date: back(9) }),
+      pageLate:      payState({ status: 'รอชำระ', channel: 'เพจ Facebook', date: back(9) })
     };
   });
   eq('เงินสดวันนี้ ยังไม่สาย', pay39.cashFresh.key, 'due');
@@ -2886,6 +2894,19 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
      ถ้าป้ายเขียนเหมือนใบอื่น คนจะไปโทรทวงคนที่จ่ายเงินไปแล้ว */
   truthy('และป้ายต้องบอกว่าไปตามกับขนส่ง ไม่ใช่ทวงลูกค้า',
     pay39.codLate.label.indexOf('ขนส่ง') > -1);
+
+  /* ออเดอร์มาร์เก็ตเพลสต้องไม่โผล่ในค้างชำระเลยสักใบ
+     ร้านไม่เคยต้องโทรทวงลูกค้า Shopee เงินมาจากรอบโอนของแพลตฟอร์ม */
+  console.log('\n   ออเดอร์มาร์เก็ตเพลส ต้องไม่ขึ้นค้างชำระ');
+  eq('Shopee ที่ส่งแล้ว = จ่ายแล้ว ไม่ใช่ค้าง', pay39.shopeeShipped.key, 'paid');
+  eq('และบอกตรง ๆ ว่าเงินมาทางแพลตฟอร์ม',
+    pay39.shopeeShipped.label, 'ชำระผ่านแพลตฟอร์ม');
+  eq('เขียนชื่อช่องทางเป็นภาษาไทยก็จับได้', pay39.shopeeThai.key, 'paid');
+  eq('Lazada ก็เหมือนกัน', pay39.lazada.key, 'paid');
+  /* ใบที่ตีกลับยังต้องเป็นใบตาย ไม่ใช่กลายเป็นจ่ายแล้วเพราะเป็นของ Shopee */
+  eq('ใบ Shopee ที่ตีกลับ ยังเป็นใบตายเหมือนเดิม', pay39.shopeeDead.key, 'dead');
+  /* ใบที่คีย์เองต้องไม่โดนผลข้างเคียง ยังขึ้นเกินกำหนดเหมือนเดิม */
+  eq('ใบเพจที่ค้าง 9 วัน ยังขึ้นเกินกำหนดเหมือนเดิม', pay39.pageLate.key, 'over');
 
   console.log('\n   แถบบอกสถานะเงินต้องขึ้นสีจริง ไม่ใช่โดนสีเทาของบรรทัดทับ');
   /* ".row .i span" ทาสีเทาไว้ทั้งบรรทัด และเจาะจงกว่า ".paybar.over" อยู่หนึ่งขั้น

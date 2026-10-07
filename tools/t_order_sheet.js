@@ -4905,5 +4905,75 @@ var over72 = [];
 for (var n72 in fx72.sheets) over72 = over72.concat(fx72.sheets[n72].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกเขียนทับตลอดข้อนี้', over72, []);
 
+/* ===================== 73. ออเดอร์ที่ไม่ตัดสต๊อก
+
+   ออเดอร์ Shopee ที่ลูกค้าติ๊ก "ขอใบกำกับภาษี" — เจ้าของร้านลงของเองอีกทางหนึ่ง
+   อยู่แล้วเพื่อออกใบ ถ้านำเข้าแล้วตัดสต๊อกอีก ของจะถูกตัดสองรอบ
+   (เจ้าของร้านสั่งเอง 7 ต.ค. 69: "ถ้าอันมีคำว่า yes ไม่ต้องตัดสต๊อก")
+
+   ยอดขายกับกำไรยังต้องลงครบ ต่างกันแค่ไม่มีบรรทัดในชีท ตัดล็อต         */
+console.log('\n73. ออเดอร์ที่ไม่ตัดสต๊อก (ลูกค้าขอใบกำกับภาษี)');
+var fx73 = FS.build({
+  lots: [{ sku: 'CHEM-001', lotNo: 'L-73', exp: EXP_LATER, recv: '2026-08-01', qty: 10 }]
+});
+var api73 = FS.load(fx73, {});
+api73.setup();
+var lt73 = fx73.sheets['ล็อตสินค้า'];
+var ct73 = fx73.sheets['ตัดล็อต'];
+var hd73 = fx73.sheets['ออเดอร์_หัวบิล'];
+var it73 = fx73.sheets['ออเดอร์_รายการ'];
+var IN73 = api73.SH.head.IN;
+
+function left73() {
+  for (var r = DATA_ROW; r <= lt73.getMaxRows(); r++) {
+    if (lt73.cell(r, 4).v === 'L-73') return lt73.cell(r, 9).v;
+  }
+  return null;
+}
+eq('ตั้งต้นล็อตมี 10', left73(), 10);
+
+console.log('\n   ใบปกติ ตัดสต๊อกเหมือนเดิม');
+var a73 = api73.createOrder(order({ clientKey: 'k73a', ship: 0, discount: 0,
+  items: [{ sku: 'CHEM-001', qty: 2, price: 100 }] }));
+eq('ล็อตลดลง 2', left73(), 8);
+eq('มีบรรทัดตัดล็อต', rowsWith(ct73, 2).length, 1);
+
+console.log('\n   ใบที่สั่งไม่ตัดสต๊อก — ของต้องไม่หายจากชั้น');
+var b73 = api73.createOrder(order({ clientKey: 'k73b', ship: 0, discount: 0,
+  noStock: true, items: [{ sku: 'CHEM-001', qty: 3, price: 100 }] }));
+eq('บันทึกผ่าน', b73.ok, true);
+eq('ล็อตไม่ขยับเลย', left73(), 8);
+eq('ไม่มีบรรทัดตัดล็อตเพิ่ม', rowsWith(ct73, 2).length, 1);
+
+console.log('\n   แต่ยอดขายกับรายการสินค้าต้องลงครบเหมือนใบปกติ');
+var row73 = rowsWith(hd73, IN73.no).filter(function (r) {
+  return hd73.cell(r, IN73.no).v === b73.no;
+})[0];
+eq('ยอดสินค้าลงครบ 300', hd73.cell(row73, 10).v, 300);
+eq('มีบรรทัดสินค้าในใบ', rowsWith(it73, 2).filter(function (r) {
+  return it73.cell(r, 2).v === b73.no;
+}).length, 1);
+truthy2('หมายเหตุบอกไว้ว่าใบนี้ไม่ตัดสต๊อก',
+  String(hd73.cell(row73, IN73.note).v || '').indexOf('ไม่ตัดสต๊อก') > -1);
+
+console.log('\n   ของไม่พอ หรือล็อตหมดอายุ ก็ยังบันทึกได้ เพราะไม่ได้ไปแตะล็อต');
+var c73 = api73.createOrder(order({ clientKey: 'k73c', ship: 0, discount: 0,
+  noStock: true, items: [{ sku: 'CHEM-001', qty: 999, price: 10 }] }));
+eq('สั่งเกินของที่มี ก็ยังบันทึกได้', c73.ok, true);
+eq('และล็อตยังไม่ขยับ', left73(), 8);
+throws('แต่ใบปกติยังกันของไม่พอเหมือนเดิม', function () {
+  api73.createOrder(order({ clientKey: 'k73d', ship: 0, discount: 0,
+    items: [{ sku: 'CHEM-001', qty: 999, price: 10 }] }));
+}, 'ไม่พอ');
+
+console.log('\n   ไม่ส่ง noStock มา = ตัดตามปกติ ห้ามเปลี่ยนพฤติกรรมเดิม');
+api73.createOrder(order({ clientKey: 'k73e', ship: 0, discount: 0,
+  items: [{ sku: 'CHEM-001', qty: 1, price: 100 }] }));
+eq('ล็อตลดลงอีก 1', left73(), 7);
+
+var over73 = [];
+for (var n73 in fx73.sheets) over73 = over73.concat(fx73.sheets[n73].overwrittenFormulas);
+eq('ไม่มีช่องสูตรถูกเขียนทับตลอดข้อนี้', over73, []);
+
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

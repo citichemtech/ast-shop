@@ -3386,6 +3386,8 @@ function planOrder_(p, email) {
   var plist = readProducts_();
   for (var i = 0; i < plist.length; i++) prods[plist[i].sku] = plist[i];
 
+  /* ไม่ตัดสต๊อก — ใบนี้บันทึกยอดขายแต่ไม่แตะล็อตเลย ดูเหตุผลตรงจุดที่ใช้ข้างล่าง */
+  var noStock = !!p.noStock;
   var lotsBySku = readLots_();
   var used = {};   // ตัดไปแล้วเท่าไรในออเดอร์นี้ กันสินค้าตัวเดียวกันหลายบรรทัดแย่งล็อตเดียวกัน
   var items = [];
@@ -3459,6 +3461,21 @@ function planOrder_(p, email) {
     subtotal += round2_(qty * (price === null ? prod.price : price));
 
     var lineNo = k + 1;
+    /* เก็บบรรทัดสินค้าก่อนเรื่องล็อต — ยอดขายของใบไม่ได้ขึ้นกับว่าตัดล็อตหรือไม่
+       ของเดิมบรรทัดนี้อยู่ท้ายสุด พอมีทางลัดข้ามเรื่องล็อต มันจะถูกข้ามไปด้วย
+       แล้วได้ออเดอร์ที่ไม่มีรายการสินค้าสักบรรทัด โดยไม่มีอะไรฟ้อง */
+    items.push({ lineNo: lineNo, sku: sku, qty: qty, price: price, std: prod.price });
+
+    /* ใบที่สั่งมาว่า "ไม่ตัดสต๊อก" — ข้ามเรื่องล็อตทั้งหมด ไม่จอง ไม่เช็คของพอ
+       ไม่เช็ควันหมดอายุ เพราะของใบนี้ไม่ได้ออกจากชั้นเพราะใบนี้
+
+       มีไว้สำหรับออเดอร์ Shopee ที่ลูกค้าติ๊กขอใบกำกับภาษี — ใบพวกนั้น
+       เจ้าของร้านลงของเองอีกทางหนึ่งอยู่แล้ว ถ้านำเข้าแล้วตัดอีกจะตัดซ้ำสองรอบ
+       (เจ้าของร้านสั่งเอง 7 ต.ค. 69 จากคอลัมน์ "ผู้ซื้อร้องขอใบกำกับภาษี" ในไฟล์ Shopee)
+
+       ยอดขายกับกำไรยังลงครบเหมือนเดิม ต่างกันแค่ไม่มีบรรทัดในชีท ตัดล็อต */
+    if (noStock) { continue; }
+
     var pool = (lotsBySku[sku] || []).map(function (l) {
       return { row: l.row, lotNo: l.lotNo, exp: l.exp, recv: l.recv, remain: l.remain - (used[l.row] || 0) };
     });
@@ -3497,8 +3514,6 @@ function planOrder_(p, email) {
     if (pick.tracked) {
       lotNote.push(sku + ': ' + pick.picks.map(function (x) { return x.lotNo + ' x' + x.take; }).join(', '));
     }
-
-    items.push({ lineNo: lineNo, sku: sku, qty: qty, price: price, std: prod.price });
   }
 
   var date = parseDate_(p.date);
@@ -3517,7 +3532,11 @@ function planOrder_(p, email) {
     /* ช่องพนักงานเก็บ "ชื่อคนคีย์" ที่เลือกจากหน้าจอ เพราะทั้งร้านใช้บัญชี Google เดียวกัน
        ถ้าไม่ได้เลือกก็ใช้อีเมลไปก่อน และไม่ว่าทางไหน Log ยังบันทึกอีเมลจริงไว้เสมอ */
     status: status, staff: String(p.by || '').trim().slice(0, 40) || email,
-    note: String(p.note || '').trim(),
+    /* ใบที่ไม่ตัดสต๊อกต้องอ่านออกจากในชีทเองได้ว่าทำไมของไม่หาย
+       ไม่งั้นวันหนึ่งมีคนกระทบยอดแล้วเจอใบขายที่ไม่มีบรรทัดตัดล็อต แล้วหาสาเหตุไม่เจอ */
+    note: [String(p.note || '').trim(), noStock ? '(ไม่ตัดสต๊อก)' : '']
+      .filter(function (x) { return x }).join(' '),
+    noStock: noStock,
     /* เงินที่แพลตฟอร์มหักไปก่อนโอนเข้าร้าน กับค่าส่งที่ร้านออกเอง
        เก็บแยกจากยอดขาย เพราะเป็นรายจ่าย ไม่ใช่ส่วนลดที่ให้ลูกค้า
        เอาไปลดยอดขายเมื่อไร ใบกำกับภาษีกับภาษีขายจะต่ำกว่าความจริงทันที */
