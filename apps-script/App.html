@@ -13,8 +13,14 @@ var BY_NEW = "✎ พิมพ์ชื่อเอง…";   /* ตัวเล
 
 /* -------------------------------------------------------------- ข้อความแจ้ง */
 
-function showErr(msg){
-  var b=$("#err"); b.innerHTML=esc(msg); b.classList.add("on");
+/* msg เป็นข้อความธรรมดาโดยปริยาย และถูก esc ให้ — ที่เรียกส่วนใหญ่ส่งข้อความ
+   จากฝั่งชีทมาตรง ๆ ซึ่งมีชื่อลูกค้าหรือชื่อสินค้าปนอยู่ ปล่อยเป็น HTML ไม่ได้
+
+   ส่ง html=true เมื่อที่เรียกประกอบ HTML เองและ esc ส่วนที่เป็นข้อมูลมาแล้ว
+   ของเดิม esc ทั้งก้อนเสมอ หน้าจอเลยโชว์ <b> กับ <br> เป็นตัวหนังสือดิบ ๆ
+   แล้วข้อความยาว ๆ กลายเป็นพืดเดียวอ่านไม่ออก (เจอตอนนำเข้า Shopee 7 ต.ค. 69) */
+function showErr(msg, html){
+  var b=$("#err"); b.innerHTML = html ? String(msg) : esc(msg); b.classList.add("on");
   $("#ok").classList.remove("on");
   b.scrollIntoView({behavior:"smooth",block:"center"});
 }
@@ -45,10 +51,37 @@ function netMsg_(m){
        + "หรือเพิ่งปล่อยเวอร์ชันใหม่) แล้วดูในแท็บ ออเดอร์ ก่อนว่าลงไปแล้วไหม";
 }
 
+/* คำตอบหายระหว่างทาง — งานอาจลงชีทไปแล้ว แต่ฝั่งหน้าจอไม่ได้รับคำตอบกลับมา
+
+   ทุกฟังก์ชันที่หน้าจอเรียกคืนค่าเสมอ ไม่มีตัวไหนตั้งใจคืนค่าว่างเลยสักตัว
+   ได้ค่าว่างกลับมาเมื่อไรจึงแปลว่า "ช่องทางคุยกับชีทขาด" ไม่ใช่ "งานล้มเหลว"
+   มักเกิดตอนเปิดหน้าค้างไว้นานข้ามชั่วโมง หรือเพิ่งปล่อยเวอร์ชันใหม่ระหว่างที่เปิดค้าง
+
+   ของเดิมปล่อยค่าว่างเข้าไปถึงตัวที่อ่าน res.no / res.net ต่อ แล้วพังเป็น
+   "Cannot read properties of null (reading 'no')" ซึ่งบอกอะไรคนหน้าจอไม่ได้เลย
+   ที่แย่กว่านั้นคือมันอ่านเหมือน "ไม่สำเร็จ" ทั้งที่ของลงชีทไปเรียบร้อยแล้ว
+   คนจะกดใหม่หรือคีย์ใหม่ทั้งที่ไม่ต้อง                                        */
+function nullMsg_(fn){
+  return "ชีทรับงานไปแล้ว แต่คำตอบหายระหว่างทาง (" + fn + ")\n"
+       + "งานนี้ส่วนใหญ่ลงชีทเรียบร้อยแล้ว — อย่าเพิ่งทำใหม่\n"
+       + "กดปุ่มเดิมซ้ำได้เลย ระบบกันงานซ้ำไว้ให้แล้ว ถ้าลงไปแล้วจะได้ของเดิมกลับมา\n"
+       + "ถ้ายังไม่ได้อีก ให้ปิดแอปแล้วเปิดลิงก์ใหม่ แล้วไปดูในแฟ้มเอกสาร/แท็บออเดอร์ "
+       + "ก่อนว่ามีของอยู่แล้วหรือยัง";
+}
+
 /* เรียกฟังก์ชันฝั่งเซิร์ฟเวอร์ — ทุกจุดที่ล้มต้องมีทางออกที่ผู้ใช้เห็น */
 function call(fn, args, done, fail){
   google.script.run
-    .withSuccessHandler(function(r){ try{ done(r) }catch(e){ showErr("แสดงผลไม่สำเร็จ: "+e.message) } })
+    .withSuccessHandler(function(r){
+      /* ค่าว่างไม่ใช่คำตอบ ห้ามปล่อยเข้าไปให้ตัวที่อ่าน .no / .net ต่อพังเอาเอง
+         ส่งเข้าทางเดียวกับที่ล้ม เพื่อให้ปุ่มกลับมากดได้และขึ้นข้อความที่อ่านรู้เรื่อง */
+      if(r === null || r === undefined){
+        var nm = nullMsg_(fn);
+        if(fail) fail(nm); else showErr(nm);
+        return;
+      }
+      try{ done(r) }catch(e){ showErr("แสดงผลไม่สำเร็จ: "+e.message) }
+    })
     .withFailureHandler(function(e){
       var m=netMsg_((e&&e.message)?e.message:String(e));
       if(fail) fail(m); else showErr(m);
@@ -69,6 +102,11 @@ function api(fn){
 
 function boot(){
   $("#who").textContent = STAFF_EMAIL;
+  /* APP_BUILD ถูกประทับตอน bundle — ถ้าไม่มีแปลว่ารันจากไฟล์ต้นฉบับตรง ๆ */
+  if ($("#ver")) {
+    $("#ver").textContent = (typeof APP_BUILD !== "undefined" && APP_BUILD)
+      ? "รุ่น " + APP_BUILD : "รุ่น (ยังไม่ผ่าน bundle)";
+  }
   $("#btn-paste-open").onclick = function(){
     var b = $("#paste-box"), open = b.style.display === "";
     b.style.display = open ? "none" : "";
@@ -188,7 +226,10 @@ function itemRows(){ return $$("#items .it") }
 function refreshProdOptions(){
   $$(".i-sku, .q-sku, #r-sku").forEach(function(sel){
     var keep = sel.value;
-    sel.innerHTML = prodOptions(keep);
+    /* หน้ารับเข้ามีตัวเลือก "สินค้าใหม่" พิเศษอยู่หัวรายการ ถ้าเขียนทับด้วย
+       prodOptions เฉย ๆ ตัวเลือกนั้นจะหายไปทุกครั้งที่รายการสินค้าโหลดใหม่
+       (ซึ่งเกิดทุกครั้งที่รับของเข้าสำเร็จ) แล้วคนจะเพิ่มสินค้าใหม่ไม่ได้อีกเลย */
+    sel.innerHTML = (sel.id === "r-sku") ? recvProdOptions(keep) : prodOptions(keep);
     if(keep) sel.value = keep;
   });
 }
@@ -710,7 +751,7 @@ function save(){
     var q=Number(items[i].qty);
     if(!(q>0)){ showErr("รายการที่ "+(i+1)+": ยังไม่ได้ใส่จำนวน"); return }
     if(items[i].free && items[i].price===""){
-      showErr("รายการที่ "+(i+1)+" ("+esc(items[i].name)+"): สินค้าที่พิมพ์ชื่อเอง"
+      showErr("รายการที่ "+(i+1)+" ("+items[i].name+"): สินค้าที่พิมพ์ชื่อเอง"
         +" ต้องใส่ราคาขายจริงด้วย เพราะไม่มีราคามาตรฐานในฐานสินค้าให้ดึง");
       return;
     }
@@ -829,6 +870,17 @@ function doParse(){
   showPreview(d);
 }
 
+/* ประกอบที่อยู่เต็มจากชิ้นส่วนที่ตัวแยกข้อความคืนมา
+   ตัวแยกคืน addr เป็นแค่บรรทัดแรก (บ้านเลขที่ ซอย ถนน) ส่วนตำบล อำเภอ จังหวัด
+   รหัสไปรษณีย์ แยกคนละช่อง ถ้าหยิบไปแต่ addr ที่อยู่บนใบปะหน้าจะขาดครึ่งหลัง
+   แล้วของไปไม่ถึง — เคยเขียนไว้ในตัวพรีวิวที่เดียว ย้ายออกมาใช้ร่วมกัน */
+function addrText(d){
+  return [d.addr,
+    [d.tambon?"ต."+d.tambon:"", d.amphoe?"อ."+d.amphoe:""].filter(Boolean).join(" "),
+    [d.province?"จ."+d.province:"", d.zip||""].filter(Boolean).join(" ")
+  ].filter(function(x){ return x && x.trim() }).join("\n");
+}
+
 /* แสดงให้ตรวจก่อน ยังไม่แตะฟอร์มจนกว่าจะกด "ใช้ข้อมูลนี้" */
 function showPreview(d){
   var n=0, got=0;
@@ -838,10 +890,7 @@ function showPreview(d){
     return '<div class="r'+(ok?"":" miss")+(opt?" opt":"")+'"><i>'+esc(label)+'</i><b>'
       +(ok?esc(String(val)):"อ่านไม่ได้ — กรอกเอง")+'</b></div>';
   };
-  var addr=[d.addr,
-    [d.tambon?"ต."+d.tambon:"",d.amphoe?"อ."+d.amphoe:""].filter(Boolean).join(" "),
-    [d.province?"จ."+d.province:"",d.zip||""].filter(Boolean).join(" ")
-  ].filter(function(x){return x&&x.trim()}).join("\n");
+  var addr = addrText(d);
 
   var h = row("วันที่",d.date,true)
         + row("ชื่อลูกค้า",d.cust)
@@ -944,6 +993,16 @@ function ordSearchInit(){
     clearTimeout(ORD_TIMER);
     runSearch(el.value.trim());
   };
+
+  /* ปุ่มเลือกกอง — กรองในเครื่องจากใบที่โหลดมาแล้ว ไม่ยิงชีทใหม่
+     กองไม่ได้เปลี่ยนข้อมูล เปลี่ยนแค่ว่าจะโชว์ใบไหน ยิงใหม่คือรอเปล่า ๆ */
+  $$("#ord-src button").forEach(function(b){
+    b.onclick = function(){
+      ORD_SRC = b.dataset.src;
+      try { localStorage.setItem("ast-ordsrc", ORD_SRC) } catch(e){}
+      renderOrders();
+    };
+  });
 }
 
 function runSearch(q, quiet){
@@ -1060,14 +1119,67 @@ function isDead(o){ return DEAD_STATUS.indexOf(String((o&&o.status)||"").trim())
 var COD_STATUS = "เก็บเงินปลายทาง";
 function isCod(o){ return String((o&&o.status)||"").trim() === COD_STATUS }
 
+/* กองไหนที่กำลังดูอยู่ — all · mkt (มาร์เก็ตเพลส) · key (คีย์เอง)
+   เก็บในเครื่อง เปิดแอปรอบหน้าได้กองเดิม คนที่ทำแต่ของหน้าร้านจะได้ไม่ต้องกดทุกครั้ง */
+var ORD_SRC = (function(){
+  try { return localStorage.getItem("ast-ordsrc") || "all" } catch(e){ return "all" }
+})();
+
+/* ใช้ isMarketCh ตัวเดียวกับที่ใช้คิดค่าส่ง ไม่เขียนกฎใหม่ให้ผลต่างกันสองที่
+   ปุ่มเขียนว่า "Shopee" เพราะร้านมีแต่ช้อปปี้ แต่กฎจับ Lazada กับ TikTok ด้วย
+   ถ้าวันหนึ่งมีออเดอร์ลาซาด้า มันควรไปอยู่กองเดียวกับช้อปปี้ ไม่ใช่กอง "คีย์เอง" */
+function ordSrcOf(o){ return isMarketCh(o && o.channel) ? "mkt" : "key" }
+
+function ordBySrc(){
+  if(ORD_SRC === "all") return ORDERS;
+  return ORDERS.filter(function(o){ return ordSrcOf(o) === ORD_SRC });
+}
+
+/* ตัวเลขบนปุ่มนับจากใบที่โหลดมาอยู่ในมือตอนนี้ ไม่ใช่ทั้งชีท
+   ตอนค้นหา ORDERS คือผลการค้น ตัวเลขจึงบอกว่า "ในผลการค้นมีกองละกี่ใบ"
+   ซึ่งเป็นสิ่งที่คนกำลังมองหาพอดี */
+function ordSrcTabs(){
+  var box = $("#ord-src");
+  if(!box) return;
+  var n = { all: ORDERS.length, mkt: 0, key: 0 };
+  ORDERS.forEach(function(o){ n[ordSrcOf(o)]++ });
+  $$("#ord-src button").forEach(function(b){
+    var k = b.dataset.src;
+    b.classList.toggle("on", k === ORD_SRC);
+    var base = k === "all" ? "ทั้งหมด" : (k === "mkt" ? "Shopee" : "คีย์เอง");
+    b.textContent = base + " (" + n[k] + ")";
+  });
+}
+
 function renderOrders(){
   if(!ORDERS) ORDERS = [];
+  ordSrcTabs();
   if(!ORDERS.length){ $("#list").innerHTML='<div class="empty"><b>ยังไม่มีออเดอร์</b>กดแท็บ “คีย์ออเดอร์” เพื่อบันทึกใบแรก</div>'; return }
-  $("#list").innerHTML = flagLegend() + ORDERS.map(function(o,i){
+  var rows = ordBySrc();
+  /* กองว่างต้องบอกว่าว่างเพราะอะไร ไม่ใช่ขึ้นข้อความเดียวกับตอนไม่มีออเดอร์เลย
+     "ยังไม่มีออเดอร์" ทั้งที่กด "ทั้งหมด" แล้วเห็นสี่สิบใบ คืออาการที่อ่านว่าแอปพัง */
+  if(!rows.length){
+    $("#list").innerHTML = '<div class="empty"><b>'
+      + (ORD_SRC === "mkt" ? "ไม่มีออเดอร์จากมาร์เก็ตเพลสในชุดนี้"
+                           : "ไม่มีออเดอร์ที่คีย์เองในชุดนี้") + '</b>'
+      + 'กด <b>ทั้งหมด</b> เพื่อดูทุกใบ'
+      + (ORD_SRC === "mkt" ? ' · นำเข้าจาก Shopee ได้ที่ปุ่มข้างบน' : '')
+      + '</div>';
+    return;
+  }
+  /* ปุ่มในแถวอ้างตำแหน่งใน ORDERS ไม่ใช่ตำแหน่งในกองที่กรองแล้ว
+     ถ้าใช้ index ของกอง พอกรองอยู่แล้วกดปุ่มจะไปทำงานกับออเดอร์ผิดใบ */
+  $("#list").innerHTML = flagLegend() + rows.map(function(o){
+    var i = ORDERS.indexOf(o);
     var dead = isDead(o);
     return '<div class="row"><div class="i">'
       + '<b>'+flagTag(o)+esc(o.cust||"ไม่ระบุชื่อ")+'</b>'
-      +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))+' · '+chanTag(o.channel)
+      /* เวลาที่คีย์ต่อท้ายวันที่ — ออเดอร์เก่าที่ยังไม่มีเวลา จะไม่ขึ้นอะไรเพิ่ม
+         ว่างคือไม่รู้ ไม่ใช่เที่ยงคืน จึงไม่เติมเลขมั่ว ๆ ให้ดูเหมือนรู้ */
+      +'<span>'+esc(o.no)+' · '+esc(thaiDate(o.date))
+      + (o.keyedAt ? ' <b style="color:var(--gray);font-weight:600">'
+          + esc(o.keyedAt) + ' น.</b>' : '')
+      + ' · '+chanTag(o.channel)
       + (o.track?' · '+esc(o.track):'')+'</span><br>'
       +'<span style="color:var(--ink);font-weight:700">'+baht(o.net)+'</span> '
       +'<span class="tag '+statusTag(o.status)+'">'+esc(o.status||"-")+'</span>'
@@ -1527,20 +1639,62 @@ function custList(cb){
   call("getCustomers", [400], done, function(){ done([]) });
 }
 
+/* คำที่ชื่อบริษัทแทบทุกชื่อมีเหมือนกันหมด — ใช้ชี้ตัวไม่ได้
+
+   ของเดิมเทียบชื่อแบบตรงตัวทั้งสตริง พิมพ์ "บริษัท คิวพาธ" แล้วไม่ขึ้น
+   ทั้งที่ลูกค้ารายนั้นอยู่ในชีท เพราะชื่อในชีทเขียนได้อีกหลายแบบ:
+     บริษัท  คิวพาธ จำกัด   (เคาะวรรคสองที)
+     คิวพาธ จำกัด           (ไม่มีคำว่าบริษัทนำหน้า)
+     บจก. คิวพาธ            (ใช้ตัวย่อ)
+     บริษัทคิวพาธ จำกัด     (ไม่เคาะวรรคเลย)
+   สี่แบบนี้ของเดิมหาไม่เจอสักแบบ ทั้งที่คนพิมพ์หมายถึงรายเดียวกันแท้ ๆ
+   คนที่หาไม่เจอก็พิมพ์ชื่อใหม่เอง แล้วชีทก็ได้ลูกค้ารายเดิมเพิ่มมาอีกชื่อ    */
+var CUST_CO_WORDS = {
+  'บริษัท':1, 'บจก':1, 'บมจ':1, 'หจก':1, 'หสน':1,
+  'ห้างหุ้นส่วนจำกัด':1, 'ห้างหุ้นส่วนสามัญ':1,
+  'จำกัด':1, 'จก':1, 'มหาชน':1, 'สำนักงานใหญ่':1, 'สาขา':1,
+  'co':1, 'ltd':1, 'company':1, 'limited':1, 'public':1, 'part':1, 'inc':1
+};
+
+/* ตัดสิ่งที่ไม่ได้ช่วยชี้ตัวออก: วรรคตอน วงเล็บ และวรรคซ้ำ ๆ */
+function custNorm(s){
+  return String(s == null ? "" : s).toLowerCase()
+    .replace(/[().,\-–—_"'`\/]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/* เหลือเฉพาะคำที่ใช้ชี้ตัวได้จริง — ถ้าพิมพ์มาแต่คำโหล ๆ จะได้ลิสต์ว่าง */
+function custKeyWords(s){
+  return custNorm(s).split(" ").filter(function(w){
+    return w && !CUST_CO_WORDS[w];
+  });
+}
+
 function custFind(q){
-  q = String(q||"").trim().toLowerCase();
-  if(q.length < 2) return [];
-  var qd = q.replace(/\D/g,"");
+  var raw = String(q||"").trim();
+  if(raw.length < 2) return [];
+  var nq = custNorm(raw);
+  var qd = raw.replace(/\D/g,"");
+  var qw = custKeyWords(raw);
+  /* พิมพ์มาแต่คำว่า "บริษัท" เฉย ๆ ต้องไม่เหมารวมทั้งชีทขึ้นมา */
+  var qwTight = qw.join("");
   var list = CUSTS || [], hit = [];
   for(var i=0;i<list.length;i++){
     var c = list[i];
-    var name = String(c.name||"").toLowerCase();
+    var name = custNorm(c.name);
+    /* ชื่อที่ไม่เคาะวรรคเลย ("บริษัทคิวพาธ") ต้องเจอด้วยคำที่พิมพ์แบบเคาะวรรค */
+    var tight = name.replace(/ /g,"");
     var tel = String(c.tel||"").replace(/\D/g,"");
     var score = -1;
-    if(name.indexOf(q)===0) score = 0;
+    if(name.indexOf(nq)===0) score = 0;
     else if(qd.length>2 && tel.indexOf(qd)===0) score = 1;
-    else if(name.indexOf(q)>0) score = 2;
+    else if(name.indexOf(nq)>0) score = 2;
     else if(qd.length>2 && tel.indexOf(qd)>0) score = 3;
+    /* ทุกคำสำคัญที่พิมพ์มา ต้องอยู่ในชื่อครบ — สลับลำดับหรือมีคำอื่นคั่นก็ยังเจอ
+       ใช้ "อยู่ในชื่อ" ไม่ใช่ "ตรงทั้งคำ" คนพิมพ์ค้างกลางคำก็ยังเจอ */
+    else if(qw.length && qw.every(function(w){ return tight.indexOf(w) > -1 })) score = 4;
+    else if(qwTight && tight.indexOf(qwTight) > -1) score = 4;
     if(score>=0) hit.push([score,i,c]);
   }
   /* รายชื่อเรียงคนซื้อล่าสุดมาก่อนอยู่แล้ว ลำดับเดิมจึงเป็นตัวตัดสินเมื่อคะแนนเท่ากัน */
@@ -1558,7 +1712,17 @@ function bindCustFind(inSel, hitSel, fill){
       /* พิมพ์ต่อไปแล้วระหว่างรอโหลด ผลของคำเก่าต้องไม่เด้งขึ้นมาทับ */
       if(el.value.trim() !== q) return;
       var hits = custFind(q);
-      if(!hits.length){ box.innerHTML = ""; return }
+      if(!hits.length){
+        /* เงียบไปเฉย ๆ ทำให้แยกไม่ออกว่า "ไม่มีลูกค้าชื่อนี้" กับ "รายชื่อโหลดไม่ขึ้น"
+           สองอย่างนี้ต้องทำคนละอย่างกัน จึงต้องบอกให้รู้ว่าเป็นแบบไหน */
+        box.innerHTML = (CUSTS && CUSTS.length)
+          ? '<div class="none">ไม่เจอ “' + esc(q) + '” ในลูกค้าเก่า '
+            + '(ค้นจาก ' + CUSTS.length + ' ราย) — พิมพ์ต่อได้เลย '
+            + 'ระบบจะบันทึกเป็นลูกค้าใหม่ให้</div>'
+          : '<div class="none">ยังโหลดรายชื่อลูกค้าเก่าไม่ได้ — '
+            + 'พิมพ์ชื่อเองได้ตามปกติ ออเดอร์ลงชีทได้เหมือนเดิม</div>';
+        return;
+      }
       box.innerHTML = hits.map(function(c,i){
         var addr = String(c.addr || c.taxAddr || "").replace(/\s+/g," ").trim();
         return '<button type="button" data-cu="'+i+'"><b>'+esc(c.name)+'</b>'
@@ -1619,6 +1783,9 @@ function docRowHtml(d){
       /* ใบที่ยังไม่ได้ส่ง = ยังอยู่ในร้าน แก้ด้วยเลขเดิมได้ไม่จำกัด
          ใบที่กดส่งแล้ว = ลูกค้าถือกระดาษอยู่ ห้ามแก้ ต้องยกเลิกแล้วออกใหม่ */
       var sent = String(d.sentAt || "");
+      /* ใบที่ไม่มีเลขออเดอร์ผูกอยู่ — ใบเสนอราคายังไม่นับ เพราะยังไม่ใช่เอกสารขาย
+         ที่ต้องเข้าเล่มภาษี ส่วนที่เหลือคือเลขในเล่มที่ต้องส่งบัญชีให้ครบ */
+      var orphan = !d.orderNo && d.type !== "ใบเสนอราคา";
       return '<div class="row"><div class="i">'
         +'<b>'+esc(d.no)+'</b>'
         /* ประวัติที่ไม่มีชื่อลูกค้า หาใบที่ต้องการไม่เจอ — เลขใบอย่างเดียว
@@ -1638,8 +1805,19 @@ function docRowHtml(d){
         + (!dead && d.lastRevise
            ? '<span style="color:var(--blue)">'+esc(d.lastRevise)+'</span>' : '')
         + (!dead && sent ? '<span style="color:var(--gray)">ส่งเมื่อ '+esc(sent)+'</span>' : '')
+        /* ใบที่ไม่มีออเดอร์ (เลขที่เติมกลับเข้าเล่ม · ใบยกเลิกที่ไม่เคยมีออเดอร์)
+           สถานะบัญชีไม่ได้อยู่บนแถวออเดอร์ จึงต้องบอกตรงนี้ ไม่งั้นไม่มีทางรู้ว่า
+           เลขนี้ส่งบัญชีไปหรือยัง แล้วเล่มที่ส่งไปจะขาดเลขโดยไม่มีใครเห็น */
+        + (orphan
+           ? (d.acctAt
+              ? '<span style="color:var(--green)">ส่งบัญชีแล้ว ' + esc(d.acctAt) + '</span>'
+              : '<span style="color:var(--amber)">ยังไม่ส่งบัญชี</span>')
+           : '')
         +'</div><div class="acts">'
         +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
+        /* เล่มใบกำกับภาษีต้องมีเลขครบทุกเลข เลขที่ไม่ได้ใช้ก็ต้องส่งให้บัญชี
+           ของเดิมปุ่มส่งบัญชีอยู่แต่บนแถวออเดอร์ เลขพวกนี้จึงส่งไม่ได้เลย */
+        + (orphan ? '<button class="mini" data-ac="'+esc(d.no)+'">ส่งบัญชี</button>' : '')
         /* ใบเสนอราคาที่ลูกค้าตอบตกลงแล้ว ของเดิมต้องคีย์รายการใหม่ทั้งชุด
            ทั้งที่ข้อมูลอยู่ในใบครบแล้ว — พิมพ์ใหม่ทีคือพิมพ์ผิดได้ที */
         + (!dead && !d.orderNo && d.type === "ใบเสนอราคา"
@@ -1663,6 +1841,11 @@ function bindDocRows(box, outId, redraw){
   });
   box.querySelectorAll("[data-rv]").forEach(function(b){
     b.onclick = function(){ askRevise(b.getAttribute("data-rv"), b, redraw) };
+  });
+  /* ส่งบัญชีสำหรับใบที่ไม่มีออเดอร์ — ใช้กล่องเดียวกับของออเดอร์
+     openAcct อ่านแค่ .no แล้วที่เหลือมาจาก acctPack ฝั่งชีท จึงส่งเลขใบไปตรง ๆ ได้ */
+  box.querySelectorAll("[data-ac]").forEach(function(b){
+    b.onclick = function(){ openAcct({ no: b.getAttribute("data-ac") }) };
   });
   box.querySelectorAll("[data-sd]").forEach(function(b){
     b.onclick = function(){
@@ -1758,12 +1941,20 @@ function askRevise(no, btn, redraw){
   var row = btn.closest(".row");
   if (row.querySelector(".rvbox")) { row.querySelector(".rv-why").focus(); return }
 
+  /* ใบวางบิลคิดยอดคนละทางกับใบขาย — มันรวมใบขายหลายใบไว้ ยอดจึงล็อกตามใบเดิม
+     ไม่คิดใหม่จากออเดอร์ (ถ้าคิดใหม่แล้วราคาในชีทเปลี่ยนไป ยอดจะไม่ตรงกับ
+     ใบที่ลูกค้าถืออยู่) เขียนให้ตรงกับที่ระบบทำจริง ไม่งั้นคนอ่านแล้วไม่กล้ากด */
+  var isBill = /^BL/.test(String(no));
+
   var box = document.createElement("div");
   box.className = "rvbox";
   box.innerHTML =
     '<div class="hint" style="margin-bottom:6px">แก้ใบ <b>'+esc(no)+'</b> โดยใช้เลขเดิม — '
-      +'ยอดคิดใหม่จากออเดอร์ตอนนี้ ส่วนชื่อและที่อยู่ผู้ซื้อแก้ได้ในช่องข้างล่างนี้เลย<br>'
-      +'<b>วันที่กับชนิดเอกสารไม่เปลี่ยน</b> · ยอดเดิมถูกจดไว้ในหมายเหตุของใบทุกครั้ง<br>'
+      + (isBill
+          ? 'ใบวางบิล <b>ยอดไม่เปลี่ยน</b> ล็อกไว้เท่าใบขายที่รวมอยู่ในนั้น · '
+            + 'แก้ได้เฉพาะชื่อผู้ซื้อ ที่อยู่ PO เงื่อนไขชำระเงิน และผู้ติดต่อ<br>'
+          : 'ยอดคิดใหม่จากออเดอร์ตอนนี้ ส่วนชื่อและที่อยู่ผู้ซื้อแก้ได้ในช่องข้างล่างนี้เลย<br>')
+      +'<b>ชนิดเอกสารไม่เปลี่ยน</b> · ยอดเดิมและวันที่เดิมถูกจดไว้ทุกครั้ง<br>'
       +'<b style="color:var(--red)">แก้ได้จนกว่าจะกดปุ่ม "ส่งแล้ว"</b> — '
       +'พอกดส่งแล้ว ใบนี้จะแก้ไม่ได้อีก ต้องยกเลิกแล้วออกใบใหม่แทน</div>'
     /* ชื่อกับที่อยู่ผู้ซื้ออยู่ตรงนี้เลย ไม่ใช่ต้องไปเปิดหน้าออกเอกสารค้างไว้ก่อน
@@ -1793,6 +1984,15 @@ function askRevise(no, btn, redraw){
         +'<input class="rv-po" placeholder="หมายเลขคำสั่งซื้อ (PO)" style="flex:2">'
         +'<input class="rv-terms" placeholder="เงื่อนไขชำระเงิน" style="flex:1">'
       +'</div>'
+      /* วันที่บนใบ — ของเดิมล็อกไว้ แก้ไม่ได้เลย พิมพ์วันผิดทีต้องเผาเลขทิ้งหนึ่งเลข
+         ใบที่ยังไม่ได้กด "ส่งแล้ว" ยังไม่มีใครถือ วันที่จึงยังไม่ได้มีผลกับใคร
+         (ของจริง: ใบ ONIV26-00342 ลงวันที่ 29 ก.ย. ตามวันที่สั่งซื้อ
+          ลูกค้าขอให้เป็นวันที่ออกจริง) */
+      +'<div style="display:flex;gap:6px;align-items:center">'
+        +'<input class="rv-date" type="date" style="flex:1">'
+        +'<button type="button" class="mini rv-today">ใช้วันนี้</button>'
+      +'</div>'
+      +'<div class="rv-datemsg hint"></div>'
       +'<select class="rv-vat">'
         +'<option value="excl">บวก VAT 7% จากราคา</option>'
         +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
@@ -1814,6 +2014,12 @@ function askRevise(no, btn, redraw){
   var go = box.querySelector(".rv-go");
   go.disabled = true;
   var custReady = false;
+  /* ใช้ .catch ไม่ใช่ .then(ok, err) — สองแบบนี้ต่างกันตรงที่พังข้างใน ok เอง
+
+     ของเดิมเป็น .then(ok, err) ซึ่ง "ไม่จับ" error ที่เกิดข้างใน ok
+     พอชีทตอบกลับมาเป็นค่าว่าง (อาการคำตอบหายระหว่างทาง) บรรทัด res.meta.po
+     จะพังเงียบ ๆ เป็น unhandled rejection แล้วปุ่ม "ยืนยันแก้ใบนี้" ค้างกดไม่ได้
+     ตลอดไป โดยไม่มีข้อความบอกสักตัว คนหน้าจอได้แต่มองช่องว่าง ๆ แล้วงง */
   api("getDoc", no).then(function(res){
     var c = (res && res.meta && res.meta.cust) || {};
     box.querySelector(".rv-name").value = c.name || "";
@@ -1826,9 +2032,11 @@ function askRevise(no, btn, redraw){
     box.querySelector(".rv-terms").value = res.meta.terms || "";
     box.querySelector(".rv-vat").value =
       res.meta.novat ? "none" : (res.meta.vatMode === "incl" ? "incl" : "excl");
+    box.querySelector(".rv-date").value = String(res.meta.date || "").slice(0, 10);
+    rvDateCheck();
     custReady = true;
     go.disabled = false;
-  }, function(e){
+  }).catch(function(e){
     /* อ่านของเดิมไม่ได้ ก็ยังแก้ยอดได้ แต่ต้องไม่แตะข้อมูลผู้ซื้อเลย
        ส่งช่องว่างขึ้นไปคือลบชื่อลูกค้าออกจากใบ ซึ่งแย่กว่าไม่ได้แก้ */
     box.querySelector(".rv-cust").innerHTML =
@@ -1838,6 +2046,33 @@ function askRevise(no, btn, redraw){
     custReady = false;
     go.disabled = false;
   });
+  /* เตือนแบบเดียวกับตอนออกใบ — ย้ายวันข้ามเดือนคือย้ายยอดไปอีกเดือนภาษี
+     ต้องรู้ตอนที่ยังกดเปลี่ยนได้ ไม่ใช่ตอนกระดาษออกไปแล้ว */
+  function rvDateCheck(){
+    var el = box.querySelector(".rv-date"), out = box.querySelector(".rv-datemsg");
+    if(!el || !out) return;
+    var pick = String(el.value || "").slice(0, 10), now = todayISO();
+    out.style.color = "";
+    out.textContent = "";
+    if(!pick) return;
+    if(pick > now){
+      out.style.color = "var(--red)";
+      out.textContent = "ลงวันที่ล่วงหน้าไม่ได้ (" + dmy_(pick) + ")";
+      return;
+    }
+    if(pick.slice(0,7) !== now.slice(0,7)){
+      out.style.color = "var(--red)";
+      out.textContent = "วันที่ " + dmy_(pick) + " เป็นคนละเดือนกับวันนี้ — "
+        + "ยอดใบนี้จะไปอยู่ในภาษีขายของเดือน " + pick.slice(0,7)
+        + " ถ้ายื่น ภ.พ.30 เดือนนั้นไปแล้ว ต้องยื่นเพิ่มเติม";
+    }
+  }
+  box.querySelector(".rv-today").onclick = function(){
+    box.querySelector(".rv-date").value = todayISO();
+    rvDateCheck();
+  };
+  box.querySelector(".rv-date").addEventListener("change", rvDateCheck);
+
   why.focus();
   box.querySelector(".rv-no").onclick = function(){ box.remove() };
   why.onkeydown = function(e){ if (e.key === "Enter") box.querySelector(".rv-go").click() };
@@ -1884,10 +2119,14 @@ function askRevise(no, btn, redraw){
          ชำระเงินของใบเดิมทิ้งทุกครั้งที่กดแก้จากแฟ้มเอกสาร */
       send.po = box.querySelector(".rv-po").value.trim();
       send.terms = box.querySelector(".rv-terms").value.trim();
+      /* ส่งเฉพาะตอนที่มีค่าจริง ช่องว่าง = อ่านของเดิมไม่ได้ ห้ามสั่งให้ล้างวันที่ */
+      var rvd = box.querySelector(".rv-date").value.trim();
+      if(rvd) send.date = rvd;
     }
 
     api("reviseDoc", send).then(function(res){
-      toast("แก้ใบ " + no + " แล้ว · ยอดใหม่ " + baht(res.doc ? res.doc.total : 0));
+      toast("แก้ใบ " + no + " แล้ว · ยอดใหม่ " + baht(res.doc ? res.doc.total : 0)
+          + (res.dateMoved ? " · วันที่เป็น " + dmy_(res.date) : ""));
       redraw();
     }, function(e){
       go.disabled = false; go.textContent = "ยืนยันแก้ใบนี้";
@@ -1962,7 +2201,15 @@ function reprint(no, btn, outSel){
             +baht(r.saved.total)+' — แปลว่าออเดอร์ถูกแก้หลังออกใบ '
             +'<b>อย่าพิมพ์ใบนี้ส่งลูกค้า</b> ให้ยึดใบที่พิมพ์ไปแล้วเป็นหลัก</div>';
       }
-      if (m.voidWhy) {
+      /* เลขที่เติมกลับเข้าเล่มเพราะไม่ได้ใช้ ไม่ใช่ใบที่เคยออกแล้วยกเลิก
+         ข้อความต้องบอกตรงนั้น ไม่งั้นจะอ่านว่าใบหายหรือระบบทำใบพัง
+         และต้องบอกด้วยว่าส่งบัญชีได้ เพราะนี่คือเหตุผลเดียวที่ต้องพิมพ์มันออกมา */
+      if (r.voidOnly) {
+        warn += '<div class="msg ok" style="display:block">เลข ' + esc(no)
+          + ' ไม่ได้ออกใบจริง (' + esc(m.voidWhy) + ')<br>'
+          + 'พิมพ์เป็นใบเปล่าประทับ <b>ยกเลิก</b> ยอด ฿0.00 ไม่มีรายการสินค้า '
+          + 'เอาไว้ใส่เล่มให้เลขเรียงครบ และส่งบัญชีได้</div>';
+      } else if (m.voidWhy) {
         warn += '<div class="msg err" style="display:block">ใบนี้ถูกยกเลิกไปแล้ว ('
           + esc(m.voidWhy) + ') พิมพ์ดูได้ แต่ใช้อ้างอิงทางบัญชีไม่ได้</div>';
       }
@@ -2107,15 +2354,41 @@ function taxMemoSave(name, o){
   try{ localStorage.setItem("ast-tax-"+name, JSON.stringify(o)) }catch(e){}
 }
 
+/**
+ * ชนิดเอกสารที่ควรติ๊กไว้ให้ตั้งแต่เปิดกล่อง
+ *
+ * ออเดอร์ที่ลูกค้าไม่ได้ขอใบกำกับภาษี ต้องเป็นบิลเงินสด ไม่ใช่ใบเสร็จ/ใบกำกับภาษี
+ * ของเดิมติ๊กใบเสร็จ/ใบกำกับภาษีไว้เสมอ ขายหน้าร้านทีก็กินเลขในเล่มใบกำกับภาษี
+ * ไปหนึ่งเลขทุกครั้ง ทั้งที่ใบนั้นไม่ใช่ใบกำกับภาษี เล่มเลยบวมด้วยใบที่ไม่เกี่ยว
+ * (บิลเงินสดมีเลขคนละชุด CS จึงไม่กินเลขของเล่มภาษี)
+ *
+ * ดูจากช่อง VAT ของออเดอร์เท่านั้น ซึ่งเป็นสิ่งที่คนคีย์ตอบไว้ตอนรับออเดอร์
+ * ช่องว่าง = ยังไม่ได้ตอบ ไม่ใช่ "ไม่เอา" จึงคงใบเสร็จ/ใบกำกับภาษีไว้เหมือนเดิม
+ * ระบบเดาแทนคนในเรื่องภาษีไม่ได้ ได้แค่ติ๊กตัวที่ถูกบ่อยที่สุดไว้ให้
+ */
+function docDefType(o){
+  return String((o && o.vat) || "").indexOf("ไม่") === 0 ? "cash" : "rec";
+}
+
 function openDoc(o, preType){
   DC_KEY = newKey();
   var memo = taxMemo(o.cust) || {};
+  var want = String(preType || "") || docDefType(o);
+  var auto = !preType && want === "cash";
   openModal("ออกเอกสาร — "+o.no,
      '<div id="dc-old"></div>'
-    +'<div class="subhd">เลือกชนิดเอกสาร</div><div id="dc-pick">'
-    + DOC_BTN.filter(function(t){return t.key!=="quote"}).map(function(t,i){
+    +'<div class="subhd">เลือกชนิดเอกสาร</div>'
+    + (auto
+       ? '<div class="hint" style="margin:-4px 0 8px">ออเดอร์นี้คีย์ไว้ว่า '
+         + '<b>ไม่รับ VAT</b> จึงติ๊ก <b>บิลเงินสด</b> ให้แล้ว — '
+         + 'ใช้เลขคนละชุด ไม่กินเลขในเล่มใบกำกับภาษี<br>'
+         + 'ถ้าลูกค้าขอใบกำกับภาษีทีหลัง เลือกใบเสร็จ/ใบกำกับภาษีได้เลย</div>'
+       : '')
+    +'<div id="dc-pick">'
+    + DOC_BTN.filter(function(t){return t.key!=="quote"}).map(function(t){
         return '<label class="giftck" style="align-items:flex-start">'
-          +'<input type="radio" name="dctype" value="'+t.key+'"'+(i===0?" checked":"")+'>'
+          +'<input type="radio" name="dctype" value="'+t.key+'"'
+            +(t.key===want?" checked":"")+'>'
           +'<span><b style="color:var(--ink)">'+esc(t.label)+'</b><br>'
           +'<span style="font-size:12.5px">'+esc(t.hint)+'</span></span></label>';
       }).join("")
@@ -2152,6 +2425,19 @@ function openDoc(o, preType){
     +'<option value="incl">ราคารวม VAT แล้ว (ถอดออก)</option>'
     +'<option value="none">ไม่คิด VAT (= บิลเงินสด)</option></select>'
     +'<div class="hint" id="dc-vatmsg"></div></div></div>'
+    /* วันที่บนเอกสาร — ของเดิมไม่มีช่องนี้ โค้ดยัดวันที่ของออเดอร์ลงไปเงียบ ๆ
+       ออเดอร์วันที่ 29 ก.ย. แต่มาออกใบวันที่ 4 ต.ค. ใบเลยลงวันที่ 29 ก.ย.
+       ทั้งที่เลขใบเป็นเลขของเดือนตุลาคม เล่มเลยมีเลขเดินหน้าแต่วันที่ถอยหลัง
+       และยอดไปตกเดือนภาษีที่อาจยื่น ภ.พ.30 ไปแล้ว
+       (เจ้าของร้านเจอเองกับใบ ONIV26-00342 เมื่อ 4 ต.ค. 69)
+
+       ตั้งต้นเป็นวันนี้ ซึ่งคือวันที่ออกใบจริง · กดใช้วันที่สั่งซื้อได้ถ้าตั้งใจ */
+    +'<div class="fld"><label>วันที่บนเอกสาร</label>'
+    +'<input type="date" id="dc-date" value="'+esc(todayISO())+'">'
+    +'<div class="hint">ออเดอร์นี้สั่งเมื่อ <b>'+esc(dmy_(o.date))+'</b> '
+    +'<button type="button" class="mini" id="dc-date-ord">ใช้วันที่สั่งซื้อ</button> '
+    +'<button type="button" class="mini" id="dc-date-today">ใช้วันนี้</button></div>'
+    +'<div class="msg" id="dc-datemsg" style="margin-top:8px"></div></div>'
     /* ดูก่อนออกเลข — เลขในเล่มใบกำกับภาษีเอาคืนไม่ได้ ต้องเห็นกระดาษก่อนเสมอ */
     +'<button class="btn ghost" id="dc-prev">👁 ดูตัวอย่างก่อน (ยังไม่กินเลข)</button>'
     +'<button class="btn" id="dc-make" style="margin-top:9px">ออกเอกสาร</button>'
@@ -2194,6 +2480,12 @@ function openDoc(o, preType){
       msg.style.color = "var(--amber)";
     }
   }
+  /* ชนิดที่ขอมาอาจไม่มีปุ่มให้ (เช่น quote ซึ่งไม่อยู่ในกล่องนี้)
+     ปล่อยไว้แล้วจะไม่มีปุ่มไหนถูกติ๊กเลย ซึ่งอ่านว่า "แอปพัง" ไม่ใช่ "ยังไม่ได้เลือก" */
+  if(!document.querySelector('#dc-pick input[name=dctype]:checked')){
+    var first = $("#dc-pick input[name=dctype]");
+    if(first) first.checked = true;
+  }
   formTick(); vatTick();
   $$("#dc-pick input[name=dctype]").forEach(function(r){
     r.addEventListener("change", function(){
@@ -2208,6 +2500,15 @@ function openDoc(o, preType){
   $$("#dc-form .fchk-i").forEach(function(c){
     c.addEventListener("change", function(){ DC_FORM_TOUCHED = true });
   });
+
+  $("#dc-date-ord").onclick = function(){
+    $("#dc-date").value = String(o.date || "").slice(0, 10); dcDateCheck();
+  };
+  $("#dc-date-today").onclick = function(){
+    $("#dc-date").value = todayISO(); dcDateCheck();
+  };
+  $("#dc-date").addEventListener("change", dcDateCheck);
+  dcDateCheck();
 
   /* ใบที่เคยออกให้ออเดอร์นี้ — ขึ้นไว้บนสุดพร้อมปุ่มพิมพ์ซ้ำ
      ก่อนหน้านี้ใบที่ออกไปแล้วเปิดกลับมาดูไม่ได้เลย กดออกใหม่ก็โดนกันใบซ้ำ
@@ -2278,7 +2579,7 @@ function openDoc(o, preType){
     $("#dc-out").innerHTML='<div class="load">กำลังออกเลขเอกสารและลงชีท…</div>';
     api("issueDoc", {
       type:type, orderNo:o.no, cust:cust, po:$("#dc-po").value.trim(),
-      terms:$("#dc-terms").value, date:o.date, by:byName(),
+      terms:$("#dc-terms").value, date:dcDate(), by:byName(),
       vatMode: vatSel==="incl" ? "incl" : "excl", novat: vatSel==="none",
       form: readFormTicks(),
       /* เน็ตหลุดตอนออกเอกสารคือกรณีที่แพงที่สุด เพราะเลขเอกสารอาจถูกใช้ไปแล้ว
@@ -2312,9 +2613,62 @@ function readFormTicks(){
 
    จงใจไม่ใส่ปุ่มแชร์/พิมพ์/บันทึกไว้ในหน้านี้ ตัวอย่างที่พิมพ์ออกไปได้
    คือใบกำกับภาษีที่ไม่มีเลข ซึ่งเป็นเอกสารที่ใช้ไม่ได้และอธิบายยากถ้าหลุดถึงลูกค้า */
+/* วันที่ที่จะไปอยู่บนกระดาษและในเล่ม — ช่องหาย (กล่องปิดไปแล้ว) คืนค่าว่าง
+   ให้คนเรียกตัดสินใจเองว่าจะถอยไปใช้อะไร ไม่เดาเป็นวันนี้เงียบ ๆ */
+function dcDate(){
+  var el = $("#dc-date");
+  return el ? String(el.value || "").slice(0, 10) : "";
+}
+
+/**
+ * เตือนเรื่องวันที่บนใบ ก่อนจะกินเลขในเล่ม
+ *
+ * เลขในเล่มเดินตามลำดับที่ออกจริงเสมอ เอาเลขกลับไปแทรกย้อนหลังไม่ได้
+ * ถ้าลงวันที่ย้อนไปเดือนก่อน เล่มจะมีเลขเดินหน้าแต่วันที่ถอยหลัง
+ * และยอดใบนั้นต้องไปอยู่ในภาษีขายของเดือนนั้น ซึ่งอาจยื่น ภ.พ.30 ไปแล้ว
+ * เรื่องนี้ต้องรู้ตอนที่ยังกดเปลี่ยนได้ ไม่ใช่ตอนกระดาษออกมาแล้ว
+ */
+function dcDateCheck(){
+  var box = $("#dc-datemsg");
+  if(!box) return;
+  var pick = dcDate(), now = todayISO();
+  box.className = "msg";
+  box.style.display = "none";
+  box.style.background = "";
+  box.innerHTML = "";
+  if(!pick) return;
+
+  if(pick > now){
+    box.className = "msg err";
+    box.style.display = "block";
+    box.innerHTML = "วันที่บนใบเป็น <b>วันข้างหน้า</b> (" + esc(dmy_(pick)) + ") — "
+      + "ใบกำกับภาษีลงวันที่ล่วงหน้าไม่ได้";
+    return;
+  }
+  if(pick.slice(0,7) !== now.slice(0,7)){
+    box.className = "msg err";
+    box.style.display = "block";
+    box.innerHTML = "ใบนี้จะลงวันที่ <b>" + esc(dmy_(pick)) + "</b> "
+      + "ซึ่งเป็นคนละเดือนกับวันนี้ (" + esc(dmy_(now)) + ")<br>"
+      + "• ยอดใบนี้ต้องไปอยู่ในภาษีขายของเดือน <b>" + esc(pick.slice(0,7)) + "</b> "
+      + "ถ้ายื่น ภ.พ.30 เดือนนั้นไปแล้ว ต้องยื่นเพิ่มเติม<br>"
+      + "• เลขในเล่มเดินตามลำดับที่ออกจริง แทรกย้อนหลังไม่ได้ "
+      + "เล่มจะมีเลขเดินหน้าแต่วันที่ถอยหลังหนึ่งใบ<br>"
+      + "ถ้าไม่ได้ตั้งใจ กด <b>ใช้วันนี้</b> ก่อนออกเอกสาร";
+    return;
+  }
+  if(pick !== now){
+    box.className = "msg";
+    box.style.display = "block";
+    box.style.background = "#fff8e1";
+    box.innerHTML = "ใบนี้จะลงวันที่ " + esc(dmy_(pick))
+      + " ไม่ใช่วันนี้ (" + esc(dmy_(now)) + ") — อยู่ในเดือนภาษีเดียวกัน จึงไม่กระทบการยื่น";
+  }
+}
+
 function drawDocPreview(r, o, f){
   if(!$("#dc-out")) return;
-  var m = { no:"(ตัวอย่าง — ยังไม่ออกเลข)", date:o.date, cust:f.cust, po:f.po,
+  var m = { no:"(ตัวอย่าง — ยังไม่ออกเลข)", date:(dcDate() || o.date), cust:f.cust, po:f.po,
             terms:f.terms, seller:CFG.docSeller||"", sellerEmail:CFG.docSellerEmail||"",
             note:"", form:f.form||[] };
   $("#dc-out").innerHTML='<div class="load">กำลังวาดตัวอย่าง…</div>';
@@ -2344,7 +2698,8 @@ function drawDoc(r, o, cust, type, form){
      ใบยังลงทะเบียนในชีทเรียบร้อยแล้ว ไม่ได้หายไปไหน กดพิมพ์ซ้ำจากแฟ้มเอกสารได้เลย
      จึงเงียบไปเฉย ๆ ดีกว่าโยน error ใส่หน้าจอที่ไม่มีใครดูอยู่แล้ว */
   if(!$("#dc-out")) return;
-  var m = { no:r.no, date:o.date, cust:cust, po:$("#dc-po")?$("#dc-po").value.trim():"",
+  var m = { no:r.no, date:(r.date || dcDate() || o.date), cust:cust,
+            po:$("#dc-po")?$("#dc-po").value.trim():"",
             terms:$("#dc-terms")?$("#dc-terms").value:"", seller:CFG.docSeller||"",
             sellerEmail:CFG.docSellerEmail||"", note:"", form:form||[] };
   $("#dc-out").innerHTML='<div class="load">กำลังวาดเอกสาร…</div>';
@@ -2605,13 +2960,15 @@ function edRow(v){
     +'<input class="i-name" type="text" placeholder="พิมพ์ชื่อสินค้า" value="'+esc(v.name||"")+'">'
     +'<input class="i-cost" type="number" inputmode="decimal" min="0" '
     +'placeholder="ต้นทุน/หน่วย (ไม่ใส่ก็ได้)" style="margin-top:6px"></div>'
-    +'<div class="three">'
+    /* สองช่อง ไม่ใช่สามเหมือนหน้าคีย์ออเดอร์ — กล่องนี้ไม่มีช่องราคามาตรฐาน
+       ถ้าใช้สามคอลัมน์จะเหลือคอลัมน์ว่างหนึ่งช่อง แล้วอีกสองช่องแคบลงโดยเปล่าประโยชน์ */
+    +'<div class="two">'
     +'<div><label style="font-size:13px;color:var(--gray)">จำนวน</label>'
     +'<input class="i-qty" type="number" inputmode="numeric" min="1" step="1" value="'+(v.qty||1)+'"></div>'
     +'<div><label style="font-size:13px;color:var(--gray)">ราคาขายจริง</label>'
     +'<input class="i-price" type="number" inputmode="decimal" min="0" step="0.01" '
-    +'placeholder="ปล่อยว่าง = ราคามาตรฐาน" value="'+(v.price===""||v.price===undefined?"":v.price)+'"></div>'
-    +'<div></div></div>'
+    +'placeholder="ปล่อยว่าง = ราคาป้าย" value="'+(v.price===""||v.price===undefined?"":v.price)+'"></div>'
+    +'</div>'
     +'<label class="giftck"><input type="checkbox" class="i-free"'+(v.free?" checked":"")+'>'
     +' ซื้อมาขายไป — พิมพ์ชื่อและราคาเอง</label>'
     /* หน้าคีย์ออเดอร์มีช่องนี้มาตั้งแต่แรก แต่กล่องแก้รายการไม่มี
@@ -2932,6 +3289,24 @@ function openLabel(o){
        : '<div class="msg err" style="display:block">ยังไม่ได้กรอก '
          +'<b>ที่อยู่ผู้ส่ง</b> ในชีท <b>ตั้งค่าแอป</b> (คอลัมน์ A แถวที่เขียนว่า "ที่อยู่ผู้ส่ง" '
          +'ใส่ค่าที่คอลัมน์ B) — ใบปะหน้าจะพิมพ์ออกมาโดยไม่มีที่อยู่ผู้ส่ง</div>')
+    /* ชื่อ เบอร์ ที่อยู่ผู้รับ — แก้ตรงนี้ได้เลย
+
+       จุดที่คนรู้ตัวว่าที่อยู่ผิดคือตอนกำลังจะพิมพ์ใบปะหน้าแปะกล่อง ไม่ใช่ตอนนั่งหน้าคอม
+       ของเดิมต้องเปิดชีท ออเดอร์_หัวบิล แล้วเลื่อนไปคอลัมน์ F บนมือถือ ซึ่งทำไม่ได้จริง
+       ตอนยืนแพ็คของ ผลคือพิมพ์ใบที่อยู่ผิดแล้วของไปผิดบ้าน */
+    +'<div class="subhd" style="margin-top:14px">ผู้รับ</div>'
+    +'<div class="hint" style="margin:-4px 0 8px">แก้ตรงนี้แล้ว <b>บันทึกลงชีทให้ด้วย</b> '
+    +'ไม่ใช่เปลี่ยนแค่บนกระดาษ · ไม่กระทบที่อยู่บนใบกำกับภาษีที่ออกไปแล้ว</div>'
+    +'<div class="fld"><label>ชื่อผู้รับ</label>'
+    +'<input id="lb-cust" value="'+esc(o.cust||"")+'"></div>'
+    +'<div class="fld"><label>เบอร์โทร</label>'
+    +'<input id="lb-tel" inputmode="tel" value="'+esc(o.tel||"")+'"></div>'
+    +'<div class="fld"><label>ที่อยู่จัดส่ง</label>'
+    +'<textarea id="lb-addr" rows="3">'+esc(o.addr||"")+'</textarea>'
+    +'<div class="hint">วางที่อยู่จากแชทมาทั้งก้อนได้เลย แล้วกดปุ่มข้างล่างให้ระบบแยกให้</div>'
+    +'<button type="button" class="mini" id="lb-parse" style="margin-top:6px">'
+    +'แยกชื่อ/เบอร์/ที่อยู่ จากข้อความที่วาง</button></div>'
+    +'<div class="msg err" id="lb-err"></div>'
     +'<button class="btn" id="lb-make">สร้างใบปะหน้า</button>'
     +'<div id="lb-out" style="margin-top:12px"></div>');
 
@@ -2941,36 +3316,76 @@ function openLabel(o){
     if (carBox) carBox.style.display = ($("#lb-car").value === o.carrier) ? "none" : "";
   };
 
+  /* ใช้ตัวแยกที่อยู่ตัวเดียวกับหน้าคีย์ออเดอร์ ไม่เขียนใหม่ให้ผลต่างกันสองที่ */
+  $("#lb-parse").onclick = function(){
+    var raw = $("#lb-addr").value;
+    if(!raw.trim()){ toast("ยังไม่ได้วางข้อความ"); return }
+    var g = null;
+    try { g = parseAddressBlock(raw) } catch(e) { g = null }
+    if(!g || (!g.cust && !g.tel && !g.addr)){
+      toast("แยกไม่ออก พิมพ์เองได้เลยครับ"); return;
+    }
+    /* เขียนทับเฉพาะช่องที่แยกได้จริง ของเดิมที่ถูกอยู่แล้วต้องไม่โดนล้าง */
+    if(g.cust) $("#lb-cust").value = g.cust;
+    if(g.tel)  $("#lb-tel").value  = g.tel;
+    var full = addrText(g);
+    if(full) $("#lb-addr").value = full;
+    toast("แยกให้แล้ว — ตรวจอีกรอบก่อนพิมพ์");
+  };
+
   $("#lb-make").onclick = function(){
     var cod = $("#lb-cod").checked;
     var car = $("#lb-car").value;
     var clr = !!($("#lb-clr") && $("#lb-clr").checked && car !== o.carrier);
+    var err = $("#lb-err");
+
+    /* ตรวจก่อนวาด — ใบปะหน้าที่ไม่มีชื่อหรือที่อยู่ผู้รับ ขนส่งไม่รับพัสดุ
+       ฟ้องตรงนี้ดีกว่าให้รู้ตัวตอนยืนอยู่หน้าเคาน์เตอร์ขนส่งแล้ว */
+    var nCust = $("#lb-cust").value.trim();
+    var nAddr = $("#lb-addr").value.trim();
+    err.textContent = ""; err.classList.remove("on");
+    if(!nCust || !nAddr){
+      err.textContent = !nCust ? "ยังไม่ได้ใส่ชื่อผู้รับ" : "ยังไม่ได้ใส่ที่อยู่ผู้รับ";
+      err.classList.add("on");
+      ($("#lb-cust").value.trim() ? $("#lb-addr") : $("#lb-cust")).focus();
+      return;
+    }
+    var nTel = $("#lb-tel").value.trim();
+    var toMoved = (nCust !== String(o.cust||"").trim())
+               || (nTel  !== String(o.tel ||"").trim())
+               || (nAddr !== String(o.addr||"").trim());
+
     $("#lb-out").innerHTML='<div class="load">กำลังสร้าง…</div>';
 
-    /* บันทึกขนส่งใหม่ลงชีทก่อนวาดใบ ใบที่พิมพ์กับชีทจะได้ตรงกันเสมอ
+    /* บันทึกขนส่งกับที่อยู่ผู้รับลงชีทก่อนวาดใบ ใบที่พิมพ์กับชีทจะได้ตรงกันเสมอ
        บันทึกไม่สำเร็จก็ยังวาดใบให้ แต่บอกตรง ๆ ว่าชีทยังไม่ขยับ —
        ของต้องส่งวันนี้ ห้ามให้ระบบขวางงานหน้าร้านเพราะเน็ตสะดุด */
-    var saved = (car === o.carrier && !clr)
-      ? Promise.resolve(null)
-      : api("setTracking", o.no, clr ? "" : null, null, car);
+    var jobs = [];
+    if (car !== o.carrier || clr) jobs.push(api("setTracking", o.no, clr ? "" : null, null, car));
+    if (toMoved) jobs.push(api("setShipTo", { no: o.no, cust: nCust, tel: nTel, addr: nAddr }));
 
-    saved.then(function(r){
+    (jobs.length ? Promise.all(jobs) : Promise.resolve(null)).then(function(r){
       if (r) {
         o.carrier = car;
         if (clr) o.track = "";
+        if (toMoved) { o.cust = nCust; o.tel = nTel; o.addr = nAddr }
         for (var i=0;i<ORDERS.length;i++) if (ORDERS[i].no === o.no) {
           ORDERS[i].carrier = o.carrier; ORDERS[i].track = o.track;
+          if (toMoved) { ORDERS[i].cust = o.cust; ORDERS[i].tel = o.tel; ORDERS[i].addr = o.addr }
         }
         renderOrders();
       }
       return "";
     }, function(e){
-      return '<div class="msg err" style="display:block">ใบปะหน้าใช้ขนส่งใหม่แล้ว '
-           + 'แต่<b>บันทึกลงชีทไม่สำเร็จ</b> — ต้องไปแก้ช่องขนส่งของใบ '+esc(o.no)
+      return '<div class="msg err" style="display:block">ใบปะหน้าใช้ข้อมูลใหม่แล้ว '
+           + 'แต่<b>บันทึกลงชีทไม่สำเร็จ</b> — ต้องไปแก้ใบ '+esc(o.no)
            + ' ในชีทเอง<br>'+esc(e&&e.message?e.message:e)+'</div>';
     }).then(function(warn){
       o.carrier = car;
       if (clr) o.track = "";
+      /* วาดด้วยค่าที่อยู่ในช่องเสมอ ถึงบันทึกจะล้ม — กระดาษที่แปะกล่องต้องถูก
+         ส่วนชีทที่ยังไม่ขยับ มีคำเตือนข้างบนบอกให้ตามไปแก้แล้ว */
+      o.cust = nCust; o.tel = nTel; o.addr = nAddr;
       return buildLabel(labelData(o, cod)).then(function(url){ return [url, warn||""] });
     }).then(function(pair){
       var url = pair[0], warn = pair[1];
@@ -3459,8 +3874,11 @@ function billIssue(){
     contactTel: $("#bl-tel").value.trim(), note: $("#bl-note").value.trim(),
     by: byName(), clientKey: BILL_KEY
   }], function(res){
-    BILL_KEY = newKey();          /* ออกสำเร็จแล้ว กุญแจต้องเปลี่ยน ไม่งั้นใบต่อไปจะเงียบหาย */
+    /* เปลี่ยนกุญแจ "หลัง" อ่านคำตอบได้แล้วเท่านั้น
+       ถ้าเปลี่ยนก่อนแล้วบรรทัดถัดไปพัง กดใหม่จะกลายเป็นงานใหม่ในสายตาชีท
+       แล้วจะไปติดด่านกันวางบิลซ้ำแทนที่จะได้ใบเดิมกลับมา */
     openModal("ใบวางบิล " + res.no, '<div id="rp-out"></div>');
+    BILL_KEY = newKey();          /* ออกสำเร็จแล้ว กุญแจต้องเปลี่ยน ไม่งั้นใบต่อไปจะเงียบหาย */
     reprint(res.no, null, "#rp-out");
     toast("ออกใบวางบิล " + res.no + " แล้ว");
   }, function(m){
@@ -4033,6 +4451,19 @@ function payState(o){
   var st = String((o&&o.status)||"").trim();
   if (isDead(o))        return { key:"dead",  label:st || "ยกเลิก", days:0, over:0 };
   if (st === "ชำระแล้ว") return { key:"paid",  label:"ชำระเรียบร้อย", days:0, over:0 };
+
+  /* ออเดอร์มาร์เก็ตเพลสเก็บเงินที่แพลตฟอร์มไปแล้วตั้งแต่ลูกค้ากดสั่ง
+     ร้านไม่เคยต้องโทรทวงลูกค้า Shopee สักใบ เงินมาจากรอบโอนของแพลตฟอร์ม
+
+     ของเดิมดูแต่ช่องสถานะ ซึ่งใบที่นำเข้าลงเป็น "ส่งแล้ว" (จริงตามการส่งของ)
+     แต่ไม่ใช่คำว่า "ชำระแล้ว" ใบพวกนั้นเลยไปกองอยู่ในค้างชำระทั้งหมด
+     ของจริง 7 ต.ค. 69: 58 ใบ ฿40,536 ขึ้นว่าเกินกำหนดชำระ 5-6 วัน
+     ทั้งที่เงินเข้าร้านครบแล้ว — ตัวเลขค้างชำระที่ผิดขนาดนั้นใช้ตัดสินใจอะไรไม่ได้เลย
+
+     ตัดสินจากช่องทางขาย ไม่ใช่จากสถานะ ใบที่นำเข้าไปแล้วจึงถูกทันทีโดยไม่ต้องนำเข้าใหม่ */
+  if (isMarketCh(o && o.channel)) {
+    return { key:"paid", label:"ชำระผ่านแพลตฟอร์ม", days:0, over:0 };
+  }
 
   var credit = st === CREDIT_STATUS;
   var cod = st === COD_STATUS;
@@ -5394,11 +5825,24 @@ document.addEventListener("keydown", function(e){ if(e.key==="Escape") closeModa
 var RECV_KEY = "";     /* คีย์กันบันทึกซ้ำของครั้งนี้ ออกใหม่ทุกครั้งที่บันทึกสำเร็จ */
 var RECV_READY = false;
 
+/* รหัสสมมุติของตัวเลือก "สินค้าใหม่" ในดรอปดาวน์หน้ารับเข้า
+   ใช้คำที่เป็นรหัสสินค้าจริงไม่ได้แน่ ๆ จะได้ไม่มีวันชนกับของในชีท */
+var RECV_NEW = "__ใหม่__";
+
+/* ดรอปดาวน์ของหน้ารับเข้ามีตัวเลือกพิเศษเพิ่มมาหนึ่งอัน — หน้าอื่นไม่มี
+   หน้าคีย์ออเดอร์กับใบเสนอราคาขายของที่ยังไม่มีในระบบไม่ได้อยู่แล้ว
+   (ของพวกนั้นใช้ช่อง "ซื้อมาขายไป" ซึ่งคนละเรื่องกัน) */
+function recvProdOptions(sel){
+  return '<option value="' + RECV_NEW + '"' + (sel === RECV_NEW ? " selected" : "") + '>'
+       + '➕ สินค้าใหม่ — พิมพ์รหัสกับชื่อเอง</option>'
+       + prodOptions(sel);
+}
+
 function recvInit(){
   if(RECV_READY) return;
   RECV_READY = true;
 
-  $("#r-sku").innerHTML = prodOptions("");
+  $("#r-sku").innerHTML = recvProdOptions("");
   fillSelect("#r-type", (BOOT && BOOT.lists && BOOT.lists.recvType) || ["ซื้อเข้า"]);
   $("#r-date").value = todayISO();
 
@@ -5412,12 +5856,79 @@ function recvInit(){
 
   $("#r-sku").onchange = recvSkuChanged;
   $("#btn-recv").onclick = recvSave;
+  /* กดยืนยันว่า "ชื่อซ้ำแต่คนละตัว" ไว้กับชื่อหนึ่ง แล้วเปลี่ยนเป็นอีกชื่อ
+     การยืนยันเก่าต้องหมดอายุทันที ไม่งั้นชื่อใหม่ที่ซ้ำกับของอื่นจะผ่านไปเงียบ ๆ
+     ทั้งที่ไม่มีใครเคยเห็นคำเตือนของชื่อนั้นเลยสักครั้ง */
+  $("#rn-name").oninput = function(){ RECV_SURE = false };
+  /* เปลี่ยนหมวดแล้วรหัสที่จะได้เปลี่ยนตาม ต้องอัปเดตให้เห็นทันที */
+  $("#rn-group").oninput = recvSkuHint;
+  $("#rn-group").onchange = recvSkuHint;
 
   /* ปุ่มสลับโหมดผูกที่นี่ เพราะ recvInit ทำงานครั้งเดียวตอนเปิดหน้ารับเข้าครั้งแรก */
   $$("#rv-mode .chip").forEach(function(b2){
     b2.onclick = function(){ fillMode(this.dataset.rv) };
   });
   recvSkuChanged();
+}
+
+/* เคยกดยืนยันว่าชื่อซ้ำแล้วยังจะสร้างใหม่หรือยัง — รีเซ็ตทุกครั้งที่เปลี่ยนสินค้า */
+var RECV_SURE = false;
+/* รหัสที่เพิ่งสร้าง รอให้รายการสินค้าโหลดใหม่เสร็จแล้วค่อยเลือกให้ */
+var RECV_PICK = "";
+
+/* รหัสที่ระบบจะตั้งให้ถ้าเว้นว่าง — โชว์ให้เห็นก่อนกดบันทึก
+
+   เป็นแค่ "ตัวอย่าง" ฝั่งชีทเป็นคนตัดสินจริงตอนบันทึก (อ่านของสดจากชีท)
+   แต่การเห็นล่วงหน้าว่าจะได้ CHEM-008 ไม่ใช่ SKU-149 ทำให้รู้ทันทีว่า
+   เลือกหมวดถูกหรือยัง — ถ้าไม่โชว์ ต้องกดบันทึกไปก่อนแล้วค่อยรู้ */
+function recvSkuPreview(group){
+  var g = String(group || "").trim().toLowerCase();
+  function parts(sku){
+    var m = /^(.*?)(\d+)$/.exec(String(sku || "").trim());
+    return m ? { head:m[1], n:Number(m[2]), pad:m[2].length } : null;
+  }
+  var list = CFG.products || [], tally = {}, top = null;
+  if(g){
+    list.forEach(function(p){
+      if(String(p.group || "").trim().toLowerCase() !== g) return;
+      var pt = parts(p.sku);
+      if(!pt) return;
+      var t = tally[pt.head] || (tally[pt.head] = { head:pt.head, n:0, hi:0, pad:pt.pad });
+      t.n++;
+      if(pt.n > t.hi) t.hi = pt.n;
+      if(pt.pad > t.pad) t.pad = pt.pad;
+    });
+    for(var k in tally){
+      if(!top || tally[k].n > top.n || (tally[k].n === top.n && tally[k].hi > top.hi)) top = tally[k];
+    }
+  }
+  var head = top ? top.head : "SKU-";
+  var pad = top ? Math.max(top.pad, 3) : 3;
+  var max = 0;
+  list.forEach(function(p){
+    var q = parts(p.sku);
+    if(q && q.head === head && q.n > max) max = q.n;
+  });
+  var next = String(max + 1);
+  while(next.length < pad) next = "0" + next;
+  return head + next;
+}
+
+function recvSkuHint(){
+  var box = $("#rn-sku");
+  if(!box) return;
+  box.placeholder = "เว้นว่าง = ระบบตั้งให้ (" + recvSkuPreview($("#rn-group").value) + ")";
+}
+
+/** หมวดสินค้าที่มีอยู่แล้วในชีท เรียงตามที่เจอ ไม่ซ้ำ */
+function recvGroups(){
+  var seen = {}, out = [];
+  (CFG.products || []).forEach(function(p){
+    var g = String(p.group || "").trim();
+    if(!g || seen[g]) return;
+    seen[g] = 1; out.push(g);
+  });
+  return out;
 }
 
 /** ของตัวนี้คุมล็อตไหม เหลือเท่าไร — ตอบจากข้อมูลที่โหลดมาตอนเปิดแอป */
@@ -5429,6 +5940,26 @@ function recvLotInfo(sku){
 function recvSkuChanged(){
   var sku = $("#r-sku").value;
   var card = $("#r-lot-card");
+  var box = $("#r-new");
+
+  /* โหมดสินค้าใหม่ — เปิดช่องให้พิมพ์รหัสกับชื่อ และเสนอหมวดที่มีอยู่แล้วให้เลือก
+     สินค้าใหม่ยังไม่มีล็อตแน่นอน ล็อตจึงเป็นตัวเลือก ไม่ใช่ข้อบังคับ */
+  if(sku === RECV_NEW){
+    box.style.display = "";
+    RECV_SURE = false;
+    $("#rn-groups").innerHTML = recvGroups().map(function(g){
+      return '<option value="' + esc(g) + '">';
+    }).join("");
+    recvSkuHint();
+    $("#r-now").textContent = "ของใหม่ที่ยังไม่มีในระบบ — ระบบจะสร้างแถวในฐานสินค้าให้เอง";
+    card.style.display = "";
+    $("#r-lot-why").innerHTML = "สินค้าใหม่ยังไม่มีล็อต จะใส่เลขล็อตก็ได้ ไม่ใส่ก็ได้"
+      + " — ถ้าเป็นเคมีที่มีวันหมดอายุ ใส่ไว้เลยดีกว่า จะได้ตัดของเก่าก่อนอัตโนมัติ";
+    return;
+  }
+  box.style.display = "none";
+  RECV_SURE = false;
+
   if(!sku){
     $("#r-now").textContent = "เลือกสินค้าก่อน";
     card.style.display = "none";
@@ -5456,7 +5987,24 @@ function recvSave(){
   if(!sku){ showErr("ยังไม่ได้เลือกสินค้า"); return }
   if(!(qty > 0)){ showErr("จำนวนที่รับเข้าต้องมากกว่า 0"); return }
 
-  var lot = recvLotInfo(sku);
+  /* สินค้าใหม่: รหัสเว้นว่างได้ (ระบบตั้งให้) แต่ชื่อเว้นไม่ได้
+     ชื่อคือสิ่งเดียวที่คนอ่านออกในใบเสร็จ ในรายงาน และในดรอปดาวน์ครั้งหน้า */
+  var fresh = null;
+  if(sku === RECV_NEW){
+    var nm = $("#rn-name").value.trim();
+    if(nm.length < 2){ showErr("ใส่ชื่อสินค้าใหม่ด้วย อย่างน้อย 2 ตัวอักษร"); return }
+    fresh = {
+      sku: $("#rn-sku").value.trim(),
+      name: nm,
+      group: $("#rn-group").value.trim(),
+      unit: $("#rn-unit").value.trim(),
+      price: $("#rn-price").value.trim(),
+      web: $("#rn-web").checked ? 1 : 0,
+      sure: RECV_SURE ? 1 : 0
+    };
+  }
+
+  var lot = sku === RECV_NEW ? null : recvLotInfo(sku);
   var lotNo = $("#r-lot").value.trim();
   if(lot && !lotNo){
     showErr("สินค้าตัวนี้คุมล็อต ต้องใส่เลขล็อตด้วย — ถ้าลงแต่จำนวน ของจะเข้าสต๊อกแต่ขายไม่ได้");
@@ -5469,7 +6017,7 @@ function recvSave(){
   var btn = $("#btn-recv");
   btn.disabled = true; btn.textContent = "กำลังบันทึก…";
   call("receiveStock", [{
-    clientKey: RECV_KEY, sku: sku, qty: qty,
+    clientKey: RECV_KEY, sku: fresh ? "" : sku, newProd: fresh, qty: qty,
     cost: $("#r-cost").value.trim(), date: $("#r-date").value,
     type: $("#r-type").value, doc: $("#r-doc").value.trim(),
     ref: $("#r-ref").value.trim(), note: $("#r-note").value.trim(),
@@ -5481,8 +6029,28 @@ function recvSave(){
     recvDone(res);
   }, function(m){
     btn.disabled = false; btn.textContent = "บันทึกรับของเข้า";
-    showErr(m);
+    recvErr(m);
   });
+}
+
+/* ชื่อสินค้าซ้ำของเดิม — ไม่ใช่ทางตัน แต่ก็ปล่อยผ่านเงียบ ๆ ไม่ได้
+   ของบางอย่างชื่อเหมือนกันจริงแต่คนละขนาด ส่วนที่เผลอสร้างซ้ำก็มีจริงเหมือนกัน
+   คนที่รู้ว่าอันไหนคืออันไหนคือคนหน้าจอ ไม่ใช่โค้ด — ยื่นปุ่มให้เขาตัดสิน */
+function recvErr(m){
+  var msg = String(m || "");
+  if(msg.indexOf("DUP_NAME|") !== 0){ showErr(msg); return }
+  showErr(msg.slice("DUP_NAME|".length));
+  /* ต่อปุ่มเป็น element จริง ไม่ใช่ต่อสตริง HTML เข้าไปในกล่อง
+     เพราะข้อความในกล่องมีชื่อสินค้าที่คนพิมพ์เองปนอยู่ ต้องถูก esc ไว้ตามเดิม */
+  var box = $("#err");
+  var go = document.createElement("button");
+  go.className = "btn ghost";
+  go.type = "button";
+  go.style.marginTop = "10px";
+  go.textContent = "ยืนยัน เป็นคนละตัว สร้างใหม่เลย";
+  go.onclick = function(){ RECV_SURE = true; clearMsg(); recvSave() };
+  box.appendChild(document.createElement("br"));
+  box.appendChild(go);
 }
 
 function recvDone(res){
@@ -5491,6 +6059,15 @@ function recvDone(res){
     "รับ " + esc(res.name || res.sku) + " เข้า " + res.qty + " ชิ้นแล้ว",
     res.lotNo ? "ลงล็อต " + esc(res.lotNo) + " ให้ด้วย" : "สินค้าตัวนี้ไม่ได้คุมล็อต ลงเฉพาะชีทรับเข้า"
   ];
+  /* บอกรหัสที่ได้ทุกครั้งที่สร้างสินค้าใหม่ โดยเฉพาะตอนเว้นว่างให้ระบบตั้งให้
+     ถ้าไม่บอก คนจะไม่รู้ว่าครั้งหน้าต้องหาตัวไหนในดรอปดาวน์ */
+  if(res.newProd){
+    lines.unshift("เพิ่มสินค้าใหม่ <b>" + esc(res.newProd.sku) + "</b> ลงฐานสินค้าให้แล้ว"
+      + " (หมวด " + esc(res.newProd.group) + ")");
+    lines.push(res.newProd.onWeb
+      ? "ตัวนี้ขึ้นหน้าร้านให้ลูกค้าเห็นแล้ว"
+      : "ยังไม่ขึ้นหน้าร้าน — เปิดได้ทีหลังที่หน้าแก้ไขสินค้า");
+  }
   if(res.remain !== null && res.remain !== undefined) lines.push("สต๊อกคงเหลือตอนนี้ " + res.remain);
   if(res.lotRemain !== null && res.lotRemain !== undefined) lines.push("ในล็อตรวม " + res.lotRemain);
   showOk(lines.join("<br>"));
@@ -5507,12 +6084,21 @@ function recvDone(res){
     });
     /* ยอดคงเหลือที่ติดมากับชื่อสินค้าเปลี่ยนไปแล้ว ทุกช่องที่เปิดค้างอยู่ต้องเห็นเลขใหม่ */
     refreshProdOptions();
+    if(RECV_PICK){ $("#r-sku").value = RECV_PICK; RECV_PICK = ""; }
     recvSkuChanged();
   }, function(){ /* โหลดยอดใหม่ไม่ได้ไม่ใช่เรื่องใหญ่ ของลงชีทไปแล้ว */ });
 
-  ["r-qty","r-cost","r-lot","r-exp","r-doc","r-ref","r-note"].forEach(function(id){
+  ["r-qty","r-cost","r-lot","r-exp","r-doc","r-ref","r-note",
+   "rn-sku","rn-name","rn-group","rn-unit","rn-price"].forEach(function(id){
     $("#"+id).value = "";
   });
+  $("#rn-web").checked = false;
+  RECV_SURE = false;
+
+  /* สร้างสินค้าใหม่เสร็จแล้ว เด้งดรอปดาวน์ไปที่ตัวที่เพิ่งสร้าง ไม่ใช่ค้างที่
+     "สินค้าใหม่" — ไม่งั้นกดบันทึกอีกทีจะได้แถวซ้ำอีกแถวโดยไม่ตั้งใจ
+     (ตัวเลือกจะมีจริงหลัง getBootstrap กลับมา จึงตั้งซ้ำอีกทีตรงนั้นด้วย) */
+  if(res.newProd) RECV_PICK = res.newProd.sku;
 }
 
 /* ------------------------------------------------- เติมน้ำยาประจำวัน (แบ่งจากถัง) */
@@ -5815,13 +6401,17 @@ function curPage(){
 }
 
 function go(page){
-  ["new","list","recv","quote","day","sum","shop","cust","file","help"].forEach(function(p){
+  ["new","list","recv","quote","day","sum","shop","cust","file","help","web",
+   "edit","eprod","eban","ecat","elook"].forEach(function(p){
     $("#pg-"+p).style.display = (p===page)?"":"none";
   });
   /* หน้านำเข้า Shopee ไม่มีปุ่มของตัวเองบนแถบล่าง เข้ามาจากหน้าออเดอร์
-     จึงให้แท็บ "ออเดอร์" ยังติดไฟค้างไว้ ไม่ใช่ดับหมดทั้งแถบจนไม่รู้ว่าอยู่ตรงไหน */
-  var tab = (page==="shop" || page==="cust") ? "list"
-          : (page==="file" ? "quote" : page);
+     จึงให้แท็บ "ออเดอร์" ยังติดไฟค้างไว้ ไม่ใช่ดับหมดทั้งแถบจนไม่รู้ว่าอยู่ตรงไหน
+     หน้าย่อยของโหมดแก้ไขก็เหมือนกัน ให้ค้างที่แท็บที่กดเข้ามา */
+  var tab = (page==="shop" || page==="cust" || page==="web") ? "list"
+          : (page==="file" ? "quote"
+          : (page==="eprod" || page==="eban" || page==="ecat" || page==="elook"
+             || page==="edit") ? "sum" : page);
   $$(".tabs button").forEach(function(b){ b.classList.toggle("on", b.dataset.go===tab) });
   if(page==="list") loadOrders();
   if(page==="day")  dayInit();
@@ -5830,7 +6420,12 @@ function go(page){
   if(page==="recv") recvInit();
   if(page==="shop") shopInit();
   if(page==="cust") custPageInit();
+  if(page==="web")  webInit();
   if(page==="file") fileInit();
+  if(page==="edit")  edInit();
+  if(page==="eban")  ebanInit();
+  if(page==="ecat")  ecatInit();
+  if(page==="elook") elookInit();
 }
 
 document.addEventListener("DOMContentLoaded", function(){
@@ -5848,6 +6443,9 @@ document.addEventListener("DOMContentLoaded", function(){
   $("#btn-parse").onclick = doParse;
   $("#btn-save").onclick  = save;
   $("#btn-shop").onclick = function(){ go("shop") };
+  $("#btn-web").onclick  = function(){ go("web") };
+  $("#web-back").onclick = function(){ go("list") };
+  webBadge();
   $("#btn-cust").onclick = function(){ go("cust") };
   $("#btn-file").onclick = function(){ go("file") };
   /* ไอคอนอยู่ใน Assets ซึ่งเป็นตัวแปรใน JS ไม่ใช่ไฟล์รูป จึงใส่ตอนเปิดแอป
@@ -5896,4 +6494,1158 @@ document.addEventListener("DOMContentLoaded", function(){
 
   boot();
 });
+
+/* =======================================================================
+   คำขอสั่งซื้อจากหน้าเว็บ
+   -----------------------------------------------------------------------
+   ลูกค้ากรอกชื่อที่อยู่และเลือกของมาให้แล้ว พนักงานแค่ตรวจแล้วกดรับ
+   ไม่ต้องพิมพ์ที่อยู่ใหม่ ซึ่งเป็นจุดที่พิมพ์ผิดแล้วของไปผิดบ้านบ่อยที่สุด
+
+   ของพวกนี้ยังไม่ใช่ออเดอร์ ยังไม่กินเลข ยังไม่ตัดสต๊อก จนกว่าจะกดรับ
+   ======================================================================= */
+
+var WEB_REQS = [];
+
+/* ตัวเลขบนปุ่มบอกว่ามีคำขอค้างกี่ใบ ไม่ต้องเข้าไปดูถึงจะรู้ว่ามีงานรออยู่ */
+function webBadge(){
+  api("getRequests", 100).then(function(rows){
+    var n = (rows || []).filter(function(r){ return r.status === "ใหม่" }).length;
+    var el = $("#web-badge");
+    if(el) el.textContent = n ? "  (" + n + ")" : "";
+  }).catch(function(){ /* ยังไม่มีชีท = ยังไม่ได้เปิดใช้ ไม่ต้องรบกวนใคร */ });
+}
+
+function webInit(){
+  $("#web-list").innerHTML = '<div class="load">กำลังโหลด…</div>';
+  api("getRequests", 100).then(function(rows){
+    WEB_REQS = rows || [];
+    webDraw();
+    webBadge();
+  }).catch(function(e){
+    $("#web-list").innerHTML = '<div class="msg err">' + esc(e.message) + '</div>';
+  });
+}
+
+function webDraw(){
+  if(!WEB_REQS.length){
+    $("#web-list").innerHTML =
+      '<div class="empty"><b>ยังไม่มีคำขอจากหน้าเว็บ</b>'
+      + 'พอลูกค้ากดสั่งจากหน้าร้าน รายการจะมาโผล่ตรงนี้</div>';
+    return;
+  }
+  var wait = WEB_REQS.filter(function(r){ return r.status === "ใหม่" });
+  var past = WEB_REQS.filter(function(r){ return r.status !== "ใหม่" }).slice(0, 20);
+
+  var html = '<div class="subhd">รอดำเนินการ ' + wait.length + ' ใบ</div>'
+    + (wait.length ? wait.map(webCard).join("")
+        : '<div class="hint" style="padding:6px 2px 12px">ไม่มีใบที่รออยู่ — จัดการครบแล้ว</div>');
+  if(past.length){
+    html += '<div class="subhd" style="margin-top:18px">จัดการแล้ว</div>' + past.map(webCard).join("");
+  }
+  $("#web-list").innerHTML = html;
+
+  $$("[data-acc]").forEach(function(b){ b.onclick = function(){ webAccept(b.dataset.acc) } });
+  $$("[data-rej]").forEach(function(b){ b.onclick = function(){ webReject(b.dataset.rej) } });
+}
+
+function webCard(r){
+  var wait = r.status === "ใหม่";
+  var tag = wait ? '<span class="tag wait">รอรับ</span>'
+    : (r.status === "รับแล้ว"
+        ? '<span class="tag ok">รับแล้ว → ' + esc(r.orderNo) + '</span>'
+        : '<span class="tag bad">ไม่รับ</span>');
+  return '<div class="row"><div class="i">'
+    + '<b>' + esc(r.cust) + ' <span class="tag">' + esc(r.no) + '</span> ' + tag + '</b>'
+    + '<span>' + esc(r.at) + ' · 📞 ' + esc(r.tel) + '</span>'
+    + '<span>🏠 ' + esc(r.addr) + '</span>'
+    + '<span>📦 ' + esc(r.names) + '</span>'
+    + (r.note ? '<span>💬 ' + esc(r.note) + '</span>' : '')
+    + '<span>ยอดประเมิน <b>' + baht(r.est) + '</b></span>'
+    + (wait
+        ? '<span style="display:flex;gap:8px;margin-top:10px">'
+          + '<button class="btn" data-acc="' + esc(r.no) + '" style="flex:1">รับเป็นออเดอร์</button>'
+          + '<button class="btn ghost" data-rej="' + esc(r.no) + '" style="flex:0 0 96px">ไม่รับ</button></span>'
+        : '')
+    + '</div></div>';
+}
+
+/* กดรับ = คีย์ออเดอร์ให้ตามที่ลูกค้ากรอก ราคาคิดใหม่จากชีทวันนี้
+   ให้แก้ชื่อ/เบอร์/ที่อยู่ได้ก่อนกด เพราะลูกค้าพิมพ์ตกหล่นเป็นเรื่องปกติ
+   เตือนเรื่องตัดสต๊อกไว้ในกล่อง เพราะกดแล้วย้อนต้องไปยกเลิกที่ออเดอร์ */
+function webAccept(no){
+  var r = WEB_REQS.filter(function(x){ return x.no === no })[0];
+  if(!r) return;
+  openModal("รับคำขอ " + no + " เป็นออเดอร์",
+     '<div class="hint" style="margin-bottom:10px">'
+    +'ระบบจะคีย์ออเดอร์ให้ตามที่ลูกค้ากรอก คิดราคาและค่าจัดส่งใหม่จากชีทวันนี้<br>'
+    +'<b>กดแล้วตัดสต๊อกทันที</b> ถ้าจะยกเลิกต้องไปยกเลิกที่ออเดอร์</div>'
+    +'<div class="hint" style="margin-bottom:10px">📦 ' + esc(r.names) + '</div>'
+    +'<div class="fld"><label>ชื่อผู้รับ</label><input id="wa-cust" value="' + esc(r.cust) + '"></div>'
+    +'<div class="fld"><label>เบอร์โทร</label><input id="wa-tel" value="' + esc(r.tel) + '"></div>'
+    +'<div class="fld"><label>ที่อยู่จัดส่ง</label>'
+    +'<textarea id="wa-addr" rows="3">' + esc(r.addr) + '</textarea></div>'
+    +'<div class="fld"><label>ขนส่ง</label>'
+    +'<input id="wa-car" placeholder="เว้นว่างได้ เลือกทีหลังตอนแพ็กของ"></div>'
+    +'<div class="fld"><label>ค่าจัดส่ง (บาท)</label>'
+    +'<input id="wa-ship" type="number" inputmode="decimal" step="0.01" '
+    +'placeholder="เว้นว่าง = คิดตามกติกาในชีท"></div>'
+    /* ลูกค้าขอปลายทางมาได้ แต่คนอนุมัติคือพนักงาน ตรงนี้คือจุดที่ตัดสิน
+       ติ๊กมาให้ล่วงหน้าถ้าลูกค้าขอมา จะได้ไม่ต้องจำว่าใบไหนขออะไร
+       แต่ยังเอาติ๊กออกได้ ระบบไม่ตัดสินแทน — และเกินวงเงินฝั่งชีทก็ยังไม่ผ่านอยู่ดี */
+    +'<label class="fld" style="display:flex;align-items:flex-start;gap:10px;'
+    +'cursor:pointer"><input type="checkbox" id="wa-cod" style="width:auto;margin-top:3px"'
+    + (r.cod ? ' checked' : '') + '>'
+    +'<span><b>เก็บเงินปลายทาง</b>'
+    +'<span class="hint" style="display:block">'
+    + (r.cod ? 'ลูกค้าขอมาแบบนี้ ' : 'ลูกค้าไม่ได้ขอ ')
+    +'· ติ๊กแล้วใบนี้จะไม่ขึ้นค้างโอน และจะส่งลิงก์โอนเงินให้ไม่ได้</span></span></label>'
+    +'<button class="btn" id="wa-go">รับเป็นออเดอร์</button>'
+    +'<div id="wa-msg" style="margin-top:10px"></div>');
+
+  $("#wa-go").onclick = function(){
+    var btn = this;
+    var v = {
+      no: no,
+      cust: $("#wa-cust").value.trim(),
+      tel: $("#wa-tel").value.trim(),
+      addr: $("#wa-addr").value.trim(),
+      carrier: $("#wa-car").value.trim(),
+      ship: $("#wa-ship").value.trim(),
+      status: $("#wa-cod").checked ? "เก็บเงินปลายทาง" : ""
+    };
+    if(!v.cust){ $("#wa-msg").innerHTML = '<div class="msg err">ใส่ชื่อผู้รับด้วย</div>'; return }
+    btn.disabled = true; btn.textContent = "กำลังคีย์…";
+    api("acceptRequest", v).then(function(res){
+      closeModal();
+      webInit();
+      go("web");
+    }).catch(function(e){
+      btn.disabled = false; btn.textContent = "รับเป็นออเดอร์";
+      $("#wa-msg").innerHTML = '<div class="msg err">' + esc(e.message) + '</div>';
+    });
+  };
+}
+
+function webReject(no){
+  openModal("ไม่รับคำขอ " + no,
+     '<div class="hint" style="margin-bottom:10px">'
+    +'ใส่เหตุผลไว้ด้วย จะได้ตอบลูกค้าได้ว่าทำไม และย้อนดูทีหลังได้</div>'
+    +'<div class="fld"><label>เหตุผล</label>'
+    +'<input id="wr-why" placeholder="เช่น ลูกค้าแจ้งยกเลิก / ของหมด / ที่อยู่ไม่ครบ"></div>'
+    +'<button class="btn" id="wr-go">บันทึกว่าไม่รับ</button>'
+    +'<div id="wr-msg" style="margin-top:10px"></div>');
+
+  $("#wr-go").onclick = function(){
+    var btn = this, why = $("#wr-why").value.trim();
+    if(why.length < 3){ $("#wr-msg").innerHTML = '<div class="msg err">ใส่เหตุผลสั้น ๆ ด้วย</div>'; return }
+    btn.disabled = true;
+    api("rejectRequest", no, why).then(function(){
+      closeModal();
+      webInit();
+    }).catch(function(e){
+      btn.disabled = false;
+      $("#wr-msg").innerHTML = '<div class="msg err">' + esc(e.message) + '</div>';
+    });
+  };
+}
+
+/* ==========================================================================
+   โหมดแก้ไขร้าน
+   --------------------------------------------------------------------------
+   ทุกอย่างที่หน้าร้านใช้อยู่ในชีทหมดแล้ว แก้ในชีทได้ตรง ๆ เหมือนเดิมทุกอย่าง
+   หน้านี้มีเพราะงานที่ทำบ่อยที่สุดสามอย่าง (เปลี่ยนแบนเนอร์ · ใส่รูปสินค้า ·
+   ติดป้ายสินค้าแนะนำ) เป็นงานที่ต้องทำจากมือถือ ระหว่างยืนอยู่หน้าชั้นของ
+   และการเปิดชีท 17 คอลัมน์บนมือถือแล้วเลื่อนหาคอลัมน์ O คือเรื่องที่ทำไม่ได้จริง
+
+   โหลดข้อมูลรอบเดียวเก็บไว้ใน ED แล้วทุกหน้าย่อยใช้ก้อนเดียวกัน
+   บันทึกเสร็จค่อยโหลดใหม่ ไม่ต้องยิงทีละหน้า
+   ========================================================================== */
+var ED = { slots: [], tags: [] }, EDGOT = {}, EDBUSY = {}, EPMODE = "all";
+
+/**
+ * ช่องใส่รูปหนึ่งช่อง = ช่องลิงก์ + ปุ่มเลือกรูปจากเครื่อง + รูปตัวอย่าง
+ *
+ * ของเดิมมีแต่ช่องลิงก์ ซึ่งแปลว่าเจ้าของร้านต้องไปอัปขึ้นไดรฟ์เอง ตั้งแชร์เอง
+ * ก๊อปลิงก์มาวางเอง — สามขั้นที่ทำบนมือถือแทบไม่ได้ และขั้นตั้งแชร์คนลืมบ่อยที่สุด
+ * ปุ่มนี้ทำให้ครบสามขั้นในกดครั้งเดียว
+ */
+function imgField(id, label, kind, value, show, hint){
+  return '<div class="fld"><label>'+esc(label)+'</label>'
+    + '<div class="picrow">'
+      + '<input id="'+id+'" placeholder="วางลิงก์รูปก็ได้ หรือกดปุ่มเลือกรูป" value="'
+        + esc(value||"") + '">'
+      + '<button type="button" class="picbtn" data-pick="'+id+'" data-kind="'+esc(kind)+'">'
+        + '📷 เลือกรูป</button>'
+    + '</div>'
+    + '<input type="file" accept="image/*" id="'+id+'-file" style="display:none">'
+    + '<img class="mprev" id="'+id+'-prev" alt=""'
+      + (show ? ' src="'+esc(show)+'"' : ' style="display:none"') + '>'
+    + '<div class="hint" id="'+id+'-msg">' + (hint||IMG_HINT) + '</div>'
+    + '</div>';
+}
+
+/* ขนาดที่แนะนำ บอกไว้ทุกช่อง ไม่งั้นได้รูปแนวตั้งมาใส่ในกรอบแนวนอนแล้วโดนครอบตัด */
+/* ไม่ต้องบอกให้ย่อรูปมาก่อนแล้ว แอปย่อให้เองตอนเลือก — ที่เคยบอกว่า "ไม่เกิน 8 MB"
+   ทำให้คนคิดว่าส่งไฟล์เต็มได้ แล้วไปนั่งรอนาทีกว่าต่อรูป */
+var IMG_HINT = 'ถ่ายมาเลย แอปย่อให้เอง · รูปสี่เหลี่ยมจัตุรัสสวยที่สุด';
+var IMG_HINT_BAN = 'รูปแนวนอน สัดส่วนกว้าง 2 ส่วน สูง 1 ส่วน · แอปย่อให้เอง';
+var IMG_HINT_COVER = 'รูปแนวนอน · ส่วนบนจะมีชื่อร้านทับ · แอปย่อให้เอง';
+var IMG_HINT_LOGO = 'รูปสี่เหลี่ยมจัตุรัส ระบบตัดเป็นวงกลมให้เอง · แอปย่อให้เอง';
+
+/* ผูกปุ่มเลือกรูปของทุกช่องในกล่องที่เพิ่งเปิด */
+/* ด้านยาวสุดที่เก็บจริงของรูปแต่ละแบบ ใหญ่กว่านี้ไม่ได้ช่วยให้สวยขึ้นบนจอลูกค้า
+   แต่ทำให้รออัปนานขึ้นเป็นสิบเท่า — การ์ดสินค้าบนมือถือกว้างจริงแค่ ~180px */
+var PIC_MAX = { logo: 600, prod: 1000, cat: 1000, cover: 1600, ban: 1600 };
+var PIC_Q = 0.82;
+
+function kb_(n){
+  return n >= 1048576 ? (Math.round(n / 104857.6) / 10) + " MB"
+                      : Math.max(1, Math.round(n / 1024)) + " KB";
+}
+
+/**
+ * ย่อรูปในเครื่องก่อนส่ง
+ *
+ * รูปจากกล้องมือถือใบหนึ่ง 4–8 MB พอแปลงเป็นข้อความเพื่อส่งผ่าน google.script.run
+ * จะบวมอีกหนึ่งในสาม กลายเป็นสิบเมกะไบต์ต่อรูป บนเน็ตมือถือคือรอเป็นนาที
+ * ย่อเหลือด้านยาว 1000px คุณภาพ 82% ได้ไฟล์ราว 150–250 KB — เล็กลงราวยี่สิบเท่า
+ * และยังคมกว่าขนาดที่การ์ดสินค้าใช้จริงอยู่ดี
+ *
+ * ถ้าย่อไม่สำเร็จ (HEIC ที่เบราว์เซอร์ถอดรหัสไม่ได้ · รูปใหญ่จนวาดไม่ไหว)
+ * ให้ส่งไฟล์เดิมไปแทน ห้ามล้มทั้งงานเพราะย่อไม่ได้ — ฝั่งชีทรับไฟล์เดิมได้อยู่แล้ว
+ */
+function shrinkPic(f, maxPx, done){
+  function raw(why){
+    var fr = new FileReader();
+    fr.onerror = function(){ done(null, null, "อ่านไฟล์ไม่ได้ ลองเลือกรูปอื่น") };
+    fr.onload = function(){ done(fr.result, { from: f.size, to: f.size, why: why }) };
+    fr.readAsDataURL(f);
+  }
+
+  function draw(src, w, h, close){
+    var scale = Math.min(1, maxPx / Math.max(w, h));
+    /* เล็กอยู่แล้วและไฟล์ไม่ใหญ่ ไม่ต้องยุ่ง — บีบซ้ำมีแต่เสียคุณภาพเปล่า ๆ */
+    if(scale === 1 && f.size <= 400 * 1024){ close && close(); raw(""); return }
+    try {
+      var c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(w * scale));
+      c.height = Math.max(1, Math.round(h * scale));
+      var g = c.getContext("2d");
+      g.fillStyle = "#fff";           /* PNG โปร่งใสกลายเป็น JPG จะได้พื้นขาว ไม่ใช่ดำ */
+      g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(src, 0, 0, c.width, c.height);
+      var out = c.toDataURL("image/jpeg", PIC_Q);
+      close && close();
+      var got = Math.round((out.length - out.indexOf(",") - 1) * 0.75);
+      /* ย่อแล้วกลับใหญ่กว่าเดิม (รูปเล็กมาก ๆ เจอได้) ให้ใช้ของเดิม */
+      if(got >= f.size){ raw(""); return }
+      done(out, { from: f.size, to: got, why: "" });
+    } catch(e){
+      close && close();
+      raw("ย่อรูปไม่ได้ ส่งไฟล์เต็ม");
+    }
+  }
+
+  /* createImageBitmap ถอดรหัสนอกเธรดหลัก จอไม่ค้างระหว่างรอ และหมุนรูปตาม EXIF ให้ด้วย
+     รูปถ่ายแนวตั้งจากมือถือจะได้ไม่กลายเป็นแนวนอนหลังย่อ */
+  if(typeof createImageBitmap === "function"){
+    createImageBitmap(f, { imageOrientation: "from-image" }).then(function(bm){
+      draw(bm, bm.width, bm.height, function(){ try { bm.close() } catch(e){} });
+    }).catch(function(){ viaImg() });
+  } else viaImg();
+
+  function viaImg(){
+    var url = URL.createObjectURL(f);
+    var im = new Image();
+    im.onload = function(){
+      draw(im, im.naturalWidth, im.naturalHeight, function(){ URL.revokeObjectURL(url) });
+    };
+    im.onerror = function(){ URL.revokeObjectURL(url); raw("เบราว์เซอร์เปิดรูปแบบนี้ไม่ได้ ส่งไฟล์เต็ม") };
+    im.src = url;
+  }
+}
+
+function bindPicks(tag){
+  $$("[data-pick]").forEach(function(btn){
+    if(btn.dataset.bound) return;
+    btn.dataset.bound = "1";
+    var id = btn.dataset.pick, kind = btn.dataset.kind;
+    var file = $("#"+id+"-file");
+    btn.onclick = function(){ file.value = ""; file.click() };
+    file.onchange = function(){
+      var f = file.files && file.files[0];
+      if(!f) return;
+      var msg = $("#"+id+"-msg");
+      btn.disabled = true;
+      msg.textContent = "ย่อรูป… (" + kb_(f.size) + ")";
+
+      shrinkPic(f, PIC_MAX[kind] || 1000, function(data, info, err){
+        if(err || !data){
+          btn.disabled = false;
+          msg.textContent = err || "อ่านไฟล์ไม่ได้ ลองเลือกรูปอื่น";
+          return;
+        }
+        /* บอกขนาดที่กำลังส่งจริง จะได้รู้ว่ารอเพราะอะไรและอีกนานแค่ไหน
+           ตัวเลขนี้คือสิ่งเดียวที่แยก "กำลังทำงาน" ออกจาก "ค้าง" ได้ */
+        msg.textContent = (info && info.why ? info.why + " · " : "") +
+          "กำลังส่ง " + kb_(info ? info.to : 0) + "… อย่าเพิ่งปิดหน้านี้";
+        google.script.run
+          .withSuccessHandler(function(r){
+            btn.disabled = false;
+            $("#"+id).value = r.url;
+            var pv = $("#"+id+"-prev");
+            pv.src = r.show; pv.style.display = "";
+            msg.textContent = "อัปแล้ว" +
+              (info && info.to < info.from
+                 ? " (ย่อจาก " + kb_(info.from) + " เหลือ " + kb_(info.to) + ")" : "") +
+              " — อย่าลืมกดบันทึกข้างล่างด้วย";
+          })
+          .withFailureHandler(function(e){
+            btn.disabled = false;
+            msg.textContent = e.message;
+          })
+          .uploadShopImage({ data: data, kind: kind, tag: tag || "" });
+      });
+    };
+  });
+}
+
+function edNote(idOk, idErr, ok, msg){
+  $("#"+idErr).classList.remove("on");
+  $("#"+idOk).classList.remove("on");
+  var box = $("#"+(ok?idOk:idErr));
+  box.textContent = msg;
+  box.classList.add("on");
+  if(ok) setTimeout(function(){ box.classList.remove("on") }, 3500);
+}
+
+/**
+ * โหลดข้อมูลของหน้าโหมดแก้ไขทีละส่วน
+ *
+ * แยกเป็นส่วน ๆ เพราะแต่ละหน้าใช้คนละก้อน ถ้าดึงรวมทีเดียว หน้าที่มีสามช่อง
+ * ต้องรออ่านสินค้าร้อยกว่าตัวก่อนถึงจะขึ้น — ช้าจนดูเหมือนแอปค้าง
+ *
+ * โหลดแล้วจำไว้ใน ED เข้าหน้าเดิมซ้ำจึงขึ้นทันที บันทึกเสร็จค่อยสั่ง force
+ */
+function edLoad(scope, force, then){
+  if(EDGOT[scope] && !force){ then && then(); return }
+  if(EDBUSY[scope]) return;
+  EDBUSY[scope] = true;
+  google.script.run
+    .withSuccessHandler(function(d){
+      EDBUSY[scope] = false;
+      EDGOT[scope] = true;
+      /* รวมเข้าก้อนเดิม ไม่ทับทั้งก้อน ส่วนที่โหลดไว้แล้วจะได้ไม่หาย */
+      Object.keys(d).forEach(function(k){ ED[k] = d[k] });
+      then && then();
+    })
+    .withFailureHandler(function(e){
+      EDBUSY[scope] = false;
+      ["ep","eb","ec","el"].forEach(function(k){
+        var box = $("#"+k+"-err");
+        if(box){ box.textContent = "โหลดข้อมูลไม่สำเร็จ — " + e.message; box.classList.add("on") }
+      });
+      ["ep-list","eb-list","ec-list"].forEach(function(k){
+        var box = $("#"+k);
+        if(box && /กำลังโหลด/.test(box.textContent)) box.innerHTML = "";
+      });
+      var ef = $("#el-form");
+      if(ef && /กำลังโหลด/.test(ef.textContent)) ef.innerHTML = "";
+    })
+    .getShopEdit(scope);
+}
+
+/* หน้ารวมเมนูไม่ต้องโหลดอะไรจากชีท แค่ใส่ตราร้านลงวงกลมสองอันบนสุด
+   ไม่มีตราก็ปล่อยไอคอน SVG ที่วาดไว้แล้วทำงานแทน ไม่เหลือวงกลมเปล่า */
+function edInit(){
+  var a = (typeof APP_LOGO !== "undefined" && APP_LOGO) ? APP_LOGO : "";
+  var b = (typeof SHOP_LOGO !== "undefined" && SHOP_LOGO) ? SHOP_LOGO : "";
+  if(a) $("#ed-ic1").innerHTML = '<img src="'+a+'" alt="">';
+  if(b || a) $("#ed-ic2").innerHTML = '<img src="'+(b||a)+'" alt="">';
+  /* ลิงก์หน้าร้านอยู่ในก้อน look ซึ่งเบามาก ดึงมาเลยตอนเปิดหน้ารวมเมนู */
+  edLoad("look", false, edLinksDraw);
+}
+
+/**
+ * สองลิงก์ของหน้าร้าน
+ *
+ * ตัวดูเอง = ลิงก์ที่เปิดอยู่ตอนนี้ + ?shop=1 กดดูได้ทันทีเพราะล็อกอินอยู่แล้ว
+ * ตัวลูกค้า = ต้องมาจากช่องในชีทเท่านั้น ห้ามเอาลิงก์ของพนักงานไปให้ลูกค้า
+ * ลูกค้าเปิดแล้วจะเจอหน้าให้ล็อกอิน Google ซึ่งคือเสียลูกค้าจริง ๆ ไม่ใช่แค่กดไม่ได้
+ */
+function edLinksDraw(){
+  var L = (ED.look && ED.look.links) || {};
+  var html = "";
+
+  if(L.preview){
+    html += '<div class="edlink"><div class="t"><b>ดูหน้าร้านเอง</b>'
+      + '<div class="u">' + esc(L.preview) + "</div></div>"
+      + '<button class="go" data-open="' + esc(L.preview) + '">เปิด</button></div>';
+  }
+
+  if(L.customer){
+    html += '<div class="edlink"><div class="t"><b>ลิงก์สำหรับลูกค้า</b>'
+      + '<div class="u">' + esc(L.customer) + "</div></div>"
+      + '<button class="cp" data-copy="' + esc(L.customer) + '">คัดลอก</button>'
+      + '<button class="go" data-open="' + esc(L.customer) + '">เปิด</button></div>';
+  } else {
+    /* เดิมตรงนี้มีแต่กล่องแดงบอกว่า "ไปกรอกในชีท ตั้งค่าแอป" ซึ่งแปลว่าคนที่เพิ่ง
+       สร้าง deploy เสร็จและมีลิงก์อยู่ในมือ ต้องไปเปิดชีทบนมือถือแล้วไล่หาแถว
+       — งานค้างอยู่ตรงนั้นทุกครั้ง ใส่ช่องวางไว้ตรงที่เตือนเลย จบในที่เดียว */
+    html += '<div class="msg err on" style="margin:0 0 10px">'
+      + esc(L.why || "ยังไม่มีลิงก์สำหรับลูกค้า") + "</div>"
+      + '<div class="fld"><label>วางลิงก์สำหรับลูกค้าตรงนี้ได้เลย</label>'
+      + '<input id="ed-paylink" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec">'
+      + '<div class="hint">ก๊อปจากช่องที่อยู่เว็บตอนเปิดหน้าร้านได้เลย '
+      + 'มี ?shop=1 ติดมาด้วยก็ไม่เป็นไร ระบบตัดให้เอง</div></div>'
+      + '<button class="btn" id="ed-paysave">บันทึกลิงก์</button>'
+      + '<div id="ed-paymsg" style="margin-top:8px"></div>';
+  }
+
+  html += '<div class="hint">ลิงก์ของพนักงานกับของลูกค้าเป็นคนละตัวกัน '
+    + "ส่งลิงก์พนักงานให้ลูกค้าไม่ได้ ลูกค้าจะเจอหน้าให้ล็อกอิน Google</div>";
+  $("#ed-links-bd").innerHTML = html;
+
+  var save = $("#ed-paysave");
+  if(save) save.onclick = function(){ payLinkSave(this, $("#ed-paylink").value) };
+}
+
+/* บันทึกลิงก์ลูกค้าจากหน้าโหมดแก้ไข — ใช้ทั้งกล่องเตือนและฟอร์มหน้าตาหัวร้าน */
+function payLinkSave(btn, val, then, sure){
+  var v = String(val || "").trim();
+  var box = $("#ed-paymsg");
+  function say(good, txt){
+    if(!box) { toast(txt); return }
+    box.className = "msg " + (good ? "ok" : "err") + " on";
+    box.style.margin = "8px 0 0";
+    box.textContent = txt;
+  }
+  if(!v){ say(false, "ยังไม่ได้วางลิงก์"); return }
+
+  btn.disabled = true;
+  var label = btn.textContent;
+  btn.textContent = "กำลังบันทึก…";
+  google.script.run
+    .withSuccessHandler(function(){
+      /* โหลดใหม่แล้ววาดใหม่ กล่องแดงจะกลายเป็นลิงก์พร้อมปุ่มคัดลอกทันที
+         ถ้าไม่โหลดใหม่ เจ้าของร้านจะไม่มีทางรู้ว่าที่วางไปนั้นใช้ได้จริงหรือเปล่า */
+      edLoad("look", true, function(){
+        edLinksDraw();
+        if(then) then();
+        toast("บันทึกลิงก์แล้ว — ส่งให้ลูกค้าได้เลย");
+      });
+    })
+    .withFailureHandler(function(e){
+      btn.disabled = false; btn.textContent = label;
+      var m = String(e.message || "");
+      /* ลิงก์ซ้ำกับของพนักงาน = เตือน ไม่ใช่ห้าม deploy ตัวเดียวที่ตั้ง "ทุกคน"
+         ใช้เป็นทั้งสองหน้าได้จริง แต่ถ้าตั้งผิดลูกค้าจะเจอหน้าล็อกอินโดยไม่มีใครมาบอก
+         จึงให้ไปทดสอบก่อนแล้วค่อยกดยืนยันเอง ไม่ใช่กดผ่านโดยไม่รู้ตัว */
+      if(m.indexOf("SAME_AS_STAFF|") === 0){
+        say(false, m.slice("SAME_AS_STAFF|".length));
+        var go = document.createElement("button");
+        go.className = "btn ghost";
+        go.style.marginTop = "8px";
+        go.textContent = "ทดสอบแล้ว ลูกค้าเปิดได้ — ใช้ลิงก์นี้";
+        go.onclick = function(){ payLinkSave(go, v, then, true) };
+        box.appendChild(document.createElement("br"));
+        box.appendChild(go);
+        return;
+      }
+      say(false, m);
+    })
+    .saveShopLook({ payLink: v, payLinkSure: !!sure });
+}
+
+document.addEventListener("click", function(e){
+  var t = e.target.closest("[data-open],[data-copy]");
+  if(!t) return;
+  if(t.dataset.open){
+    var u = t.dataset.open, w = null;
+    try { w = window.open(u, "_blank") } catch(err) {}
+    if(!w){ try { top.location.href = u } catch(err2) { location.href = u } }
+    return;
+  }
+  copyText(t.dataset.copy, "คัดลอกลิงก์แล้ว วางในไลน์ส่งให้ลูกค้าได้เลย");
+});
+
+/* ---------------------------------------------------------------- สินค้า */
+
+/**
+ * ช่องเลือกหมวด — ชิปของหมวดที่มีอยู่ บวกปุ่มพิมพ์หมวดใหม่
+ *
+ * ให้เลือกจากที่มีก่อน เพราะพิมพ์เองทุกครั้งแล้วพิมพ์ผิดตัวเดียว
+ * จะได้หมวดใหม่ที่มีสินค้าอยู่ตัวเดียว โดยไม่มีอะไรบอกว่าพิมพ์ผิด
+ */
+function groupField(id, cur){
+  var list = (ED.groups || []).slice();
+  if(cur && list.indexOf(cur) < 0) list.push(cur);
+  return '<div class="fld"><label>หมวดหมู่</label>'
+    + '<div class="tagpick" id="'+id+'">'
+    + list.map(function(g){
+        return '<button type="button" data-grp="'+esc(g)+'"'
+          + (g===cur ? ' class="on"' : "") + ">"+esc(g)+"</button>";
+      }).join("")
+    + '<button type="button" data-grpnew="1">＋ หมวดใหม่</button>'
+    + "</div>"
+    + '<input id="'+id+'-new" placeholder="พิมพ์ชื่อหมวดใหม่" style="display:none">'
+    + '<div class="hint">หมวดคือกลุ่มที่ลูกค้าเห็นบนหน้าแรก '
+    + "ตั้งชื่อให้ลูกค้าอ่านรู้เรื่อง ไม่ใช่ชื่อที่ใช้กันเองในร้าน</div></div>";
+}
+
+function bindGroup(id){
+  if(!$("#"+id)) return;
+  $$("#"+id+" button").forEach(function(b){
+    b.onclick = function(){
+      $$("#"+id+" button").forEach(function(x){ x.classList.remove("on") });
+      b.classList.add("on");
+      var nw = $("#"+id+"-new");
+      if(b.dataset.grpnew){ nw.style.display=""; nw.focus() }
+      else { nw.style.display="none"; nw.value="" }
+    };
+  });
+}
+
+/* ค่าที่เลือกอยู่ — undefined = ไม่ได้แตะ จะได้ไม่ส่งไปแก้โดยไม่ตั้งใจ */
+function groupValue(id){
+  var on = $("#"+id+" button.on");
+  if(!on) return undefined;
+  if(on.dataset.grpnew) return $("#"+id+"-new").value.trim();
+  return on.dataset.grp;
+}
+
+/* ช่องหน่วยนับ — พิมพ์เองได้ พร้อมปุ่มลัดหน่วยที่ร้านใช้อยู่จริง
+   ไม่ทำเป็นดรอปดาวน์ตายตัว เพราะร้านเคมี/ทูลลิ่งใช้หน่วยไม่ซ้ำกันเลย
+   และหน่วยใหม่ต้องใส่ได้ทันทีโดยไม่ต้องรอแก้โค้ด */
+var UNIT_QUICK = ["can", "pcs", "set", "ขวด", "แกลลอน", "ถัง", "กล่อง", "ชุด", "ชิ้น", "กก."];
+
+function unitField(id, cur){
+  var now = String(cur || "").trim();
+  /* หน่วยที่ร้านใช้อยู่จริงต้องมาก่อนหน่วยที่เราเดาไว้ — เรียงตามที่ใช้บ่อย */
+  var seen = {}, list = [];
+  (ED.products || []).forEach(function(x){
+    var u = String(x.unit || "").trim();
+    if(!u) return;
+    seen[u] = (seen[u] || 0) + 1;
+  });
+  Object.keys(seen).sort(function(a,b){ return seen[b]-seen[a] }).forEach(function(u){
+    list.push(u);
+  });
+  UNIT_QUICK.forEach(function(u){ if(list.indexOf(u) < 0) list.push(u) });
+
+  return '<div class="fld"><label>หน่วยนับ</label>'
+    + '<input id="'+id+'" maxlength="20" value="'+esc(now)+'" placeholder="เช่น can">'
+    + '<div class="tagpick" id="'+id+'-pick">'
+      + list.slice(0,10).map(function(u){
+          return '<button type="button" data-unit="'+esc(u)+'"'
+            + (u===now ? ' class="on"' : "") + ">"+esc(u)+"</button>";
+        }).join("")
+    + '</div><div class="hint">คำนี้ถูกพิมพ์ลงใบกำกับภาษีในช่อง '
+    + '<b>จำนวน (Quantity)</b> ตรง ๆ — น้ำยาเป็น <b>2 can</b> · '
+    + 'ดอกเอ็นมิลเป็น <b>2 pcs</b> หรือ <b>2 set</b><br>'
+    + "ใบที่ออกไปแล้วไม่เปลี่ยนตาม — ใบที่ลูกค้าถืออยู่ต้องพิมพ์ซ้ำได้เหมือนเดิมเสมอ"
+    + "</div></div>";
+}
+
+function bindUnit(id){
+  if(!$("#"+id+"-pick")) return;
+  $$("#"+id+"-pick button").forEach(function(b){
+    b.onclick = function(){
+      $$("#"+id+"-pick button").forEach(function(x){ x.classList.remove("on") });
+      b.classList.add("on");
+      $("#"+id).value = b.dataset.unit;
+    };
+  });
+}
+
+function eprodInit(mode){
+  EPMODE = mode || "all";
+  $("#ep-title").textContent = (EPMODE==="tag") ? "สินค้าแนะนำ" : "ข้อมูลร้าน";
+  $("#ep-hint").innerHTML = (EPMODE==="tag")
+    ? 'แตะสินค้าเพื่อติดป้าย <b>แนะนำ · ใหม่ · ขายดี · โปรโมชั่น</b> ' +
+      'ตัวที่ติดป้ายจะขึ้นแถบ "สินค้าแนะนำ" บนหน้าแรกของลูกค้า'
+    : "แตะสินค้าเพื่อแก้รูป ราคา และการโชว์บนหน้าร้าน";
+  $("#ep-q").value = "";
+  edLoad("prod", false, eprodDraw);
+}
+
+function eprodList(){
+  if(!ED.products) return [];
+  var q = $("#ep-q").value.trim().toLowerCase();
+  return ED.products.filter(function(p){
+    if(EPMODE==="tag" && !q && !String(p.tag||"").trim()) return false;
+    if(!q) return true;
+    return (p.name+" "+p.sku+" "+p.group).toLowerCase().indexOf(q) > -1;
+  });
+}
+
+/**
+ * ย้ายทั้งชุดที่ค้นเจอไปหมวดเดียวกัน
+ *
+ * ร้านนี้มีสินค้า 119 ตัวแต่มีหมวดแค่ 3 หมวด ถ้าแก้ทีละตัวคือ 119 รอบ
+ * ซึ่งไม่มีใครทำจริง แล้วหน้าร้านก็จะมีสามหมวดไปตลอด
+ * ท่าที่ใช้ได้จริงคือค้นชื่อ ("Endmill Corn") แล้วย้ายทั้งชุดทีเดียว
+ */
+function eprodMove(){
+  var list = eprodList();
+  if(!list.length){ toast("ไม่มีสินค้าให้ย้าย"); return }
+  var q = $("#ep-q").value.trim();
+
+  openModal("ย้าย " + list.length + " ตัวไปหมวดเดียวกัน",
+    '<div class="hint" style="padding:0 2px 10px">'
+      + (q ? 'สินค้าที่ค้นด้วยคำว่า <b>' + esc(q) + '</b> ทั้ง ' + list.length + ' ตัว'
+           : "สินค้าทั้งหมด " + list.length + " ตัวที่เห็นอยู่ตอนนี้")
+      + " จะถูกย้ายไปหมวดที่เลือก</div>"
+    + '<div class="hint" style="padding:0 2px 12px;max-height:160px;overflow:auto">'
+      + list.slice(0,40).map(function(p){ return esc(p.name) }).join("<br>")
+      + (list.length>40 ? "<br>… และอีก " + (list.length-40) + " ตัว" : "")
+      + "</div>"
+    + groupField("emv-grp", "")
+    + '<div class="msg err" id="emv-err"></div>'
+    + '<button class="btn" id="emv-go">ย้ายทั้งหมด</button>');
+
+  bindGroup("emv-grp");
+  $("#emv-go").onclick = function(){
+    var g = groupValue("emv-grp");
+    var box = $("#emv-err");
+    if(!g){ box.textContent = "ยังไม่ได้เลือกหมวด"; box.classList.add("on"); return }
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังย้าย…";
+    google.script.run
+      .withSuccessHandler(function(r){
+        closeModal();
+        edLoad("prod", true, function(){
+          eprodDraw();
+          edNote("ep-ok","ep-err", true,
+            "ย้ายไปหมวด " + r.group + " แล้ว " + r.moved + " ตัว"
+            + (r.same ? " (อีก " + r.same + " ตัวอยู่หมวดนี้อยู่แล้ว)" : ""));
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "ย้ายทั้งหมด";
+        box.textContent = e.message; box.classList.add("on");
+      })
+      .moveShopCategory({ group: g, skus: list.map(function(p){ return p.sku }) });
+  };
+}
+
+/**
+ * เปลี่ยนหน่วยนับทั้งชุดที่ค้นเจอ
+ *
+ * หน่วยไปโผล่บนใบกำกับภาษีในช่อง "จำนวน (Quantity)" ผิดคำเดียวก็ผิดทุกใบ
+ * และร้านนี้ใช้หน่วยเดียวกันทั้งหมวด (น้ำยาทุกตัวเป็น can)
+ * แก้ทีละตัวคือหลายสิบรอบ ซึ่งไม่มีใครทำจริง
+ */
+function eprodUnit(){
+  var list = eprodList();
+  if(!list.length){ toast("ไม่มีสินค้าให้เปลี่ยนหน่วย"); return }
+  var q = $("#ep-q").value.trim();
+
+  /* หน่วยที่ชุดนี้ใช้อยู่ ต้องเห็นก่อนกด ไม่งั้นไม่รู้ว่ากำลังจะทับอะไร */
+  var now = {};
+  list.forEach(function(p){ var u = String(p.unit||"").trim() || "(ว่าง)";
+                            now[u] = (now[u]||0) + 1 });
+  var nowTxt = Object.keys(now).map(function(u){
+    return esc(u) + " " + now[u] + " ตัว";
+  }).join(" · ");
+
+  openModal("เปลี่ยนหน่วยนับ " + list.length + " ตัว",
+    '<div class="hint" style="padding:0 2px 10px">'
+      + (q ? 'สินค้าที่ค้นด้วยคำว่า <b>' + esc(q) + '</b> ทั้ง ' + list.length + ' ตัว'
+           : "สินค้าทั้งหมด " + list.length + " ตัวที่เห็นอยู่ตอนนี้")
+      + " จะถูกเปลี่ยนเป็นหน่วยที่ใส่</div>"
+    + '<div class="hint" style="padding:0 2px 12px">ตอนนี้ใช้อยู่: ' + nowTxt + "</div>"
+    + '<div class="hint" style="padding:0 2px 12px;max-height:160px;overflow:auto">'
+      + list.slice(0,40).map(function(p){ return esc(p.name) }).join("<br>")
+      + (list.length>40 ? "<br>… และอีก " + (list.length-40) + " ตัว" : "")
+      + "</div>"
+    + unitField("euv-unit", "")
+    + '<div class="msg err" id="euv-err"></div>'
+    + '<button class="btn" id="euv-go">เปลี่ยนทั้งหมด</button>');
+
+  bindUnit("euv-unit");
+  $("#euv-go").onclick = function(){
+    var u = $("#euv-unit").value.trim();
+    var box = $("#euv-err");
+    if(!u){ box.textContent = "ยังไม่ได้ใส่หน่วยนับ"; box.classList.add("on"); return }
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังเปลี่ยน…";
+    google.script.run
+      .withSuccessHandler(function(r){
+        closeModal();
+        edLoad("prod", true, function(){
+          eprodDraw();
+          edNote("ep-ok","ep-err", true,
+            "เปลี่ยนหน่วยเป็น " + r.unit + " แล้ว " + r.changed + " ตัว"
+            + (r.same ? " (อีก " + r.same + " ตัวเป็นหน่วยนี้อยู่แล้ว)" : ""));
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "เปลี่ยนทั้งหมด";
+        box.textContent = e.message; box.classList.add("on");
+      })
+      .setShopUnit({ unit: u, skus: list.map(function(p){ return p.sku }) });
+  };
+}
+
+function eprodDraw(){
+  var list = eprodList();
+  if(!list.length){
+    $("#ep-list").innerHTML = '<div class="card"><div class="hint">' +
+      (EPMODE==="tag" && !$("#ep-q").value.trim()
+        ? "ยังไม่มีสินค้าที่ติดป้ายไว้ — พิมพ์ค้นหาชื่อสินค้าข้างบน แล้วแตะเพื่อติดป้าย"
+        : "ไม่เจอสินค้าที่ค้น") + "</div></div>";
+    return;
+  }
+  var moveBtn = (EPMODE !== "tag" && list.length > 1)
+    ? '<div class="card"><button class="btn ghost" id="ep-move">'
+        + "📂 ย้าย " + list.length + " ตัวที่เห็นอยู่ ไปหมวดเดียวกัน</button>"
+        /* หน่วยนับไปอยู่บนใบกำกับภาษี แก้ทีละตัวคือหลายสิบรอบ
+           ปุ่มนี้อยู่คู่กับปุ่มย้ายหมวด เพราะเป็นงานท่าเดียวกัน — ค้นให้แคบแล้วทำทั้งชุด */
+        + '<button class="btn ghost" id="ep-unit" style="margin-top:9px">'
+        + "🧴 เปลี่ยนหน่วยนับ " + list.length + " ตัวที่เห็นอยู่</button>"
+        + '<div class="hint">ค้นชื่อให้แคบลงก่อน แล้วทำทั้งชุดทีเดียว '
+        + "เร็วกว่าแก้ทีละตัวมาก<br>"
+        + 'หน่วยนับคือคำที่พิมพ์ลงใบกำกับภาษีในช่อง <b>จำนวน (Quantity)</b></div></div>'
+    : "";
+
+  $("#ep-list").innerHTML = moveBtn + '<div class="card">' + list.slice(0,80).map(function(p){
+    var tags = String(p.tag||"").split(/\s*,\s*/).filter(function(t){return !!t});
+    return '<button class="edpick" data-eprod="'+esc(p.sku)+'">'
+      + '<span class="th">' + (p.show.length
+          ? '<img src="'+esc(p.show[0])+'" alt="" loading="lazy">'
+          : "ยังไม่มีรูป") + "</span>"
+      + '<span class="bd"><b>'+esc(p.name)+"</b>"
+        + '<span class="sub">'+esc(p.sku)+" · "+baht(p.price)
+          /* หน่วยต้องเห็นตั้งแต่ในรายการ ไม่งั้นต้องเปิดทีละตัวถึงจะรู้ว่าตัวไหนยังผิด */
+          + " / " + esc(p.unit || "ชิ้น")
+          + " · " + esc(p.group || "ไม่มีหมวด")
+          + (p.show.length>1 ? " · 2 รูป" : "") + "</span>"
+        + '<span class="pills">'
+          + (p.hidden ? '<span class="off">ซ่อนจากหน้าร้าน</span>'
+                      : '<span class="on">ขายหน้าเว็บ</span>')
+          + tags.map(function(t){ return "<span>"+esc(t)+"</span>" }).join("")
+        + "</span></span></button>";
+  }).join("")
+  + (list.length>80 ? '<div class="hint">โชว์ 80 ตัวแรกจาก '+list.length
+      +' ตัว — พิมพ์ค้นหาเพื่อหาตัวที่ต้องการ</div>' : "")
+  + "</div>";
+}
+
+function eprodOpen(sku){
+  var p = ED.products.filter(function(x){ return x.sku===sku })[0];
+  if(!p) return;
+  var tags = String(p.tag||"").split(/\s*,\s*/).filter(function(t){return !!t});
+
+  openModal(p.name,
+    '<div class="fld"><label>รหัสสินค้า</label>'
+      + '<div class="hint" style="margin:0">'+esc(p.sku)+" · "+esc(p.group||"ไม่ระบุหมวด")+"</div></div>"
+    + '<div class="fld"><label>ราคาขาย (บาท)</label>'
+      + '<input id="epm-price" type="number" inputmode="decimal" step="0.01" min="0" value="'
+        + Number(p.price) + '"></div>'
+    /* หน่วยนับถูกพิมพ์ลงใบกำกับภาษีในช่อง "จำนวน (Quantity)" ตรง ๆ
+       ของเดิมแก้ได้ทางเดียวคือเปิดชีท ฐานสินค้า แล้วเลื่อนไปคอลัมน์ F
+       ซึ่งบนมือถือทำไม่ได้จริง หน่วยเลยค้างผิดอยู่บนใบทุกใบที่ขายตัวนั้น */
+    + unitField("epm-unit", p.unit)
+    + imgField("epm-img", "รูปที่ 1 (รูปหลัก)", "prod", p.img, p.show[0])
+    + imgField("epm-img2", "รูปที่ 2 (ลูกค้ากดดูเพิ่มได้)", "prod", p.img2, p.show[1],
+        "เว้นว่างได้ ถ้าเว้นก็มีรูปเดียว · " + IMG_HINT)
+    + groupField("epm-grp", p.group)
+    + '<div class="fld"><label>ป้ายหน้าร้าน</label><div class="tagpick" id="epm-tags">'
+      + ED.tags.map(function(t){
+          return '<button type="button" data-tag="'+esc(t)+'"'
+            + (tags.indexOf(t)>-1 ? ' class="on"' : "") + ">"+esc(t)+"</button>";
+        }).join("")
+      + '</div><div class="hint">ตัวที่ติดป้ายจะขึ้นแถบ "สินค้าแนะนำ" บนหน้าแรก</div></div>'
+    + '<div class="fld"><label>โชว์บนหน้าร้านไหม</label><div class="tagpick" id="epm-web">'
+      + '<button type="button" data-web="1"'+(p.hidden?"":' class="on"')+">ขาย</button>"
+      + '<button type="button" data-web="0"'+(p.hidden?' class="on"':"")+">ซ่อน</button>"
+      + '</div><div class="hint">ซ่อนแล้วพนักงานยังคีย์ขายได้ตามปกติ '
+      + "แค่ลูกค้าไม่เห็นบนหน้าเว็บ</div></div>"
+    + '<div class="msg err" id="epm-err"></div>'
+    + '<button class="btn" id="epm-save">บันทึก</button>');
+
+  bindPicks(p.sku);
+  bindGroup("epm-grp");
+  bindUnit("epm-unit");
+  $$("#epm-tags button").forEach(function(b){
+    b.onclick = function(){ b.classList.toggle("on") };
+  });
+  $$("#epm-web button").forEach(function(b){
+    b.onclick = function(){
+      $$("#epm-web button").forEach(function(x){ x.classList.remove("on") });
+      b.classList.add("on");
+    };
+  });
+
+  $("#epm-save").onclick = function(){
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+    var picked = $$("#epm-tags button.on").map(function(b){ return b.dataset.tag });
+    var on = $("#epm-web button.on");
+    google.script.run
+      .withSuccessHandler(function(){
+        closeModal();
+        edLoad("prod", true, function(){
+          eprodDraw();
+          edNote("ep-ok","ep-err", true, "บันทึกแล้ว — หน้าร้านเปลี่ยนตามทันที");
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "บันทึก";
+        var box = $("#epm-err");
+        box.textContent = e.message; box.classList.add("on");
+      })
+      .saveShopProduct({
+        sku: p.sku,
+        group: groupValue("epm-grp"),
+        unit: $("#epm-unit").value,
+        price: $("#epm-price").value,
+        img: $("#epm-img").value,
+        img2: $("#epm-img2").value,
+        tag: picked.join(", "),
+        web: (on && on.dataset.web === "0") ? "ไม่" : ""
+      });
+  };
+}
+
+/* -------------------------------------------------------------- แบนเนอร์ */
+
+function ebanInit(){ edLoad("ban", false, ebanDraw) }
+
+function ebanDraw(){
+  if(!ED.banners) return;
+  if(!ED.banners.length){
+    $("#eb-list").innerHTML = '<div class="card"><div class="hint">'
+      + "ยังไม่มีแบนเนอร์ — กด ＋ เพิ่มแบนเนอร์ ข้างบน<br>"
+      + "แบนเนอร์คือรูปใหญ่ที่ลูกค้าเห็นก่อนสินค้า ใส่ไว้บอกโปรโมชั่นหรือชวนแอดไลน์"
+      + "</div></div>";
+    return;
+  }
+  var bySlot = {};
+  ED.banners.forEach(function(b){ (bySlot[b.slot] = bySlot[b.slot] || []).push(b) });
+  $("#eb-list").innerHTML = ED.slots.map(function(slot){
+    var list = bySlot[slot] || [];
+    if(!list.length) return "";
+    return '<div class="card"><div class="sec-hd"><h2>'+esc(slot)+"</h2></div>"
+      + list.map(function(b){
+          return '<button class="edpick" data-eban="'+b.row+'">'
+            + '<span class="th">' + (b.show
+                ? '<img src="'+esc(b.show)+'" alt="" loading="lazy">' : "รูปเสีย") + "</span>"
+            + '<span class="bd"><b>'+esc(b.title||"(ไม่ได้ตั้งชื่อ)")+"</b>"
+              + '<span class="pills">'
+                + (b.on ? '<span class="on">เปิดอยู่</span>'
+                        : '<span class="off">ปิดอยู่</span>')
+                + (b.btn ? "<span>ปุ่ม: "+esc(b.btn)+"</span>" : "")
+              + "</span></span></button>";
+        }).join("")
+      + "</div>";
+  }).join("");
+}
+
+function ebanOpen(row){
+  var b = row ? ED.banners.filter(function(x){ return x.row===row })[0] : null;
+  b = b || { row:0, slot:ED.slots[0], title:"", img:"", show:"", btn:"", href:"", on:true, note:"" };
+
+  openModal(b.row ? "แก้แบนเนอร์" : "เพิ่มแบนเนอร์",
+    '<div class="fld"><label>ไปโผล่ตรงไหนของหน้าแรก</label>'
+      + '<div class="tagpick" id="ebm-slot">'
+      + ED.slots.map(function(sl){
+          return '<button type="button" data-slot="'+esc(sl)+'"'
+            + (sl===b.slot ? ' class="on"' : "") + ">"+esc(sl)+"</button>";
+        }).join("") + "</div></div>"
+    + imgField("ebm-img", "รูปแบนเนอร์ *", "ban", b.img, b.show, IMG_HINT_BAN)
+    + '<div class="fld"><label>ชื่อแบนเนอร์ (ไว้ดูเอง ลูกค้าไม่เห็น)</label>'
+      + '<input id="ebm-title" value="'+esc(b.title)+'"></div>'
+    + '<div class="fld"><label>ข้อความบนปุ่ม</label>'
+      + '<input id="ebm-btn" placeholder="เช่น Buy Now — เว้นว่าง = ไม่มีปุ่ม" value="'
+        + esc(b.btn) + '"></div>'
+    + '<div class="fld"><label>กดปุ่มแล้วไปไหน</label>'
+      + '<input id="ebm-href" placeholder="https://... หรือ หมวด:Chemical หรือ สินค้า:SKU-141" value="'
+        + esc(b.href) + '">'
+      + '<div class="hint">ใส่ <b>หมวด:</b> หรือ <b>สินค้า:</b> แล้วกดปุ่มจะวิ่งไปหน้าในร้านเอง '
+      + "ไม่เด้งออกไปข้างนอก</div></div>"
+    + '<div class="fld"><label>เปิดใช้ไหม</label><div class="tagpick" id="ebm-on">'
+      + '<button type="button" data-on="1"'+(b.on?' class="on"':"")+">เปิด</button>"
+      + '<button type="button" data-on="0"'+(b.on?"":' class="on"')+">ปิด</button>"
+      + "</div></div>"
+    + '<div class="msg err" id="ebm-err"></div>'
+    + '<button class="btn" id="ebm-save">บันทึก</button>'
+    + (b.row ? '<button class="btn ghost" id="ebm-del" style="margin-top:8px;color:#8f1d1d">'
+        + "ลบแบนเนอร์นี้</button>" : ""));
+
+  bindPicks(b.title || b.slot);
+  ["ebm-slot","ebm-on"].forEach(function(g){
+    $$("#"+g+" button").forEach(function(x){
+      x.onclick = function(){
+        $$("#"+g+" button").forEach(function(y){ y.classList.remove("on") });
+        x.classList.add("on");
+      };
+    });
+  });
+
+  $("#ebm-save").onclick = function(){
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+    google.script.run
+      .withSuccessHandler(function(){
+        closeModal();
+        edLoad("ban", true, function(){
+          ebanDraw();
+          edNote("eb-ok","eb-err", true, "บันทึกแล้ว — หน้าร้านเปลี่ยนตามทันที");
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "บันทึก";
+        var box = $("#ebm-err"); box.textContent = e.message; box.classList.add("on");
+      })
+      .saveShopBanner({
+        row: b.row,
+        slot: ($("#ebm-slot button.on")||{dataset:{}}).dataset.slot,
+        title: $("#ebm-title").value,
+        img: $("#ebm-img").value,
+        btn: $("#ebm-btn").value,
+        href: $("#ebm-href").value,
+        on: ($("#ebm-on button.on")||{dataset:{}}).dataset.on === "1"
+      });
+  };
+
+  if($("#ebm-del")){
+    $("#ebm-del").onclick = function(){
+      var d = this;
+      if(d.dataset.sure !== "1"){
+        /* ถามซ้ำในปุ่มเดิม ไม่ใช้ confirm() เพราะหน้านี้อยู่ใน iframe ของ Google
+           แล้ว confirm บางเครื่องไม่ขึ้น กดลบแล้วเงียบไปเฉย ๆ */
+        d.dataset.sure = "1";
+        d.textContent = "กดอีกครั้งเพื่อยืนยันการลบ";
+        return;
+      }
+      d.disabled = true; d.textContent = "กำลังลบ…";
+      google.script.run
+        .withSuccessHandler(function(){
+          closeModal();
+          edLoad("ban", true, function(){
+            ebanDraw();
+            edNote("eb-ok","eb-err", true, "ลบแบนเนอร์แล้ว");
+          });
+        })
+        .withFailureHandler(function(e){
+          d.disabled = false; d.textContent = "ลบแบนเนอร์นี้"; d.dataset.sure = "";
+          var box = $("#ebm-err"); box.textContent = e.message; box.classList.add("on");
+        })
+        .deleteShopBanner(b.row);
+    };
+  }
+}
+
+/* ------------------------------------------------------------------ หมวด */
+
+function ecatInit(){ edLoad("cat", false, ecatDraw) }
+
+function ecatDraw(){
+  if(!ED.cats) return;
+  if(!ED.cats.length){
+    $("#ec-list").innerHTML = '<div class="card"><div class="hint">'
+      + "ยังไม่มีหมวด — สั่งฟังก์ชัน setupShopPages หนึ่งครั้ง "
+      + "ระบบจะเติมชื่อหมวดจาก ฐานสินค้า ให้เอง</div></div>";
+    return;
+  }
+  $("#ec-list").innerHTML = '<div class="card">' + ED.cats.map(function(c){
+    return '<button class="edpick" data-ecat="'+esc(c.group)+'">'
+      + '<span class="th">' + (c.iconShow
+          ? '<img src="'+esc(c.iconShow)+'" alt="" loading="lazy">' : "ยังไม่มีรูป") + "</span>"
+      + '<span class="bd"><b>'+esc(c.label || c.group)+"</b>"
+        + '<span class="sub">'+esc(c.group)+" · สินค้า "+(c.n||0)+" ตัว</span>"
+        + '<span class="pills">'
+          + (!c.n ? '<span class="off">ยังไม่มีสินค้า ลูกค้าไม่เห็นหมวดนี้</span>'
+                  : (c.home ? '<span class="on">โชว์หน้าแรก</span>'
+                            : '<span class="off">ซ่อนจากหน้าแรก</span>'))
+          + (c.coverShow ? "<span>มีรูปปก</span>" : "")
+        + "</span></span></button>";
+  }).join("") + "</div>";
+}
+
+/**
+ * เพิ่มหมวดใหม่
+ *
+ * หมวดที่ยังไม่มีสินค้าอยู่ในนั้น ลูกค้าจะไม่เห็น (กติกาเดิม: กดเข้าไปเจอหน้าว่าง
+ * ทำให้คิดว่าเว็บเสีย) กล่องนี้จึงบอกไว้ตั้งแต่ตอนสร้าง และมีทางลัดไปใส่สินค้าต่อ
+ * ไม่ใช่ปล่อยให้ตั้งหมวดใส่รูปเสร็จสวยงามแล้วไปหาในหน้าร้านไม่เจอ
+ */
+function ecatAdd(){
+  openModal("เพิ่มหมวดหมู่",
+    '<div class="fld"><label>ชื่อหมวด *</label>'
+      + '<input id="ecn-name" placeholder="เช่น Router Bit">'
+      + '<div class="hint">ชื่อนี้จะไปอยู่ในคอลัมน์ หมวด ของชีท ฐานสินค้า</div></div>'
+    + '<div class="fld"><label>ชื่อที่ลูกค้าเห็น</label>'
+      + '<input id="ecn-label" placeholder="เว้นว่าง = ใช้ชื่อหมวดเดิม"></div>'
+    + '<div class="hint" style="padding:0 2px 12px">'
+      + "สร้างเสร็จแล้วอย่าลืมใส่สินค้าเข้าหมวดนี้ด้วย "
+      + "หมวดที่ยังไม่มีสินค้า ลูกค้าจะไม่เห็นบนหน้าร้าน</div>"
+    + '<div class="msg err" id="ecn-err"></div>'
+    + '<button class="btn" id="ecn-go">สร้างหมวด</button>');
+
+  $("#ecn-go").onclick = function(){
+    var name = $("#ecn-name").value.trim();
+    var box = $("#ecn-err");
+    if(!name){ box.textContent = "ยังไม่ได้ใส่ชื่อหมวด"; box.classList.add("on"); return }
+    if((ED.cats||[]).some(function(c){ return c.group === name })){
+      box.textContent = "มีหมวดชื่อนี้อยู่แล้ว"; box.classList.add("on"); return;
+    }
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังสร้าง…";
+    google.script.run
+      .withSuccessHandler(function(){
+        closeModal();
+        edLoad("cat", true, function(){
+          ecatDraw();
+          edNote("ec-ok","ec-err", true,
+            "สร้างหมวด " + name + " แล้ว — ต่อไปไปที่ ข้อมูลร้าน แล้วย้ายสินค้าเข้าหมวดนี้");
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "สร้างหมวด";
+        box.textContent = e.message; box.classList.add("on");
+      })
+      .saveShopCat({ group: name, label: $("#ecn-label").value, home: true });
+  };
+}
+
+function ecatOpen(group){
+  var c = ED.cats.filter(function(x){ return x.group===group })[0];
+  if(!c) return;
+  openModal(c.group,
+    (!c.n
+      ? '<div class="msg err on" style="margin-bottom:12px">'
+        + "หมวดนี้ยังไม่มีสินค้าอยู่เลย ลูกค้าจึงไม่เห็นบนหน้าร้าน<br>"
+        + "ไปที่ <b>ข้อมูลร้าน</b> แล้วย้ายสินค้าเข้าหมวดนี้ก่อน</div>"
+      : '<div class="hint" style="padding:0 2px 10px">มีสินค้าในหมวดนี้ '
+        + c.n + " ตัว</div>")
+    + '<div class="fld"><label>ชื่อที่ลูกค้าเห็น</label>'
+      + '<input id="ecm-label" placeholder="เว้นว่าง = ใช้ชื่อหมวดเดิม" value="'
+        + esc(c.label) + '"></div>'
+    + imgField("ecm-icon", "รูปไอคอน (บนหน้าแรก)", "icon", c.icon, c.iconShow)
+    + imgField("ecm-cover", "รูปปก (ภาพใหญ่ตอนกดเข้าหมวด)", "cat", c.cover, c.coverShow,
+        IMG_HINT_BAN)
+    + '<div class="fld"><label>โชว์บนหน้าแรกไหม</label><div class="tagpick" id="ecm-home">'
+      + '<button type="button" data-home="1"'+(c.home?' class="on"':"")+">โชว์</button>"
+      + '<button type="button" data-home="0"'+(c.home?"":' class="on"')+">ซ่อน</button>"
+      + '</div><div class="hint">ซ่อนแล้วสินค้าในหมวดนี้ยังขายอยู่ '
+      + "แค่ไม่มีการ์ดหมวดบนหน้าแรก</div></div>"
+    + '<div class="msg err" id="ecm-err"></div>'
+    + '<button class="btn" id="ecm-save">บันทึก</button>');
+
+  bindPicks(c.group);
+  $$("#ecm-home button").forEach(function(x){
+    x.onclick = function(){
+      $$("#ecm-home button").forEach(function(y){ y.classList.remove("on") });
+      x.classList.add("on");
+    };
+  });
+
+  $("#ecm-save").onclick = function(){
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+    google.script.run
+      .withSuccessHandler(function(){
+        closeModal();
+        edLoad("cat", true, function(){
+          ecatDraw();
+          edNote("ec-ok","ec-err", true, "บันทึกแล้ว — หน้าร้านเปลี่ยนตามทันที");
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "บันทึก";
+        var box = $("#ecm-err"); box.textContent = e.message; box.classList.add("on");
+      })
+      .saveShopCat({
+        group: c.group,
+        label: $("#ecm-label").value,
+        icon: $("#ecm-icon").value,
+        cover: $("#ecm-cover").value,
+        home: ($("#ecm-home button.on")||{dataset:{}}).dataset.home === "1"
+      });
+  };
+}
+
+/* ------------------------------------------------------- หน้าตาหัวหน้าร้าน */
+
+function elookInit(){ edLoad("look", false, elookDraw) }
+
+function elookDraw(){
+  if(!ED.look) return;
+  var l = ED.look || {};
+  $("#el-form").innerHTML =
+    imgField("elm-logo", "โลโก้ร้าน", "logo", l.logo, l.logoShow,
+      "เว้นว่าง = ใช้ตัวอักษรย่อของชื่อร้าน · " + IMG_HINT_LOGO)
+    + imgField("elm-cover", "ภาพพื้นหลังหัวหน้าร้าน", "cover", l.cover, l.coverShow,
+      "เว้นว่าง = ใช้พื้นหลังไล่สีฟ้าของระบบ · " + IMG_HINT_COVER)
+    + '<div class="fld"><label>ลิงก์แผนที่ร้าน</label>'
+      + '<input id="elm-map" placeholder="ลิงก์ Google Maps — เว้นว่าง = ค้นจากที่อยู่ผู้ส่งให้เอง" value="'
+        + esc(l.map||"") + '"></div>'
+    /* ช่องนี้เคยแก้ได้ทางเดียวคือเปิดชีทไปหาแถว ซึ่งบนมือถือแทบทำไม่ได้
+       และเป็นช่องเดียวที่ถ้าไม่กรอก หน้าร้านก็ส่งให้ลูกค้าไม่ได้เลย */
+    + '<div class="fld"><label>ลิงก์เว็บแอปสำหรับลูกค้า</label>'
+      + '<input id="elm-paylink" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="'
+        + esc(l.payLink||"") + '">'
+      + '<div class="hint">ลิงก์ของ deploy ที่ตั้ง “ทำงานในชื่อ: ฉัน” และ “ใครเข้าถึงได้: ทุกคน” '
+      + 'คนละตัวกับลิงก์ที่พนักงานใช้ · มี ?shop=1 ติดมาก็ได้ ระบบตัดให้เอง</div></div>'
+    + '<button class="btn" id="elm-save">บันทึก</button>';
+
+  bindPicks("");
+  $("#elm-save").onclick = function(){
+    var btn = this;
+    btn.disabled = true; btn.textContent = "กำลังบันทึก…";
+    google.script.run
+      .withSuccessHandler(function(){
+        edLoad("look", true, function(){
+          elookDraw();
+          edNote("el-ok","el-err", true, "บันทึกแล้ว — หน้าร้านเปลี่ยนตามทันที");
+        });
+      })
+      .withFailureHandler(function(e){
+        btn.disabled = false; btn.textContent = "บันทึก";
+        edNote("el-ok","el-err", false, e.message);
+      })
+      .saveShopLook({
+        logo: $("#elm-logo").value,
+        cover: $("#elm-cover").value,
+        map: $("#elm-map").value,
+        payLink: $("#elm-paylink").value,
+        /* ช่องนี้เปิดมาพร้อมค่าเดิมเสมอ กดบันทึกทั้งที่ไม่ได้ตั้งใจแก้ลิงก์ก็เกิดได้
+           ถ้าไม่ยอมให้ผ่าน จะแก้โลโก้ไม่ได้เลยเพราะติดด่านลิงก์ที่ไม่ได้แตะ */
+        payLinkSure: true
+      });
+  };
+}
+
+/* ------------------------------------------------------------ ผูกปุ่มทั้งหมด */
+
+document.addEventListener("click", function(e){
+  var t = e.target.closest("[data-edgo],[data-eprod],[data-eban],[data-ecat]");
+  if(!t) return;
+  if(t.dataset.edgo){
+    var k = t.dataset.edgo;
+    if(k==="etag"){ go("eprod"); eprodInit("tag"); return }
+    if(k==="eprod"){ go("eprod"); eprodInit("all"); return }
+    go(k);
+    return;
+  }
+  if(t.dataset.eprod){ eprodOpen(t.dataset.eprod); return }
+  if(t.dataset.eban){ ebanOpen(Number(t.dataset.eban)); return }
+  if(t.dataset.ecat){ ecatOpen(t.dataset.ecat); return }
+});
+
+$("#ep-q").addEventListener("input", function(){ if(EDGOT.prod) eprodDraw() });
+document.addEventListener("click", function(e){
+  if(e.target.closest("#ep-move")) eprodMove();
+  if(e.target.closest("#ep-unit")) eprodUnit();
+});
+["ep","eb","ec","el"].forEach(function(k){
+  var b = $("#"+k+"-back");
+  if(b) b.onclick = function(){ go("edit") };
+});
+$("#eb-add").onclick = function(){ edLoad("ban", false, function(){ ebanOpen(0) }) };
+$("#ec-add").onclick = function(){ edLoad("cat", false, ecatAdd) };
+$("#fs-edit").onclick = function(){ go("edit") };
 </script>

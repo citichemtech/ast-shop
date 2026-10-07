@@ -361,6 +361,62 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('เห็นยอดสุทธิ', row.indexOf('฿800.00') > -1);
   truthy('เห็นเลขพัสดุ', row.indexOf('TH0000000001') > -1);
 
+  /* ---------- 9ข. แยกกองออเดอร์ Shopee กับที่คีย์เอง ----------
+     สองกองนี้เป็นคนละงาน ของที่คีย์เองต้องแพ็คต้องออกใบต้องเก็บเงิน
+     ส่วนของ Shopee แพลตฟอร์มทำให้หมดแล้ว เหลือแค่ตัดสต๊อกกับดูกำไร
+     พอปนกันวันละหลายสิบใบ ใบที่ต้องลงมือทำจริงจะจมหายไปในกอง
+     (เจ้าของร้านขอเอง 7 ต.ค. 69) */
+  console.log('\n9ข. แยกกองออเดอร์ Shopee / คีย์เอง');
+  await page.evaluate(function () {
+    /* ให้มีทั้งสองกองแน่ ๆ ข้อมูลจำลองเดิมเป็นเพจ Facebook ล้วน */
+    ORDERS[0].channel = 'Shopee';
+    renderOrders();
+  });
+  await page.waitForTimeout(250);
+  var tabs9 = await page.evaluate(function () {
+    return $$('#ord-src button').map(function (b) { return b.textContent });
+  });
+  eq('มีปุ่มสามกอง', tabs9.length, 3);
+  truthy('ปุ่มบอกจำนวนในแต่ละกองด้วย', /ทั้งหมด \(\d+\)/.test(tabs9[0]), tabs9.join(' | '));
+  truthy('นับกอง Shopee ได้', /Shopee \(1\)/.test(tabs9[1]), tabs9.join(' | '));
+
+  var allN = await page.locator('#list .row').count();
+  await page.click('#ord-src button[data-src="mkt"]');
+  await page.waitForTimeout(250);
+  eq('กด Shopee แล้วเหลือเฉพาะใบของ Shopee',
+    await page.locator('#list .row').count(), 1);
+  truthy('และเป็นใบที่ช่องทางเป็น Shopee จริง',
+    /Shopee/.test(await page.textContent('#list .row')));
+
+  await page.click('#ord-src button[data-src="key"]');
+  await page.waitForTimeout(250);
+  eq('กดคีย์เอง แล้วได้ใบที่เหลือ',
+    await page.locator('#list .row').count(), allN - 1);
+  truthy('ไม่มีใบ Shopee ปนอยู่ในกองคีย์เอง',
+    !/Shopee/.test(await page.textContent('#list')));
+
+  /* ปุ่มในแถวอ้างตำแหน่งใน ORDERS ไม่ใช่ตำแหน่งในกองที่กรองแล้ว
+     ถ้าใช้ index ของกอง พอกรองอยู่แล้วกดปุ่มจะไปทำงานกับออเดอร์ผิดใบ
+     ซึ่งแปลว่าพิมพ์ใบปะหน้าของลูกค้าอีกคน */
+  console.log('\n   ปุ่มในแถวต้องยังชี้ไปที่ออเดอร์ใบถูก ตอนกรองอยู่');
+  var pick9 = await page.evaluate(function () {
+    var b = document.querySelector('#list .row .sq[data-lb]');
+    /* อ่านข้อความทั้งช่อง ไม่ใช่ span แรก — span แรกคือสามเหลี่ยมสีซึ่งไม่มีข้อความ */
+    return { idx: Number(b.dataset.lb), no: ORDERS[Number(b.dataset.lb)].no,
+             shown: b.closest('.row').querySelector('.i').textContent };
+  });
+  truthy('เลขออเดอร์ที่ปุ่มชี้ไป ตรงกับเลขที่แสดงในแถวนั้น',
+    pick9.shown.indexOf(pick9.no) > -1, pick9.no + ' vs ' + pick9.shown.slice(0, 40));
+
+  await page.click('#ord-src button[data-src="all"]');
+  await page.waitForTimeout(250);
+  eq('กดทั้งหมด แล้วกลับมาครบ', await page.locator('#list .row').count(), allN);
+  await page.evaluate(function () {
+    ORDERS[0].channel = 'เพจ Facebook';
+    renderOrders();
+  });
+  await page.waitForTimeout(200);
+
   /* ---------- 10. ใบปะหน้าพัสดุ ---------- */
   console.log('\n10. ใบปะหน้าพัสดุ');
   await page.click('#list .row .sq[data-lb="0"]');
@@ -404,6 +460,89 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ใบธรรมดายังไม่ติ๊กเหมือนเดิม',
     await page.evaluate(function () { return $('#lb-cod').checked }), false);
   await page.click('#m-close');
+
+  /* ---------- 10ข. แก้ชื่อ/เบอร์/ที่อยู่ผู้รับ จากกล่องใบปะหน้า ----------
+     จุดที่คนรู้ตัวว่าที่อยู่ผิดคือตอนกำลังจะแปะกล่อง ไม่ใช่ตอนนั่งหน้าคอม
+     ของเดิมต้องเปิดชีทแล้วเลื่อนไปคอลัมน์ F บนมือถือ ซึ่งทำไม่ได้จริงตอนยืนแพ็คของ
+     (เจ้าของร้านถามเอง 6 ต.ค. 69: "จะกดแก้ที่อยู่บนใบปะหน้ายังไง") */
+  console.log('\n10ข. แก้ที่อยู่ผู้รับจากกล่องใบปะหน้า');
+  await page.click('#list .row .sq[data-lb="0"]');
+  await page.waitForSelector('#lb-make', { timeout: 3000 });
+  var was10 = await page.evaluate(function () {
+    return { cust: ORDERS[0].cust, tel: ORDERS[0].tel, addr: ORDERS[0].addr };
+  });
+  eq('ช่องผู้รับเติมของเดิมมาให้ครบ', await page.evaluate(function () {
+    return [$('#lb-cust').value, $('#lb-tel').value, $('#lb-addr').value];
+  }), [was10.cust, was10.tel, was10.addr]);
+
+  console.log('\n   ลบที่อยู่ทิ้งแล้วกดสร้าง ต้องฟ้อง ไม่ใช่พิมพ์ใบที่ส่งไม่ถึง');
+  await page.fill('#lb-addr', '   ');
+  await page.click('#lb-make');
+  await page.waitForTimeout(300);
+  truthy('บอกว่ายังไม่ได้ใส่ที่อยู่', /ยังไม่ได้ใส่ที่อยู่/.test(await page.textContent('#lb-err')));
+  eq('และยังไม่ได้วาดใบให้', await page.locator('#lb-out img').count(), 0);
+  eq('ไม่ได้ยิงอะไรขึ้นชีทเลย', await page.evaluate(function () {
+    return SENT.filter(function (x) { return x.fn === 'setShipTo' }).length;
+  }), 0);
+
+  console.log('\n   แก้ที่อยู่แล้วกดสร้าง ต้องบันทึกลงชีทให้ด้วย');
+  await page.fill('#lb-cust', 'คุณ ศุภชัย ทองอนันต์');
+  await page.fill('#lb-tel', '0980692519');
+  await page.fill('#lb-addr', '134 ม.1 ต.พรุเตียว อ.เขาพนม จ.กระบี่ 81140');
+  await page.click('#lb-make');
+  await page.waitForSelector('#lb-out img', { timeout: 20000 });
+  var sent10 = await page.evaluate(function () {
+    return SENT.filter(function (x) { return x.fn === 'setShipTo' }).pop();
+  });
+  truthy('ยิง setShipTo ขึ้นชีทแล้ว', !!sent10);
+  eq('ส่งทั้งสามช่องไปครบ',
+    [sent10.p.cust, sent10.p.tel, sent10.p.addr],
+    ['คุณ ศุภชัย ทองอนันต์', '0980692519', '134 ม.1 ต.พรุเตียว อ.เขาพนม จ.กระบี่ 81140']);
+  eq('รายการออเดอร์บนหน้าจออัปเดตตาม', await page.evaluate(function () {
+    return [ORDERS[0].cust, ORDERS[0].addr];
+  }), ['คุณ ศุภชัย ทองอนันต์', '134 ม.1 ต.พรุเตียว อ.เขาพนม จ.กระบี่ 81140']);
+  truthy('และวาดใบปะหน้าออกมาให้', await page.locator('#lb-out img').count() > 0);
+
+  console.log('\n   กดสร้างซ้ำโดยไม่แก้อะไร ต้องไม่ยิงขึ้นชีทอีก');
+  var before10 = await page.evaluate(function () {
+    return SENT.filter(function (x) { return x.fn === 'setShipTo' }).length;
+  });
+  await page.click('#lb-make');
+  await page.waitForSelector('#lb-out img', { timeout: 20000 });
+  eq('ไม่มีการยิงซ้ำ', await page.evaluate(function () {
+    return SENT.filter(function (x) { return x.fn === 'setShipTo' }).length;
+  }), before10);
+
+  console.log('\n   วางที่อยู่จากแชทแล้วกดแยกให้');
+  await page.fill('#lb-addr',
+    'ชื่อ: คุณ มานี ใจดี\nโทร 0812345678\n55/1 ซ.ลาดพร้าว 5 ต.จอมพล อ.จตุจักร จ.กรุงเทพฯ 10900');
+  await page.click('#lb-parse');
+  await page.waitForTimeout(300);
+  var got10 = await page.evaluate(function () {
+    return { c: $('#lb-cust').value, t: $('#lb-tel').value, a: $('#lb-addr').value };
+  });
+  eq('แยกชื่อออกมาได้', got10.c, 'คุณ มานี ใจดี');
+  eq('แยกเบอร์ออกมาได้', got10.t, '0812345678');
+  truthy('ที่อยู่ยังมีบ้านเลขที่', got10.a.indexOf('55/1') > -1, got10.a);
+  /* ตัวแยกคืนที่อยู่เป็นชิ้น ๆ ถ้าหยิบไปแต่บรรทัดแรก ที่อยู่บนใบจะขาดครึ่งหลัง
+     แล้วของไปไม่ถึง — ต้องประกอบกลับมาให้ครบทั้งก้อน */
+  truthy('และมีรหัสไปรษณีย์ติดมาด้วย ไม่ได้ขาดครึ่งหลัง',
+    got10.a.indexOf('10900') > -1, got10.a);
+  await page.click('#m-close');
+  await page.waitForTimeout(200);
+  /* คืนผู้รับของออเดอร์ตัวอย่างกลับเป็นของเดิม — ข้อถัด ๆ ไปตรวจข้อความที่ส่งลูกค้า
+     เทียบกับชื่อและเบอร์ของข้อมูลจำลอง ถ้าปล่อยค่าที่เพิ่งแก้ไว้ ข้อพวกนั้นจะตก
+     ทั้งที่โค้ดไม่ได้พัง ซึ่งกลบของจริงที่อาจพังอยู่ */
+  await page.evaluate(function (w) {
+    [ORDERS, MOCK_ORDERS].forEach(function (list) {
+      (list || []).forEach(function (o) {
+        if (o.no !== w.no) return;
+        o.cust = w.cust; o.tel = w.tel; o.addr = w.addr;
+      });
+    });
+    renderOrders();
+  }, Object.assign({ no: await page.evaluate(function () { return ORDERS[0].no }) }, was10));
+  await page.waitForTimeout(200);
 
   /* ---------- 11. ข้อความส่งลูกค้า ---------- */
   console.log('\n11. ข้อความส่งลูกค้า');
@@ -484,8 +623,48 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   console.log('\n14. ต้นฉบับ / สำเนา ของเอกสารขาย');
   await page.evaluate(function () { go('list'); });
   await page.waitForTimeout(600);
+
+  /* ---------- 13ค. ออเดอร์ที่ไม่รับ VAT ต้องติ๊กบิลเงินสดให้เอง ----------
+     ของเดิมติ๊กใบเสร็จ/ใบกำกับภาษีไว้เสมอ ขายหน้าร้านทีก็กินเลขในเล่มใบกำกับภาษี
+     ไปหนึ่งเลขทุกครั้ง ทั้งที่ใบนั้นไม่ใช่ใบกำกับภาษี
+     (บิลเงินสดใช้เลขชุด CS จึงไม่กินเลขของเล่มภาษี) */
+  console.log('\n13ค. ออเดอร์ที่ไม่รับ VAT ต้องติ๊กบิลเงินสดให้เอง');
+  var vatOf = await page.evaluate(function () {
+    return (ORDERS || []).slice(0, 2).map(function (o) { return String(o.vat || '') });
+  });
+  eq('ข้อสอบนี้มีความหมาย — มีทั้งออเดอร์ที่ไม่รับและรับ VAT',
+    [vatOf[0].indexOf('ไม่') === 0, vatOf[1].indexOf('ไม่') === 0], [true, false]);
+
+  await page.evaluate(function () { openDoc((ORDERS || [])[0]); });
+  await page.waitForTimeout(400);
+  eq('ออเดอร์ที่ไม่รับ VAT ติ๊กบิลเงินสดมาให้',
+    await page.evaluate(function () {
+      return (document.querySelector('#dc-pick input[name=dctype]:checked') || {}).value;
+    }), 'cash');
+  var why13 = await page.textContent('#dc-pick, .modal');
+  truthy('บอกเหตุผลว่าทำไมถึงติ๊กบิลเงินสดให้', /ไม่รับ VAT/.test(why13), why13.slice(0, 200));
+  truthy('และบอกว่าไม่กินเลขในเล่มใบกำกับภาษี',
+    /ไม่กินเลขในเล่มใบกำกับภาษี/.test(why13));
+  eq('ช่อง VAT ถูกล็อกเป็นไม่คิด ตามชนิดใบ',
+    await page.inputValue('#dc-vat'), 'none');
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(250);
+
+  await page.evaluate(function () { openDoc((ORDERS || [])[1]); });
+  await page.waitForTimeout(400);
+  eq('ออเดอร์ที่รับ VAT ยังติ๊กใบเสร็จ/ใบกำกับภาษีเหมือนเดิม',
+    await page.evaluate(function () {
+      return (document.querySelector('#dc-pick input[name=dctype]:checked') || {}).value;
+    }), 'rec');
+  await page.evaluate(function () { closeModal(); });
+  await page.waitForTimeout(250);
+
   await page.evaluate(function () { openDoc((ORDERS || [])[0], 'rec'); });
   await page.waitForTimeout(400);
+  eq('สั่งชนิดมาตรง ๆ ต้องชนะค่าตั้งต้น',
+    await page.evaluate(function () {
+      return (document.querySelector('#dc-pick input[name=dctype]:checked') || {}).value;
+    }), 'rec');
   /* ชื่อบนหัวใบ — ติ๊กตั้งต้นตามชนิดเอกสาร แล้วคนออกใบเลือกเพิ่มเองได้
      ใบใบเดียวบางทีใช้เป็นทั้งใบส่งของและใบกำกับภาษี ระบบเดาแทนไม่ได้ */
   eq('ใบเสร็จ/ใบกำกับภาษี ติ๊กมาให้สองชื่อ',
@@ -493,6 +672,33 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.check('#dc-form .fchk-i[value="2"]');
   eq('ติ๊กใบส่งของเพิ่มได้เป็นสามชื่อ',
     await page.locator('#dc-form .fchk-i:checked').count(), 3);
+
+  /* ---------- 14ก. วันที่บนเอกสาร ----------
+     ของเดิมไม่มีช่องนี้ โค้ดยัดวันที่ของออเดอร์ลงไปเงียบ ๆ
+     ออเดอร์ 29 ก.ย. แต่ออกใบ 4 ต.ค. ใบเลยลงวันที่ 29 ก.ย. ทั้งที่เลขเป็นของตุลาคม
+     เล่มจึงมีเลขเดินหน้าแต่วันที่ถอยหลัง และยอดไปตกเดือนภาษีที่อาจยื่นไปแล้ว
+     (ใบ ONIV26-00342 ของจริง เจ้าของร้านเจอเอง 4 ต.ค. 69) */
+  console.log('\n14ก. วันที่บนเอกสาร ต้องเป็นวันที่ออกใบ ไม่ใช่วันที่สั่งซื้อ');
+  var today14 = await page.evaluate(function () { return todayISO() });
+  var ord14 = await page.evaluate(function () { return (ORDERS || [])[0].date });
+  truthy('ข้อสอบนี้มีความหมาย — ออเดอร์เป็นของเดือนก่อน', ord14.slice(0, 7) !== today14.slice(0, 7));
+  eq('มีช่องวันที่บนเอกสาร', await page.locator('#dc-date').count(), 1);
+  eq('ตั้งต้นเป็นวันนี้ ไม่ใช่วันที่สั่งซื้อ', await page.inputValue('#dc-date'), today14);
+
+  await page.click('#dc-date-ord');
+  await page.waitForTimeout(150);
+  eq('กดใช้วันที่สั่งซื้อแล้วช่องเปลี่ยนตาม', await page.inputValue('#dc-date'), ord14);
+  var warn14 = await page.textContent('#dc-datemsg');
+  truthy('เตือนว่าเป็นคนละเดือนกับวันนี้', /คนละเดือนกับวันนี้/.test(warn14), warn14);
+  truthy('บอกผลกับภาษีขาย/ภ.พ.30 ไม่ใช่แค่บอกว่าวันที่ต่าง',
+    /ภ\.พ\.30/.test(warn14), warn14);
+  truthy('บอกด้วยว่าเลขในเล่มแทรกย้อนหลังไม่ได้', /แทรกย้อนหลังไม่ได้/.test(warn14), warn14);
+
+  await page.click('#dc-date-today');
+  await page.waitForTimeout(150);
+  eq('กดใช้วันนี้แล้วกลับมาเป็นวันนี้', await page.inputValue('#dc-date'), today14);
+  eq('คำเตือนหายไปเมื่อวันที่กลับมาเป็นวันนี้',
+    await page.locator('#dc-datemsg').isVisible(), false);
 
   await page.click('#dc-make');
   await page.waitForSelector('#dc-copy', { timeout: 20000 });
@@ -502,6 +708,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     return document.querySelector('#dc-copy').disabled === false;
   }, null, { timeout: 20000 });
   var docCopy = await page.getAttribute('img.docimg', 'src');
+  eq('ใบที่ลงทะเบียนไว้ ลงวันที่วันนี้ ไม่ใช่วันที่สั่งซื้อ',
+    await page.evaluate(function () { return MOCK_DOCS[MOCK_DOCS.length - 1].date }), today14);
   truthy('กดสำเนาแล้วได้รูปคนละใบกับต้นฉบับ', docOrig !== docCopy);
   truthy('ปุ่มเปลี่ยนเป็นทางกลับให้เห็นว่ากำลังดูสำเนาอยู่',
     /ต้นฉบับ/.test(await page.textContent('#dc-copy')));
@@ -511,6 +719,47 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   }, null, { timeout: 20000 });
   eq('กดกลับแล้วได้ต้นฉบับใบเดิม ไม่ได้ออกเลขใหม่',
     (await page.getAttribute('img.docimg', 'src')) === docOrig, true);
+
+  /* ตราชุดเอกสารมุมขวาบน — ทุกใบต้องบอกได้ด้วยตัวเองว่าเป็นฉบับไหนในชุด
+     เคยเอา "ต้นฉบับ (Original)" ออกเมื่อ 1 ต.ค. 69 แล้วใส่กลับ 4 ต.ค. 69
+     ตามที่เจ้าของร้านสั่งหลังเห็นใบจริงที่พิมพ์ออกมา */
+  console.log('\n   ตราชุดเอกสาร — ทุกฉบับต้องติดป้ายบอกว่าเป็นใบอะไร');
+  /* ดักข้อความที่ถูกวาดลงกระดาษจริง ๆ แทนการนับหมึกในกรอบที่เดาพิกัดเอง
+     ตรงไปตรงมากว่า และไม่พังเวลาย้ายตำแหน่งตราหรือเปลี่ยนขนาดกระดาษ */
+  var badge = await page.evaluate(async function () {
+    function drawnText(copy) {
+      var seen = [], real = window.fitCenter;
+      window.fitCenter = function (x, t) { seen.push(String(t == null ? '' : t)); return real.apply(this, arguments) };
+      var d = { no: 'ONIV26-00001', type: 'ใบเสร็จรับเงิน', vatRate: 0.07,
+        lines: [{ name: 'ก', po: '', qty: 1, unit: 'ชิ้น', price: 100, amount: 100 }],
+        base: 100, vat: 7, total: 107, totalText: 'หนึ่งร้อยเจ็ดบาทถ้วน' };
+      var m = { no: 'ONIV26-00001', date: '2026-09-30', cust: { name: 'ก' } };
+      return buildDocPage(d, m, { co: {} }, copy).then(function () {
+        window.fitCenter = real;
+        return seen;
+      }, function (e) { window.fitCenter = real; throw e });
+    }
+    return { orig: await drawnText('ต้นฉบับ'),
+             copy: await drawnText('สำเนา'),
+             draft: await drawnText('ตัวอย่าง') };
+  });
+  truthy('ดักข้อความที่วาดได้จริง', badge.orig.length > 10);
+  truthy('ใบต้นฉบับ มีคำว่า "ต้นฉบับ" บนกระดาษ', badge.orig.indexOf('ต้นฉบับ') > -1);
+  truthy('และมีคำว่า "(Original)" ด้วย', badge.orig.indexOf('(Original)') > -1);
+  /* ป้ายต้องไม่ปนกัน ใบต้นฉบับที่ติดคำว่าสำเนาคือใบที่หยิบผิดได้ทันที */
+  eq('ใบต้นฉบับไม่มีคำว่า "สำเนา" ปนอยู่', badge.orig.indexOf('สำเนา'), -1);
+  eq('และไม่มี "(Copy)" ปนอยู่', badge.orig.indexOf('(Copy)'), -1);
+  eq('ใบสำเนาไม่มีคำว่า "ต้นฉบับ" ปนอยู่', badge.copy.indexOf('ต้นฉบับ'), -1);
+  eq('และไม่มี "(Original)" ปนอยู่', badge.copy.indexOf('(Original)'), -1);
+  /* กรอบ "สำหรับลูกค้า · เอกสารออกเป็นชุด" บอกคนละเรื่อง ต้องยังอยู่ */
+  truthy('แต่ยังบอกว่าใบนี้ของลูกค้า', badge.orig.indexOf('สำหรับลูกค้า') > -1);
+  truthy('และยังบอกว่าเอกสารออกเป็นชุด', badge.orig.indexOf('เอกสารออกเป็นชุด') > -1);
+
+  /* สำเนากับตัวอย่างต้องยังติดป้าย ไม่งั้นแยกไม่ออกจากใบจริงเวลาวางปนกัน */
+  truthy('ใบสำเนา ยังมีคำว่า "สำเนา"', badge.copy.indexOf('สำเนา') > -1);
+  truthy('ใบสำเนา ยังมี "(Copy)"', badge.copy.indexOf('(Copy)') > -1);
+  truthy('และบอกว่าใบนี้เก็บที่บริษัท', badge.copy.indexOf('สำหรับบริษัท') > -1);
+  truthy('ใบตัวอย่าง ยังมีคำว่า "ตัวอย่าง"', badge.draft.indexOf('ตัวอย่าง') > -1);
 
   /* พิมพ์ซ้ำ — ใบที่ออกไปแล้วต้องเปิดกลับมาพิมพ์ใหม่ได้ โดยไม่ออกเลขใหม่
      ก่อนหน้านี้ทำไม่ได้เลย กดออกใหม่ก็โดนด่านกันใบซ้ำ คนเลยตัน */
@@ -764,6 +1013,23 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   });
   eq('ใบที่ยกเลิกวาดออกมาไม่เหมือนใบปกติ', stamped.same, false);
   truthy('และยังเป็นรูปที่มีเนื้อหาจริง', stamped.len > 30000);
+
+  /* เลขที่เติมกลับเข้าเล่ม (fillDocGaps) ไม่เคยออกใบจริง จึงไม่มีรายการสักบรรทัด
+     ชีทส่ง lines: [] มาให้ หน้าจอต้องวาดกระดาษออกมาได้ ไม่ใช่ตายกลางทาง
+     ถ้าวาดไม่ได้ ปุ่มส่งบัญชีก็ส่งไม่ได้ เพราะไฟล์ที่ส่งคือรูปที่วาดตรงนี้ */
+  var empty = await page.evaluate(async function () {
+    var d = { lines: [], base: 0, vat: 0, vatRate: 0, total: 0,
+              totalText: 'ศูนย์บาทถ้วน' };
+    var m = { no: 'ONIV26-00248', date: '', type: 'ใบเสร็จรับเงิน',
+              cust: { name: '' }, voidWhy: 'ไม่ได้ใช้เลขนี้ — เติมกลับเข้าเล่มให้เลขครบ' };
+    var url = await buildDocPage(d, m, CFG.doc || {}, 'สำเนา');
+    var plain = await buildDocPage(d, { no: 'ONIV26-00248', date: '',
+      type: 'ใบเสร็จรับเงิน', cust: { name: '' } }, CFG.doc || {}, 'สำเนา');
+    return { len: url.length, png: url.slice(0, 15), stamped: url !== plain };
+  });
+  eq('ใบเปล่าวาดออกมาเป็นรูปจริง', empty.png, 'data:image/png;');
+  truthy('ไม่ใช่กระดาษเปล่าโล่ง ๆ — ยังมีหัวใบ เลขที่ และช่องเซ็น', empty.len > 30000);
+  truthy('และมีตรา ยกเลิก ปั๊มทับ หยิบไปใช้เป็นใบจริงไม่ได้', empty.stamped);
   await page.screenshot({ path: 'out/ui-void.png' });
   await page.evaluate(function () { closeModal(); });
   await page.waitForTimeout(200);
@@ -888,6 +1154,32 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.waitForTimeout(350);
   var edStart = await page.locator('#ed-rows .edrow').count();
   truthy('เปิดมาแล้วเห็นรายการเดิมของใบนั้น', edStart > 0);
+
+  /* เคยมีคลาส .edrow ของหน้าโหมดแก้ไขไปชนกับแถวนี้ แล้วตั้ง display:flex
+     ทุกอย่างในแถวเลยเรียงแนวนอน ช่องเลือกสินค้าเหลือกว้างสามตัวอักษร
+     และข้อความช่องติ๊กตกบรรทัดทีละตัว — บนมือถือใช้งานไม่ได้เลย
+     ข้อสอบนี้วัดความกว้างจริงบนจอ 390px ไม่ใช่ดูแค่ว่ามี element อยู่ */
+  console.log('\n   แถวสินค้าในกล่องนี้ต้องอ่านออกบนมือถือ');
+  var lay = await page.evaluate(function () {
+    var row = document.querySelector('#ed-rows .edrow');
+    var box = row.getBoundingClientRect();
+    var sel = row.querySelector('.i-sku').getBoundingClientRect();
+    var cks = [].map.call(row.querySelectorAll('.giftck'), function (el) {
+      var r = el.getBoundingClientRect();
+      return { w: r.width, h: r.height, x: r.left };
+    });
+    var qty = row.querySelector('.i-qty').getBoundingClientRect();
+    return { boxW: box.width, selW: sel.width, qtyW: qty.width, cks: cks };
+  });
+  truthy('ช่องเลือกสินค้ากว้างเกือบเต็มแถว (' + Math.round(lay.selW) + ' จาก ' +
+    Math.round(lay.boxW) + ')', lay.selW > lay.boxW * 0.8);
+  truthy('ช่องจำนวนกว้างพอพิมพ์ (' + Math.round(lay.qtyW) + 'px)', lay.qtyW > 100);
+  eq('ช่องติ๊กมีสองช่อง', lay.cks.length, 2);
+  lay.cks.forEach(function (c, i) {
+    truthy('ข้อความช่องติ๊กที่ ' + (i + 1) + ' ไม่ถูกบีบเป็นคอลัมน์ (กว้าง ' +
+      Math.round(c.w) + 'px สูง ' + Math.round(c.h) + 'px)',
+      c.w > lay.boxW * 0.8 && c.h < 90);
+  });
 
   console.log('\n   กดเพิ่มสินค้าแล้วต้องมีบรรทัดใหม่ให้กรอก');
   await page.click('#ed-add');
@@ -1087,6 +1379,79 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     Number(s2[1].replace(/,/g,'')) + Number(p2[1].replace(/,/g,'')),
     Number(n2[1].replace(/,/g,'')));
 
+  /* ---------- ช่อง Customer/PO บนใบพิมพ์ ----------
+
+     ของจริง: เจ้าของร้านวงแดงช่องนี้ในใบ ONIV26-00319 แล้วบอกว่า "ตรงนี้ไม่ใส่ po ให้"
+     หัวใบมี "หมายเลขคำสั่งซื้อ: PO26/08-0093" อยู่แล้ว แต่ช่องในตารางว่าง
+     เพราะของเดิมวาดเฉพาะ PO รายบรรทัด ซึ่งไม่มีหน้าจอไหนใส่ให้เลยสักที่
+     ฝ่ายจัดซื้อของลูกค้าใช้ช่องนี้จับคู่ใบกับ PO ของเขา ว่างไว้ = เขาต้องไล่หาเอง  */
+  console.log('\n   ช่อง Customer/PO ในตาราง ต้องเติมเลข PO ของใบให้');
+  var poInk = await page.evaluate(async function () {
+    /* นับหมึกทั้งหน้า แล้วเทียบใบที่เหมือนกันเป๊ะ ต่างกันแค่มี PO กับไม่มี
+       ไม่ต้องเดาพิกัดช่อง — หมึกที่เพิ่มขึ้นคือเลข PO ที่ถูกวาดลงไปล้วน ๆ */
+    function ink(url) {
+      return new Promise(function (res) {
+        var im = new Image();
+        im.onload = function () {
+          var c = document.createElement('canvas');
+          c.width = im.width; c.height = im.height;
+          var g = c.getContext('2d');
+          g.drawImage(im, 0, 0);
+          var p = g.getImageData(0, 0, im.width, im.height).data, n = 0;
+          for (var i = 0; i < p.length; i += 4) if (p[i] < 170) n++;
+          res(n);
+        };
+        im.onerror = function () { res(-1) };
+        im.src = url;
+      });
+    }
+    function meta(po) {
+      return { no: 'ONIV26-00319', date: '2026-09-28', po: po,
+               cust: { name: 'บริษัท ไทยโคโพลี อุสาหกรรมพลาสติก จำกัด' } };
+    }
+    function doc(lines) {
+      return { no: 'ONIV26-00319', type: 'ใบเสร็จรับเงิน', vatRate: 0.07, lines: lines,
+               base: 7500, vat: 525, total: 8025, totalText: 'แปดพันยี่สิบห้าบาทถ้วน' };
+    }
+    var goods = [{ name: 'Set Single Flute 1F 3.175-32-3.175-55L(10pcs)',
+                   po: '', qty: 5, unit: 'ชิ้น', price: 1500, amount: 7500 }];
+    /* บรรทัดที่ไม่ใช่ตัวสินค้า — ค่าจัดส่งไม่ได้สั่งมาตาม PO จึงต้องไม่ถูกเติมให้ */
+    var shipOnly = [{ name: 'ค่าจัดส่ง', po: '', extra: true,
+                      qty: 1, unit: 'ครั้ง', price: 50, amount: 50 }];
+
+    var cfg = { co: {} };
+    return {
+      goodsNo:   await ink(await buildDocPage(doc(goods),    meta(''),              cfg, 'ต้นฉบับ')),
+      goodsYes:  await ink(await buildDocPage(doc(goods),    meta('PO26/08-0093'),  cfg, 'ต้นฉบับ')),
+      shipNo:    await ink(await buildDocPage(doc(shipOnly), meta(''),              cfg, 'ต้นฉบับ')),
+      shipYes:   await ink(await buildDocPage(doc(shipOnly), meta('PO26/08-0093'),  cfg, 'ต้นฉบับ')),
+      /* PO ที่ติดมากับบรรทัดเอง ต้องถูกวาดให้แม้ใบไม่มี PO
+         ใช้ชื่อสินค้าเดิมเป๊ะ เทียบกับ goodsNo ได้ตรง ๆ ต่างกันแค่ช่อง po */
+      ownPo:     await ink(await buildDocPage(
+                    doc([{ name: 'Set Single Flute 1F 3.175-32-3.175-55L(10pcs)',
+                           po: 'PO26/08-0093', qty: 5, unit: 'ชิ้น',
+                           price: 1500, amount: 7500 }]),
+                    meta(''), cfg, 'ต้นฉบับ'))
+    };
+  });
+  truthy('วาดใบได้ ไม่ error', poInk.goodsNo > 0 && poInk.goodsYes > 0);
+  truthy('ใส่ PO แล้วมีหมึกเพิ่มขึ้นในใบจริง (' + poInk.goodsNo + ' → ' + poInk.goodsYes + ')',
+    poInk.goodsYes > poInk.goodsNo);
+  /* หัวใบมีช่อง "หมายเลขคำสั่งซื้อ" อยู่แล้ว หมึกจึงเพิ่มสองที่ = เลขถูกวาดในตารางด้วย
+     ถ้าวาดแต่หัวใบอย่างเดียว ส่วนต่างจะราวครึ่งเดียวของนี้ */
+  truthy('หมึกที่เพิ่มมากพอที่จะเป็นเลข PO สองที่ (หัวใบ + ในตาราง)',
+    poInk.goodsYes - poInk.goodsNo > 300,
+    'เพิ่มแค่ ' + (poInk.goodsYes - poInk.goodsNo));
+  truthy('บรรทัดค่าจัดส่งไม่ถูกเติม PO ให้ — ส่วนต่างเท่ากับเลขบนหัวใบเท่านั้น',
+    (poInk.shipYes - poInk.shipNo) < (poInk.goodsYes - poInk.goodsNo) * 0.7,
+    'ค่าจัดส่งเพิ่ม ' + (poInk.shipYes - poInk.shipNo)
+      + ' · สินค้าเพิ่ม ' + (poInk.goodsYes - poInk.goodsNo));
+  /* ใบไม่มี PO แต่บรรทัดมีของตัวเอง — หมึกต้องเพิ่มจากบรรทัดนั้นบรรทัดเดียว
+     จึงน้อยกว่าตอนที่ใบมี PO ด้วย (ซึ่งวาดทั้งหัวใบและในตาราง) */
+  truthy('บรรทัดที่มี PO ของตัวเองก็ยังวาดให้ แม้หัวใบจะไม่มี PO ('
+    + poInk.goodsNo + ' → ' + poInk.ownPo + ')',
+    poInk.ownPo > poInk.goodsNo && poInk.ownPo < poInk.goodsYes);
+
   console.log('\n   ไฟล์เอกสารต้องเล็กพอส่งในไลน์ได้ ไม่ต้องเอาไปบีบเอง');
   var fsz = await page.evaluate(async function () {
     var d = { no:'X', type:'ใบเสร็จรับเงิน', vatRate:0.07,
@@ -1278,6 +1643,71 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     'ส่งที่หน้างานโครงการใหม่ 99 ถ.สมมติ');
   truthy('แต่เบอร์ที่ยังว่างอยู่ยังเติมให้',
     /^0\d{8,9}$/.test(await page.inputValue('#f-tel')));
+
+  /* ---------- 23ข. ชื่อบริษัทเขียนได้หลายแบบ ต้องหาเจอทุกแบบ ----------
+
+     ของจริง: พิมพ์ "บริษัท คิวพาธ" แล้วไม่ขึ้นสักราย ทั้งที่ลูกค้ารายนั้นอยู่ในชีท
+     เพราะของเดิมเทียบชื่อแบบตรงตัวทั้งสตริง แต่ชื่อในชีทเขียนได้อีกหลายแบบ
+     คนที่หาไม่เจอก็พิมพ์ชื่อใหม่เอง แล้วชีทก็ได้ลูกค้ารายเดิมเพิ่มมาอีกชื่อ    */
+  console.log('\n23ข. ชื่อบริษัทเขียนคนละแบบ ต้องยังหาเจอ');
+  await page.click('.tabs button[data-go="new"]');
+  await page.evaluate(function () { resetForm() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () {
+    CUSTS = [
+      { name: 'บริษัท  คิวพาธ จำกัด', tel: '0812345678', addr: 'ที่อยู่ ก 10250', n: 2 },
+      { name: 'คิวพาธ จำกัด',          tel: '0823456789', addr: 'ที่อยู่ ข 10250', n: 1 },
+      { name: 'บจก. คิวพาธ',           tel: '0834567890', addr: 'ที่อยู่ ค 10250', n: 1 },
+      { name: 'บริษัทคิวพาธ จำกัด',    tel: '0845678901', addr: 'ที่อยู่ ง 10250', n: 1 },
+      { name: 'บริษัท คิวพาธ จำกัด (สำนักงานใหญ่)', tel: '0856789012', addr: 'ที่อยู่ จ 10250', n: 1 },
+      { name: 'บริษัท ไทยโคโพลี อุสาหกรรมพลาสติก จำกัด', tel: '0867890123', addr: 'ที่อยู่ ฉ 24130', n: 3 }
+    ];
+  });
+
+  async function custHits(q) {
+    await page.fill('#f-cust', '');
+    await page.waitForTimeout(120);
+    await page.fill('#f-cust', q);
+    await page.waitForTimeout(450);
+    return await page.evaluate(function () {
+      return Array.prototype.map.call(
+        document.querySelectorAll('#f-cust-hit button b'),
+        function (b) { return b.textContent });
+    });
+  }
+
+  var h1 = await custHits('บริษัท คิวพาธ');
+  eq('พิมพ์ "บริษัท คิวพาธ" เจอครบทั้ง 5 แบบที่เขียนต่างกัน', h1.length, 5);
+  truthy('เจอแบบเคาะวรรคสองที', h1.indexOf('บริษัท  คิวพาธ จำกัด') > -1, h1.join(' | '));
+  truthy('เจอแบบไม่มีคำว่าบริษัทนำหน้า', h1.indexOf('คิวพาธ จำกัด') > -1, h1.join(' | '));
+  truthy('เจอแบบใช้ตัวย่อ บจก.', h1.indexOf('บจก. คิวพาธ') > -1, h1.join(' | '));
+  truthy('เจอแบบไม่เคาะวรรคเลย', h1.indexOf('บริษัทคิวพาธ จำกัด') > -1, h1.join(' | '));
+  truthy('ไม่ลากรายอื่นที่ไม่เกี่ยวมาด้วย',
+    h1.indexOf('บริษัท ไทยโคโพลี อุสาหกรรมพลาสติก จำกัด') < 0, h1.join(' | '));
+
+  var h2 = await custHits('คิวพาธ');
+  eq('พิมพ์เฉพาะคำเด่นก็เจอครบเหมือนกัน', h2.length, 5);
+  var h3 = await custHits('บริษัท คิวพา');
+  eq('พิมพ์ค้างกลางคำก็ยังเจอ', h3.length, 5);
+  var h4 = await custHits('ไทยโคโพลี');
+  eq('คำเด่นของอีกรายต้องได้รายนั้นรายเดียว', h4, ['บริษัท ไทยโคโพลี อุสาหกรรมพลาสติก จำกัด']);
+
+  console.log('\n   หาไม่เจอ ต้องบอกให้รู้ ไม่ใช่เงียบ');
+  /* เงียบไปเฉย ๆ ทำให้แยกไม่ออกว่า "ไม่มีลูกค้าชื่อนี้" กับ "รายชื่อโหลดไม่ขึ้น" */
+  await custHits('ไม่มีบริษัทชื่อนี้แน่นอน');
+  var miss = await page.textContent('#f-cust-hit');
+  truthy('บอกว่าไม่เจอ พร้อมจำนวนที่ค้นจาก', /ไม่เจอ/.test(miss) && /6 ราย/.test(miss), miss);
+  truthy('และบอกว่าพิมพ์ต่อได้ จะบันทึกเป็นลูกค้าใหม่', /ลูกค้าใหม่/.test(miss), miss);
+
+  console.log('\n   รายชื่อโหลดไม่ขึ้น ต้องบอกคนละอย่างกับ "ไม่เจอ"');
+  await page.evaluate(function () { CUSTS = [] });
+  await custHits('บริษัท คิวพาธ');
+  var down = await page.textContent('#f-cust-hit');
+  truthy('บอกว่าโหลดรายชื่อไม่ได้ ไม่ใช่บอกว่าไม่มีลูกค้ารายนี้',
+    /โหลดรายชื่อลูกค้าเก่าไม่ได้/.test(down), down);
+  truthy('และย้ำว่ายังคีย์ออเดอร์ได้ตามปกติ', /ลงชีทได้เหมือนเดิม/.test(down), down);
+  await page.evaluate(function () { CUSTS = null; resetForm() });
+  await page.waitForTimeout(200);
 
   console.log('\n   ใบเสนอราคาก็ดึงลูกค้าเก่าได้เหมือนกัน');
   await page.click('.tabs button[data-go="quote"]');
@@ -1839,6 +2269,181 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       return $$('#items .it')[0].querySelector('.i-sku').innerHTML.indexOf('(เหลือ ' + n + ')') > -1;
     }, before29 + 12));
 
+  /* ---------- 29ข. ของที่เพิ่งซื้อเข้ามา ยังไม่มีในดรอปดาวน์ ----------
+
+     ของจริง: เจ้าของร้านเปิดหน้ารับเข้าสินค้า แล้วในรายการไม่มีตัวที่เพิ่งซื้อมา
+     เพราะยังไม่เคยขาย ก่อนหน้านี้ต้องไปเปิดชีท ฐานสินค้า พิมพ์แถวเองก่อน
+     แล้วค่อยกลับมารับเข้า — ขั้นตอนที่คนข้ามแล้วของหายเข้าระบบไม่ได้          */
+  console.log('\n29ข. พิมพ์ชื่อกับรหัสสินค้าใหม่ตอนรับของเข้า');
+  truthy('ดรอปดาวน์มีตัวเลือก "สินค้าใหม่" ให้เลือก',
+    await page.evaluate(function () {
+      var o = $('#r-sku').options[0];
+      return o && /สินค้าใหม่/.test(o.textContent);
+    }));
+  truthy('ยังไม่เลือก กล่องกรอกสินค้าใหม่ต้องซ่อนอยู่',
+    await page.evaluate(function () { return $('#r-new').style.display === 'none' }));
+
+  await page.selectOption('#r-sku', '__ใหม่__');
+  await page.waitForTimeout(250);
+  truthy('เลือกแล้วกล่องกรอกโผล่ขึ้นมา',
+    await page.evaluate(function () { return $('#r-new').style.display !== 'none' }));
+  truthy('เสนอหมวดที่มีอยู่แล้วให้เลือก ไม่ต้องพิมพ์ใหม่ทั้งคำ',
+    await page.evaluate(function () { return $('#rn-groups').options.length > 0 }));
+
+  /* รหัสที่จะได้ต้องโชว์ให้เห็นก่อนกดบันทึก และต้องเดินตามชุดของหมวดที่เลือก
+     เจ้าของร้านสั่งว่าของ TOOLING กับเคมีอยากให้เรียงติดกัน ไม่ใช่แทรกกัน */
+  var skuHint = await page.evaluate(function () {
+    /* ปลอมรายการสินค้าให้มีสองชุดรหัสเหมือนของจริงในชีท */
+    CFG.products = [
+      { sku: 'SKU-141', group: 'TOOLING', name: 'ก' },
+      { sku: 'SKU-148', group: 'TOOLING', name: 'ข' },
+      { sku: 'CHEM-001', group: 'เคมีภัณฑ์', name: 'ค' },
+      { sku: 'CHEM-007', group: 'เคมีภัณฑ์', name: 'ง' }
+    ];
+    function hintFor(g) {
+      $('#rn-group').value = g;
+      $('#rn-group').dispatchEvent(new Event('input'));
+      return $('#rn-sku').placeholder;
+    }
+    return { tool: hintFor('TOOLING'), chem: hintFor('เคมีภัณฑ์'), blank: hintFor('') };
+  });
+  truthy('หมวดเครื่องมือ บอกว่าจะได้ SKU-149', /SKU-149/.test(skuHint.tool), skuHint.tool);
+  truthy('หมวดเคมี บอกว่าจะได้ CHEM-008 ไม่ใช่ SKU-149',
+    /CHEM-008/.test(skuHint.chem) && !/SKU-/.test(skuHint.chem), skuHint.chem);
+  truthy('ยังไม่เลือกหมวด ใช้ชุดกลาง', /SKU-149/.test(skuHint.blank), skuHint.blank);
+  await page.evaluate(function () { $('#rn-group').value = '' });
+  /* สินค้าใหม่ไม่มีทางคุมล็อตอยู่แล้ว บังคับใส่เลขล็อตไม่ได้ */
+  truthy('ไม่บังคับเลขล็อตกับของที่เพิ่งสร้าง',
+    !/ต้องใส่เลขล็อต/.test(await page.textContent('#r-lot-why')));
+
+  console.log('\n   ลืมใส่ชื่อ ต้องกันไว้ก่อนถึงเซิร์ฟเวอร์');
+  await page.fill('#r-qty', '6');
+  var sentB4 = await page.evaluate(function () { return window.SENT.length });
+  await page.click('#btn-recv');
+  await page.waitForTimeout(400);
+  truthy('ขึ้นคำเตือนเรื่องชื่อ',
+    /ใส่ชื่อสินค้าใหม่/.test(await page.textContent('#err')));
+  eq('ไม่ได้ยิงขึ้นชีทเลย',
+    await page.evaluate(function () { return window.SENT.length }), sentB4);
+
+  console.log('\n   ชื่อซ้ำของเดิม ต้องเตือนพร้อมปุ่มให้ยืนยัน ไม่ใช่ทางตัน');
+  var dupName = await page.evaluate(function () { return MOCK_BOOT.products[0].name });
+  await page.fill('#rn-name', dupName);
+  await page.click('#btn-recv');
+  await page.waitForTimeout(600);
+  truthy('บอกว่าชื่อนี้มีอยู่แล้ว พร้อมรหัสของเดิม',
+    /อยู่แล้วในรหัส/.test(await page.textContent('#err')));
+  truthy('ไม่โชว์รหัสลับ DUP_NAME ให้คนอ่าน',
+    !/DUP_NAME/.test(await page.textContent('#err')));
+  truthy('มีปุ่มยืนยันให้กดต่อได้',
+    /ยืนยัน เป็นคนละตัว/.test(await page.textContent('#err')));
+
+  console.log('\n   ตั้งชื่อใหม่ที่ไม่ซ้ำ แล้วบันทึกได้');
+  await page.fill('#rn-name', 'จารบีทนความร้อน 1kg');
+  await page.fill('#rn-sku', 'AB-900');
+  /* เลี่ยงหมวดที่มีคำว่า เคมี/น้ำยา เพราะหน้าเติมน้ำยาจับจากคำพวกนั้น
+     ตัวที่สร้างในข้อนี้จะไปโผล่ในข้อ 60 ด้วย แล้วสองข้อจะผูกกันโดยไม่จำเป็น */
+  await page.fill('#rn-group', 'จารบีและน้ำมัน');
+  await page.fill('#rn-unit', 'กระปุก');
+  await page.fill('#rn-price', '450');
+  await page.fill('#r-cost', '300');
+  await page.click('#btn-recv');
+  await page.waitForTimeout(1200);
+  var sentNew = await page.evaluate(function () { return window.SENT[window.SENT.length - 1] });
+  eq('ส่งรายละเอียดสินค้าใหม่ไปครบ',
+    [sentNew.newProd.sku, sentNew.newProd.name, sentNew.newProd.group,
+     sentNew.newProd.unit, sentNew.newProd.price, sentNew.qty],
+    ['AB-900', 'จารบีทนความร้อน 1kg', 'จารบีและน้ำมัน', 'กระปุก', '450', 6]);
+  eq('ไม่ส่งรหัสสมมุติของตัวเลือกขึ้นชีท', sentNew.sku, '');
+  eq('ไม่ติ๊กขึ้นหน้าร้าน = ส่ง 0 ไป', sentNew.newProd.web, 0);
+  truthy('บอกรหัสที่ได้ ครั้งหน้าจะได้หาเจอในรายการ',
+    /AB-900/.test(await page.textContent('#ok')));
+  truthy('และบอกว่ายังไม่ขึ้นหน้าร้าน',
+    /ยังไม่ขึ้นหน้าร้าน/.test(await page.textContent('#ok')));
+
+  console.log('\n   บันทึกเสร็จแล้วต้องไม่ค้างที่ "สินค้าใหม่" ไม่งั้นกดอีกทีได้แถวซ้ำ');
+  eq('ดรอปดาวน์เด้งไปที่ตัวที่เพิ่งสร้าง',
+    await page.evaluate(function () { return $('#r-sku').value }), 'AB-900');
+  truthy('กล่องกรอกสินค้าใหม่ปิดกลับไปแล้ว',
+    await page.evaluate(function () { return $('#r-new').style.display === 'none' }));
+  eq('ล้างช่องที่กรอกไว้ให้หมด',
+    await page.evaluate(function () {
+      return ['rn-sku', 'rn-name', 'rn-group', 'rn-unit', 'rn-price']
+        .map(function (id) { return $('#' + id).value });
+    }), ['', '', '', '', '']);
+  truthy('ตัวที่เพิ่งสร้างไปโผล่ในดรอปดาวน์ของหน้าคีย์ออเดอร์ด้วย',
+    await page.evaluate(function () {
+      return $$('#items .it')[0].querySelector('.i-sku').innerHTML.indexOf('AB-900') > -1;
+    }));
+  /* รายการสินค้าโหลดใหม่ทุกครั้งที่รับของสำเร็จ ตัวเลือกพิเศษต้องไม่หายไปด้วย */
+  truthy('ตัวเลือก "สินค้าใหม่" ยังอยู่หัวรายการ กดเพิ่มตัวต่อไปได้เลย',
+    await page.evaluate(function () {
+      var o = $('#r-sku').options[0];
+      return o && o.value === '__ใหม่__';
+    }));
+
+  /* ---------- 29ค. คำตอบหายระหว่างทาง ต้องไม่พังเป็นภาษาโปรแกรมเมอร์ ----------
+
+     ของจริงที่เจ้าของร้านเจอสองครั้ง: กดออกใบวางบิลแล้วขึ้น
+     "Cannot read properties of null (reading 'no')" และตอนคีย์ออเดอร์ขึ้น
+     "... (reading 'net')" — ทั้งสองครั้งงานลงชีทไปเรียบร้อยแล้ว
+     แต่คำตอบไม่กลับมาถึงหน้าจอ (เปิดหน้าค้างไว้นาน / เพิ่งปล่อยเวอร์ชันใหม่)
+
+     ข้อความแบบนั้นบอกอะไรคนหน้าร้านไม่ได้เลย และที่แย่กว่าคือมันอ่านเหมือน
+     "ไม่สำเร็จ" ทั้งที่สำเร็จแล้ว คนจะคีย์ใหม่ทั้งที่ไม่ต้อง                */
+  console.log('\n29ค. คำตอบจากชีทหายระหว่างทาง');
+  await page.click('.tabs button[data-go="recv"]');
+  await page.waitForTimeout(400);
+  await page.evaluate(function () { window.MOCK_NULL = 1 });
+
+  var okSku = await page.evaluate(function () {
+    for (var i = 0; i < MOCK_BOOT.products.length; i++) {
+      if (!MOCK_BOOT.lots[MOCK_BOOT.products[i].sku]) return MOCK_BOOT.products[i].sku;
+    }
+    return '';
+  });
+  await page.selectOption('#r-sku', okSku);
+  await page.fill('#r-qty', '5');
+  await page.click('#btn-recv');
+  await page.waitForTimeout(900);
+
+  var errTx = await page.textContent('#err');
+  truthy('ไม่โชว์ข้อความภาษาโปรแกรมเมอร์ให้คนหน้าร้านอ่าน',
+    !/Cannot read propert|null|undefined/.test(errTx), errTx);
+  truthy('บอกว่าชีทรับงานไปแล้ว คำตอบหายระหว่างทาง',
+    /คำตอบหายระหว่างทาง/.test(errTx), errTx);
+  /* สำคัญที่สุด: ห้ามอ่านเหมือน "ไม่สำเร็จ" เพราะของลงชีทไปแล้วจริง ๆ */
+  truthy('บอกให้อย่าเพิ่งทำใหม่ — ของอาจลงชีทไปแล้ว',
+    /อย่าเพิ่งทำใหม่/.test(errTx), errTx);
+  truthy('และบอกว่ากดซ้ำได้ ระบบกันงานซ้ำไว้แล้ว',
+    /กันงานซ้ำ/.test(errTx), errTx);
+  truthy('บอกชื่อฟังก์ชันไว้ด้วย เผื่อต้องไล่ใน Executions',
+    /receiveStock/.test(errTx), errTx);
+  truthy('ปุ่มกลับมากดได้ ไม่ค้างที่ "กำลังบันทึก…"',
+    !(await page.locator('#btn-recv').isDisabled()));
+  eq('ปุ่มกลับไปเป็นข้อความเดิม',
+    (await page.textContent('#btn-recv')).trim(), 'บันทึกรับของเข้า');
+
+  console.log('\n   งานฝั่งชีทต้องเดินจนจบตามปกติ ไม่ได้ถูกยกเลิกไปด้วย');
+  /* นี่คือหัวใจของเรื่อง — ถ้าคนกดใหม่เพราะเข้าใจว่าล้มเหลว จะได้ของสองก้อน */
+  truthy('ของเข้าสต๊อกไปแล้วจริง แม้คำตอบจะหาย',
+    await page.evaluate(function (sku) {
+      return MOCK_BOOT.products.filter(function (p) { return p.sku === sku })[0].remain >= 5;
+    }, okSku));
+
+  console.log('\n   กดซ้ำด้วยกุญแจเดิม ต้องไม่ได้ของสองก้อน');
+  var keyBefore = await page.evaluate(function () {
+    return window.SENT[window.SENT.length - 1].clientKey;
+  });
+  await page.evaluate(function () { window.MOCK_NULL = 0 });
+  await page.click('#btn-recv');
+  await page.waitForTimeout(900);
+  eq('กุญแจกันซ้ำยังเป็นอันเดิม ชีทจึงรู้ว่าเป็นงานเดิม',
+    await page.evaluate(function () {
+      return window.SENT[window.SENT.length - 1].clientKey;
+    }), keyBefore);
+  await page.evaluate(function () { window.MOCK_NULL = 0 });
+
   /* ---------- 30. นำเข้าออเดอร์จาก Shopee ---------- */
   console.log('\n30. นำเข้าออเดอร์จาก Shopee');
   await page.click('.tabs button[data-go="list"]');
@@ -1858,8 +2463,43 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   await page.fill('#sp-text', 'สวัสดีครับ ส่งของด้วย');
   await page.click('#sp-read');
   await page.waitForTimeout(400);
-  truthy('บอกว่าหาคอลัมน์ไม่เจอ พร้อมชื่อคอลัมน์ที่ขาด',
-    /หาคอลัมน์ไม่เจอ/.test(await page.textContent('#err')));
+  var e30a = await page.textContent('#err');
+  truthy('บอกว่าอ่านตารางไม่ได้', /อ่านตารางไม่ได้/.test(e30a), e30a.slice(0, 120));
+  truthy('และบอกชื่อคอลัมน์ที่ขาดไปด้วย',
+    /หาคอลัมน์ที่ต้องใช้ไม่เจอ.*หมายเลขคำสั่งซื้อ/.test(e30a), e30a.slice(0, 200));
+
+  /* ---------- 30ก. ก๊อปมาไม่ติดแถวหัวตาราง ----------
+     สาเหตุที่เจอจริงเกือบทุกครั้ง บรรทัดแรกเป็นข้อมูลของออเดอร์ใบแรก
+     ระบบอ่านมันเป็นชื่อคอลัมน์แล้วหาไม่เจอสักอัน
+     ของเดิมเทรายชื่อคอลัมน์ห้าสิบกว่าตัวออกมาเป็นพืด แถมโชว์ <b> กับ <br>
+     เป็นตัวหนังสือดิบ ๆ เพราะ showErr esc ทั้งก้อน (เจอจริง 7 ต.ค. 69) */
+  console.log('\n30ก. ก๊อปมาไม่ติดแถวหัวตาราง ต้องบอกสาเหตุ ไม่ใช่เทรายชื่อคอลัมน์');
+  await page.fill('#sp-text',
+    ['260901U79QX7QN', 'สำเร็จแล้ว', 'N', 'N', 'hanavy001', '2026-09-01 11:19',
+     'ShopeePay', 'KBank', '3.21%', 'Express Delivery', 'pickup', '3241997846775296201',
+     '5000 ml IPA.99.9%', '', '590.00', '1', '0.00', '0.00', '203.00',
+     'ROI3_QFP_K0AWJ4FV1EBRJGNCP6MR-XJ', 'N', '95.00', '21.00', '387.00',
+     'น******ฐ', '******39', 'แขวงแสนแสบ', 'กรุงเทพมหานคร', '10510'].join('\t'));
+  await page.click('#sp-read');
+  await page.waitForTimeout(400);
+  var e30 = await page.textContent('#err');
+  truthy('บอกสาเหตุจริงตั้งแต่บรรทัดแรก', /ก๊อปมาไม่ติดแถวหัวตาราง/.test(e30), e30.slice(0, 160));
+  truthy('และบอกวิธีแก้ที่กดได้จริง (Ctrl+A)', /Ctrl\+A/.test(e30));
+  /* HTML ต้องถูกวาดเป็นตัวหนา ไม่ใช่โชว์แท็กดิบ ๆ ให้คนอ่าน */
+  eq('ไม่มีแท็ก <b> โผล่เป็นตัวหนังสือ', e30.indexOf('<b>'), -1);
+  eq('ไม่มีแท็ก <br> โผล่เป็นตัวหนังสือ', e30.indexOf('<br>'), -1);
+  truthy('วาดเป็นตัวหนาจริง ไม่ใช่ข้อความล้วน',
+    await page.evaluate(function () { return $('#err').querySelectorAll('b').length > 0 }));
+  /* ข้อความที่ยาวเป็นพืดคือข้อความที่ไม่มีใครอ่าน — คำแนะนำต้องไม่ถูกดันหายไป */
+  truthy('ไม่เทรายชื่อคอลัมน์ทั้งหมดออกมา', e30.length < 700, 'ยาว ' + e30.length);
+
+  /* ข้อความธรรมดาต้องยัง esc เหมือนเดิม ไม่งั้นชื่อลูกค้าที่มีอักขระ HTML
+     จะกลายเป็นแท็กจริงบนหน้าจอ */
+  eq('ข้อความธรรมดายังถูก esc ให้เหมือนเดิม', await page.evaluate(function () {
+    showErr('<img src=x onerror=1> ชื่อแปลก');
+    var n = $('#err').querySelectorAll('img').length;
+    return [n, $('#err').textContent.indexOf('<img') > -1];
+  }), [0, true]);
 
   console.log('\n   วางตารางจริง — ต้องกางให้ตรวจก่อน ยังไม่เขียนอะไรลงชีท');
   var sku30 = await page.evaluate(function () { return MOCK_BOOT.products[0].sku });
@@ -2224,7 +2864,15 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       dead:      payState({ status: 'ตีกลับ', date: back(9) }),
       codFresh:  payState({ status: 'เก็บเงินปลายทาง', date: back(2) }),
       codEdge:   payState({ status: 'เก็บเงินปลายทาง', date: back(7) }),
-      codLate:   payState({ status: 'เก็บเงินปลายทาง', date: back(12) })
+      codLate:   payState({ status: 'เก็บเงินปลายทาง', date: back(12) }),
+      /* ออเดอร์มาร์เก็ตเพลส เก็บเงินที่แพลตฟอร์มไปแล้วตั้งแต่ลูกค้ากดสั่ง
+         ใบที่นำเข้าลงสถานะเป็น "ส่งแล้ว" ซึ่งจริงตามการส่งของ แต่ไม่ใช่คำว่าชำระแล้ว
+         ของเดิมจึงไปกองอยู่ในค้างชำระทั้งหมด (ของจริง 7 ต.ค. 69: 58 ใบ ฿40,536) */
+      shopeeShipped: payState({ status: 'ส่งแล้ว', channel: 'Shopee', date: back(9) }),
+      shopeeThai:    payState({ status: 'รอชำระ', channel: 'ช้อปปี้', date: back(40) }),
+      lazada:        payState({ status: 'รอชำระ', channel: 'Lazada', date: back(40) }),
+      shopeeDead:    payState({ status: 'ตีกลับ', channel: 'Shopee', date: back(9) }),
+      pageLate:      payState({ status: 'รอชำระ', channel: 'เพจ Facebook', date: back(9) })
     };
   });
   eq('เงินสดวันนี้ ยังไม่สาย', pay39.cashFresh.key, 'due');
@@ -2246,6 +2894,19 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
      ถ้าป้ายเขียนเหมือนใบอื่น คนจะไปโทรทวงคนที่จ่ายเงินไปแล้ว */
   truthy('และป้ายต้องบอกว่าไปตามกับขนส่ง ไม่ใช่ทวงลูกค้า',
     pay39.codLate.label.indexOf('ขนส่ง') > -1);
+
+  /* ออเดอร์มาร์เก็ตเพลสต้องไม่โผล่ในค้างชำระเลยสักใบ
+     ร้านไม่เคยต้องโทรทวงลูกค้า Shopee เงินมาจากรอบโอนของแพลตฟอร์ม */
+  console.log('\n   ออเดอร์มาร์เก็ตเพลส ต้องไม่ขึ้นค้างชำระ');
+  eq('Shopee ที่ส่งแล้ว = จ่ายแล้ว ไม่ใช่ค้าง', pay39.shopeeShipped.key, 'paid');
+  eq('และบอกตรง ๆ ว่าเงินมาทางแพลตฟอร์ม',
+    pay39.shopeeShipped.label, 'ชำระผ่านแพลตฟอร์ม');
+  eq('เขียนชื่อช่องทางเป็นภาษาไทยก็จับได้', pay39.shopeeThai.key, 'paid');
+  eq('Lazada ก็เหมือนกัน', pay39.lazada.key, 'paid');
+  /* ใบที่ตีกลับยังต้องเป็นใบตาย ไม่ใช่กลายเป็นจ่ายแล้วเพราะเป็นของ Shopee */
+  eq('ใบ Shopee ที่ตีกลับ ยังเป็นใบตายเหมือนเดิม', pay39.shopeeDead.key, 'dead');
+  /* ใบที่คีย์เองต้องไม่โดนผลข้างเคียง ยังขึ้นเกินกำหนดเหมือนเดิม */
+  eq('ใบเพจที่ค้าง 9 วัน ยังขึ้นเกินกำหนดเหมือนเดิม', pay39.pageLate.key, 'over');
 
   console.log('\n   แถบบอกสถานะเงินต้องขึ้นสีจริง ไม่ใช่โดนสีเทาของบรรทัดทับ');
   /* ".row .i span" ทาสีเทาไว้ทั้งบรรทัด และเจาะจงกว่า ".paybar.over" อยู่หนึ่งขั้น
@@ -2807,7 +3468,9 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
         icons: q('.acts .sqic').length,
         lines: Object.keys(tops).length,
         srcs: q('.acts .sqic').map(function (im) { return im.getAttribute('src').slice(-40) }),
-        iconW: btns.length ? Math.round(r.querySelector('.sqic').getBoundingClientRect().width) : 0
+        iconW: btns.length ? Math.round(r.querySelector('.sqic').getBoundingClientRect().width) : 0,
+        sqW: btns.length ? Math.round(btns[0].getBoundingClientRect().width) : 0,
+        sqH: btns.length ? Math.round(btns[0].getBoundingClientRect().height) : 0
       });
     });
     return out;
@@ -2837,9 +3500,16 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
      ล็อกเลขไว้ที่ 8 ตั้งใจ — วันที่ได้รูปมาแล้วข้อสอบข้อนี้จะเตือนให้มาแก้เป็น 9 */
   eq('แปดปุ่มเดิมยังเป็นรูปจริง ไม่มีปุ่มไหนตกกลับไปเป็นตัวอักษร',
     seen40.rows.slice(0, 4).map(function (r) { return r.icons }), [8, 8, 8, 8]);
-  /* ปุ่มตกบรรทัด = ปุ่มสุดท้ายลอยเดี่ยวใต้แถว ดูเหมือนปุ่มแปลกที่ไม่เข้าพวก */
-  eq('ปุ่มทั้งเก้าอยู่บรรทัดเดียวกันบนจอมือถือ',
-    seen40.rows.slice(0, 4).map(function (r) { return r.lines }), [1, 1, 1, 1]);
+  /* เดิมข้อนี้บังคับให้เก้าปุ่มอยู่บรรทัดเดียว เพราะกลัวปุ่มสุดท้ายลอยเดี่ยวดูไม่เข้าพวก
+     แต่บนมือถือมันแปลว่าปุ่มละ 35px เล็กกว่าปลายนิ้ว และพอกด ก+ แถวนี้กว้างเกินจอ
+     เบราว์เซอร์จึงย่อทั้งหน้าลงมาให้พอดี — กดขยายตัวอักษรแล้วได้หน้าเล็กลง
+     ตอนนี้จัดเป็นตาราง 5 ช่อง ได้สองแถวเท่า ๆ กัน 5+4 ปุ่มใหญ่ขึ้นเกือบเท่าตัว
+     ข้อสอบจึงเปลี่ยนไปวัดสิ่งที่สำคัญกว่า: ต้องเป็นแถวที่ตรงกันเป็นตาราง ไม่เกินสองแถว */
+  eq('ปุ่มเรียงเป็นตารางไม่เกินสองแถวบนจอมือถือ',
+    seen40.rows.slice(0, 4).map(function (r) { return r.lines }), [2, 2, 2, 2]);
+  truthy('ปุ่มใหญ่พอให้นิ้วกด ไม่ใช่แถบบาง ๆ',
+    seen40.rows.slice(0, 4).every(function (r) { return r.sqW >= 38 && r.sqH >= 38 }),
+    JSON.stringify(seen40.rows.slice(0, 4).map(function (r) { return r.sqW + 'x' + r.sqH })));
   eq('รูปแปดอันต้องเป็นคนละรูปกันทั้งหมด ไม่มีปุ่มไหนใช้รูปซ้ำ',
     seen40.rows[0].srcs.filter(function (s, i, a) { return a.indexOf(s) === i }).length, 8);
   truthy('ไอคอนใหญ่พอให้เห็นว่าเป็นรูปอะไร ไม่ใช่จุดเล็ก ๆ',
@@ -4654,6 +5324,41 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   });
   truthy('ช่องชื่อผู้ซื้อถูกเติมของเดิมไว้ให้แล้ว', pre.name.length > 0);
 
+  /* ---- อ่านของเดิมไม่ได้ ปุ่มต้องไม่ค้างกดไม่ได้ตลอดไป ----
+
+     ของจริง: กดแก้ใบเสนอราคา QO26-00012 แล้วช่องทุกช่องว่าง ปุ่ม "ยืนยันแก้ใบนี้"
+     กดไม่ได้ และไม่มีข้อความบอกอะไรเลย — คนหน้าจอได้แต่มองช่องว่าง ๆ แล้วงง
+     เพราะโค้ดเดิมเป็น .then(ok, err) ซึ่งไม่จับ error ที่เกิดข้างใน ok เอง
+     พอคำตอบจากชีทหายระหว่างทาง บรรทัด res.meta.po พังเงียบเป็น unhandled rejection */
+  console.log('\n   อ่านข้อมูลผู้ซื้อของใบเดิมไม่ได้ ต้องบอก ไม่ใช่ค้างเงียบ');
+  await page.evaluate(function () { document.querySelector('.rvbox .rv-no').click() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function () { window.MOCK_NULL = 1 });
+  await page.evaluate(function (no) {
+    document.querySelector('#fl-docs [data-rv="' + no + '"]').click();
+  }, target);
+  await page.waitForTimeout(1500);
+  var stuck = await page.evaluate(function () {
+    var b = document.querySelector('.rvbox');
+    return { disabled: b.querySelector('.rv-go').disabled,
+             cust: b.querySelector('.rv-cust').textContent };
+  });
+  eq('ปุ่มกลับมากดได้ ไม่ค้างตลอดไป', stuck.disabled, false);
+  truthy('บอกตรง ๆ ว่าอ่านข้อมูลผู้ซื้อไม่ได้', /อ่านข้อมูลผู้ซื้อของใบเดิมไม่ได้/.test(stuck.cust),
+    stuck.cust);
+  /* สำคัญ: ต้องบอกด้วยว่าข้อมูลผู้ซื้อจะไม่ถูกแตะ ไม่งั้นคนจะไม่กล้ากดต่อ */
+  truthy('และบอกว่าข้อมูลผู้ซื้อจะคงไว้ตามเดิม', /คงไว้ตามเดิม/.test(stuck.cust), stuck.cust);
+  await page.evaluate(function () { window.MOCK_NULL = 0 });
+  await page.evaluate(function () { document.querySelector('.rvbox .rv-no').click() });
+  await page.waitForTimeout(200);
+  await page.evaluate(function (no) {
+    document.querySelector('#fl-docs [data-rv="' + no + '"]').click();
+  }, target);
+  await page.waitForFunction(function () {
+    var g = document.querySelector('.rvbox .rv-go');
+    return g && !g.disabled;
+  }, null, { timeout: 15000 });
+
   await page.fill('.rvbox .rv-name', 'บริษัท แก้ชื่อถูกแล้ว จำกัด');
   await page.fill('.rvbox .rv-addr', '99/9 ถนนแก้ใหม่ กรุงเทพฯ 10240');
   await page.fill('.rvbox .rv-why', 'พนักงานพิมพ์ชื่อลูกค้าผิด');
@@ -4713,6 +5418,111 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     await page.evaluate(function (no) {
       return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
     }, incl.no), incl.total);
+
+  /* ---------- 20.95 แก้วันที่บนใบ โดยไม่เผาเลขในเล่ม ----------
+     ของเดิมล็อกวันที่ไว้ พิมพ์วันผิดทีต้องยกเลิกแล้วออกใหม่ = เผาเลขทิ้งหนึ่งเลข
+     (ของจริง: ใบ ONIV26-00342 ลงวันที่ 29 ก.ย. ตามวันที่สั่งซื้อ
+      ลูกค้าขอให้เป็นวันที่ออกจริง) */
+  console.log('\n20.95 แก้วันที่บนใบ ด้วยเลขเดิม');
+  var today20 = await page.evaluate(function () { return todayISO() });
+  var back20 = await page.evaluate(async function () {
+    var o = (MOCK_ORDERS || [])[0];
+    var r = await new Promise(function (res) {
+      google.script.run.withSuccessHandler(res)
+        .withFailureHandler(function (e) { res({ err: String(e) }) })
+        .issueDoc({ type: 'rec', orderNo: o.no, cust: { name: 'บริษัท ย้อนวัน จำกัด' },
+                    date: '2026-09-29', by: 'test',
+                    clientKey: 'ui-2095-' + Date.now() });
+    });
+    return r && r.no ? { no: r.no } : { err: String(r && r.err) };
+  });
+  truthy('ออกใบที่ลงวันย้อนไว้ได้', !!back20.no);
+  await page.evaluate(function () { drawFileDocs() });
+  await page.waitForTimeout(900);
+  await page.evaluate(function (no) {
+    document.querySelector('#fl-docs [data-rv="' + no + '"]').click();
+  }, back20.no);
+  await page.waitForFunction(function () {
+    var g = document.querySelector('.rvbox .rv-go');
+    return g && !g.disabled;
+  }, null, { timeout: 15000 });
+
+  eq('กล่องแก้ใบมีช่องวันที่ และเติมวันเดิมมาให้',
+    await page.inputValue('.rvbox .rv-date'), '2026-09-29');
+  var rvWarn = await page.textContent('.rvbox .rv-datemsg');
+  truthy('เตือนว่าวันเดิมอยู่คนละเดือนกับวันนี้', /คนละเดือนกับวันนี้/.test(rvWarn), rvWarn);
+  truthy('และบอกผลกับ ภ.พ.30', /ภ\.พ\.30/.test(rvWarn), rvWarn);
+  truthy('ไม่บอกว่าวันที่แก้ไม่ได้อีกแล้ว',
+    !/วันที่กับชนิดเอกสารไม่เปลี่ยน/.test(await page.textContent('.rvbox')));
+
+  await page.click('.rvbox .rv-today');
+  await page.waitForTimeout(150);
+  eq('กดใช้วันนี้แล้วช่องเปลี่ยนตาม', await page.inputValue('.rvbox .rv-date'), today20);
+  eq('คำเตือนหายไปเมื่อกลับมาเป็นเดือนนี้',
+    (await page.textContent('.rvbox .rv-datemsg')).trim(), '');
+
+  await page.fill('.rvbox .rv-why', 'ลูกค้าขอให้ลงวันที่ออกจริง');
+  page.once('dialog', function (d) { d.accept() });
+  await page.click('.rvbox .rv-go');
+  await page.waitForTimeout(1200);
+  eq('วันที่ในทะเบียนเปลี่ยนเป็นวันนี้',
+    await page.evaluate(function (no) {
+      return MOCK_DOCS.filter(function (d) { return d.no === no })[0].date;
+    }, back20.no), today20);
+  eq('ยังเป็นใบเลขเดิม ไม่ได้กินเลขใหม่',
+    await page.evaluate(function (no) {
+      return MOCK_DOCS.filter(function (d) { return d.no === no }).length;
+    }, back20.no), 1);
+  truthy('จดวันเดิมไว้ในประวัติการแก้ใบ',
+    await page.evaluate(function (no) {
+      return String(MOCK_DOCS.filter(function (d) { return d.no === no })[0].note || '')
+        .indexOf('วันที่เดิม 2026-09-29') > -1;
+    }, back20.no));
+
+  console.log('\n20.9 คำขอสั่งซื้อจากหน้าเว็บ');
+  await page.click('.tabs button[data-go="list"]');
+  await page.waitForTimeout(400);
+  eq('ปุ่มบอกจำนวนคำขอที่ยังค้าง',
+     (await page.textContent('#web-badge')).trim(), '(1)');
+  await page.click('#btn-web');
+  await page.waitForTimeout(600);
+  truthy('เข้าหน้าคำขอได้', await page.isVisible('#pg-web'));
+  eq('เห็นคำขอสองใบ', await page.locator('#web-list .row').count(), 2);
+  eq('ใบที่รอมีปุ่มรับเป็นออเดอร์', await page.locator('[data-acc]').count(), 1);
+  eq('ใบที่รับไปแล้วไม่มีปุ่ม', await page.locator('[data-rej]').count(), 1);
+  truthy('โชว์ที่อยู่ที่ลูกค้ากรอกมา',
+     (await page.textContent('#web-list')).indexOf('เนินพระ') > -1);
+  truthy('โชว์รายการสินค้า',
+     (await page.textContent('#web-list')).indexOf('Acetone 1000 ml x1') > -1);
+
+  /* กดรับ — ที่อยู่ต้องถูกเติมมาให้แล้ว พนักงานไม่ต้องพิมพ์ใหม่ */
+  await page.click('[data-acc]');
+  await page.waitForTimeout(400);
+  eq('ชื่อผู้รับถูกเติมมาให้', await page.inputValue('#wa-cust'), 'มานี ใจดี');
+  eq('เบอร์ถูกเติมมาให้', await page.inputValue('#wa-tel'), '0812345678');
+  truthy('ที่อยู่ถูกเติมมาให้',
+     (await page.inputValue('#wa-addr')).indexOf('เนินพระ') > -1);
+  await page.fill('#wa-car', 'Flash Express');
+  await page.click('#wa-go');
+  await page.waitForTimeout(900);
+  var accSent = await page.evaluate(function () {
+    return window.SENT.filter(function (x) { return x.fn === 'acceptRequest' })[0];
+  });
+  truthy('ส่งคำสั่งรับไปจริง', !!accSent);
+  eq('ส่งเลขคำขอไปถูกใบ', accSent.p.no, 'REQ-690920-001');
+  eq('ส่งขนส่งที่เลือกไปด้วย', accSent.p.carrier, 'Flash Express');
+  eq('ตอนนี้ไม่มีใบรออยู่แล้ว', await page.locator('[data-acc]').count(), 0);
+
+  console.log('\n20ข. เวลาที่คีย์ขึ้นในรายการออเดอร์');
+  await page.locator('.tabs button[data-go="list"]').click();
+  await page.waitForTimeout(700);
+  /* ข้อก่อนหน้าเปลี่ยนชุดออเดอร์ไปแล้ว ติดเวลาให้ใบแรกเองแล้ววาดใหม่ */
+  await page.evaluate(() => { ORDERS[0].keyedAt = '14:07'; renderOrders(); });
+  await page.waitForTimeout(400);
+  var txt20b = await page.locator('#list').innerText();
+  truthy('ใบที่มีเวลาที่คีย์ โชว์เวลาต่อท้ายวันที่', /14:07 น\./.test(txt20b));
+  eq('ใบที่ไม่มีเวลา ไม่ขึ้นเวลามั่ว ๆ ให้',
+     (txt20b.match(/ น\./g) || []).length, 1);
 
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);

@@ -77,6 +77,26 @@ function requireStaff_() {
 
 /* ------------------------------------------------------------------ หน้าเว็บ */
 
+/**
+ * ลิงก์ขอหน้าร้านมาไหม — รับทุกแบบที่คนพิมพ์จริง
+ *
+ * ?shop=1 · ?Shop=1 · ?SHOP=yes · ?shop=true ต้องได้หน้าร้านเหมือนกันหมด
+ * ของเดิมรับแค่ shop ตัวเล็กเป๊ะ ๆ พิมพ์ S ใหญ่ทีเดียวก็ตกไปเจอหน้าล็อกอินของหลังร้าน
+ * โดยไม่มีอะไรบอกว่าพิมพ์ผิดตรงไหน — เสียเวลาหาสาเหตุกันจริงมาแล้ว
+ *
+ * "0" กับ "false" ถือว่าไม่เอา เผื่อวันหลังมีลิงก์ที่ปิดหน้าร้านด้วยพารามิเตอร์
+ */
+function wantShop_(e) {
+  var par = e && e.parameter;
+  if (!par) return false;
+  for (var k in par) {
+    if (String(k).toLowerCase() !== 'shop') continue;
+    var v = String(par[k] == null ? '' : par[k]).trim().toLowerCase();
+    return !(v === '0' || v === 'false' || v === 'no');
+  }
+  return false;
+}
+
 function doGet(e) {
   /* มีกุญแจติดมาในลิงก์ = ลูกค้าเปิดหน้าจ่ายเงินของออเดอร์ใบหนึ่ง
      ไม่ใช่พนักงานเปิดหลังร้าน — คนละหน้า คนละสิทธิ์ คนละข้อมูลที่เห็น
@@ -86,6 +106,11 @@ function doGet(e) {
      ของหลังร้าน ซึ่งจะทำให้ลูกค้าเห็นว่ามีระบบหลังร้านอยู่ตรงนี้ */
   var key = (e && e.parameter && e.parameter.p) ? String(e.parameter.p) : '';
   if (key) return pubPage_(key);
+
+  /* ?shop=1 = หน้าร้านที่ลูกค้าเปิดเอง — ไม่ต้องล็อกอิน ไม่ต้องมีกุญแจ
+     ต้องมาก่อนด่าน requireStaff_ ข้างล่าง ไม่งั้นลูกค้าจะเจอหน้าให้ล็อกอิน
+     แล้วรู้ว่ามีระบบหลังร้านซ่อนอยู่ที่ลิงก์นี้ */
+  if (wantShop_(e)) return shopPage_();
 
   var email;
   try {
@@ -144,9 +169,33 @@ function getBootstrap() {
   });
 }
 
-function readProducts_() {
+/**
+ * สินค้าทั้งหมดจากชีท ฐานสินค้า
+ *
+ * skipStock = ข้ามการอ่านชีท สต๊อกคงเหลือ สำหรับคนเรียกที่ไม่ได้ใช้ยอดคงเหลือ
+ * (หน้าแก้ข้อมูลร้านเป็นตัวอย่าง — ต้องการแค่ชื่อ ราคา รูป)
+ * ชีทสต๊อกเป็นสูตรทั้งใบ อ่านทีหนึ่งกินเวลาพอ ๆ กับอ่านฐานสินค้าทั้งชีท
+ */
+/**
+ * เวลาจากช่องวันเวลา เอาแค่ ชม.:นาที
+ *
+ * ชีทคืนค่ามาเป็น Date ถ้าช่องตั้งรูปแบบเป็นวันเวลา แต่ถ้าเคยถูกพิมพ์ทับด้วยมือ
+ * จะได้เป็นข้อความ จึงรับทั้งสองแบบ อ่านไม่ออกคืนค่าว่าง ไม่เดาเป็นเที่ยงคืน
+ */
+function hhmm_(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, tz_(), 'HH:mm');
+  }
+  var t = String(v == null ? '' : v).trim();
+  if (!t) return '';
+  var m = /(\d{1,2}):(\d{2})/.exec(t);
+  if (!m) return '';
+  return ('0' + m[1]).slice(-2) + ':' + m[2];
+}
+
+function readProducts_(skipStock) {
   var rows = readAll_('prod');
-  var stock = readStock_();
+  var stock = skipStock ? {} : readStock_();
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     var sku = String(rows[i][SH.prod.IN.sku - 1] || '').trim();
@@ -172,8 +221,117 @@ function readProducts_() {
                 rows[i][SH.prod.IN.reorder - 1] === null ||
                 rows[i][SH.prod.IN.reorder - 1] === undefined)
                  ? null : Number(rows[i][SH.prod.IN.reorder - 1] || 0),
-      remain: stock[sku] === undefined ? null : stock[sku]
+      remain: stock[sku] === undefined ? null : stock[sku],
+      /* สี่ช่องนี้ใช้เฉพาะหน้าร้านที่ลูกค้าเปิดเอง ชีทเก่าที่ยังไม่มีคอลัมน์จะได้ค่าว่าง */
+      web: rows[i][SH.prod.IN.web - 1],
+      img: String(rows[i][SH.prod.IN.img - 1] || ''),
+      img2: String(rows[i][SH.prod.IN.img2 - 1] || ''),
+      tag: String(rows[i][SH.prod.IN.tag - 1] || '')
     });
+  }
+  return out;
+}
+
+/**
+ * กางหลักฐานให้ดูว่าเขียนอะไรลงไป และสูตรของชีทนับอะไร
+ *
+ * มีไว้ให้ข้อความ error ตอนนับสต๊อกไม่ผ่าน บอกได้พอที่จะลงมือแก้ต่อ
+ * ไม่ใช่บอกว่า "อาจจะเพราะ..." แล้วทิ้งให้ไปเดาเอง
+ */
+function countWhyDump_(plan, upType, dnType, wrRecv) {
+  var out = [];
+  out.push('ระบบลงอะไรไปในชีท ' + SH.recv.name);
+  for (var i = 0; i < plan.lines.length; i++) {
+    var L = plan.lines[i];
+    if (!L.diff) { out.push('  ' + L.sku + ' : ส่วนต่าง 0 ไม่ต้องลงแถว'); continue; }
+    out.push('  ' + L.sku + ' : ประเภท "' + (L.diff > 0 ? upType : dnType) +
+      '" จำนวน ' + Math.abs(L.diff) + ' (ยอดเดิม ' + L.was + ' → ' + L.counted + ')');
+  }
+  out.push('  รวม ' + wrRecv.length + ' แถว แถวที่ ' + (wrRecv.join(', ') || '-'));
+
+  var fx = stockTypeWords_();
+  out.push('');
+  out.push('สูตรของชีท ' + SH.stock.name + ' นับคำพวกนี้');
+  out.push('  ช่องรับเข้า : ' + (fx.up.length ? fx.up.join(' · ') : '(อ่านสูตรไม่ออก)'));
+  out.push('  ช่องปรับลด : ' + (fx.down.length ? fx.down.join(' · ') : '(อ่านสูตรไม่ออก)'));
+
+  /* แถวที่สูตรพัง (#REF!) คือกรณีที่เกิดจริงกับชีทนี้มาแล้ว ตอนลบแถวออกจาก ฐานสินค้า
+     แถวแบบนั้นจะนิ่งค้างตลอด ลงอะไรไปยอดก็ไม่ขยับ — ต้องฟ้องให้เห็น */
+  var broke = countBrokenRows_(plan.lines);
+  if (broke.length) {
+    out.push('');
+    out.push('⚠ แถวในชีท ' + SH.stock.name + ' ที่สูตรพังอยู่');
+    for (var b = 0; b < broke.length; b++) out.push('  ' + broke[b]);
+    out.push('  แถวที่สูตรขึ้น #REF! จะนิ่งค้างตลอด ลงอะไรไปยอดก็ไม่ขยับ');
+    out.push('  ต้องซ่อมสูตรแถวนั้นในชีทก่อน (ลากสูตรจากแถวที่ยังดีลงมาทับ)');
+  }
+  return out.join('\n');
+}
+
+/** แถวของ SKU พวกนี้ในชีทสต๊อก มีสูตรที่พังอยู่ไหม */
+function countBrokenRows_(lines) {
+  var out = [];
+  try {
+    var s = sheet_('stock');
+    var last = s.getLastRow();
+    if (last < DATA_ROW) return out;
+    var n = last - DATA_ROW + 1;
+    var want = {};
+    for (var i = 0; i < lines.length; i++) want[lines[i].sku] = 1;
+    var v = s.getRange(DATA_ROW, 1, n, SH.stock.remain).getValues();
+    var f = s.getRange(DATA_ROW, 1, n, SH.stock.remain).getFormulas();
+    for (var r = 0; r < n; r++) {
+      var sku = String(v[r][SH.stock.sku - 1] || '').trim();
+      if (!sku || !want[sku]) continue;
+      var hit = [];
+      for (var c = 0; c < f[r].length; c++) {
+        if (String(f[r][c]).indexOf('#REF!') > -1) hit.push(colLetter_(c + 1));
+      }
+      if (hit.length) {
+        out.push(sku + ' อยู่แถว ' + (DATA_ROW + r) + ' — สูตรพังที่คอลัมน์ ' + hit.join(', '));
+      }
+    }
+  } catch (e) {
+    Logger.log('ตรวจแถวสูตรพังไม่ได้: ' + e.message);
+  }
+  return out;
+}
+
+/**
+ * คำที่สูตรของชีท สต๊อกคงเหลือ นับเข้าช่อง "รับเข้า" กับช่อง "ปรับลด" จริง ๆ
+ *
+ * ทำไมต้องอ่านสูตร: ชีทเป็นของเจ้าของร้าน เราไม่ได้เป็นคนเขียนสูตรนั้น
+ * และห้ามไปแก้ด้วย คำที่ดรอปดาวน์มีให้เลือก กับคำที่สูตรนับ ไม่จำเป็นต้องตรงกัน
+ * ของจริงที่เจอ: ดรอปดาวน์มี "ปรับเพิ่ม" แต่สูตรช่องรับเข้าไม่ได้นับคำนั้น
+ * ลงไปเท่าไรยอดก็ไม่ขึ้น ด่านตรวจถอยคืนทุกครั้ง นับสต๊อกจึงทำไม่ได้เลย
+ *
+ * วิธีที่ถูกคือถามชีทว่า "แกนับคำไหน" แล้วใช้คำนั้น ไม่ใช่เดาจากชื่อที่ดูเข้าท่า
+ * อ่านไม่ออก (สูตรเขียนคนละแบบ) คืนชุดว่าง ให้คนเรียกถอยไปใช้ค่าเดาเหมือนเดิม
+ */
+function stockTypeWords_() {
+  var out = { up: [], down: [] };
+  try {
+    var s = sheet_('stock');
+    /* F = รับเข้า · G = ปรับลด ตามที่ checkLotStock อ่านอยู่แล้ว */
+    var f = s.getRange(DATA_ROW, 6, 1, 2).getFormulas()[0];
+    out.up = formulaWords_(f[0]);
+    out.down = formulaWords_(f[1]);
+  } catch (e) {
+    Logger.log('อ่านสูตรชีทสต๊อกไม่ได้: ' + e.message);
+  }
+  return out;
+}
+
+/** คำในเครื่องหมายคำพูดของสูตร — ตัดตัวที่เป็นที่อยู่ช่องหรือเครื่องหมายเปรียบเทียบทิ้ง */
+function formulaWords_(formula) {
+  var t = String(formula || '');
+  var out = [], m, re = /"([^"]*)"/g;
+  while ((m = re.exec(t)) !== null) {
+    var w = m[1].trim();
+    if (!w) continue;
+    if (/^[<>=!]+$/.test(w)) continue;          // ">" "<=" ฯลฯ
+    if (/^[A-Za-z]{1,3}\d+$/.test(w)) continue;  // ที่อยู่ช่องอย่าง B6
+    if (out.indexOf(w) < 0) out.push(w);
   }
   return out;
 }
@@ -398,6 +556,8 @@ function readOrders_(opts) {
            กำไรที่ชีทคิดในช่อง P ยังไม่ได้หักสองก้อนนี้ หน้าจอจึงต้องเห็นเพื่อหักเอง */
         fee: Number(hcell(hv[i], SH.head.IN.fee) || 0),
         shipCost: Number(hcell(hv[i], SH.head.IN.shipCost) || 0),
+        /* ว่าง = ออเดอร์เก่าที่คีย์ก่อนมีช่องนี้ หน้าจอต้องไม่โชว์เวลามั่ว ๆ แทน */
+        keyedAt: hhmm_(hcell(hv[i], SH.head.IN.keyedAt)),
         items: []
       };
 
@@ -613,6 +773,75 @@ function setTracking(no, track, status, carrier) {
   }
 }
 
+/**
+ * แก้ชื่อ เบอร์ ที่อยู่ "ผู้รับ" ของออเดอร์ — สำหรับหน้าใบปะหน้าพัสดุ
+ *
+ * ทำไมต้องมี: จุดที่คนรู้ตัวว่าที่อยู่ผิดคือตอนกำลังจะพิมพ์ใบปะหน้าแปะกล่อง
+ * ไม่ใช่ตอนนั่งหน้าคอม ของเดิมแก้ได้ทางเดียวคือเปิดชีท ออเดอร์_หัวบิล
+ * แล้วเลื่อนไปคอลัมน์ F บนมือถือ ซึ่งทำไม่ได้จริงตอนยืนแพ็คของ
+ * ผลคือพิมพ์ใบปะหน้าที่อยู่ผิดแล้วของไปผิดบ้าน ซึ่งเสียทั้งค่าส่งสองเที่ยวและลูกค้า
+ *
+ * แตะเฉพาะสามช่องนี้ และเฉพาะช่องที่ส่งมาจริง ๆ (undefined = ไม่ได้จะแก้)
+ * ไม่แตะยอดเงิน ไม่แตะสถานะ ไม่แตะสต๊อก — คนละเรื่องกันทั้งหมด
+ *
+ * ที่อยู่บนใบกำกับภาษีเป็นคนละช่อง (อยู่ในชีท เอกสาร) ไม่ขยับตามโดยตั้งใจ
+ * ใบที่ออกไปแล้วลูกค้าถืออยู่ ที่อยู่บนนั้นต้องตรงกับกระดาษเสมอ
+ */
+function setShipTo(p) {
+  var email = requireStaff_();
+  p = p || {};
+  var no = String(p.no || '').trim();
+  if (!no) throw new Error('ไม่ได้บอกว่าจะแก้ออเดอร์ไหน');
+
+  var has = function (k) { return p[k] !== undefined && p[k] !== null; };
+  if (!has('cust') && !has('tel') && !has('addr')) {
+    return { ok: true, no: no, changed: 0 };
+  }
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('ระบบกำลังยุ่งอยู่ ลองใหม่อีกครั้ง');
+  try {
+    var found = findOrderRow_(no);
+    var sh = found.sheet, row = found.row, IN = SH.head.IN;
+
+    /* ชื่อผู้รับว่าง = ใบปะหน้าไม่มีชื่อคนรับ ขนส่งไม่รับพัสดุแบบนั้น
+       ที่อยู่ว่างก็เหมือนกัน — ยอมให้ลบทิ้งไม่ได้ ต่างจากเบอร์โทรที่เว้นได้ */
+    var patch = {}, changed = [];
+    function put(key, label, raw, required) {
+      if (!has(key)) return;
+      var v = String(raw).replace(/\r\n?/g, '\n').replace(/[ \t]+/g, ' ').trim();
+      if (required && !v) throw new Error(label + 'ว่างไม่ได้ — ใบปะหน้าที่ไม่มี' + label +
+        ' ขนส่งไม่รับพัสดุ');
+      if (v.length > 400) throw new Error(label + 'ยาวเกินไป (เกิน 400 ตัวอักษร)');
+      var before = String(sh.getRange(row, IN[key]).getValue() || '').trim();
+      if (v === before) return;
+      patch[key] = v;
+      changed.push([label, before || '(ว่าง)', v || '(ว่าง)']);
+    }
+    put('cust', 'ชื่อผู้รับ', p.cust, true);
+    put('tel', 'เบอร์โทรผู้รับ', p.tel, false);
+    put('addr', 'ที่อยู่ผู้รับ', p.addr, true);
+
+    if (!changed.length) return { ok: true, no: no, changed: 0 };
+
+    writeRow_('head', row, patch);
+    SpreadsheetApp.flush();
+    for (var i = 0; i < changed.length; i++) {
+      writeLog_(email, 'แก้ที่อยู่ผู้รับ', SH.head.name, no, changed[i][0],
+        changed[i][1], changed[i][2], 'แก้จากหน้าใบปะหน้าพัสดุโดย ' + email);
+    }
+    return { ok: true, no: no, changed: changed.length,
+             cust: patch.cust === undefined
+               ? String(sh.getRange(row, IN.cust).getValue() || '') : patch.cust,
+             tel: patch.tel === undefined
+               ? String(sh.getRange(row, IN.tel).getValue() || '') : patch.tel,
+             addr: patch.addr === undefined
+               ? String(sh.getRange(row, IN.addr).getValue() || '') : patch.addr };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /* ------------------------------------------------------------ เอกสารขาย */
 
 /**
@@ -704,8 +933,14 @@ function issueDoc(payload) {
     if (orderNo && !p.allowDup) {
       var dup = used.byOrder[orderNo + '|' + t.key];
       if (dup) {
-        throw new Error('ออเดอร์ ' + orderNo + ' ออก' + t.th + 'ไปแล้วเป็นใบ ' + dup +
-          ' — ถ้าจะออกใหม่ ต้องยกเลิกใบเดิมในชีท เอกสาร ก่อน');
+        /* ของเดิมบอกให้ไปยกเลิกในชีท ซึ่งไม่จำเป็นเลย — ปุ่มอยู่ในหน้าจอนี้อยู่แล้ว
+           และทางที่ดีกว่ามักเป็น "แก้ไขใบ" ซึ่งเก็บเลขเดิมไว้ ไม่เผาเลขทิ้ง
+           ข้อความที่ชี้ไปที่ชีททำให้คนไปนั่งหาในชีทโดยไม่จำเป็น แล้วเสี่ยงแก้มือผิดช่อง */
+        throw new Error('ออเดอร์ ' + orderNo + ' ออก' + t.th + 'ไปแล้วเป็นใบ ' + dup + '\n\n' +
+          'เลื่อนลงไปที่รายการ "เอกสารที่ออกไปแล้ว" ข้างล่างนี้ แล้วเลือกทางใดทางหนึ่ง\n' +
+          '  • ใบยังไม่ได้กด "ส่งแล้ว" → กด "แก้ไขใบ" ระบบแก้ยอดให้โดยใช้เลขเดิม ' +
+          'ไม่ต้องออกใบใหม่\n' +
+          '  • ลูกค้าถือใบไปแล้ว → กด "ยกเลิก" (ใส่เหตุผลด้วย) แล้วค่อยออกใบใหม่');
       }
     }
 
@@ -719,8 +954,12 @@ function issueDoc(payload) {
     var row = nextRow_('doc', SH.doc.IN.no);
     if (!row) throw new Error('ชีท เอกสาร เต็มแล้ว — สั่ง setup() อีกครั้งเพื่อขยายแถว');
     var cu = p.cust || {};
+    /* วันที่ที่ลงชีทจริง ต้องส่งกลับไปให้หน้าจอวาดด้วย
+       ของเดิมหน้าจอวาดด้วยวันที่ของตัวเอง กระดาษกับชีทจึงไม่ผูกกัน
+       วันไหนสองค่าไม่ตรงกัน ใบที่ลูกค้าถือจะลงวันที่คนละวันกับในเล่ม */
+    var when = parseDate_(p.date) || new Date();
     writeRow_('doc', row, {
-      no: no, type: t.th, date: parseDate_(p.date) || new Date(), orderNo: orderNo,
+      no: no, type: t.th, date: when, orderNo: orderNo,
       custName: String(cu.name || ''), custTaxId: String(cu.taxId || ''),
       custBranch: String(cu.branch || ''), custAddr: String(cu.addr || ''),
       custTel: String(cu.tel || ''), custEmail: String(cu.email || ''),
@@ -735,7 +974,7 @@ function issueDoc(payload) {
     writeLog_(email, 'ออกเอกสาร', SH.doc.name, no, t.th, '', d.total,
       orderNo ? 'จากออเดอร์ ' + orderNo : 'ออกเดี่ยว');
 
-    return { ok: true, no: no, doc: d, row: row };
+    return { ok: true, no: no, date: isoDate_(when), doc: d, row: row };
   } finally {
     lock.releaseLock();
   }
@@ -841,6 +1080,37 @@ function billCandidates(custName) {
  * ยอดทุกช่องอ่านจากชีทเอง ไม่รับยอดที่หน้าจอส่งมา — หน้าจออาจค้างข้อมูลเก่า
  * แล้วใบวางบิลจะเขียนยอดที่ไม่ตรงกับใบที่ลูกค้าถืออยู่ ซึ่งเป็นเรื่องที่แก้ทีหลังยาก
  */
+/**
+ * ภาพถ่ายของใบวางบิล — ต้องมีที่เดียว ใช้ร่วมกันทั้งตอนออกใบและตอนแก้ใบ
+ *
+ * getDoc อ่านภาพถ่ายนี้กลับมาวาดใบตอนพิมพ์ซ้ำ โดยดูจากรูปร่างของมัน
+ * (type === 'bill' และมีช่อง docs) ถ้าสองที่เขียนคนละรูป ใบที่แก้แล้วจะพิมพ์ซ้ำไม่ได้
+ * และจะไม่มีอะไรฟ้องจนกว่าจะมีคนกดพิมพ์ ซึ่งมักเป็นตอนลูกค้ารออยู่แล้ว
+ */
+function billSnap_(no, when, terms, d, extra, cust) {
+  extra = extra || {};
+  try {
+    return JSON.stringify({
+      v: 1, no: no, type: 'bill', date: isoDate_(when), terms: terms,
+      creditDays: d.creditDays, contact: String(extra.contact || ''),
+      contactTel: String(extra.contactTel || ''), note: String(extra.note || ''),
+      base: d.base, vat: d.vat, total: d.total, totalText: d.totalText,
+      cust: {
+        name: String((cust && cust.name) || ''), taxId: String((cust && cust.taxId) || ''),
+        branch: String((cust && cust.branch) || ''), addr: String((cust && cust.addr) || ''),
+        tel: String((cust && cust.tel) || '')
+      },
+      docs: d.lines.map(function (l) {
+        return { no: l.no, date: isoDate_(l.date), po: l.po,
+                 due: isoDate_(l.due), base: l.base, vat: l.vat, total: l.total };
+      })
+    });
+  } catch (e) {
+    Logger.log('เก็บภาพถ่ายใบวางบิลไม่ได้: ' + e.message);
+    return '';
+  }
+}
+
 function issueBill(payload) {
   var email = requireStaff_();
   var p = payload || {};
@@ -910,25 +1180,12 @@ function issueBill(payload) {
     if (!row) throw new Error('ชีท เอกสาร เต็มแล้ว — สั่ง setup() อีกครั้งเพื่อขยายแถว');
 
     var head = chosen[0];
-    var snap = '';
-    try {
-      snap = JSON.stringify({
-        v: 1, no: no, type: 'bill', date: isoDate_(when), terms: terms,
-        creditDays: d.creditDays, contact: String(p.contact || ''),
-        contactTel: String(p.contactTel || ''), note: String(p.note || ''),
-        base: d.base, vat: d.vat, total: d.total, totalText: d.totalText,
-        cust: {
-          name: head.custName, taxId: head.custTaxId, branch: head.custBranch,
-          addr: head.custAddr, tel: head.custTel
-        },
-        docs: d.lines.map(function (l) {
-          return { no: l.no, date: isoDate_(l.date), po: l.po,
-                   due: isoDate_(l.due), base: l.base, vat: l.vat, total: l.total };
-        })
-      });
-    } catch (e) {
-      Logger.log('เก็บภาพถ่ายใบวางบิลไม่ได้: ' + e.message);
-    }
+    var snap = billSnap_(no, when, terms, d, {
+      contact: p.contact, contactTel: p.contactTel, note: p.note
+    }, {
+      name: head.custName, taxId: head.custTaxId, branch: head.custBranch,
+      addr: head.custAddr, tel: head.custTel
+    });
 
     writeRow_('doc', row, {
       no: no, type: t.th, date: when, orderNo: '',
@@ -977,9 +1234,21 @@ function docTypeByTh_(th) {
  * แล้วด่านที่ห้ามแก้ใบที่ส่งไปแล้วก็เลิกทำงานเงียบ ๆ โดยไม่มีอะไรฟ้อง
  * คิดจาก SH.doc.IN เอาเองแบบนี้ เพิ่มคอลัมน์อีกกี่ครั้งก็ไม่พังซ้ำรอยเดิม
  */
+/**
+ * ช่วงคอลัมน์ของชีทเอกสารที่ "อ่านได้จริง"
+ *
+ * ตัดให้ไม่เกินความกว้างจริงของชีท เพราะชีทที่ยังไม่ได้สั่ง setup หลังอัปเดต
+ * จะยังไม่มีคอลัมน์ที่เพิ่งเพิ่มเข้ามา แล้ว getRange เลยขอบจะโยน error ทันที
+ * ผลคือแฟ้มเอกสารทั้งหน้าเปิดไม่ขึ้น เพราะคอลัมน์เดียวที่ยังไม่มี
+ * ซึ่งแย่กว่าการไม่มีข้อมูลช่องนั้นมาก — ช่องที่ยังไม่มีอ่านได้เป็นค่าว่างก็พอ
+ */
 function docSpan_() {
   var C = SH.doc.IN, hi = C.no;
   for (var f in C) if (C[f] > hi) hi = C[f];
+  try {
+    var wide = sheet_('doc').getMaxColumns();
+    if (wide < hi) hi = wide;
+  } catch (e) { /* อ่านความกว้างไม่ได้ ใช้ค่าตามผังไปก่อน */ }
   return { lo: C.no, hi: hi, len: hi - C.no + 1 };
 }
 
@@ -1028,8 +1297,65 @@ function reviseRow_(row, why, p, email) {
   var oldSnap = null;
   try { oldSnap = JSON.parse(String(cur.snap || '')); } catch (e) { oldSnap = null; }
 
-  var src;
-  if (t.quote) {
+  /* ช่องที่คนแก้ได้ ต้องรู้ค่าก่อนประกอบใบ เพราะใบวางบิลเอา "เงื่อนไขชำระเงิน"
+     ไปคิดวันครบกำหนดของทุกบรรทัด แก้เป็นเครดิต 60 วัน วันครบกำหนดต้องขยับตาม */
+  var has = function (k) { return p[k] !== undefined && p[k] !== null; };
+  var cu = p.cust || {
+    name: cur.custName, taxId: cur.custTaxId, branch: cur.custBranch,
+    addr: cur.custAddr, tel: cur.custTel, email: cur.custEmail
+  };
+  var po = has('po') ? p.po : cur.po;
+  var terms = has('terms') ? p.terms : cur.terms;
+  var form = has('form') ? p.form : ((oldSnap && oldSnap.form) || []);
+
+  /* วันที่บนใบ — แก้ได้เฉพาะใบที่ยังไม่ได้ส่งให้ลูกค้า (ด่านข้างบนกันไว้แล้ว)
+     ของเดิมล็อกไว้ตายตัวด้วยเหตุผลว่า "วันที่คือจุดตั้งต้นทางภาษี"
+     ซึ่งจริง แต่ยอดเงินก็เป็นจุดตั้งต้นทางภาษีเหมือนกัน และยอดแก้ได้มาตลอด
+     เส้นแบ่งจริงของไฟล์นี้คือ "ใบออกจากร้านไปหรือยัง" ไม่ใช่ว่าเป็นช่องไหน
+     ใบที่ยังไม่มีใครถือ วันที่ยังไม่ได้มีผลกับใคร
+
+     ของจริงที่ทำให้ต้องเปิด: ใบ ONIV26-00342 ออกวันที่ 4 ต.ค. แต่ระบบลงวันที่
+     29 ก.ย. ตามวันที่สั่งซื้อ ลูกค้าขอให้เป็นวันที่ออกจริง
+     ถ้าแก้วันไม่ได้ ต้องยกเลิกแล้วออกใหม่ = เผาเลขในเล่มทิ้งหนึ่งเลขเพราะวันที่
+     ซึ่งเป็นสิ่งที่ปุ่มแก้ใบมีไว้เพื่อไม่ให้เกิด */
+  var oldDate = (cur.date instanceof Date) ? isoDate_(cur.date) : String(cur.date || '');
+  var date = oldDate;
+  if (has('date') && String(p.date).trim()) {
+    /* ตรวจรูปแบบเองก่อน ห้ามพึ่ง parseDate_ ตรงนี้ — ตัวนั้นคืน "วันนี้"
+       ให้กับทุกอย่างที่อ่านไม่ออก ซึ่งเหมาะกับช่องที่เว้นว่างได้
+       แต่กับวันที่บนใบกำกับภาษีแปลว่าพิมพ์ผิดแล้วใบไปลงวันนี้เงียบ ๆ */
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.date).trim())) {
+      throw new Error('วันที่บนใบอ่านไม่ออก ("' + p.date + '") — ต้องเป็นแบบ 2026-10-04');
+    }
+    var pd = parseDate_(String(p.date).trim());
+    if (!pd) {
+      throw new Error('วันที่บนใบอ่านไม่ออก ("' + p.date + '") — ต้องเป็นแบบ 2026-10-04');
+    }
+    /* ลงวันที่ล่วงหน้าไม่ได้ ใบกำกับภาษีออกก่อนวันที่บนใบไม่ได้ */
+    var nd = isoDate_(pd);
+    if (nd > isoDate_(new Date())) {
+      throw new Error('ลงวันที่ล่วงหน้าไม่ได้ (' + nd + ') — ' +
+        'ใบกำกับภาษีลงวันที่ที่ยังมาไม่ถึงไม่ได้');
+    }
+    date = nd;
+  }
+  var dateMoved = (date !== oldDate);
+
+  var src = null, isBill = (t.key === 'bill');
+  if (isBill) {
+    /* ใบวางบิลไม่ได้ผูกกับออเดอร์ใบเดียว มันรวมใบขายหลายใบไว้ด้วยกัน
+       ของเดิมจึงวิ่งไปหาออเดอร์แล้วตาย ทั้งที่ใบนี้มีทุกอย่างอยู่ในตัวเองแล้ว
+
+       ยอดเงินเอาจากภาพถ่ายของใบเดิมทั้งก้อน ไม่คิดใหม่จากออเดอร์เด็ดขาด —
+       ใบวางบิลต้องเท่ากับใบขายที่ลูกค้าถืออยู่เป๊ะ ถ้าไปคิดใหม่แล้วราคาสินค้า
+       ในชีทเปลี่ยนไปตอนไหน ยอดสองใบจะไม่ตรงกันเงียบ ๆ แล้วทวงเงินไม่ได้
+       ที่แก้ได้จริงจึงมีแต่ตัวหนังสือ: ชื่อผู้ซื้อ · PO · เงื่อนไข · ผู้ติดต่อ · หมายเหตุ */
+    if (!oldSnap || !oldSnap.docs || !oldSnap.docs.length) {
+      throw new Error('ใบวางบิล ' + no + ' ไม่มีรายการใบที่รวมไว้เก็บอยู่ในระบบ ' +
+        '(ออกก่อนระบบเริ่มเก็บ) — แก้ไม่ได้ ให้ยกเลิกใบนี้แล้ววางบิลใหม่ ' +
+        'ใบขายที่อยู่ในนั้นจะกลับมาวางบิลได้เองหลังยกเลิก');
+    }
+  } else if (t.quote) {
     src = { items: p.items || (oldSnap && oldSnap.lines) || [], ship: p.ship, discount: p.discount };
   } else {
     if (!orderNo) throw new Error('ใบ ' + no + ' ไม่ได้อ้างออเดอร์ไว้ จึงประกอบใหม่ให้ไม่ได้');
@@ -1052,17 +1378,9 @@ function reviseRow_(row, why, p, email) {
       'ให้ยกเลิกใบนี้ แล้วออกใหม่เป็น "บิลเงินสด" ซึ่งมีชุดเลขของตัวเอง');
   }
   var vatMode = p.vatMode || (oldSnap && oldSnap.vatMode) || appCfg_().vatMode;
-  var d = buildDoc_(t.key, src, { vatRate: novat ? 0 : cfgGet_().vatRate, vatMode: vatMode });
-
-  var has = function (k) { return p[k] !== undefined && p[k] !== null; };
-  var cu = p.cust || {
-    name: cur.custName, taxId: cur.custTaxId, branch: cur.custBranch,
-    addr: cur.custAddr, tel: cur.custTel, email: cur.custEmail
-  };
-  var po = has('po') ? p.po : cur.po;
-  var terms = has('terms') ? p.terms : cur.terms;
-  var form = has('form') ? p.form : ((oldSnap && oldSnap.form) || []);
-  var date = (cur.date instanceof Date) ? isoDate_(cur.date) : String(cur.date || '');
+  var d = isBill
+    ? buildBill_(oldSnap.docs, { terms: terms, creditDays: appCfg_().creditDays })
+    : buildDoc_(t.key, src, { vatRate: novat ? 0 : cfgGet_().vatRate, vatMode: vatMode });
 
   /* นับว่าแก้เป็นครั้งที่เท่าไร จากร่องรอยที่จดไว้ในช่องประวัติการแก้ใบ
      ใบเก่าที่จดไว้ในหมายเหตุตั้งแต่ก่อนแยกคอลัมน์ ก็ยังนับต่อจากของเดิมได้ถูก
@@ -1083,6 +1401,7 @@ function reviseRow_(row, why, p, email) {
   var times = top + 1;
   var who = String(p.by || '').trim() || email;
   var stamp = '[แก้ไขครั้งที่ ' + times + ': ' + why + ' · ยอดเดิม ' + oldTotal +
+    (dateMoved ? ' · วันที่เดิม ' + oldDate + ' เปลี่ยนเป็น ' + date : '') +
     ' โดย ' + who + ' ' + stampTime_() + ']';
 
   /* หมายเหตุเป็นของลูกค้า ไม่ใช่ของระบบ — ช่องนี้ถูกพิมพ์ลงกระดาษที่ส่งออกไปจริง
@@ -1101,7 +1420,7 @@ function reviseRow_(row, why, p, email) {
   var trail = (oldTrail ? oldTrail + ' ' : '') + stamp;
   if (trail.length > 2000) trail = trail.slice(trail.length - 2000);
 
-  writeRow_('doc', row, {
+  var upd = {
     custName: String(cu.name || ''), custTaxId: String(cu.taxId || ''),
     custBranch: String(cu.branch || ''), custAddr: String(cu.addr || ''),
     custTel: String(cu.tel || ''), custEmail: String(cu.email || ''),
@@ -1110,17 +1429,31 @@ function reviseRow_(row, why, p, email) {
     base: d.base, vat: d.vat, total: d.total,
     staff: who.slice(0, 40),
     note: note, revise: trail,
-    snap: docSnap_(d, {
-      cust: cu, po: po, terms: terms, date: date, note: note, form: form,
-      validTo: (oldSnap && oldSnap.validTo) || '', vatMode: vatMode, novat: novat
-    }, no, t)
-  });
+    /* ใบวางบิลเก็บภาพถ่ายคนละรูปกับใบสินค้า (เก็บรายการเอกสาร ไม่ใช่รายการสินค้า)
+       เขียนผิดรูปเมื่อไร ใบที่แก้แล้วจะพิมพ์ซ้ำไม่ได้ และจะรู้ตอนลูกค้ารออยู่ */
+    snap: isBill
+      ? billSnap_(no, parseDate_(date) || cur.date || new Date(), terms, d, {
+          contact: has('contact') ? p.contact : (oldSnap && oldSnap.contact),
+          contactTel: has('contactTel') ? p.contactTel : (oldSnap && oldSnap.contactTel),
+          note: note
+        }, cu)
+      : docSnap_(d, {
+          cust: cu, po: po, terms: terms, date: date, note: note, form: form,
+          validTo: (oldSnap && oldSnap.validTo) || '', vatMode: vatMode, novat: novat
+        }, no, t)
+  };
+  /* แตะช่องวันที่เฉพาะตอนที่เปลี่ยนจริง ใบที่ไม่ได้ขอแก้วันต้องไม่ถูกเขียนทับ
+     แม้จะเขียนค่าเดิมกลับไป ก็ยังเป็นการแตะช่องที่ไม่มีใครสั่งให้แตะ */
+  if (dateMoved) upd.date = parseDate_(date) || cur.date;
+  writeRow_('doc', row, upd);
 
   writeLog_(email, 'แก้ไขเอกสาร', SH.doc.name, no, t.th, oldTotal, d.total,
     why + ' · แก้ครั้งที่ ' + times + ' โดย ' + who + ' (บัญชี ' + email + ')' +
+    (dateMoved ? ' · วันที่ ' + oldDate + ' → ' + date : '') +
     (orderNo ? ' · ออเดอร์ ' + orderNo : ''));
 
-  return { no: no, doc: d, row: row, times: times, before: oldTotal, type: t.th };
+  return { no: no, doc: d, row: row, times: times, before: oldTotal, type: t.th,
+           date: date, dateBefore: oldDate, dateMoved: dateMoved };
 }
 
 /**
@@ -1132,8 +1465,15 @@ function reviseRow_(row, why, p, email) {
  *
  * สิ่งที่ไม่ถูกแตะเด็ดขาด
  *   เลขที่เอกสาร — ทั้งเล่มจึงยังเรียงครบ ไม่มีเลขข้ามและไม่มีเลขซ้ำ
- *   วันที่บนใบ   — วันที่คือจุดตั้งต้นทางภาษี ขยับไม่ได้ ถ้าจะเปลี่ยนวันต้องออกใบใหม่
  *   ชนิดเอกสาร   — ใบเสร็จแก้เป็นใบแจ้งหนี้ไม่ได้ คนละเล่มคนละชุดเลข
+ *
+ * วันที่บนใบแก้ได้ตั้งแต่ 4 ต.ค. 69 (เดิมล็อกไว้)
+ *   เหตุผลเดิมคือ "วันที่คือจุดตั้งต้นทางภาษี" ซึ่งจริง แต่ยอดเงินก็เป็นเหมือนกัน
+ *   และยอดแก้ได้มาตลอด เส้นแบ่งจริงคือใบออกจากร้านไปหรือยัง ซึ่งด่าน sentAt
+ *   ข้างบนกันไว้อยู่แล้ว ใบที่ยังไม่มีใครถือ วันที่ยังไม่ได้มีผลกับใคร
+ *   ถ้าล็อกไว้ การพิมพ์วันผิดจะต้องเผาเลขในเล่มทิ้งหนึ่งเลขทุกครั้ง
+ *   ซึ่งเป็นสิ่งที่ปุ่มนี้มีไว้เพื่อไม่ให้เกิด
+ *   วันที่เดิมถูกจดไว้ทั้งในประวัติการแก้ใบและใน Log ย้อนดูได้เสมอ
  *
  * ทุกครั้งที่แก้ ยอดเดิมถูกจดไว้ในช่องหมายเหตุของใบและใน Log
  * ใบที่แก้ไปแล้วกี่ครั้งจึงตรวจย้อนได้เสมอ ไม่ใช่เงียบหายไปกับการเขียนทับ
@@ -1429,6 +1769,9 @@ function listDocs(orderNo) {
       revised: rvl.n, lastRevise: rvl.last,
       /* ส่งไปแล้วหรือยัง เป็นตัวตัดสินว่าหน้าจอจะโชว์ปุ่มแก้ใบให้ไหม */
       sentAt: String(v[i][at(C.sentAt)] || '').trim(),
+      /* ส่งบัญชีไปแล้วหรือยัง — เฉพาะใบที่ไม่มีออเดอร์ ใบที่มีออเดอร์
+         จดสถานะไว้บนแถวออเดอร์ หน้าจอจึงใช้ช่องนี้แค่กับใบที่ไม่มีออเดอร์ */
+      acctAt: String(v[i][at(C.acctAt)] || '').trim(),
       hasSnap: !!String(v[i][at(C.snap)] || '').trim()
     });
   }
@@ -1558,6 +1901,7 @@ function findDocs(p) {
       total: Number(v[i][at(C.total)] || 0),
       voidWhy: String(v[i][at(C.voidWhy)] || '').trim(),
       sentAt: String(v[i][at(C.sentAt)] || '').trim(),
+      acctAt: String(v[i][at(C.acctAt)] || '').trim(),
       revised: rv.n, lastRevise: rv.last,
       hasSnap: !!String(v[i][at(C.snap)] || '').trim()
     };
@@ -1739,6 +2083,23 @@ function getDoc(no) {
 
     /* ใบเก่าที่ยังไม่มีภาพถ่าย — ประกอบจากออเดอร์ให้ แล้วเทียบยอดกับที่บันทึกไว้ */
     if (!m.orderNo) {
+      /* เลขที่ fillDocGaps เติมกลับเข้าเล่ม ไม่มีทั้งภาพถ่ายและออเดอร์ เพราะไม่เคยออกใบจริง
+         ของเดิมโยน error ทิ้งตรงนี้ ซึ่งแปลว่าเลขพวกนั้นพิมพ์ซ้ำไม่ได้
+         และส่งบัญชีไม่ได้ตามไปด้วย เพราะหน้าจอต้องวาดรูปใบก่อนถึงจะส่งไฟล์ได้
+         เล่มใบกำกับภาษีจึงขาดเลขอยู่อย่างนั้น ซึ่งเป็นปัญหาตอนยื่นภาษี ไม่ใช่แค่ไม่สวย
+
+         ใบที่ยกเลิก/ไม่ได้ใช้ ต้องมีกระดาษหนึ่งแผ่นอยู่ในเล่ม — เลขที่ ชนิดใบ เหตุผล
+         ยอด 0 และไม่มีรายการสินค้าสักบรรทัด ตราประทับ ยกเลิก/CANCELLED
+         ปั๊มทับให้เองจาก m.voidWhy จึงหยิบไปใช้เป็นใบจริงไม่ได้แน่นอน
+
+         ทำเฉพาะแถวที่มีเหตุผลยกเลิกกำกับไว้ ใบที่ไม่มีเหตุผลและไม่มีออเดอร์
+         คือข้อมูลหาย ไม่ใช่เลขที่ไม่ได้ใช้ ยังต้องฟ้องเหมือนเดิม
+         ห้ามพิมพ์ใบเปล่าแทนใบที่เคยออกจริง */
+      if (m.voidWhy) {
+        var none = buildDoc_(key || 'rec', { items: [] }, { vatRate: 0, vatMode: 'excl' });
+        return jsonSafe_({ ok: true, exact: true, voidOnly: true,
+                           meta: m, saved: saved, doc: none });
+      }
       throw new Error('ใบ ' + want + ' ออกก่อนที่ระบบจะเก็บรายการในใบ และไม่ได้ผูกกับออเดอร์ ' +
         'จึงพิมพ์ซ้ำให้ไม่ได้ — ต้องออกใบใหม่');
     }
@@ -3025,6 +3386,8 @@ function planOrder_(p, email) {
   var plist = readProducts_();
   for (var i = 0; i < plist.length; i++) prods[plist[i].sku] = plist[i];
 
+  /* ไม่ตัดสต๊อก — ใบนี้บันทึกยอดขายแต่ไม่แตะล็อตเลย ดูเหตุผลตรงจุดที่ใช้ข้างล่าง */
+  var noStock = !!p.noStock;
   var lotsBySku = readLots_();
   var used = {};   // ตัดไปแล้วเท่าไรในออเดอร์นี้ กันสินค้าตัวเดียวกันหลายบรรทัดแย่งล็อตเดียวกัน
   var items = [];
@@ -3098,6 +3461,21 @@ function planOrder_(p, email) {
     subtotal += round2_(qty * (price === null ? prod.price : price));
 
     var lineNo = k + 1;
+    /* เก็บบรรทัดสินค้าก่อนเรื่องล็อต — ยอดขายของใบไม่ได้ขึ้นกับว่าตัดล็อตหรือไม่
+       ของเดิมบรรทัดนี้อยู่ท้ายสุด พอมีทางลัดข้ามเรื่องล็อต มันจะถูกข้ามไปด้วย
+       แล้วได้ออเดอร์ที่ไม่มีรายการสินค้าสักบรรทัด โดยไม่มีอะไรฟ้อง */
+    items.push({ lineNo: lineNo, sku: sku, qty: qty, price: price, std: prod.price });
+
+    /* ใบที่สั่งมาว่า "ไม่ตัดสต๊อก" — ข้ามเรื่องล็อตทั้งหมด ไม่จอง ไม่เช็คของพอ
+       ไม่เช็ควันหมดอายุ เพราะของใบนี้ไม่ได้ออกจากชั้นเพราะใบนี้
+
+       มีไว้สำหรับออเดอร์ Shopee ที่ลูกค้าติ๊กขอใบกำกับภาษี — ใบพวกนั้น
+       เจ้าของร้านลงของเองอีกทางหนึ่งอยู่แล้ว ถ้านำเข้าแล้วตัดอีกจะตัดซ้ำสองรอบ
+       (เจ้าของร้านสั่งเอง 7 ต.ค. 69 จากคอลัมน์ "ผู้ซื้อร้องขอใบกำกับภาษี" ในไฟล์ Shopee)
+
+       ยอดขายกับกำไรยังลงครบเหมือนเดิม ต่างกันแค่ไม่มีบรรทัดในชีท ตัดล็อต */
+    if (noStock) { continue; }
+
     var pool = (lotsBySku[sku] || []).map(function (l) {
       return { row: l.row, lotNo: l.lotNo, exp: l.exp, recv: l.recv, remain: l.remain - (used[l.row] || 0) };
     });
@@ -3136,8 +3514,6 @@ function planOrder_(p, email) {
     if (pick.tracked) {
       lotNote.push(sku + ': ' + pick.picks.map(function (x) { return x.lotNo + ' x' + x.take; }).join(', '));
     }
-
-    items.push({ lineNo: lineNo, sku: sku, qty: qty, price: price, std: prod.price });
   }
 
   var date = parseDate_(p.date);
@@ -3156,7 +3532,11 @@ function planOrder_(p, email) {
     /* ช่องพนักงานเก็บ "ชื่อคนคีย์" ที่เลือกจากหน้าจอ เพราะทั้งร้านใช้บัญชี Google เดียวกัน
        ถ้าไม่ได้เลือกก็ใช้อีเมลไปก่อน และไม่ว่าทางไหน Log ยังบันทึกอีเมลจริงไว้เสมอ */
     status: status, staff: String(p.by || '').trim().slice(0, 40) || email,
-    note: String(p.note || '').trim(),
+    /* ใบที่ไม่ตัดสต๊อกต้องอ่านออกจากในชีทเองได้ว่าทำไมของไม่หาย
+       ไม่งั้นวันหนึ่งมีคนกระทบยอดแล้วเจอใบขายที่ไม่มีบรรทัดตัดล็อต แล้วหาสาเหตุไม่เจอ */
+    note: [String(p.note || '').trim(), noStock ? '(ไม่ตัดสต๊อก)' : '']
+      .filter(function (x) { return x }).join(' '),
+    noStock: noStock,
     /* เงินที่แพลตฟอร์มหักไปก่อนโอนเข้าร้าน กับค่าส่งที่ร้านออกเอง
        เก็บแยกจากยอดขาย เพราะเป็นรายจ่าย ไม่ใช่ส่วนลดที่ให้ลูกค้า
        เอาไปลดยอดขายเมื่อไร ใบกำกับภาษีกับภาษีขายจะต่ำกว่าความจริงทันที */
@@ -3386,7 +3766,10 @@ function commitOrder_(plan) {
       tel: plan.tel, addr: plan.addr, carrier: plan.carrier, track: plan.track,
       vat: plan.vat, discount: plan.discount, ship: plan.ship,
       status: plan.status, staff: plan.staff, note: plan.note,
-      fee: plan.fee, shipCost: plan.shipCost
+      fee: plan.fee, shipCost: plan.shipCost,
+      /* เวลาที่กดบันทึกจริง ระบบเขียนเอง ไม่รับจากฝั่งหน้าจอ
+         ถ้ารับจากหน้าจอ เวลาจะเป็นของนาฬิกาเครื่องที่คีย์ ซึ่งเพี้ยนได้และแก้ได้ */
+      keyedAt: new Date()
     });
     written.head = hRow;
   }
@@ -3416,6 +3799,10 @@ function commitOrder_(plan) {
       written.cut.push(cRows[j]);
     }
   }
+
+  /* ขายของออกไปแล้ว ยอดคงเหลือเปลี่ยน ป้าย "สินค้าหมด" บนหน้าร้านจึงอาจเปลี่ยนตาม
+     ถ้าไม่ล้างแคช ลูกค้าคนถัดไปยังเห็นว่ามีของอยู่ กดสั่งแล้วเจอ error ตอนบันทึก */
+  try { shopCacheBust_(); } catch (e) {}
 
   return written;
 }
@@ -3598,12 +3985,50 @@ function receiveStock(payload) {
     throw new Error('มีคนกำลังบันทึกอยู่ ลองกดใหม่อีกครั้งใน 2-3 วินาที');
   }
 
-  var written = { recv: 0, lot: 0 };
+  var written = { recv: 0, lot: 0, prod: 0 };
   try {
     done = props.getProperty('rs_' + clientKey);
     if (done) return jsonSafe_(JSON.parse(done));
 
     var plan = planReceive_(p, email);
+
+    /* สินค้าใหม่ต้องลงฐานสินค้าก่อนเพื่อนเสมอ ไม่งั้นแถวรับเข้าจะอ้างรหัสที่ไม่มีจริง
+       และสูตร สต๊อกคงเหลือ จะไม่มีแถวให้เกาะ ของก็หายเข้าไปในชีทเฉย ๆ */
+    if (plan.fresh) {
+      var pRow = nextRow_('prod', SH.prod.IN.sku);
+      if (!pRow) throw new Error('ชีท ' + SH.prod.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
+        formulaLimit_('prod') + ')\n' +
+        'แก้ได้โดยสั่งฟังก์ชัน growProducts หนึ่งครั้งที่หน้าแก้ไขสคริปต์ ' +
+        'แล้วกลับมากดบันทึกใหม่ — ข้อมูลในฟอร์มยังอยู่ครบ');
+      /* สต๊อกคงเหลือ ผูกกับ ฐานสินค้า แบบแถวต่อแถว เลยแถวสุดท้ายที่มีสูตรเมื่อไร
+         สินค้าตัวใหม่จะไม่มียอดคงเหลือ และไม่มีอะไรฟ้อง — เคยเกิดมาแล้ว กันไว้ตรงนี้ */
+      var stockLimit = formulaLimit_('stock');
+      if (pRow > stockLimit) {
+        throw new Error('ชีท ' + SH.stock.name + ' มีสูตรถึงแถว ' + stockLimit +
+          ' แต่สินค้าใหม่จะลงแถว ' + pRow + ' — สินค้าตัวใหม่จะไม่มียอดคงเหลือ\n' +
+          'แก้ได้โดยสั่งฟังก์ชัน repairStockSheet หนึ่งครั้ง แล้วกลับมากดบันทึกใหม่');
+      }
+      var fields = {
+        sku: plan.fresh.sku, group: plan.fresh.group, name: plan.fresh.name,
+        perPack: plan.fresh.perPack, unit: plan.fresh.unit,
+        cost: plan.fresh.cost, price: plan.fresh.price,
+        /* ยอดยกมาเป็นศูนย์เสมอ ของก้อนนี้เข้าทางแถว รับเข้า ไม่ใช่ทางยอดยกมา
+           ถ้าใส่ทั้งสองที่ ของก้อนเดียวจะถูกนับสองรอบ */
+        opening: 0, reorder: ''
+      };
+      /* ช่อง "ขายบนเว็บ" มีเฉพาะชีทที่ผ่าน setupShopColumns มาแล้ว
+         ชีทเก่าที่ยังไม่มีคอลัมน์นั้น เขียนลงไปจะพังทั้งการรับของ
+         ซึ่งไม่คุ้มกันเลย — ของเข้าสต๊อกสำคัญกว่าธงหน้าร้าน
+
+         แต่ห้ามโกหกว่าซ่อนให้แล้ว: ชีทที่ไม่มีคอลัมน์นี้ หน้าร้านอ่านได้ค่าว่าง
+         ซึ่งแปลว่า "ขาย" อยู่ดี (ดู shopHidden_) ของตัวใหม่จึงขึ้นหน้าร้านจริง ๆ
+         ต้องรายงานตามนั้น ไม่ใช่ตามที่ตั้งใจไว้ */
+      if (sheet_('prod').getMaxColumns() >= SH.prod.IN.web) fields.web = plan.fresh.web;
+      else plan.fresh.web = '';
+      plan.fresh.onWeb = plan.fresh.web !== 'ไม่';
+      writeRow_('prod', pRow, fields);
+      written.prod = pRow;
+    }
 
     var rRow = nextRow_('recv', SH.recv.IN.sku);
     if (!rRow) throw new Error('ชีท ' + SH.recv.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
@@ -3639,19 +4064,39 @@ function receiveStock(payload) {
       lotNo: plan.lotNo, exp: p.exp || '',
       remain: stock[plan.sku] === undefined ? null : stock[plan.sku],
       lotRemain: plan.lotNo ? lotLeft : null,
-      recvRow: written.recv, lotRow: written.lot
+      recvRow: written.recv, lotRow: written.lot,
+      newProd: plan.fresh ? { sku: plan.fresh.sku, name: plan.fresh.name,
+                              group: plan.fresh.group, row: written.prod,
+                              onWeb: !!plan.fresh.onWeb } : null
     };
+
+    /* สินค้าใหม่ที่ตั้งให้ขึ้นหน้าร้าน ต้องโผล่ทันที ไม่ใช่รอแคชหมดอายุห้านาที */
+    if (plan.fresh && plan.fresh.onWeb) {
+      try { shopCacheBust_(); } catch (e) {}
+    }
 
     props.setProperty('rs_' + clientKey, JSON.stringify(res));
     writeLog_(email, 'รับของเข้า', SH.recv.name, plan.doc,
       plan.sku + (plan.lotNo ? ' ล็อต ' + plan.lotNo : ''), '', plan.qty,
       'รับของเข้าจากแอป โดย ' + plan.staff + ' (บัญชี ' + email + ')');
+    /* สินค้าใหม่ลงเป็นคนละบรรทัดใน บันทึกการใช้งาน เพราะเป็นคนละเรื่องกับการรับของ
+       วันหลังถ้าต้องไล่ว่าแถวนี้ในฐานสินค้ามาจากไหน จะเจอว่าใครสร้างเมื่อไร */
+    if (plan.fresh) {
+      writeLog_(email, 'เพิ่มสินค้าใหม่', SH.prod.name, plan.fresh.sku,
+        'พิมพ์เองตอนรับของเข้า', '', plan.fresh.name,
+        'หมวด ' + plan.fresh.group + ' · ' +
+        (plan.fresh.onWeb ? 'ขึ้นหน้าร้านด้วย' : 'ยังไม่ขึ้นหน้าร้าน') +
+        ' (แถว ' + written.prod + ')');
+    }
 
     return jsonSafe_(res);
   } catch (err) {
     try {
       if (written.lot) clearRow_('lot', written.lot);
       if (written.recv) clearRow_('recv', written.recv);
+      /* แถวฐานสินค้าต้องถอยด้วย ไม่งั้นเหลือสินค้าผีที่ไม่มีของสักชิ้นค้างอยู่ในระบบ
+           แล้วคนก็จะเลือกมันไปคีย์ออเดอร์ได้ ทั้งที่ไม่มีของจริง */
+      if (written.prod) clearRow_('prod', written.prod);
       SpreadsheetApp.flush();
     } catch (e) {
       Logger.log('ถอยกลับการรับของไม่สำเร็จ: ' + e.message + ' ' + JSON.stringify(written));
@@ -3671,13 +4116,22 @@ function receiveStock(payload) {
 function planReceive_(p, email) {
   var lists = cfgLists_();
 
-  var sku = String(p.sku || '').trim();
-  if (!sku) throw new Error('ยังไม่ได้เลือกสินค้า');
-
   var prods = readProducts_();
+
+  /* ของที่เพิ่งซื้อเข้ามาครั้งแรก ยังไม่มีในฐานสินค้า — พิมพ์รหัสกับชื่อเอาเองได้
+     เตรียมแถวฐานสินค้าไว้ตรงนี้ แต่ยังไม่เขียน เพราะต้องตรวจให้ครบก่อนทุกอย่าง */
+  var fresh = null, sku = '';
+  if (p.newProd) {
+    fresh = planNewProduct_(p.newProd, prods);
+    sku = fresh.sku;
+  } else {
+    sku = String(p.sku || '').trim();
+    if (!sku) throw new Error('ยังไม่ได้เลือกสินค้า');
+  }
+
   var prod = null;
   for (var i = 0; i < prods.length; i++) if (prods[i].sku === sku) { prod = prods[i]; break; }
-  if (!prod) throw new Error('ไม่มีรหัส ' + sku + ' ในชีท ' + SH.prod.name);
+  if (!prod && !fresh) throw new Error('ไม่มีรหัส ' + sku + ' ในชีท ' + SH.prod.name);
 
   var qty = Number(p.qty);
   if (!isFinite(qty) || qty <= 0) throw new Error('จำนวนที่รับเข้าต้องมากกว่า 0');
@@ -3714,12 +4168,153 @@ function planReceive_(p, email) {
     }
   }
 
+  /* ต้นทุนของแถวฐานสินค้าใหม่ = ต้นทุนของก้อนที่รับเข้ามานี่แหละ
+     เป็นตัวเลขเดียวที่รู้จริงตอนนี้ และเป็นตัวที่สูตรกำไรจะใช้ต่อไป */
+  if (fresh && fresh.cost === null) fresh.cost = cost;
+
   return {
-    sku: sku, name: prod.name, qty: qty, cost: cost, type: type, date: date,
+    sku: sku, name: (prod ? prod.name : fresh.name), qty: qty, cost: cost,
+    type: type, date: date,
     doc: String(p.doc || '').trim(), ref: String(p.ref || '').trim(),
     note: String(p.note || '').trim(),
     staff: String(p.staff || '').trim() || email,
-    lotNo: lotNo, exp: exp
+    lotNo: lotNo, exp: exp, fresh: fresh
+  };
+}
+
+/* ===========================================================================
+   สินค้าใหม่ที่พิมพ์เองตอนรับของเข้า
+   ===========================================================================
+
+   ของจริง: เจ้าของร้านสั่งของเข้ามาล็อตใหม่ แล้วในดรอปดาวน์ไม่มีตัวนั้น
+   เพราะยังไม่เคยขาย ก่อนหน้านี้ต้องไปเปิดชีท ฐานสินค้า พิมพ์แถวเองก่อน
+   แล้วค่อยกลับมารับเข้า — ซึ่งเป็นขั้นตอนที่คนข้ามแล้วของหายเข้าระบบไม่ได้
+
+   ที่ต้องระวังที่สุดคือ "ไปทับแถวเดิม" ช่องต้นทุนกับราคาใน ฐานสินค้า
+   ถูกสูตรของ ออเดอร์_รายการ ดึงไปคิดกำไรของ "ทุกใบ" ที่ใช้รหัสนั้น
+   เขียนทับรหัสเดิมหนึ่งครั้ง = กำไรของออเดอร์ที่ปิดไปแล้วเปลี่ยนตามทันที
+   โดยไม่มีอะไรฟ้อง ฟังก์ชันนี้จึงสร้างได้อย่างเดียว ไม่แก้ของเดิมเลยสักช่อง   */
+
+/** หมวดตั้งต้นของสินค้าที่พิมพ์เองตอนรับเข้า — หาเจอง่ายตอนไล่จัดหมวดทีหลัง */
+var RECV_NEW_GROUP_ = 'ยังไม่จัดหมวด';
+
+/** แยกรหัสเป็น "หัว" กับ "เลขท้าย" — SKU-141 -> {head:'SKU-', n:141, pad:3} */
+function skuParts_(sku) {
+  var m = /^(.*?)(\d+)$/.exec(String(sku || '').trim());
+  if (!m) return null;
+  return { head: m[1], n: Number(m[2]), pad: m[2].length };
+}
+
+/**
+ * รหัสถัดไปของสินค้าใหม่ — เดินตามชุดของ "หมวด" ที่เลือก
+ *
+ * เจ้าของร้านสั่งว่าของ TOOLING กับเคมีอยากให้เรียงติดกัน ซึ่งชีทก็ทำแบบนั้นอยู่แล้ว
+ * ของเครื่องมือใช้ SKU-141 SKU-143 ... ส่วนเคมีใช้ CHEM-001 ...
+ * ถ้าตั้งรหัสใหม่เป็น SKU-nnn ให้ทุกตัวไม่ว่าหมวดไหน เคมีตัวใหม่จะไปแทรก
+ * อยู่กลางกองเครื่องมือ แล้วเวลาเรียงตามรหัสในชีทก็หาไม่เจอว่ามันอยู่ไหน
+ *
+ * วิธีหา "หัวรหัส" ของหมวด: ดูจากของที่อยู่ในหมวดนั้นอยู่แล้ว ไม่ใช่ฮาร์ดโค้ดคู่
+ * TOOLING/CHEM ไว้ — เจ้าของร้านเพิ่มหมวดใหม่เองได้ตลอด และเคยตั้งชื่อหมวด
+ * ตามชื่อสินค้ามาแล้วหลายหมวด ระบบจึงต้องเรียนจากของจริงในชีท
+ *
+ * เลขนับต่อจาก "ทั้งชีท" ที่ใช้หัวเดียวกัน ไม่ใช่นับแค่ในหมวด
+ * เพราะหัวเดียวกันอาจถูกใช้ข้ามหมวด ถ้านับแค่ในหมวดจะได้รหัสชนของเดิม
+ */
+function nextSkuForGroup_(plist, group) {
+  var g = String(group || '').trim().toLowerCase();
+
+  /* หัวรหัสที่หมวดนี้ใช้อยู่ — เอาอันที่ใช้บ่อยสุด เท่ากันเอาอันที่เลขสูงกว่า
+     (หัวที่เพิ่งใช้ล่าสุดน่าจะเป็นอันที่ร้านใช้อยู่จริงในตอนนี้) */
+  var tally = {}, top = null;
+  if (g) {
+    for (var i = 0; i < plist.length; i++) {
+      if (String(plist[i].group || '').trim().toLowerCase() !== g) continue;
+      var pt = skuParts_(plist[i].sku);
+      if (!pt) continue;
+      var t = tally[pt.head] || (tally[pt.head] = { head: pt.head, n: 0, hi: 0, pad: pt.pad });
+      t.n++;
+      if (pt.n > t.hi) t.hi = pt.n;
+      if (pt.pad > t.pad) t.pad = pt.pad;
+    }
+    for (var k in tally) {
+      if (!top || tally[k].n > top.n || (tally[k].n === top.n && tally[k].hi > top.hi)) top = tally[k];
+    }
+  }
+
+  /* หมวดใหม่ที่ยังไม่มีของสักตัว ใช้ชุดกลาง SKU-nnn ไปก่อน
+     ย้ายหมวดทีหลังได้ และรหัสไม่ใช่สิ่งที่ต้องสื่อความหมายอยู่แล้ว */
+  var head = top ? top.head : 'SKU-';
+  var pad = top ? Math.max(top.pad, 3) : 3;
+
+  var max = 0;
+  for (var j = 0; j < plist.length; j++) {
+    var q = skuParts_(plist[j].sku);
+    if (q && q.head === head && q.n > max) max = q.n;
+  }
+  var next = String(max + 1);
+  while (next.length < pad) next = '0' + next;
+  return head + next;
+}
+
+function planNewProduct_(np, plist) {
+  np = np || {};
+
+  var name = String(np.name || '').trim().replace(/\s+/g, ' ');
+  if (name.length < 2) throw new Error('ใส่ชื่อสินค้าใหม่ด้วย อย่างน้อย 2 ตัวอักษร');
+  if (name.length > 120) throw new Error('ชื่อสินค้ายาวเกินไป (เกิน 120 ตัวอักษร)');
+
+  /* รหัสเว้นว่างได้ ระบบตั้งให้แบบ SKU-nnn ต่อจากเลขสูงสุดที่มีอยู่
+     คนที่รีบรับของเข้าไม่ควรต้องหยุดคิดว่าจะตั้งรหัสว่าอะไร */
+  var sku = String(np.sku || '').trim().replace(/\s+/g, '');
+  if (!sku) sku = nextSkuForGroup_(plist, np.group);
+  if (sku.length > 40) throw new Error('รหัสสินค้ายาวเกินไป (เกิน 40 ตัวอักษร)');
+  /* ห้ามมี · เพราะเป็นตัวคั่นที่ชีทอื่นใช้ต่อสตริงหลายรายการไว้ในช่องเดียว */
+  if (/[·\n\r\t]/.test(sku)) throw new Error('รหัสสินค้ามีอักขระที่ใช้ไม่ได้ (· หรือขึ้นบรรทัดใหม่)');
+
+  /* รหัสซ้ำ = ห้ามเด็ดขาด ไม่มีทางเลือกให้ยืนยันทับ
+     ทับรหัสเดิมคือเขียนทับต้นทุนกับราคาของสินค้าที่ขายไปแล้ว */
+  var low = sku.toLowerCase();
+  for (var i = 0; i < plist.length; i++) {
+    if (String(plist[i].sku || '').trim().toLowerCase() === low) {
+      throw new Error('รหัส ' + plist[i].sku + ' มีอยู่แล้วในชีท ' + SH.prod.name +
+        ' (' + plist[i].name + ') — เลือกตัวนั้นจากรายการแทน หรือตั้งรหัสใหม่ที่ไม่ซ้ำ');
+    }
+  }
+
+  /* ชื่อซ้ำ = เตือน ไม่ห้าม ของบางอย่างชื่อเหมือนกันจริงแต่คนละขนาดคนละยี่ห้อ
+     แต่ถ้าเผลอสร้างซ้ำ สต๊อกของตัวเดียวกันจะแตกเป็นสองแถว แล้วยอดไม่มีวันตรง
+     จึงต้องให้คนกดยืนยันอีกที ไม่ใช่ปล่อยผ่านเงียบ ๆ */
+  if (!np.sure) {
+    var key = name.toLowerCase();
+    for (var k = 0; k < plist.length; k++) {
+      if (String(plist[k].name || '').trim().toLowerCase() === key) {
+        throw new Error('DUP_NAME|มี "' + plist[k].name + '" อยู่แล้วในรหัส ' + plist[k].sku +
+          ' — ถ้าเป็นตัวเดียวกัน ให้เลือกรหัสนั้นจากรายการ ของจะได้ไม่แตกเป็นสองแถว\n' +
+          'ถ้าคนละตัวจริง ๆ (คนละขนาด คนละยี่ห้อ) กดยืนยันสร้างใหม่ได้');
+      }
+    }
+  }
+
+  var price = 0;
+  if (np.price !== '' && np.price !== null && np.price !== undefined) {
+    price = Number(np.price);
+    if (!isFinite(price) || price < 0) throw new Error('ราคาขายของสินค้าใหม่ไม่ถูกต้อง');
+  }
+
+  var perPack = Number(np.perPack);
+  if (!isFinite(perPack) || perPack <= 0) perPack = 1;
+
+  return {
+    sku: sku,
+    name: name,
+    group: String(np.group || '').trim() || RECV_NEW_GROUP_,
+    unit: String(np.unit || '').trim() || 'ชิ้น',
+    perPack: perPack,
+    price: price,
+    cost: null,                 /* เติมจากต้นทุนของก้อนที่รับเข้าใน planReceive_ */
+    /* ไม่ขึ้นหน้าร้านให้เอง — เจ้าของร้านสั่งไว้ว่าลูกค้าเห็นเฉพาะที่ตั้งใจให้เห็น
+       ของที่เพิ่งรับเข้ายังไม่มีรูป ยังไม่ได้ตั้งราคาจริง ขึ้นไปก็มีแต่เสีย */
+    web: np.web ? '' : 'ไม่'
   };
 }
 
@@ -4205,8 +4800,14 @@ function countStock(payload) {
 
     var plan = planCount_(p, email);
     var lists = cfgLists_();
-    var upType = pickWord_(lists.recvType, ['ปรับเพิ่ม', 'รับเข้า', 'ซื้อ']);
-    var dnType = pickWord_(lists.recvType, ['ปรับลด']);
+
+    /* เลือกคำที่ "สูตรของชีทนับจริง" ไม่ใช่คำที่เราคิดว่าน่าจะใช่
+       ของเดิมเลือก ปรับเพิ่ม เพราะมีในดรอปดาวน์ แต่สูตรช่องรับเข้าของชีทนี้
+       ไม่ได้นับคำนั้น ยอดจึงไม่ขึ้นตาม แล้วด่านตรวจก็ถอยคืนทุกครั้ง
+       — นับสต๊อกจึงทำไม่สำเร็จสักที โดยไม่มีอะไรบอกว่าติดตรงไหน */
+    var fx = stockTypeWords_();
+    var upType = pickStockType_(lists.recvType, ['ปรับเพิ่ม', 'รับเข้า', 'ซื้อ'], fx.up);
+    var dnType = pickStockType_(lists.recvType, ['ปรับลด'], fx.down);
     if (!dnType) {
       throw new Error('ชีท ' + SH.cfg.name + ' ไม่มีประเภท "ปรับลด" ให้เลือก ' +
         '— ลดยอดไม่ได้เลยถ้าไม่มีคำนี้ ต้องเติมในชีทก่อน');
@@ -4273,9 +4874,12 @@ function countStock(payload) {
       }
     }
     if (bad.length) {
+      /* ข้อความนี้คือทั้งหมดที่คนอ่านจะได้เห็น — ต้องพอให้ลงมือแก้ได้เลย
+         ของเดิมบอกแค่ "สาเหตุที่เป็นไปได้" แล้วทิ้งให้ไปเดาเอง
+         ของจริงเจอว่าเจ้าของร้านลองซ้ำสองรอบ ได้เลขเดิมเป๊ะทั้งสองรอบ
+         ซึ่งเป็นเบาะแสว่าแถวที่ลงไปไม่ถูกนับเลย แต่ข้อความไม่ได้ช่วยให้เห็นเลย */
       throw new Error('ตั้งยอดแล้วชีทไม่ได้ยอดตามที่นับ — ถอยคืนให้หมดแล้ว ไม่แตะอะไรทั้งนั้น\n' +
-        bad.join('\n') + '\nสาเหตุที่เป็นไปได้: สูตรช่องรับเข้า/ปรับลด ของชีทไม่ได้นับ "' +
-        upType + '" หรือ "' + dnType + '" เข้าไปด้วย');
+        bad.join('\n') + '\n\n' + countWhyDump_(plan, upType, dnType, wrRecv));
     }
 
     var res = { ok: true, date: ymd_(plan.date), preview: countPreview_(plan),
@@ -4310,6 +4914,39 @@ function countStock(payload) {
 }
 
 /** หาคำแรกในรายการของชีทที่ตรงกับคำที่อยากได้ — ไม่ฮาร์ดโค้ด เพราะร้านแก้ชีทเองได้ */
+/**
+ * เลือกประเภทที่จะลงในชีท รับเข้า ให้สูตรของชีทสต๊อกนับให้จริง
+ *
+ * ลำดับการเลือก
+ *   1. คำที่เราชอบ และสูตรนับด้วย        ← ปกติได้ตัวนี้
+ *   2. คำอะไรก็ได้ที่สูตรนับ              ← สูตรของร้านนี้ใช้คำอื่น
+ *   3. คำที่เราชอบ โดยไม่สนสูตร           ← อ่านสูตรไม่ออก ถอยไปใช้ค่าเดาเหมือนเดิม
+ *
+ * ข้อ 2 คือหัวใจ — ของเดิมมีแต่ข้อ 1 กับ 3 พอสูตรของร้านไม่ได้นับคำที่เราชอบ
+ * ยอดก็ไม่ขยับ ด่านตรวจถอยคืนทุกครั้ง แล้วนับสต๊อกทำไม่สำเร็จเลยสักที
+ */
+function pickStockType_(types, prefer, counted) {
+  counted = counted || [];
+  function counts(word) {
+    for (var c = 0; c < counted.length; c++) {
+      if (String(counted[c]).indexOf(word) > -1 || word.indexOf(String(counted[c])) > -1) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (counted.length) {
+    for (var i = 0; i < prefer.length; i++) {
+      if (!counts(prefer[i])) continue;
+      var hit = pickWord_(types, [prefer[i]]);
+      if (hit) return hit;
+    }
+    var any = pickWord_(types, counted);
+    if (any) return any;
+  }
+  return pickWord_(types, prefer);
+}
+
 function pickWord_(list, wants) {
   list = list || [];
   for (var w = 0; w < wants.length; w++) {
