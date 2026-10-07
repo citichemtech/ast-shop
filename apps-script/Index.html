@@ -828,6 +828,15 @@ stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><path d='M9 5l7 
       <input id="ord-q" placeholder="ค้นหา — เลขออเดอร์ · หมายเลขคำสั่งซื้อ Shopee · ชื่อ · เบอร์ · เลขพัสดุ"
              autocomplete="off">
       <div class="hint" id="ord-q-hint">ปล่อยว่างไว้ = ใบล่าสุด 40 ใบ · พิมพ์ 2 ตัวอักษรขึ้นไปเพื่อค้นทั้งชีท</div>
+      <!-- แยกออเดอร์ที่นำเข้าจากมาร์เก็ตเพลส ออกจากออเดอร์ที่คีย์เอง
+           สองกองนี้เป็นคนละงานกัน ของที่คีย์เองต้องแพ็คต้องออกใบต้องเก็บเงิน
+           ส่วนของ Shopee แพลตฟอร์มทำให้หมดแล้ว เหลือแค่ตัดสต๊อกกับดูกำไร
+           พอมาปนกันวันละหลายสิบใบ ใบที่ต้องลงมือทำจริงจะจมหายไปในกอง -->
+      <div class="tagpick" id="ord-src" style="margin-top:10px">
+        <button type="button" data-src="all" class="on">ทั้งหมด</button>
+        <button type="button" data-src="mkt">Shopee</button>
+        <button type="button" data-src="key">คีย์เอง</button>
+      </div>
       <button class="btn ghost" id="btn-shop" style="margin-top:10px">
         <img id="btn-shop-ic" alt="" style="height:1.15em;vertical-align:-0.18em;margin-right:7px">
         นำเข้าออเดอร์จาก Shopee</button>

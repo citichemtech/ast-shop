@@ -361,6 +361,62 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('เห็นยอดสุทธิ', row.indexOf('฿800.00') > -1);
   truthy('เห็นเลขพัสดุ', row.indexOf('TH0000000001') > -1);
 
+  /* ---------- 9ข. แยกกองออเดอร์ Shopee กับที่คีย์เอง ----------
+     สองกองนี้เป็นคนละงาน ของที่คีย์เองต้องแพ็คต้องออกใบต้องเก็บเงิน
+     ส่วนของ Shopee แพลตฟอร์มทำให้หมดแล้ว เหลือแค่ตัดสต๊อกกับดูกำไร
+     พอปนกันวันละหลายสิบใบ ใบที่ต้องลงมือทำจริงจะจมหายไปในกอง
+     (เจ้าของร้านขอเอง 7 ต.ค. 69) */
+  console.log('\n9ข. แยกกองออเดอร์ Shopee / คีย์เอง');
+  await page.evaluate(function () {
+    /* ให้มีทั้งสองกองแน่ ๆ ข้อมูลจำลองเดิมเป็นเพจ Facebook ล้วน */
+    ORDERS[0].channel = 'Shopee';
+    renderOrders();
+  });
+  await page.waitForTimeout(250);
+  var tabs9 = await page.evaluate(function () {
+    return $$('#ord-src button').map(function (b) { return b.textContent });
+  });
+  eq('มีปุ่มสามกอง', tabs9.length, 3);
+  truthy('ปุ่มบอกจำนวนในแต่ละกองด้วย', /ทั้งหมด \(\d+\)/.test(tabs9[0]), tabs9.join(' | '));
+  truthy('นับกอง Shopee ได้', /Shopee \(1\)/.test(tabs9[1]), tabs9.join(' | '));
+
+  var allN = await page.locator('#list .row').count();
+  await page.click('#ord-src button[data-src="mkt"]');
+  await page.waitForTimeout(250);
+  eq('กด Shopee แล้วเหลือเฉพาะใบของ Shopee',
+    await page.locator('#list .row').count(), 1);
+  truthy('และเป็นใบที่ช่องทางเป็น Shopee จริง',
+    /Shopee/.test(await page.textContent('#list .row')));
+
+  await page.click('#ord-src button[data-src="key"]');
+  await page.waitForTimeout(250);
+  eq('กดคีย์เอง แล้วได้ใบที่เหลือ',
+    await page.locator('#list .row').count(), allN - 1);
+  truthy('ไม่มีใบ Shopee ปนอยู่ในกองคีย์เอง',
+    !/Shopee/.test(await page.textContent('#list')));
+
+  /* ปุ่มในแถวอ้างตำแหน่งใน ORDERS ไม่ใช่ตำแหน่งในกองที่กรองแล้ว
+     ถ้าใช้ index ของกอง พอกรองอยู่แล้วกดปุ่มจะไปทำงานกับออเดอร์ผิดใบ
+     ซึ่งแปลว่าพิมพ์ใบปะหน้าของลูกค้าอีกคน */
+  console.log('\n   ปุ่มในแถวต้องยังชี้ไปที่ออเดอร์ใบถูก ตอนกรองอยู่');
+  var pick9 = await page.evaluate(function () {
+    var b = document.querySelector('#list .row .sq[data-lb]');
+    /* อ่านข้อความทั้งช่อง ไม่ใช่ span แรก — span แรกคือสามเหลี่ยมสีซึ่งไม่มีข้อความ */
+    return { idx: Number(b.dataset.lb), no: ORDERS[Number(b.dataset.lb)].no,
+             shown: b.closest('.row').querySelector('.i').textContent };
+  });
+  truthy('เลขออเดอร์ที่ปุ่มชี้ไป ตรงกับเลขที่แสดงในแถวนั้น',
+    pick9.shown.indexOf(pick9.no) > -1, pick9.no + ' vs ' + pick9.shown.slice(0, 40));
+
+  await page.click('#ord-src button[data-src="all"]');
+  await page.waitForTimeout(250);
+  eq('กดทั้งหมด แล้วกลับมาครบ', await page.locator('#list .row').count(), allN);
+  await page.evaluate(function () {
+    ORDERS[0].channel = 'เพจ Facebook';
+    renderOrders();
+  });
+  await page.waitForTimeout(200);
+
   /* ---------- 10. ใบปะหน้าพัสดุ ---------- */
   console.log('\n10. ใบปะหน้าพัสดุ');
   await page.click('#list .row .sq[data-lb="0"]');

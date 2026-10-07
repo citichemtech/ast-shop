@@ -993,6 +993,16 @@ function ordSearchInit(){
     clearTimeout(ORD_TIMER);
     runSearch(el.value.trim());
   };
+
+  /* ปุ่มเลือกกอง — กรองในเครื่องจากใบที่โหลดมาแล้ว ไม่ยิงชีทใหม่
+     กองไม่ได้เปลี่ยนข้อมูล เปลี่ยนแค่ว่าจะโชว์ใบไหน ยิงใหม่คือรอเปล่า ๆ */
+  $$("#ord-src button").forEach(function(b){
+    b.onclick = function(){
+      ORD_SRC = b.dataset.src;
+      try { localStorage.setItem("ast-ordsrc", ORD_SRC) } catch(e){}
+      renderOrders();
+    };
+  });
 }
 
 function runSearch(q, quiet){
@@ -1109,10 +1119,58 @@ function isDead(o){ return DEAD_STATUS.indexOf(String((o&&o.status)||"").trim())
 var COD_STATUS = "เก็บเงินปลายทาง";
 function isCod(o){ return String((o&&o.status)||"").trim() === COD_STATUS }
 
+/* กองไหนที่กำลังดูอยู่ — all · mkt (มาร์เก็ตเพลส) · key (คีย์เอง)
+   เก็บในเครื่อง เปิดแอปรอบหน้าได้กองเดิม คนที่ทำแต่ของหน้าร้านจะได้ไม่ต้องกดทุกครั้ง */
+var ORD_SRC = (function(){
+  try { return localStorage.getItem("ast-ordsrc") || "all" } catch(e){ return "all" }
+})();
+
+/* ใช้ isMarketCh ตัวเดียวกับที่ใช้คิดค่าส่ง ไม่เขียนกฎใหม่ให้ผลต่างกันสองที่
+   ปุ่มเขียนว่า "Shopee" เพราะร้านมีแต่ช้อปปี้ แต่กฎจับ Lazada กับ TikTok ด้วย
+   ถ้าวันหนึ่งมีออเดอร์ลาซาด้า มันควรไปอยู่กองเดียวกับช้อปปี้ ไม่ใช่กอง "คีย์เอง" */
+function ordSrcOf(o){ return isMarketCh(o && o.channel) ? "mkt" : "key" }
+
+function ordBySrc(){
+  if(ORD_SRC === "all") return ORDERS;
+  return ORDERS.filter(function(o){ return ordSrcOf(o) === ORD_SRC });
+}
+
+/* ตัวเลขบนปุ่มนับจากใบที่โหลดมาอยู่ในมือตอนนี้ ไม่ใช่ทั้งชีท
+   ตอนค้นหา ORDERS คือผลการค้น ตัวเลขจึงบอกว่า "ในผลการค้นมีกองละกี่ใบ"
+   ซึ่งเป็นสิ่งที่คนกำลังมองหาพอดี */
+function ordSrcTabs(){
+  var box = $("#ord-src");
+  if(!box) return;
+  var n = { all: ORDERS.length, mkt: 0, key: 0 };
+  ORDERS.forEach(function(o){ n[ordSrcOf(o)]++ });
+  $$("#ord-src button").forEach(function(b){
+    var k = b.dataset.src;
+    b.classList.toggle("on", k === ORD_SRC);
+    var base = k === "all" ? "ทั้งหมด" : (k === "mkt" ? "Shopee" : "คีย์เอง");
+    b.textContent = base + " (" + n[k] + ")";
+  });
+}
+
 function renderOrders(){
   if(!ORDERS) ORDERS = [];
+  ordSrcTabs();
   if(!ORDERS.length){ $("#list").innerHTML='<div class="empty"><b>ยังไม่มีออเดอร์</b>กดแท็บ “คีย์ออเดอร์” เพื่อบันทึกใบแรก</div>'; return }
-  $("#list").innerHTML = flagLegend() + ORDERS.map(function(o,i){
+  var rows = ordBySrc();
+  /* กองว่างต้องบอกว่าว่างเพราะอะไร ไม่ใช่ขึ้นข้อความเดียวกับตอนไม่มีออเดอร์เลย
+     "ยังไม่มีออเดอร์" ทั้งที่กด "ทั้งหมด" แล้วเห็นสี่สิบใบ คืออาการที่อ่านว่าแอปพัง */
+  if(!rows.length){
+    $("#list").innerHTML = '<div class="empty"><b>'
+      + (ORD_SRC === "mkt" ? "ไม่มีออเดอร์จากมาร์เก็ตเพลสในชุดนี้"
+                           : "ไม่มีออเดอร์ที่คีย์เองในชุดนี้") + '</b>'
+      + 'กด <b>ทั้งหมด</b> เพื่อดูทุกใบ'
+      + (ORD_SRC === "mkt" ? ' · นำเข้าจาก Shopee ได้ที่ปุ่มข้างบน' : '')
+      + '</div>';
+    return;
+  }
+  /* ปุ่มในแถวอ้างตำแหน่งใน ORDERS ไม่ใช่ตำแหน่งในกองที่กรองแล้ว
+     ถ้าใช้ index ของกอง พอกรองอยู่แล้วกดปุ่มจะไปทำงานกับออเดอร์ผิดใบ */
+  $("#list").innerHTML = flagLegend() + rows.map(function(o){
+    var i = ORDERS.indexOf(o);
     var dead = isDead(o);
     return '<div class="row"><div class="i">'
       + '<b>'+flagTag(o)+esc(o.cust||"ไม่ระบุชื่อ")+'</b>'
