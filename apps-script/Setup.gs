@@ -2644,6 +2644,203 @@ function countHeadRef_(sh, n, M, N) {
   return c;
 }
 
+/* ------------------------------------- สูตรที่ยังเป็นสูตร แต่เนื้อในถูกแก้ */
+
+/**
+ * หาแถวที่สูตร "หน้าตาไม่เหมือนชาวบ้าน"
+ *
+ * ด่านตรวจยอด (verifyOrder_) ถอยใบที่ชีทคำนวณยอดไม่ตรงออก แล้วบอกให้สั่ง
+ * checkFormulas ดูต่อ — แต่ checkFormulas จับได้แค่ช่องที่ "ไม่ใช่สูตรแล้ว"
+ * กับ #REF! เท่านั้น ช่องที่ยังเป็นสูตรอยู่แต่เนื้อในถูกแก้ มันรายงานว่าปกติดี
+ * เจ้าของร้านจึงเดินไปสุดทางแล้วไม่เจออะไรเลย
+ *
+ * ของจริง 8 ต.ค. 69: บันทึกออเดอร์แล้วชีทคำนวณยอดสินค้าได้ 291,691.55
+ * ทั้งที่ควรได้ 294 — ตัวเลขขนาดนั้นคือทั้งคอลัมน์ ไม่ใช่ของใบเดียว
+ * แปลว่าสูตรของแถวนั้นไปรวมทุกใบในชีท ซึ่งเป็นสูตรที่ใช้งานได้ ไม่ใช่ #REF!
+ * และไม่ใช่ค่านิ่ง เครื่องมือที่มีอยู่จึงมองไม่เห็นสักตัว
+ *
+ * วิธีหา: ไม่เดาว่าสูตรควรเป็นอะไร (กฎเหล็กของไฟล์นี้) แต่เทียบแถวกันเอง
+ * ถอดเลขแถวของตัวเองออกจากสูตรก่อน แล้วนับว่าหน้าตาแบบไหนมีกี่แถว
+ * แบบที่มีมากที่สุดคือของถูก ที่เหลือคือแถวที่ต้องไปดู
+ *
+ * อ่านอย่างเดียว ไม่แก้ ไม่ลบ ไม่เขียนอะไรทั้งนั้น
+ */
+function oddFormulas() {
+  requireStaff_();
+  var keys = ['head', 'item', 'prod', 'recv', 'lot', 'cut', 'doc'];
+  var out = ['— แถวที่สูตรหน้าตาต่างจากแถวอื่น —', ''];
+  var total = 0;
+
+  for (var i = 0; i < keys.length; i++) {
+    var r = oddScan_(keys[i]);
+    if (!r) continue;
+    total += r.odd;
+    out = out.concat(r.lines);
+  }
+
+  out.push(total
+    ? 'รวมช่องที่หน้าตาต่างจากแถวอื่น ' + total + ' ช่อง\n' +
+      'ถ้าดูแล้วเป็นของเสียจริง สั่ง fixOddFormulas(\'ซ่อม\') ให้คัดลอกสูตร' +
+      'จากแถวที่หน้าตาเหมือนกันมากที่สุดไปทับ'
+    : 'ทุกคอลัมน์สูตรหน้าตาเหมือนกันหมด ไม่มีแถวไหนผิดรูป\n' +
+      'ยอดที่ไม่ตรงจึงไม่ได้มาจากสูตรถูกแก้ — ดูที่ข้อมูลในช่องกรอกแทน ' +
+      '(เช่น เลขออเดอร์ซ้ำกันสองแถว ทำให้สูตรรวมของสองใบมากองที่ใบเดียว)');
+  var msg = out.join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
+/**
+ * ถอดเลขแถวของตัวเองออกจากสูตร เหลือแต่ "รูปร่าง"
+ *
+ * $J6 ของแถว 6 กับ $J340 ของแถว 340 เป็นสูตรเดียวกัน ต่างกันแค่แถวที่มันอยู่
+ * จึงแทนเลขแถวที่เท่ากับแถวตัวเองด้วย {r} ก่อนเทียบ
+ *
+ * แทนเฉพาะที่ไม่มี $ นำหน้าเลข เพราะ $J$6 คือตรึงไว้ที่แถว 6 จริง ๆ
+ * (เช่น ตั้งค่า!$B$8 ที่เก็บอัตรา VAT) ซึ่งทุกแถวต้องเหมือนกันอยู่แล้ว
+ * ถ้าไปแทนด้วย จะกลายเป็นว่าแถว 8 ดูต่างจากชาวบ้านทั้งที่ไม่ได้ผิดอะไร
+ */
+function oddShape_(f, row) {
+  var s = String(f == null ? '' : f);
+  if (!s) return '';
+  return s.replace(/(\$?)([A-Za-z]{1,3})(\$?)(\d+)/g, function (m, d1, col, d2, num) {
+    if (d2) return m;                       /* $6 = ตรึงแถวไว้ ไม่ใช่แถวของตัวเอง */
+    if (Number(num) !== row) return m;      /* อ้างแถวอื่นจริง ๆ ก็ปล่อยไว้ */
+    return d1 + col + '{r}';
+  });
+}
+
+/** ไล่ทีละคอลัมน์สูตรของชีทหนึ่ง หาแถวที่รูปร่างเป็นเสียงข้างน้อย */
+function oddScan_(key) {
+  var cfg = SH[key];
+  var cols = cfg.CALC || [];
+  if (!cols.length || !sheetIfAny_(key)) return null;
+  var sh = sheet_(key);
+  var limit = formulaLimit_(key);
+  if (limit < DATA_ROW) return null;
+  var n = limit - DATA_ROW + 1;
+  var f = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
+
+  var lines = [], odd = 0, cells = [];
+  for (var k = 0; k < cols.length; k++) {
+    var c = cols[k];
+    var count = {}, first = {};
+    for (var i = 0; i < n; i++) {
+      var raw = c <= f[i].length ? f[i][c - 1] : '';
+      /* ช่องที่ไม่ใช่สูตรแล้วเป็นงานของ repairOrderSheets ไม่ใช่ของตัวนี้
+         ถ้านับมาด้วย เสียงข้างมากจะกลายเป็น "ว่าง" แล้วรายงานกลับหัว */
+      if (String(raw || '').charAt(0) !== '=') continue;
+      var shape = oddShape_(raw, DATA_ROW + i);
+      count[shape] = (count[shape] || 0) + 1;
+      if (first[shape] === undefined) first[shape] = DATA_ROW + i;
+    }
+    var shapes = Object.keys(count);
+    if (shapes.length < 2) continue;
+
+    shapes.sort(function (a, b) { return count[b] - count[a] });
+    var main = shapes[0];
+    for (var j = 1; j < shapes.length; j++) {
+      var sp = shapes[j];
+      var rows = [];
+      for (var q = 0; q < n; q++) {
+        var rawq = c <= f[q].length ? f[q][c - 1] : '';
+        if (String(rawq || '').charAt(0) !== '=') continue;
+        if (oddShape_(rawq, DATA_ROW + q) === sp) rows.push(DATA_ROW + q);
+      }
+      odd += rows.length;
+      cells.push({ col: c, rows: rows, shape: sp, mainRow: first[main] });
+    }
+  }
+
+  if (!odd) return { odd: 0, lines: ['  ' + cfg.name + ': หน้าตาเหมือนกันหมดทุกแถว', ''] };
+
+  lines.push('  ' + cfg.name + ' (ดูแถว ' + DATA_ROW + '-' + limit + ')');
+  for (var z = 0; z < cells.length && z < 12; z++) {
+    var it = cells[z];
+    var letter = sh.getRange(DATA_ROW, it.col).getA1Notation().replace(/\d+$/, '');
+    var show = it.rows.slice(0, 8).join(', ') + (it.rows.length > 8 ? ' …' : '');
+    lines.push('    คอลัมน์ ' + letter + ' แถว ' + show +
+      ' (' + it.rows.length + ' แถว) ต่างจากแถว ' + it.mainRow);
+    lines.push('      ที่เป็นอยู่: ' + it.shape.slice(0, 120));
+  }
+  if (cells.length > 12) lines.push('    … และอีก ' + (cells.length - 12) + ' แบบ');
+  lines.push('');
+  return { odd: odd, lines: lines };
+}
+
+/**
+ * คัดลอกสูตรจากแถวเสียงข้างมากไปทับแถวที่ผิดรูป
+ *
+ * ต้องยืนยันด้วย fixOddFormulas('ซ่อม') เสมอ เพราะ "ผิดรูป" ไม่ได้แปลว่าผิด
+ * เสมอไป — เจ้าของร้านอาจตั้งใจเขียนสูตรพิเศษไว้บางแถวก็ได้
+ * ให้ดูรายงานจาก oddFormulas() ก่อนทุกครั้ง แล้วค่อยตัดสินใจเอง
+ */
+function fixOddFormulas(confirm) {
+  var email = requireStaff_();
+  if (String(confirm || '') !== 'ซ่อม') {
+    var ask = 'ยังไม่ได้ซ่อมอะไร — ดูรายงานจาก oddFormulas() ก่อน\n' +
+      'ถ้าแน่ใจแล้วว่าแถวพวกนั้นเสียจริง สั่ง fixOddFormulas(\'ซ่อม\')';
+    Logger.log(ask);
+    return ask;
+  }
+
+  var keys = ['head', 'item', 'prod', 'recv', 'lot', 'cut', 'doc'];
+  var out = [], total = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var r = oddScan_(key);
+    if (!r || !r.odd) continue;
+    var sh = sheet_(key);
+    var limit = formulaLimit_(key);
+    var n = limit - DATA_ROW + 1;
+    var f = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
+    var fixed = 0;
+
+    var cols = SH[key].CALC || [];
+    for (var k = 0; k < cols.length; k++) {
+      var c = cols[k];
+      var count = {}, first = {};
+      for (var a = 0; a < n; a++) {
+        var raw = c <= f[a].length ? f[a][c - 1] : '';
+        if (String(raw || '').charAt(0) !== '=') continue;
+        var shp = oddShape_(raw, DATA_ROW + a);
+        count[shp] = (count[shp] || 0) + 1;
+        if (first[shp] === undefined) first[shp] = DATA_ROW + a;
+      }
+      var shapes = Object.keys(count);
+      if (shapes.length < 2) continue;
+      shapes.sort(function (x, y) { return count[y] - count[x] });
+      var main = shapes[0], src = first[main];
+
+      for (var b = 0; b < n; b++) {
+        var rawb = c <= f[b].length ? f[b][c - 1] : '';
+        if (String(rawb || '').charAt(0) !== '=') continue;
+        if (oddShape_(rawb, DATA_ROW + b) === main) continue;
+        sh.getRange(src, c).copyTo(sh.getRange(DATA_ROW + b, c),
+          SpreadsheetApp.CopyPasteType.PASTE_FORMULA, false);
+        fixed++;
+      }
+    }
+    SpreadsheetApp.flush();
+    total += fixed;
+    var after = oddScan_(key);
+    out.push('  ' + SH[key].name + ': เขียนทับ ' + fixed + ' ช่อง (เหลือผิดรูป ' +
+      (after ? after.odd : 0) + ')');
+    if (fixed) {
+      writeLog_(email, 'ซ่อมสูตร', SH[key].name, '', 'สูตรผิดรูป',
+        r.odd + ' ช่อง', 'คัดลอกจากแถวเสียงข้างมาก ' + fixed + ' ช่อง',
+        'สูตรยังเป็นสูตรแต่เนื้อในถูกแก้');
+    }
+  }
+
+  var msg = total
+    ? 'ซ่อมสูตรที่ผิดรูปแล้ว\n' + out.join('\n') +
+      '\n\nลองบันทึกออเดอร์ใบที่ติดอีกครั้ง'
+    : 'ไม่มีสูตรแถวไหนผิดรูป จึงไม่ได้เขียนอะไรเลย';
+  Logger.log(msg);
+  return msg;
+}
+
 /* ------------------------------------------- ขยายที่ว่างของชีท ฐานสินค้า */
 
 /**

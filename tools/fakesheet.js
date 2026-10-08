@@ -28,9 +28,27 @@ Sheet.prototype.cell = function (r, c) {
   if (!this.cells[k]) this.cells[k] = { v: '', f: null };
   return this.cells[k];
 };
+/* ลากสูตรลงมาทีละแถว แบบเดียวกับที่คนลากในชีทจริง
+   ของเดิมวางข้อความสูตรก้อนเดิมเป๊ะ ๆ ทุกแถว ($D6 ติดอยู่กับทุกแถว)
+   ซึ่งไม่ตรงกับ Google Sheets ที่ขยับอ้างอิงสัมพัทธ์ตามแถวให้เอง
+   พอไม่ขยับ เครื่องมือที่เทียบรูปร่างสูตรระหว่างแถวจะเห็นแถว 6 เป็นตัวประหลาด
+   ทั้งที่ในชีทจริงทุกแถวเหมือนกันหมด */
 Sheet.prototype.setFormulaDown = function (col, fromRow, toRow, tag) {
-  for (var r = fromRow; r <= toRow; r++) this.cell(r, col).f = tag || ('=F' + col);
+  for (var r = fromRow; r <= toRow; r++) {
+    this.cell(r, col).f = tag ? shiftRows(tag, fromRow, r) : ('=F' + col);
+  }
 };
+
+/* ขยับเลขแถวของอ้างอิงสัมพัทธ์จาก base ไปเป็น row — $B$6 ที่ตรึงไว้ไม่ขยับ */
+function shiftRows(f, base, row) {
+  if (row === base) return f;
+  return String(f).replace(/(\$?)([A-Za-z\u0E00-\u0E7F]{1,3})(\$?)(\d+)/g,
+    function (m, d1, col, d2, num) {
+      if (d2) return m;
+      if (Number(num) !== base) return m;
+      return d1 + col + row;
+    });
+}
 Sheet.prototype.getName = function () { return this.name; };
 Sheet.prototype.getMaxRows = function () { return this.maxRows; };
 Sheet.prototype.getMaxColumns = function () { return this.cols; };
@@ -159,9 +177,15 @@ Range.prototype.setFormulas = function (rows) {
   }
   return this;
 };
+/* คัดลอกสูตร — Google Sheets ขยับอ้างอิงสัมพัทธ์ตามระยะแถวที่ย้ายไป
+   ของเดิมวางข้อความเดิมเป๊ะ ๆ ทุกแถว ทำให้ชีทจำลองมีแถว 6 เป็นตัวประหลาด
+   ตัวเดียวทั้งชีท ซึ่งไม่เคยเกิดในชีทจริง */
 Range.prototype.copyTo = function (dst) {
   var f = this.s.cell(this.r, this.c).f;
-  for (var i = 0; i < dst.nr; i++) for (var j = 0; j < dst.nc; j++) dst.s.cell(dst.r + i, dst.c + j).f = f;
+  for (var i = 0; i < dst.nr; i++) {
+    var moved = f ? shiftRows(f, this.r, dst.r + i) : f;
+    for (var j = 0; j < dst.nc; j++) dst.s.cell(dst.r + i, dst.c + j).f = moved;
+  }
   return this;
 };
 /* จำรูปแบบช่องไว้ตรวจได้ เบอร์โทรกับเลขภาษีต้องถูกตั้งเป็นข้อความก่อนเขียนเสมอ */
