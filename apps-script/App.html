@@ -38,8 +38,9 @@ function showErr(msg, html){
  * ไม่ได้แปะทุกปุ่มเสมอ — ข้อความไหนไม่ได้พูดถึงตัวไหน ก็ไม่มีปุ่มตัวนั้น
  */
 var FIX_TOOLS = [
-  { fn:"oddFormulas",      label:"🔍 หาแถวที่สูตรเพี้ยน", args:[] },
-  { fn:"repairOrderSheets", label:"🛠 ซ่อมสูตรที่หายไป",  args:[] }
+  { fn:"growOrders",        label:"➕ ขยายที่ว่างของชีทออเดอร์", args:[] },
+  { fn:"oddFormulas",       label:"🔍 หาแถวที่สูตรเพี้ยน",      args:[] },
+  { fn:"repairOrderSheets", label:"🛠 ซ่อมสูตรที่หายไป",        args:[] }
 ];
 
 function fixBtns_(box, plain){

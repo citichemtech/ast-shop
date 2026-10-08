@@ -625,7 +625,7 @@ function formulaLimit_(key) {
  */
 function nextRows_(key, keyCol, count) {
   var s = sheet_(key);
-  var limit = formulaLimit_(key);
+  var limit = lastUsableRow_(key);
   if (limit < DATA_ROW) return [];
   var n = limit - DATA_ROW + 1;
   var v = s.getRange(DATA_ROW, keyCol, n, 1).getValues();
@@ -634,6 +634,46 @@ function nextRows_(key, keyCol, count) {
     if (v[i][0] === '' || v[i][0] === null) out.push(DATA_ROW + i);
   }
   return out.length === count ? out : [];
+}
+
+/**
+ * แถวสุดท้ายที่เขียนออเดอร์ลงไปได้จริง — ไม่นับแถวรวมยอดที่อยู่ท้ายตาราง
+ *
+ * เจ้าของร้านวางแถวรวมยอดไว้ใต้ข้อมูลในชีท ออเดอร์_หัวบิล กับ ออเดอร์_รายการ
+ * (เช่น J501 = SUM($J$6:$J$500)) แถวนั้นมีสูตรเหมือนกัน formulaLimit_ จึงนับรวม
+ * และช่องกรอกของมันว่าง nextRows_ เลยแจกแถวนั้นออกไปเป็นที่ว่างของออเดอร์ใหม่
+ *
+ * ผลคือ 8 ต.ค. 69 ออเดอร์ใหม่ถูกเขียนทับแถวรวมยอด แล้วด่านตรวจยอดอ่าน J501
+ * ได้ 291,691.55 (ยอดรวมทั้งชีท) แทนที่จะเป็น 294 ของใบนั้น — ถอยใบออกทุกครั้ง
+ * บันทึกออเดอร์ไม่ได้อีกเลยจนกว่าจะมีที่ว่างจริง
+ *
+ * แถวรวมยอดอยู่ท้ายสุดเสมอ และหน้าตาสูตรต่างจากแถวข้อมูล จึงดูแค่แถวสุดท้ายพอ
+ * ไม่ไล่ทั้งชีท เพราะตัวนี้ถูกเรียกทุกครั้งที่บันทึกออเดอร์
+ */
+var FOOTER_CACHE_ = {};
+
+function footerRow_(key) {
+  if (Object.prototype.hasOwnProperty.call(FOOTER_CACHE_, key)) return FOOTER_CACHE_[key];
+  var out = 0;
+  try {
+    var limit = formulaLimit_(key);
+    if (limit > DATA_ROW) {
+      var s = sheet_(key);
+      var col = SH[key].probe;
+      var top = oddShape_(s.getRange(DATA_ROW, col).getFormula(), DATA_ROW);
+      var end = oddShape_(s.getRange(limit, col).getFormula(), limit);
+      if (top && end && top !== end) out = limit;
+    }
+  } catch (e) { out = 0; }
+  FOOTER_CACHE_[key] = out;
+  return out;
+}
+
+/** แถวที่แจกให้ออเดอร์ใหม่ได้ = ถึงแถวสุดท้ายที่มีสูตร แต่ไม่แตะแถวรวมยอด */
+function lastUsableRow_(key) {
+  var limit = formulaLimit_(key);
+  var foot = footerRow_(key);
+  return (foot && foot === limit) ? limit - 1 : limit;
 }
 
 function nextRow_(key, keyCol) {

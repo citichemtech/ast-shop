@@ -3758,8 +3758,11 @@ function commitOrder_(plan) {
      เลขออเดอร์ ลูกค้า วันที่ เลขพัสดุ ค่าส่ง ส่วนลด ยังเป็นของเดิมทั้งหมด */
   if (!plan.skipHead) {
     var hRow = nextRow_('head', SH.head.IN.no);
-    if (!hRow) throw new Error('ชีท ' + SH.head.name + ' เต็มแล้ว (สูตรมีถึงแถว ' +
-      formulaLimit_('head') + ') — ต้องลากสูตรลงเพิ่มก่อนจึงบันทึกออเดอร์ใหม่ได้');
+    /* "ต้องลากสูตรลงเพิ่มก่อน" เป็นงานที่ต้องไปทำในชีทด้วยมือ ซึ่งบนมือถือทำไม่ได้
+       และการแทรกแถวผิดที่ทำให้ช่วงของสูตรรวมยอดไม่ขยายตาม — มีปุ่มให้กดปลอดภัยกว่า */
+    if (!hRow) throw new Error('ชีท ' + SH.head.name + ' เต็มแล้ว ' +
+      '(ที่ว่างมีถึงแถว ' + lastUsableRow_('head') + ') — สั่ง growOrders หนึ่งครั้ง ' +
+      'เพื่อขยายที่ว่าง แล้วกดบันทึกใหม่ ข้อมูลในฟอร์มยังอยู่ครบ');
 
     writeRow_('head', hRow, {
       no: plan.no, date: plan.date, channel: plan.channel, cust: plan.cust,
@@ -3776,7 +3779,8 @@ function commitOrder_(plan) {
 
   var iRows = nextRows_('item', SH.item.IN.no, plan.items.length);
   if (!iRows.length) throw new Error('ชีท ' + SH.item.name + ' เหลือที่ว่างไม่พอ ' +
-    plan.items.length + ' บรรทัด (สูตรมีถึงแถว ' + formulaLimit_('item') + ') — ต้องลากสูตรลงเพิ่มก่อน');
+    plan.items.length + ' บรรทัด (ที่ว่างมีถึงแถว ' + lastUsableRow_('item') + ') — ' +
+    'สั่ง growOrders หนึ่งครั้งเพื่อขยายที่ว่าง แล้วกดบันทึกใหม่');
   for (var i = 0; i < plan.items.length; i++) {
     var it = plan.items[i];
     writeRow_('item', iRows[i], {

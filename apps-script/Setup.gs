@@ -2537,7 +2537,7 @@ function setupItemLotColumn_(ss) {
 function fillFormula_(s, col, n, formula) {
   /* เขียนสูตรเพิ่ม = คำตอบเก่าของ "สูตรมีถึงแถวไหน" ใช้ไม่ได้แล้ว
      ล้างทิ้งตรงนี้ที่เดียว เพราะนี่คือที่เดียวในระบบที่เขียนสูตรลงชีท */
-  LIMIT_CACHE_ = {};
+  LIMIT_CACHE_ = {}; FOOTER_CACHE_ = {};
   s.getRange(DATA_ROW, col).setFormula(formula);
   if (n > 1) {
     s.getRange(DATA_ROW, col).copyTo(s.getRange(DATA_ROW + 1, col, n - 1, 1));
@@ -2721,11 +2721,17 @@ function oddScan_(key) {
   var n = limit - DATA_ROW + 1;
   var f = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
 
+  /* แถวรวมยอดท้ายตารางมีสูตรคนละแบบกับแถวข้อมูลโดยตั้งใจ (เช่น SUM ทั้งคอลัมน์)
+     ถ้านับเข้ามาด้วย มันจะถูกรายงานว่าเพี้ยน แล้วตัวซ่อมจะเอาสูตรของแถวข้อมูล
+     ไปทับยอดรวมของเจ้าของร้านทิ้ง — เกือบเกิดขึ้นจริง 8 ต.ค. 69 */
+  var foot = footerRow_(key);
+
   var lines = [], odd = 0, cells = [];
   for (var k = 0; k < cols.length; k++) {
     var c = cols[k];
     var count = {}, first = {};
     for (var i = 0; i < n; i++) {
+      if (DATA_ROW + i === foot) continue;
       var raw = c <= f[i].length ? f[i][c - 1] : '';
       /* ช่องที่ไม่ใช่สูตรแล้วเป็นงานของ repairOrderSheets ไม่ใช่ของตัวนี้
          ถ้านับมาด้วย เสียงข้างมากจะกลายเป็น "ว่าง" แล้วรายงานกลับหัว */
@@ -2743,6 +2749,7 @@ function oddScan_(key) {
       var sp = shapes[j];
       var rows = [];
       for (var q = 0; q < n; q++) {
+        if (DATA_ROW + q === foot) continue;
         var rawq = c <= f[q].length ? f[q][c - 1] : '';
         if (String(rawq || '').charAt(0) !== '=') continue;
         if (oddShape_(rawq, DATA_ROW + q) === sp) rows.push(DATA_ROW + q);
@@ -2752,9 +2759,21 @@ function oddScan_(key) {
     }
   }
 
-  if (!odd) return { odd: 0, lines: ['  ' + cfg.name + ': หน้าตาเหมือนกันหมดทุกแถว', ''] };
+  var footNote = foot
+    ? '  ' + cfg.name + ': แถว ' + foot + ' เป็นแถวรวมยอดของชีท ไม่ใช่ของเสีย ' +
+      'จึงไม่แตะและไม่นับ'
+    : '';
 
-  lines.push('  ' + cfg.name + ' (ดูแถว ' + DATA_ROW + '-' + limit + ')');
+  if (!odd) {
+    var okLines = ['  ' + cfg.name + ': หน้าตาเหมือนกันหมดทุกแถว'];
+    if (footNote) okLines.push(footNote);
+    okLines.push('');
+    return { odd: 0, lines: okLines };
+  }
+
+  lines.push('  ' + cfg.name + ' (ดูแถว ' + DATA_ROW + '-' +
+    (foot === limit ? limit - 1 : limit) + ')');
+  if (footNote) lines.push(footNote);
   for (var z = 0; z < cells.length && z < 12; z++) {
     var it = cells[z];
     var letter = sh.getRange(DATA_ROW, it.col).getA1Notation().replace(/\d+$/, '');
@@ -2794,6 +2813,7 @@ function fixOddFormulas(confirm) {
     var limit = formulaLimit_(key);
     var n = limit - DATA_ROW + 1;
     var f = sh.getRange(DATA_ROW, 1, n, sh.getLastColumn()).getFormulas();
+    var foot = footerRow_(key);
     var fixed = 0;
 
     var cols = SH[key].CALC || [];
@@ -2801,6 +2821,7 @@ function fixOddFormulas(confirm) {
       var c = cols[k];
       var count = {}, first = {};
       for (var a = 0; a < n; a++) {
+        if (DATA_ROW + a === foot) continue;
         var raw = c <= f[a].length ? f[a][c - 1] : '';
         if (String(raw || '').charAt(0) !== '=') continue;
         var shp = oddShape_(raw, DATA_ROW + a);
@@ -2813,6 +2834,8 @@ function fixOddFormulas(confirm) {
       var main = shapes[0], src = first[main];
 
       for (var b = 0; b < n; b++) {
+        /* ห้ามทับแถวรวมยอดเด็ดขาด — สูตรมันต่างโดยตั้งใจ */
+        if (DATA_ROW + b === foot) continue;
         var rawb = c <= f[b].length ? f[b][c - 1] : '';
         if (String(rawb || '').charAt(0) !== '=') continue;
         if (oddShape_(rawb, DATA_ROW + b) === main) continue;
@@ -2858,6 +2881,94 @@ function fixOddFormulasNow() {
   var msg = fixOddFormulas('ซ่อม');
   Logger.log(msg);
   return msg;
+}
+
+/* ---------------------------------- ขยายที่ว่างของชีทออเดอร์ (หัวบิล/รายการ) */
+
+/**
+ * ลากสูตรของ ออเดอร์_หัวบิล กับ ออเดอร์_รายการ ลงเพิ่ม เมื่อแถวเต็ม
+ *
+ * 8 ต.ค. 69 ชีทหัวบิลมีสูตรถึงแถว 501 โดยแถว 501 เป็นแถวรวมยอดของเจ้าของร้าน
+ * ที่ว่างจริงจึงมีแค่ถึงแถว 500 และวันนั้นเต็มพอดี บันทึกออเดอร์ไม่ได้อีกเลย
+ * อาการที่โผล่ออกมาคือ "ยอดที่ชีทคำนวณได้ 291,691.55 ไม่ตรงกับ 294"
+ * ซึ่งไม่มีใครเดาได้ว่าแปลว่าแถวเต็ม
+ *
+ * แทรกแถวว่างไว้ "เหนือแถวข้อมูลแถวสุดท้าย" ไม่ใช่ต่อท้าย
+ * เพราะถ้าแทรกต่อท้าย ช่วงของสูตรรวมยอด (SUM($J$6:$J$500)) จะไม่ขยายตาม
+ * แล้วยอดรวมของเจ้าของร้านจะหยุดนับที่แถวเดิมเงียบ ๆ โดยไม่มีอะไรฟ้อง
+ * แทรกเหนือแถวสุดท้ายของช่วง Google จะขยายช่วงให้เองเป็น $J$6:$J$1000
+ *
+ * ลอกเฉพาะคอลัมน์ที่เป็นสูตร ช่องกรอกต้องว่างไว้
+ * ลอกทั้งแถวเมื่อไร ข้อมูลลูกค้าของแถวสุดท้ายจะถูกก๊อปลงมาทุกแถว
+ * กลายเป็นออเดอร์ผีเต็มชีทที่ดูเหมือนของจริง และ nextRows_ จะมองว่าเต็มเหมือนเดิม
+ */
+function growOrders() {
+  var email = requireStaff_();
+  var out = [], added = 0;
+
+  [['head', 500], ['item', 1000]].forEach(function (pair) {
+    var r = growOrderSheet_(pair[0], pair[1]);
+    added += r.added;
+    out.push(r.msg);
+  });
+
+  if (added) {
+    writeLog_(email, 'ขยายชีท', SH.head.name + ' + ' + SH.item.name, '', 'ที่ว่างออเดอร์',
+      'เต็ม', 'เพิ่ม ' + added + ' แถว', 'แถวเต็มจนบันทึกออเดอร์ไม่ได้');
+  }
+
+  var msg = out.join('\n\n') + (added
+    ? '\n\nกลับไปกดบันทึกออเดอร์ใบเดิมได้เลย ข้อมูลในฟอร์มยังอยู่ครบ'
+    : '\n\nยังไม่ได้เพิ่มแถวไหนเลย');
+  Logger.log(msg);
+  return msg;
+}
+
+function growOrderSheet_(key, add) {
+  var cfg = SH[key];
+  var s = sheet_(key);
+  var limit = formulaLimit_(key);
+  if (limit < DATA_ROW) {
+    return { added: 0, msg: '  ' + cfg.name + ': ไม่มีแถวไหนมีสูตรเลย — ต้องสั่ง setup ก่อน' };
+  }
+
+  var foot = footerRow_(key);
+  var lastData = (foot && foot === limit) ? limit - 1 : limit;
+  if (lastData < DATA_ROW) {
+    return { added: 0, msg: '  ' + cfg.name + ': มีแต่แถวรวมยอด ไม่มีแถวข้อมูล — ต้องสั่ง setup ก่อน' };
+  }
+
+  /* ยังมีที่ว่างเหลืออยู่ก็ไม่ต้องขยาย ไม่งั้นชีทจะบวมขึ้นทุกครั้งที่กด */
+  var free = 0;
+  var used = s.getRange(DATA_ROW, cfg.IN.no, lastData - DATA_ROW + 1, 1).getValues();
+  for (var i = 0; i < used.length; i++) {
+    if (used[i][0] === '' || used[i][0] === null) free++;
+  }
+  if (free > 20) {
+    return { added: 0, msg: '  ' + cfg.name + ': ยังว่างอยู่ ' + free + ' แถว ไม่ต้องขยาย' };
+  }
+
+  /* แทรกเหนือแถวข้อมูลแถวสุดท้าย เพื่อให้ช่วงของสูตรรวมยอดขยายตามไปเอง */
+  s.insertRowsBefore(lastData, add);
+  SpreadsheetApp.flush();
+
+  var src = lastData + add;   /* แถวข้อมูลเดิมถูกดันลงมาอยู่ตรงนี้ */
+  var calc = cfg.CALC || [];
+  for (var k = 0; k < calc.length; k++) {
+    s.getRange(src, calc[k]).copyTo(s.getRange(lastData, calc[k], add, 1),
+      SpreadsheetApp.CopyPasteType.PASTE_FORMULA, false);
+  }
+  SpreadsheetApp.flush();
+  LIMIT_CACHE_ = {}; FOOTER_CACHE_ = {};
+
+  var now = formulaLimit_(key);
+  var msg = '  ' + cfg.name + ': แทรก ' + add + ' แถวเหนือแถว ' + lastData +
+    ' แล้วลอกสูตรจากแถว ' + src + ' ลงไป (สูตรมีถึงแถว ' + now + ' แล้ว)';
+  if (foot) {
+    msg += '\n    แถวรวมยอดเลื่อนไปอยู่แถว ' + (foot + add) +
+      ' และช่วงที่มันรวมขยายตามให้เอง — เปิดดูสักครั้งว่ายอดรวมยังถูก';
+  }
+  return { added: add, msg: msg };
 }
 
 /* ------------------------------------------- ขยายที่ว่างของชีท ฐานสินค้า */
@@ -2907,7 +3018,7 @@ function growProducts() {
     s.getRange(from, calc[i]).copyTo(s.getRange(from + 1, calc[i], n, 1));
   }
   SpreadsheetApp.flush();
-  LIMIT_CACHE_ = {};
+  LIMIT_CACHE_ = {}; FOOTER_CACHE_ = {};
 
   var now = formulaLimit_('prod');
   var msg = 'ชีท ' + cfg.name + ': ลากสูตรจากแถว ' + from + ' ลงถึงแถว ' + now +

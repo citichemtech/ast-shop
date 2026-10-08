@@ -80,6 +80,22 @@ Sheet.prototype.setFrozenRows = function () { return this; };
 Sheet.prototype.setColumnWidth = function () { return this; };
 Sheet.prototype.hideColumns = function () { return this; };
 Sheet.prototype.insertRowsAfter = function (after, n) { this.maxRows += n; return this; };
+
+/* แทรกแถวกลางตาราง — ของที่อยู่ตั้งแต่แถวนั้นลงไปต้องเลื่อนลงจริง
+   ถ้าแค่เพิ่ม maxRows เฉย ๆ เหมือน insertRowsAfter ชุดทดสอบจะมองไม่เห็นเลยว่า
+   แถวรวมยอดเลื่อนไปไหน แล้วโค้ดที่แทรกผิดที่จะผ่านหน้าด่านไปได้
+   (ของจริง Google ขยายช่วงของสูตรที่คลุมแถวที่ถูกดันให้เองด้วย ตรงนี้ทำไม่ได้
+   จึงไม่เขียนข้อทดสอบที่อ้างว่าพิสูจน์เรื่องนั้น) */
+Sheet.prototype.insertRowsBefore = function (before, n) {
+  var moved = {};
+  for (var k in this.cells) {
+    var p = k.split(','), r = +p[0], c = +p[1];
+    moved[(r >= before ? r + n : r) + ',' + c] = this.cells[k];
+  }
+  this.cells = moved;
+  this.maxRows += n;
+  return this;
+};
 Sheet.prototype.insertColumnsAfter = function (after, n) { this.cols += n; return this; };
 
 function Range(sheet, r, c, nr, nc) {
