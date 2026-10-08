@@ -5524,6 +5524,66 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ใบที่ไม่มีเวลา ไม่ขึ้นเวลามั่ว ๆ ให้',
      (txt20b.match(/ น\./g) || []).length, 1);
 
+  console.log('\n20ค. ปุ่มซ่อมสูตรในกล่องแดง');
+  /* 8 ต.ค. 69: สูตรในชีทเพี้ยน 6 ช่อง บันทึกออเดอร์ไม่ได้ทั้งวัน
+     แล้วทางแก้ที่เราเขียนไว้คือ "เปิด Apps Script แล้วสั่ง oddFormulas"
+     ซึ่งบนมือถือแทบทำไม่ได้ = บอกทางออกที่เขาเดินไปไม่ถึง
+     ปุ่มจึงต้องอยู่ในกล่องแดงนั้นเลย */
+  await page.evaluate(() => {
+    showErr('ยอดสินค้าที่ชีทคำนวณได้ (291691.55) ไม่ตรงกับที่ควรเป็น (294) — ' +
+      'วิธีแก้: เปิด Apps Script สั่ง oddFormulas เพื่อดูว่าแถวไหนเพี้ยน');
+  });
+  await page.waitForTimeout(200);
+  eq('มีปุ่มให้กดในกล่องแดง',
+     await page.locator('#err button').count(), 1);
+  truthy('ปุ่มบอกว่ามันทำอะไร',
+     /หาแถวที่สูตรเพี้ยน/.test(await page.locator('#err button').first().innerText()));
+
+  console.log('\n   กดแล้วต้องเรียกของจริงและกางผลให้เห็น');
+  await page.evaluate(() => { window.SENT = [] });
+  await page.locator('#err button').first().click();
+  await page.waitForTimeout(500);
+  var sentOdd = await page.evaluate(() => window.SENT[0] || null);
+  eq('ยิงไปที่ตัวตรวจสูตรจริง', sentOdd && sentOdd.fn, 'oddFormulas');
+  var outTxt = await page.locator('#err .fixout').innerText();
+  truthy('กางรายงานให้อ่านตรงนั้นเลย', /คอลัมน์ J แถว 341/.test(outTxt));
+
+  console.log('\n   รายงานบอกให้ซ่อมต่อ ปุ่มซ่อมต้องโผล่เอง');
+  eq('มีปุ่มซ่อมให้กดต่อ', await page.locator('#err .fixodd').count(), 1);
+
+  console.log('\n   กดครั้งแรกต้องแค่ถามย้ำ ยังไม่ซ่อม');
+  /* ไม่ใช้ confirm() เพราะหน้านี้อยู่ใน iframe ของ Google แล้วบางเครื่องไม่ขึ้นเลย
+     กดแล้วเงียบ = ซ่อมไปโดยไม่ได้ตั้งใจ หรือไม่ซ่อมเลยก็ไม่รู้ */
+  await page.evaluate(() => { window.SENT = [] });
+  await page.locator('#err .fixodd').click();
+  await page.waitForTimeout(300);
+  eq('ครั้งแรกยังไม่ยิงอะไร', await page.evaluate(() => window.SENT.length), 0);
+  truthy('ปุ่มเปลี่ยนไปบอกว่าต้องกดย้ำ',
+     /กดอีกครั้ง/.test(await page.locator('#err .fixodd').innerText()));
+
+  console.log('\n   กดย้ำแล้วต้องส่งคำยืนยันไปด้วย ไม่งั้นฝั่งชีทไม่ยอมทำ');
+  await page.locator('#err .fixodd').click();
+  await page.waitForTimeout(500);
+  var sentFix = await page.evaluate(() => window.SENT[0] || null);
+  eq('ยิงไปที่ตัวซ่อม', sentFix && sentFix.fn, 'fixOddFormulas');
+  eq('ส่งคำยืนยันไปด้วย', sentFix && sentFix.p, 'ซ่อม');
+
+  console.log('\n   ข้อความที่ไม่ได้พูดถึงตัวซ่อม ต้องไม่มีปุ่มงอกมา');
+  /* แปะปุ่มทุกข้อความ = คนกดมั่วตอนที่ไม่ได้มีอะไรต้องซ่อม */
+  await page.evaluate(() => { showErr('ล็อตมีของไม่พอ — เหลือ 2 แต่สั่ง 5') });
+  await page.waitForTimeout(150);
+  eq('ไม่มีปุ่มในกล่องแดงธรรมดา', await page.locator('#err button').count(), 0);
+
+  console.log('\n   ข้อความที่บอกให้ซ่อมสูตรที่หายไป ต้องได้ปุ่มของมันเอง');
+  await page.evaluate(() => {
+    showErr('สูตรในชีทถูกพิมพ์ทับจนหายไป — วิธีแก้: สั่ง repairOrderSheets');
+  });
+  await page.waitForTimeout(150);
+  eq('ได้ปุ่มเดียว ตรงกับที่ข้อความบอก', await page.locator('#err button').count(), 1);
+  truthy('และเป็นปุ่มซ่อมสูตรที่หายไป',
+     /ซ่อมสูตรที่หายไป/.test(await page.locator('#err button').first().innerText()));
+  await page.evaluate(() => clearMsg());
+
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 

@@ -426,6 +426,32 @@ window.google = { script: { run: (function(){
         return {ok:true,no:no,changed:true,track:cur.track||"",carrier:cur.carrier||""};
       });
     },
+    /* ตัวตรวจ/ตัวซ่อมสูตรที่ปุ่มในกล่องแดงเรียก — ของจริงอ่านสูตรในชีทจริง
+       ตรงนี้คืนข้อความหน้าตาเดียวกันพอให้ทดสอบว่าปุ่มต่อสายถูกและกางผลได้ */
+    oddFormulas: function(){
+      window.SENT.push({fn:"oddFormulas"});
+      return reply(function(){
+        if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
+        return window.MOCK_ODD !== undefined ? window.MOCK_ODD :
+          "— แถวที่สูตรหน้าตาต่างจากแถวอื่น —\\n\\n" +
+          "  ออเดอร์_หัวบิล (ดูแถว 6-1200)\\n" +
+          "    คอลัมน์ J แถว 341, 342 (2 แถว) ต่างจากแถว 6\\n" +
+          "      ที่เป็นอยู่: =SUM('ออเดอร์_รายการ'!$J:$J)\\n\\n" +
+          "รวมช่องที่หน้าตาต่างจากแถวอื่น 2 ช่อง\\n" +
+          "ถ้าดูแล้วเป็นของเสียจริง เลือกฟังก์ชัน fixOddFormulasNow แล้วกดเรียกใช้";
+      });
+    },
+    fixOddFormulas: function(confirmWord){
+      window.SENT.push({fn:"fixOddFormulas", p:confirmWord});
+      return reply(function(){
+        if(confirmWord !== "ซ่อม") return "ยังไม่ได้ซ่อมอะไร — ดูรายงานจาก oddFormulas() ก่อน";
+        return "ซ่อมสูตรที่ผิดรูปแล้ว\\n  ออเดอร์_หัวบิล: เขียนทับ 2 ช่อง (เหลือผิดรูป 0)";
+      });
+    },
+    repairOrderSheets: function(){
+      window.SENT.push({fn:"repairOrderSheets"});
+      return reply(function(){ return "ซ่อมสูตรที่หายไปแล้ว\\n  ออเดอร์_รายการ: ซ่อม 12 ช่อง" });
+    },
     /* แก้ชื่อ/เบอร์/ที่อยู่ผู้รับ จากหน้าใบปะหน้าพัสดุ — กติกาเดียวกับของจริง
        ไม่ส่งช่องไหนมา = ไม่ได้จะแก้ช่องนั้น · ชื่อกับที่อยู่ว่างไม่ได้ เบอร์ว่างได้ */
     setShipTo: function(p){

@@ -21,8 +21,93 @@ var BY_NEW = "✎ พิมพ์ชื่อเอง…";   /* ตัวเล
    แล้วข้อความยาว ๆ กลายเป็นพืดเดียวอ่านไม่ออก (เจอตอนนำเข้า Shopee 7 ต.ค. 69) */
 function showErr(msg, html){
   var b=$("#err"); b.innerHTML = html ? String(msg) : esc(msg); b.classList.add("on");
+  fixBtns_(b, html ? "" : String(msg));
   $("#ok").classList.remove("on");
   b.scrollIntoView({behavior:"smooth",block:"center"});
+}
+
+/**
+ * ข้อความที่บอกให้ "เปิด Apps Script แล้วสั่ง ..." ต้องมีปุ่มให้กดตรงนั้นเลย
+ *
+ * ตัวซ่อมสูตรเรียกจากหน้าจอไม่ได้มาตั้งแต่แรก ต้องเข้าเครื่องมือแก้ไขของ Google
+ * เลือกชื่อฟังก์ชันจากเมนู แล้วกดเรียกใช้ ซึ่งบนมือถือแทบทำไม่ได้เลย
+ * 8 ต.ค. 69 เจอของจริง: สูตรเพี้ยน 6 ช่อง บันทึกออเดอร์ไม่ได้ทั้งวัน
+ * แล้วทางแก้ที่เราเขียนไว้ในข้อความ ดันเป็นสิ่งที่ทำไม่ได้จากที่ที่เขายืนอยู่
+ *
+ * จึงอ่านชื่อฟังก์ชันจากข้อความ แล้วแปะปุ่มให้ตามที่ข้อความนั้นบอกจริง ๆ
+ * ไม่ได้แปะทุกปุ่มเสมอ — ข้อความไหนไม่ได้พูดถึงตัวไหน ก็ไม่มีปุ่มตัวนั้น
+ */
+var FIX_TOOLS = [
+  { fn:"oddFormulas",      label:"🔍 หาแถวที่สูตรเพี้ยน", args:[] },
+  { fn:"repairOrderSheets", label:"🛠 ซ่อมสูตรที่หายไป",  args:[] }
+];
+
+function fixBtns_(box, plain){
+  var text = plain || box.textContent || "";
+  var want = FIX_TOOLS.filter(function(t){ return text.indexOf(t.fn) > -1 });
+  if(!want.length) return;
+
+  var wrap = document.createElement("div");
+  wrap.style.cssText = "margin-top:10px;display:flex;flex-wrap:wrap;gap:8px";
+  want.forEach(function(t){
+    var b = document.createElement("button");
+    b.type = "button";
+    /* .btn เป็น width:100% ถ้าไม่ปลดจะตกบรรทัดละปุ่ม กินจอไปครึ่งหน้า */
+    b.className = "btn ghost";
+    b.style.cssText = "width:auto;flex:0 1 auto;padding:10px 14px;margin:0";
+    b.textContent = t.label;
+    b.onclick = function(){ runFixTool_(t, b, wrap) };
+    wrap.appendChild(b);
+  });
+  box.appendChild(wrap);
+}
+
+/**
+ * กดแล้วเรียกตัวตรวจ/ตัวซ่อมให้เลย แล้วกางผลไว้ใต้ปุ่ม
+ *
+ * ตัวซ่อมสูตรที่ผิดรูปต้องส่งคำยืนยันไปด้วยเสมอ (ฝั่งชีทบังคับไว้) จึงถามก่อนทุกครั้ง
+ * "ผิดรูป" ไม่ได้แปลว่าผิด เจ้าของร้านอาจตั้งใจเขียนสูตรพิเศษไว้บางแถวก็ได้
+ */
+function runFixTool_(t, btn, wrap){
+  var out = wrap.querySelector(".fixout");
+  if(!out){
+    out = document.createElement("pre");
+    out.className = "fixout";
+    out.style.cssText = "flex:1 1 100%;margin:8px 0 0;white-space:pre-wrap;" +
+      "font:12px/1.6 ui-monospace,monospace;background:#fff;color:#333;" +
+      "border:1px solid #ddd;border-radius:8px;padding:10px;max-height:46vh;overflow:auto";
+    wrap.appendChild(out);
+  }
+  out.textContent = "กำลังอ่านสูตรในชีท…";
+  btn.disabled = true;
+  call(t.fn, t.args, function(r){
+    btn.disabled = false;
+    out.textContent = String(r || "(ไม่มีคำตอบกลับมา)");
+    /* รายงานบอกเองว่าต้องสั่งตัวซ่อมต่อ ก็ให้ปุ่มนั้นโผล่ตรงนี้เลย
+       ไม่ต้องให้ไปหาเองอีกรอบ */
+    if(String(r||"").indexOf("fixOddFormulasNow") > -1 && !wrap.querySelector(".fixodd")){
+      var f = document.createElement("button");
+      f.type = "button";
+      f.className = "btn dark fixodd";
+      f.style.cssText = "width:auto;flex:0 1 auto;padding:10px 14px;margin:0";
+      f.textContent = "🩹 ซ่อมแถวที่เพี้ยนตามรายงานนี้";
+      /* ถามซ้ำในปุ่มเดิม ไม่ใช้ confirm() — หน้านี้อยู่ใน iframe ของ Google
+         แล้ว confirm บางเครื่องไม่ขึ้นเลย กดแล้วเงียบไปเฉย ๆ
+         (ปุ่มลบในหน้าแก้ร้านเจอปัญหาเดียวกันมาก่อน จึงใช้ท่าเดียวกัน) */
+      f.onclick = function(){
+        if(f.dataset.sure !== "1"){
+          f.dataset.sure = "1";
+          f.textContent = "กดอีกครั้งเพื่อยืนยันการซ่อม";
+          return;
+        }
+        runFixTool_({ fn:"fixOddFormulas", args:["ซ่อม"] }, f, wrap);
+      };
+      wrap.insertBefore(f, out);
+    }
+  }, function(m){
+    btn.disabled = false;
+    out.textContent = m;
+  });
 }
 function showOk(msg){
   var b=$("#ok"); b.innerHTML=msg; b.classList.add("on");

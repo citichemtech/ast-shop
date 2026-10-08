@@ -915,7 +915,7 @@ truthy2('บอกว่าสูตรยังเป็นสูตร แต�
   /หน้าตาไม่เหมือนแถวอื่น/.test(m24c));
 truthy2('ชี้ชื่อชีทที่มีแถวเพี้ยน', /ออเดอร์_หัวบิล \d+ ช่อง/.test(m24c));
 truthy2('บอกชื่อตัวที่ต้องสั่งเพื่อดูว่าแถวไหน', /oddFormulas/.test(m24c));
-truthy2('และบอกตัวซ่อมพร้อมคำยืนยัน', /fixOddFormulas/.test(m24c));
+truthy2('และบอกตัวซ่อมที่กดจากเมนูได้เลย', /fixOddFormulasNow/.test(m24c));
 eq('ยังถอยออเดอร์ออกหมดเหมือนเดิม',
   rowsWith(fx24c.sheets['ออเดอร์_หัวบิล'], 1), []);
 
@@ -5026,7 +5026,10 @@ var found74 = api74.oddFormulas();
 truthy2('ชี้ชื่อชีทที่มีปัญหา', found74.indexOf('ออเดอร์_หัวบิล') > -1);
 truthy2('ชี้เลขแถวที่เพี้ยน', found74.indexOf('200') > -1);
 truthy2('กางสูตรที่เป็นอยู่ให้ดูด้วย', found74.indexOf('SUM(') > -1);
-truthy2('บอกทางไปต่อว่าให้สั่งอะไร', found74.indexOf('fixOddFormulas') > -1);
+truthy2('บอกทางไปต่อว่าให้สั่งอะไร', found74.indexOf('fixOddFormulasNow') > -1);
+/* เมนูของ Apps Script ส่งคำยืนยันเข้าไปไม่ได้ ต้องมีตัวที่กดเฉย ๆ แล้วทำงานเลย */
+truthy2('และตัวที่บอกต้องกดจากเมนูได้จริง ไม่ต้องพิมพ์อาร์กิวเมนต์',
+  typeof api74.fixOddFormulasNow === 'function');
 
 console.log('\n   ตัวซ่อมต้องไม่ลงมือเองจนกว่าจะยืนยัน');
 var ask74 = api74.fixOddFormulas();
@@ -5034,7 +5037,7 @@ truthy2('ยังไม่ได้ซ่อมอะไร', ask74.indexOf('�
 eq('สูตรที่เพี้ยนยังอยู่ที่เดิม', hd74.cell(200, 10).f, "=SUM('ออเดอร์_รายการ'!$J:$J)");
 
 console.log('\n   ยืนยันแล้วค่อยคัดลอกสูตรจากแถวเสียงข้างมากไปทับ');
-api74.fixOddFormulas('ซ่อม');
+api74.fixOddFormulasNow();
 eq('แถวที่เพี้ยนได้สูตรเดียวกับแถวอื่นแล้ว',
   hd74.cell(200, 10).f, hd74.cell(DATA_ROW, 10).f);
 truthy2('สั่งซ้ำแล้วบอกว่าไม่มีอะไรต้องซ่อม',
