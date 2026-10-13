@@ -755,6 +755,56 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('แต่ยังบอกว่าใบนี้ของลูกค้า', badge.orig.indexOf('สำหรับลูกค้า') > -1);
   truthy('และยังบอกว่าเอกสารออกเป็นชุด', badge.orig.indexOf('เอกสารออกเป็นชุด') > -1);
 
+  console.log('\n   ใบเสนอราคา — ไม่ติด "ต้นฉบับ" ใบเดียว ใบอื่นติดเหมือนเดิม');
+  /* 13 ต.ค. 69 เจ้าของร้านสั่ง "เอาแค่ใบเสนอราคานะ ส่งใบกำกับภาษีต้องมี"
+     ใบเสนอราคาไม่ใช่เอกสารทางบัญชี ไม่ได้ออกเป็นชุด ส่งลูกค้าใบเดียวจบ
+     ส่วนใบกำกับภาษีออกเป็นชุดจริง ต้องแยกให้ออกว่าฉบับไหนของใคร */
+  var qbadge = await page.evaluate(async function () {
+    function drawnText(type, no, copy) {
+      var seen = [], real = window.fitCenter;
+      window.fitCenter = function (x, t) { seen.push(String(t == null ? '' : t)); return real.apply(this, arguments) };
+      var d = { no: no, type: type, vatRate: 0.07,
+        lines: [{ name: 'ก', po: '', qty: 1, unit: 'ชิ้น', price: 100, amount: 100 }],
+        base: 100, vat: 7, total: 107, totalText: 'หนึ่งร้อยเจ็ดบาทถ้วน' };
+      var m = { no: no, date: '2026-10-13', cust: { name: 'ก' } };
+      return buildDocPage(d, m, { co: {} }, copy).then(function () {
+        window.fitCenter = real; return seen;
+      }, function (e) { window.fitCenter = real; throw e });
+    }
+    return {
+      quote:     await drawnText('quote', 'QO26-00013', 'ต้นฉบับ'),
+      quoteCopy: await drawnText('quote', 'QO26-00013', 'สำเนา'),
+      quoteDraft:await drawnText('quote', 'QO26-00013', 'ตัวอย่าง'),
+      /* ใบเก่าที่ชีทไม่ได้เก็บชนิดไว้ ต้องยังดูออกจากเลขใบ */
+      quoteOld:  await drawnText('', 'QO26-00002', 'ต้นฉบับ'),
+      rec:       await drawnText('rec', 'ONIV26-00301', 'ต้นฉบับ'),
+      inv:       await drawnText('inv', 'INV26-00009', 'ต้นฉบับ')
+    };
+  });
+  eq('ใบเสนอราคาไม่มีคำว่า "ต้นฉบับ"', qbadge.quote.indexOf('ต้นฉบับ'), -1);
+  eq('และไม่มี "(Original)"', qbadge.quote.indexOf('(Original)'), -1);
+  eq('ใบเสนอราคาเก่าที่ไม่ได้เก็บชนิดไว้ ก็ดูออกจากเลขใบ',
+     qbadge.quoteOld.indexOf('ต้นฉบับ'), -1);
+  /* กรอบ "สำหรับลูกค้า · เอกสารออกเป็นชุด" ก็ไม่เอาเหมือนกัน (สั่งเพิ่มวันเดียวกัน)
+     ใบเสนอราคาไม่ได้ออกเป็นชุด กรอบนี้จึงพูดถึงสิ่งที่ไม่มีอยู่จริง */
+  eq('ใบเสนอราคาไม่มีกรอบ "สำหรับลูกค้า"', qbadge.quote.indexOf('สำหรับลูกค้า'), -1);
+  eq('และไม่มี "เอกสารออกเป็นชุด"', qbadge.quote.indexOf('เอกสารออกเป็นชุด'), -1);
+  eq('สำเนาของใบเสนอราคาก็ไม่มีกรอบนั้น', qbadge.quoteCopy.indexOf('สำหรับบริษัท'), -1);
+  /* "สำเนา" กับ "ตัวอย่าง" บอกว่าใบที่ถืออยู่ไม่ใช่ตัวจริง ต้องรู้ทุกชนิดใบ */
+  truthy('สำเนาของใบเสนอราคายังติดคำว่า "สำเนา"',
+     qbadge.quoteCopy.indexOf('สำเนา') > -1);
+  truthy('ตัวอย่างของใบเสนอราคายังติดคำว่า "ตัวอย่าง"',
+     qbadge.quoteDraft.indexOf('ตัวอย่าง') > -1);
+  /* ใบกำกับภาษีคือใบที่สั่งไว้ชัดว่าต้องมี — พังเมื่อไรคือเอกสารภาษีไม่ครบ */
+  truthy('ใบเสร็จ/ใบกำกับภาษียังมี "ต้นฉบับ" เหมือนเดิม',
+     qbadge.rec.indexOf('ต้นฉบับ') > -1);
+  truthy('และยังมี "(Original)"', qbadge.rec.indexOf('(Original)') > -1);
+  truthy('ใบแจ้งหนี้ก็ยังมีเหมือนเดิม', qbadge.inv.indexOf('ต้นฉบับ') > -1);
+  truthy('และใบที่ออกเป็นชุดจริงยังมีกรอบบอกว่าใครเก็บ',
+     qbadge.rec.indexOf('สำหรับลูกค้า') > -1);
+  truthy('พร้อมคำว่าเอกสารออกเป็นชุด',
+     qbadge.rec.indexOf('เอกสารออกเป็นชุด') > -1);
+
   /* สำเนากับตัวอย่างต้องยังติดป้าย ไม่งั้นแยกไม่ออกจากใบจริงเวลาวางปนกัน */
   truthy('ใบสำเนา ยังมีคำว่า "สำเนา"', badge.copy.indexOf('สำเนา') > -1);
   truthy('ใบสำเนา ยังมี "(Copy)"', badge.copy.indexOf('(Copy)') > -1);
