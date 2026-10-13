@@ -2045,6 +2045,61 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   });
   truthy('ออกใบเสนอราคาได้', !!qNo);
 
+  console.log('\n28ก. ส่งใบเสนอราคาให้ลูกค้าทางอีเมลได้จากตรงนั้นเลย');
+  /* ใบเสนอราคาเป็นใบที่ต้องส่งให้ลูกค้ามากที่สุด แต่กลับเป็นใบเดียวที่ไม่มีปุ่มส่ง
+     ต้องบันทึก PDF แล้วไปแนบเองใน Gmail (เจ้าของร้านทักมาเอง 13 ต.ค. 69) */
+  eq('มีปุ่มส่งอีเมลในหน้าใบเสนอราคา', await page.locator('#q-out #dc-mail').count(), 1);
+  await page.locator('#q-out #dc-mail').click();
+  await page.waitForTimeout(400);
+  eq('เปิดกล่องให้ตรวจข้อความก่อนส่ง', await page.locator('#q-out .mlbox').count(), 1);
+
+  var qmail = await page.evaluate(function () {
+    return { to: $('#q-out .ml-to').value,
+             subj: $('#q-out .ml-subj').value,
+             body: $('#q-out .ml-body').value };
+  });
+  truthy('หัวข้อบอกว่าเป็นใบเสนอราคา', /เสนอราคา/.test(qmail.subj));
+  /* ร่างของใบเสร็จพูดถึงการสั่งซื้อและการรับชำระเงิน ซึ่งยังไม่เกิดขึ้นเลย
+     ลูกค้าที่เพิ่งขอราคามาอ่านแล้วงง และดูเหมือนร้านส่งผิดใบ */
+  truthy('ไม่ใช้ร่างของใบเสร็จ', qmail.body.indexOf('รับชำระเงิน') < 0);
+  truthy('และไม่ขอบคุณที่สั่งซื้อทั้งที่ยังไม่ได้สั่ง',
+     qmail.body.indexOf('ได้ทำการสั่งซื้อ') < 0);
+  truthy('ชวนให้ตอบกลับเพื่อยืนยันสั่งซื้อ', /ยืนยันสั่งซื้อ/.test(qmail.body));
+  truthy('บอกวันยืนราคาถึง ซึ่งเป็นเนื้อหาสำคัญที่สุดของใบชนิดนี้',
+     /ยืนราคาถึงวันที่ \d/.test(qmail.body));
+
+  console.log('\n   กดส่งแล้วต้องยิงของจริงพร้อมไฟล์แนบ');
+  await page.evaluate(function () { $('#q-out .ml-to').value = 'buyer@example.com' });
+  await page.evaluate(function () { window.SENT = [] });
+  await page.locator('#q-out .ml-go').click();
+  await page.waitForTimeout(6000);
+  /* ตัวจำลอง emailDoc เก็บ payload ลง SENT ตรง ๆ ไม่ได้ห่อ {fn,p} เหมือนตัวอื่น */
+  var qsent = await page.evaluate(function () {
+    return (window.SENT || []).filter(function (x) { return x && x.pdf !== undefined })[0] || null;
+  });
+  truthy('ยิงไปที่ตัวส่งอีเมลจริง', !!qsent);
+  eq('ส่งถึงอีเมลที่กรอก', qsent && qsent.to, 'buyer@example.com');
+  eq('ส่งเลขใบเสนอราคาที่เพิ่งออกไปด้วย', qsent && qsent.no, qNo);
+  truthy('แนบไฟล์ PDF ไปด้วย ไม่ใช่อีเมลเปล่า',
+     /^data:application\/pdf;base64,/.test((qsent && qsent.pdf) || ''));
+  /* ใบที่ส่งอีเมลเป็นใบเดียวที่มีตราประทับ (กระดาษร้านปั๊มตรายางเอง แต่ไฟล์ปั๊มไม่ได้)
+     วัดจากรูปจริงสองใบ ไม่ใช่เชื่อว่าโค้ดตั้งธงถูก */
+  var qstamp = await page.evaluate(async function () {
+    var d = MOCK_DOCS.filter(function (x) { return x.type === 'ใบเสนอราคา' })[0];
+    var doc = { lines: [{ name: 'ก', qty: 1, price: 100, amount: 100 }],
+                sub: 100, vat: 7, total: 107, typeTh: 'ใบเสนอราคา' };
+    var base = { no: d.no, date: '2026-10-13', cust: { name: 'ลูกค้า' } };
+    var off = await buildDocPage(doc, base, CFG.doc || {}, 'ต้นฉบับ');
+    var on = await buildDocPage(doc, Object.assign({}, base, { stamp: true }),
+                                CFG.doc || {}, 'ต้นฉบับ');
+    return { same: off === on, len: on.length };
+  });
+  eq('ใบที่ปั๊มตราวาดออกมาไม่เหมือนใบธรรมดา', qstamp.same, false);
+  truthy('และเป็นรูปที่มีเนื้อหาจริง', qstamp.len > 30000);
+  /* ล้าง SENT ทิ้งก่อนไปข้อถัดไป — ข้อที่ตรวจอีเมลของใบกำกับภาษีหยิบรายการแรก
+     ที่มีไฟล์แนบ ถ้าปล่อยใบเสนอราคาค้างไว้ มันจะไปอ่านของข้อนี้แทนของตัวเอง */
+  await page.evaluate(function () { window.SENT = [] });
+
   await page.evaluate(function () { drawOldDocs('', '#q-old') });
   await page.waitForTimeout(600);
   truthy('ใบเสนอราคามีปุ่มทำเป็นออเดอร์', await page.locator('#q-old [data-q2o]').count() > 0);

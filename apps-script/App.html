@@ -1628,6 +1628,10 @@ function qMake(){
         +'<img class="docimg" src="'+url+'" style="width:100%;border:1px solid var(--line);border-radius:10px">'
         +'<button class="btn" id="lb-share" style="margin-top:12px">แชร์ / สั่งพิมพ์</button>'
         +'<button class="btn dark" id="lb-save" style="margin-top:9px">บันทึกลงเครื่อง</button>'
+        /* ใบเสนอราคาเป็นใบที่ "ต้องส่งให้ลูกค้า" มากที่สุดในบรรดาใบทั้งหมด
+           แต่กลับเป็นใบเดียวที่ไม่มีปุ่มส่งอีเมล ต้องบันทึก PDF แล้วไปแนบเองใน Gmail
+           (เจ้าของร้านทักมาเอง 13 ต.ค. 69) */
+        +'<button class="btn ghost" id="dc-mail" style="margin-top:9px">📧 ส่งอีเมลให้ลูกค้า (ปั๊มตราให้)</button>'
       +'<button class="btn ghost" id="dc-copy" style="margin-top:9px">ดูสำเนา (เก็บส่งบัญชี)</button>'
         +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
         +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
@@ -1640,6 +1644,7 @@ function qMake(){
         +' ไปใส่หน้าคีย์ออเดอร์ให้ · ยังไม่บันทึกจนกว่าจะกดบันทึกเอง'
         +' · สต๊อกตัดตอนบันทึกออเดอร์ ไม่ใช่ตอนออกใบเสนอราคา</div>';
       bindLabelButtons(url, r.no+".png", "a4");
+      bindDocMail("#q-out", r, m, r.no, cust);
       bindDocCopy("#q-out", r, m, r.no);
       $("#q2o-now").onclick = function(){ quoteToOrder(r.no, this) };
       drawOldDocs("", "#q-old");
@@ -2834,6 +2839,34 @@ var DOC_MAIL_BODY =
 + "\u2709 Citisales01@chem-inno-tech.com\n"
 + "Line OA: @citiofficial";
 
+/* ร่างจดหมายของใบเสนอราคา — คนละเรื่องกับใบเสร็จโดยสิ้นเชิง
+
+   ใบเสร็จส่งหลังลูกค้าจ่ายเงินแล้ว ใบเสนอราคาส่งตอนลูกค้ายังไม่ตัดสินใจ
+   จึงต้องชวนให้ตอบกลับ และต้องบอกวันหมดอายุราคาให้ชัด ไม่ใช่ขอบคุณที่สั่งซื้อ */
+var QUOTE_MAIL_BODY =
+  "เรียน {ลูกค้า}\n\n"
++ "ตามที่ท่านได้สอบถามราคาสินค้ามายังบริษัทฯ นั้น\n\n"
++ "บริษัทฯ ขอเสนอราคาตาม {เอกสาร} ที่แนบมาพร้อมอีเมลฉบับนี้ {ยืนราคาถึง}\n\n"
++ "หากท่านต้องการให้ปรับจำนวน เปลี่ยนรุ่นสินค้า หรือขอราคาสำหรับจำนวนมาก "
++ "กรุณาแจ้งกลับมาได้ทุกเมื่อ ทางเรายินดีจัดทำใบเสนอราคาฉบับใหม่ให้ทันที\n\n"
++ "เมื่อท่านยืนยันสั่งซื้อ กรุณาแจ้งกลับทางอีเมลฉบับนี้หรือทางไลน์ได้เลย "
++ "ทางเราจะดำเนินการจัดส่งและออกเอกสารให้ตามลำดับ\n\n"
++ "ขอขอบพระคุณที่ให้ความสนใจสินค้าและบริการของเรา\n\n"
++ "ขอแสดงความนับถือ\n\n"
++ "ฝ่ายขาย (Sales Department)\n"
++ "Chemical Innovation Technology & Instruments Co., Ltd.\n"
++ "\u260E 096192-9993\n"
++ "\u2709 Citisales01@chem-inno-tech.com\n"
++ "Line OA: @citiofficial";
+
+/* วันยืนราคา — ใบไหนไม่ได้กรอกไว้ก็ต้องไม่โผล่เป็นช่องว่างค้างในจดหมาย
+   ใช้ thaiDate ตัวเดียวกับที่ใช้ทั้งแอป วันบนกระดาษกับในจดหมายจะได้ตรงกันเสมอ */
+function fmtValidTo_(v){
+  var iso = String(v == null ? "" : v).trim();
+  if(!iso) return "";
+  return "โดยยืนราคาถึงวันที่ " + (thaiDate(iso) || iso);
+}
+
 /* ส่งใบทางอีเมล — ฉบับนี้ฉบับเดียวที่มีตราบริษัทปั๊มให้
 
    ใบที่พิมพ์ลงกระดาษ ร้านปั๊มตรายางเองอยู่แล้ว แต่ไฟล์ที่ส่งอีเมลปั๊มมือไม่ได้
@@ -2844,7 +2877,7 @@ function bindDocMail(sel, r, m, no, cust){
   var btn = document.querySelector(sel + " #dc-mail");
   if(!btn) return;
   btn.onclick = function(){
-    var host = btn.closest("#dc-out, #rp-out") || btn.parentNode;
+    var host = btn.closest("#dc-out, #rp-out, #q-out") || btn.parentNode;
     if(host.querySelector(".mlbox")){ host.querySelector(".ml-body").focus(); return }
 
     var to = ((cust && cust.email) || (m && m.cust && m.cust.email) || "").trim();
@@ -2856,9 +2889,14 @@ function bindDocMail(sel, r, m, no, cust){
     /* ร่างข้อความไว้ให้ครบ แก้ได้ทุกช่อง — ใบส่วนใหญ่ใช้ร่างนี้ได้เลยไม่ต้องพิมพ์
        แต่ใบที่ต้องอธิบายอะไรเพิ่ม (เช่นใบที่ออกแทนใบเดิม) ต้องเขียนเองได้ */
     var subj = th + " เลขที่ " + no + (shop ? " จาก " + shop : "");
-    var body = DOC_MAIL_BODY
+    /* ใบเสนอราคายังไม่มีการซื้อและยังไม่มีการรับเงิน ร่างของใบเสร็จจึงใช้ไม่ได้เลย
+       ("ขอบคุณที่สั่งซื้อ · หลักฐานการรับชำระเงิน") — ลูกค้าอ่านแล้วงง
+       และยังต้องบอกวันที่ยืนราคาถึง ซึ่งเป็นเนื้อหาสำคัญที่สุดของใบชนิดนี้ */
+    var isQuote = /เสนอราคา|quot/i.test(th) || /^QO/i.test(no);
+    var body = (isQuote ? QUOTE_MAIL_BODY : DOC_MAIL_BODY)
       .replace("{ลูกค้า}", who || "คุณลูกค้า")
-      .replace("{เอกสาร}", th + " เลขที่ " + no);
+      .replace("{เอกสาร}", th + " เลขที่ " + no)
+      .replace("{ยืนราคาถึง}", fmtValidTo_(m && m.validTo));
 
     var box = document.createElement("div");
     box.className = "mlbox";
