@@ -2741,6 +2741,49 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       return window.SENT.slice(n).filter(function (x) { return x && x.files }).length;
     }, before31), 0);
 
+  console.log('\n   ใบที่ไม่มีออเดอร์ — ยื่นให้เลือกเฉพาะสถานะที่เก็บได้จริง');
+  /* เลขที่เติมกลับเข้าเล่ม (00248/249/250) ไม่มีแถวออเดอร์ จึงเก็บสถานะไว้บนแถว
+     เอกสาร ซึ่งมีแต่ช่อง "ส่งบัญชีแล้วเมื่อ" — มีได้แค่ส่งแล้ว/ยังไม่ส่ง
+     ของเดิมโชว์รายการเต็ม กดแล้วได้ "ไม่พบออเดอร์" ส่งบัญชีเลขพวกนี้ไม่ได้เลย */
+  await page.evaluate(function () {
+    MOCK_DOCS.push({ no: 'ONIV26-00248', type: 'ใบเสร็จรับเงิน', date: '2026-09-03',
+                     total: 0, vat: 0, custName: '', orderNo: '', acctAt: '',
+                     voidWhy: 'ไม่ได้ใช้เลขนี้ — เติมกลับเข้าเล่มให้เลขครบ' });
+    openAcct({ no: 'ONIV26-00248' });
+  });
+  await page.waitForTimeout(800);
+  var opt248 = await page.evaluate(function () {
+    return $$('#ac-st option').map(function (o) { return o.value });
+  });
+  eq('มีให้เลือกแค่สองสถานะ', opt248, ['ยังไม่ส่งบัญชี', 'ส่งบัญชีแล้ว']);
+  truthy('และบอกเหตุผลว่าทำไมมีแค่นี้',
+    /ไม่ได้ผูกกับออเดอร์/.test(await page.textContent('#m-body')));
+
+  console.log('\n   กดบันทึกสถานะอย่างเดียว ต้องผ่าน ไม่ใช่ "ไม่พบออเดอร์"');
+  var before248 = await page.evaluate(function () { return window.SENT.length });
+  await page.selectOption('#ac-st', 'ส่งบัญชีแล้ว');
+  await page.click('#ac-save');
+  await page.waitForTimeout(800);
+  var sent248 = await page.evaluate(function (n) {
+    return window.SENT.slice(n).filter(function (x) { return x && x.fn === 'setAcctStatus' });
+  }, before248);
+  eq('ยิงคำสั่งเปลี่ยนสถานะไปหนึ่งครั้ง', sent248.length, 1);
+  eq('ด้วยเลขใบ ไม่ใช่เลขออเดอร์', sent248[0].no, 'ONIV26-00248');
+  eq('ไม่มีข้อความผิดพลาดค้างอยู่', (await page.textContent('#ac-out')).trim(), '');
+  eq('และชีทจดไว้ว่าส่งแล้ว', await page.evaluate(function () {
+    return (MOCK_DOCS.filter(function (d) { return d.no === 'ONIV26-00248' })[0] || {}).acctAt;
+  }), '2026-10-15 09:30');
+
+  /* เก็บกวาดก่อนไปข้อถัดไป ไม่งั้นใบนี้ค้างอยู่ในทะเบียนของข้ออื่น */
+  await page.evaluate(function () {
+    var i = MOCK_DOCS.map(function (d) { return d.no }).indexOf('ONIV26-00248');
+    if (i > -1) MOCK_DOCS.splice(i, 1);
+  });
+  await page.click('#m-close');
+  await page.waitForTimeout(250);
+  await page.click('#list [data-ac="0"]');
+  await page.waitForTimeout(700);
+
   console.log('\n   ไม่ติ๊กอะไรเลยแล้วกดส่ง ต้องกันไว้ก่อนถึงเซิร์ฟเวอร์');
   await page.evaluate(function () {
     $$('.ac-x').forEach(function (c) { c.checked = false });

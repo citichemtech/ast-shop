@@ -118,6 +118,19 @@ function setAcctStatus(orderNo, status, why) {
   var no = String(orderNo || '').trim();
   if (!no) throw new Error('ไม่ได้บอกว่าจะแก้สถานะบัญชีของใบไหน');
 
+  /* ใบที่ไม่มีออเดอร์ (เลขที่ fillDocGaps เติมกลับเข้าเล่ม · ใบยกเลิกที่ไม่เคยมีออเดอร์)
+     sendToAccounting รองรับมาตั้งแต่แรก แต่ปุ่ม "บันทึกสถานะอย่างเดียว" ไม่รองรับ
+     กดแล้วได้ "ไม่พบออเดอร์" — เจ้าของร้านจึงส่งบัญชีเลข 00248/249/250 ไม่ได้เลย
+
+     ใบแบบนี้ไม่มีคอลัมน์สถานะของตัวเอง มีแต่ "ส่งบัญชีแล้วเมื่อ" (วันเวลา)
+     จึงเก็บได้แค่สองสถานะจริง ๆ — ส่งแล้ว กับ ยังไม่ส่ง
+     สถานะอื่น (รอเอกสาร · บัญชีตีกลับ) เก็บไม่ได้ ต้องปฏิเสธตรง ๆ
+     ไม่ใช่รับไว้แล้วบันทึกเป็นอย่างอื่นเงียบ ๆ ซึ่งจะกลายเป็นสถานะที่ไม่จริง */
+  var docOne = null;
+  try { findOrderRow_(no); }
+  catch (e) { docOne = acctDocRow_(no); }
+  if (docOne) return setDocAcctStatus_(docOne, status, why, email);
+
   var lists = cfgLists_();
   var want = pickFrom_(status, lists.acct.length ? lists.acct : ACCT_LIST, 'สถานะบัญชี');
 
@@ -129,6 +142,43 @@ function setAcctStatus(orderNo, status, why) {
     before || '(ว่าง)', want, String(why || '').trim() || 'แก้จากในแอปโดย ' + email);
 
   return jsonSafe_({ ok: true, no: no, acct: want });
+}
+
+/**
+ * สถานะบัญชีของใบที่ไม่มีออเดอร์ — เก็บบนแถวเอกสาร ไม่ใช่แถวออเดอร์
+ *
+ * ที่เก็บได้มีช่องเดียวคือ "ส่งบัญชีแล้วเมื่อ" จึงมีได้แค่สองสถานะ
+ * มีวันเวลา = ส่งแล้ว · ว่าง = ยังไม่ส่ง
+ */
+var DOC_ACCT_SENT = 'ส่งบัญชีแล้ว';
+var DOC_ACCT_NOT = 'ยังไม่ส่งบัญชี';
+
+function setDocAcctStatus_(docOne, status, why, email) {
+  var want = String(status || '').trim();
+  var sent = want.indexOf(DOC_ACCT_SENT) > -1;
+  if (!sent && want !== DOC_ACCT_NOT) {
+    throw new Error('ใบ ' + docOne.no + ' ไม่ได้ผูกกับออเดอร์ จึงเก็บสถานะ "' + want +
+      '" ไม่ได้ — ใบแบบนี้มีได้แค่ "' + DOC_ACCT_SENT + '" กับ "' + DOC_ACCT_NOT + '"');
+  }
+
+  /* ชีทที่ยังไม่ได้สั่ง setup หลังอัปเดต ยังไม่มีคอลัมน์นี้ — เขียนเลยขอบชีทไม่ได้
+     บอกทางแก้ที่กดได้จริง ดีกว่า error เรื่องขอบชีทที่อ่านไม่รู้เรื่อง */
+  if (sheet_('doc').getMaxColumns() < SH.doc.IN.acctAt) {
+    throw new Error('ชีท ' + SH.doc.name + ' ยังไม่มีคอลัมน์ "ส่งบัญชีแล้วเมื่อ" — ' +
+      'สั่งฟังก์ชัน setup หนึ่งครั้งที่หน้าแก้ไขสคริปต์ แล้วกดใหม่');
+  }
+
+  var before = docOne.acctAt ? DOC_ACCT_SENT + ' (' + docOne.acctAt + ')' : DOC_ACCT_NOT;
+  var at = sent ? Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm') : '';
+  writeRow_('doc', docOne.row, { acctAt: at });
+  SpreadsheetApp.flush();
+
+  writeLog_(email, 'แก้สถานะบัญชี', SH.doc.name, docOne.no, 'เปลี่ยนสถานะบัญชี',
+    before, sent ? DOC_ACCT_SENT + ' (' + at + ')' : DOC_ACCT_NOT,
+    String(why || '').trim() || 'ใบที่ไม่มีออเดอร์ แก้จากในแอปโดย ' + email);
+
+  return jsonSafe_({ ok: true, no: docOne.no, docOnly: true,
+                     acct: sent ? DOC_ACCT_SENT : DOC_ACCT_NOT, acctAt: at });
 }
 
 /**

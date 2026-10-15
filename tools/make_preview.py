@@ -1419,7 +1419,18 @@ window.google = { script: { run: (function(){
       reply(function(){
         if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
         var o = MOCK_ORDERS.filter(function(x){ return x.no === String(no) })[0];
-        if(!o) throw new Error("ไม่พบออเดอร์ "+no);
+        if(!o){
+          /* ใบที่ไม่มีออเดอร์ (เลขที่เติมกลับเข้าเล่ม) — ของจริงตกมาทางนี้
+             ถ้าตัวจำลองโยน error ทิ้ง ข้อสอบจะทดสอบทางนี้ไม่ได้เลย */
+          var d0 = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+          if(!d0) throw new Error("ไม่พบออเดอร์หรือเอกสารเลขที่ "+no+" ในชีท");
+          return { no:d0.no, date:d0.date, channel:"", cust:d0.custName||"", net:d0.total,
+                   vatAmt:d0.vat||0, status:"", docOnly:true,
+                   acct: d0.acctAt ? "ส่งบัญชีแล้ว" : "ยังไม่ส่งบัญชี",
+                   acctAt: d0.acctAt||"", acctWhat:"",
+                   docs:[{no:d0.no, type:d0.type, date:d0.date, total:d0.total,
+                          hasSnap:true, voidWhy:d0.voidWhy||""}] };
+        }
         return {
           no:o.no, date:o.date, channel:o.channel, cust:o.cust,
           net:o.net, vatAmt:o.vatAmt||0, status:o.status,
@@ -1433,8 +1444,17 @@ window.google = { script: { run: (function(){
       window.SENT.push({fn:"setAcctStatus", no:no, acct:st});
       reply(function(){
         if(window.MOCK_FAIL) throw new Error(window.MOCK_FAIL);
-        MOCK_ORDERS.forEach(function(o){ if(o.no===String(no)) o.acct = st });
-        return {ok:true, no:no, acct:st};
+        var o = MOCK_ORDERS.filter(function(x){ return x.no===String(no) })[0];
+        if(o){ o.acct = st; return {ok:true, no:no, acct:st} }
+        /* ใบที่ไม่มีออเดอร์เก็บได้แค่สองสถานะ เพราะมีแต่ช่อง "ส่งบัญชีแล้วเมื่อ" */
+        var d0 = MOCK_DOCS.filter(function(d){ return d.no === String(no) })[0];
+        if(!d0) throw new Error("ไม่พบออเดอร์ "+no+" ในชีท ออเดอร์_หัวบิล");
+        if(st !== "ส่งบัญชีแล้ว" && st !== "ยังไม่ส่งบัญชี"){
+          throw new Error('ใบ '+no+' ไม่ได้ผูกกับออเดอร์ จึงเก็บสถานะ "'+st+'" ไม่ได้ — '
+            + 'ใบแบบนี้มีได้แค่ "ส่งบัญชีแล้ว" กับ "ยังไม่ส่งบัญชี"');
+        }
+        d0.acctAt = st === "ส่งบัญชีแล้ว" ? "2026-10-15 09:30" : "";
+        return {ok:true, no:no, docOnly:true, acct:st, acctAt:d0.acctAt};
       });
     },
     sendToAccounting: function(p){
