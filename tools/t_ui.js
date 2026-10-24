@@ -461,6 +461,49 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     await page.evaluate(function () { return $('#lb-cod').checked }), false);
   await page.click('#m-close');
 
+  console.log('\n   รายการสินค้าต้องขึ้นครบทุกตัว ไม่ใช่ตัดที่ 3 แล้วเขียนว่า "และอีก N"');
+  /* ของเดิมตรึงความสูงแถวไว้ 92 แล้วพิมพ์ได้สูงสุด 4 บรรทัด ทั้งที่กระดาษยังว่าง
+     ใบที่มี 7 รายการจึงบอกชื่อของจริงแค่ 3 ตัว คนแพ็กของต้องเปิดออเดอร์ดูอีกที
+     (เจ้าของร้านแจ้งเอง 24 ต.ค. 69: "โชว์สินค้าไม่ครบ")
+
+     ดักข้อความที่ถูกวาดลงกระดาษจริง แทนการนับหมึกหรือเดาพิกัด */
+  var lblText = await page.evaluate(async function () {
+    function drawn(n) {
+      var seen = [], real = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function (t) {
+        seen.push(String(t == null ? '' : t)); return real.apply(this, arguments);
+      };
+      var items = [];
+      for (var i = 1; i <= n; i++) items.push({ name: 'สินค้าทดสอบหมายเลข ' + i, qty: 1 });
+      return buildLabel({ no: 'AST-26-0614', id: 'AST-26-0614', date: '2026-10-23',
+        cust: 'ผู้รับ ทดสอบ', tel: '0800000000',
+        addr: '1/2 ถ.ทดสอบ ต.ในเมือง อ.เมือง เชียงใหม่ 50000',
+        carrier: 'Flash Express', pay: 'cod', total: 100, amt: 100, disc: 0,
+        qty: n, items: items }).then(function () {
+          CanvasRenderingContext2D.prototype.fillText = real; return seen;
+        }, function (e) { CanvasRenderingContext2D.prototype.fillText = real; throw e });
+    }
+    return { three: await drawn(3), seven: await drawn(7), many: await drawn(30) };
+  });
+
+  function hasAll(seen, n) {
+    for (var i = 1; i <= n; i++) if (seen.indexOf('สินค้าทดสอบหมายเลข ' + i) < 0) return i;
+    return 0;
+  }
+  eq('3 รายการขึ้นครบ (เหมือนเดิม)', hasAll(lblText.three, 3), 0);
+  eq('ไม่มีคำว่า "และอีก" ตอนของน้อย',
+     lblText.three.filter(function (t) { return t.indexOf('และอีก') === 0 }).length, 0);
+  eq('7 รายการต้องขึ้นครบทั้ง 7 ตัว', hasAll(lblText.seven, 7), 0);
+  eq('และไม่ต้องมีแถวสรุปแล้ว',
+     lblText.seven.filter(function (t) { return t.indexOf('และอีก') === 0 }).length, 0);
+  truthy('จำนวนรวมยังนับจากทุกรายการ', lblText.seven.indexOf('7') > -1);
+
+  /* ของเยอะจนใส่ไม่ไหวจริง ๆ ต้องยังบอกว่าเหลืออีกกี่รายการ ไม่ตัดทิ้งเงียบ ๆ */
+  var rest30 = lblText.many.filter(function (t) { return t.indexOf('และอีก') === 0 });
+  eq('ของ 30 รายการยังมีแถวสรุปหนึ่งแถว', rest30.length, 1);
+  truthy('และพิมพ์ชื่อจริงได้มากกว่าของเดิม 3 ตัว', hasAll(lblText.many, 8) === 0);
+  truthy('จำนวนรวมยังเป็น 30 ครบ', lblText.many.indexOf('30') > -1);
+
   /* ---------- 10ข. แก้ชื่อ/เบอร์/ที่อยู่ผู้รับ จากกล่องใบปะหน้า ----------
      จุดที่คนรู้ตัวว่าที่อยู่ผิดคือตอนกำลังจะแปะกล่อง ไม่ใช่ตอนนั่งหน้าคอม
      ของเดิมต้องเปิดชีทแล้วเลื่อนไปคอลัมน์ F บนมือถือ ซึ่งทำไม่ได้จริงตอนยืนแพ็คของ

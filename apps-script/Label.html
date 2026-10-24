@@ -171,17 +171,33 @@ async function buildLabel(o){
   x.fillText("รายการสินค้า",W/2,y); y+=52;
   x.textAlign="left";
   var c1=pad+4, c2=pad+90, c3=W-pad-170;
-  var row=function(a,b,cc,bold,h){
+  /* fs = ขนาดตัวอักษรของแถวนั้น · แถวที่เตี้ยลงต้องใช้ตัวเล็กลงตาม
+     และต้องตัดบรรทัดส่วนเกินทิ้งพร้อมจุดไข่ปลา ไม่ใช่ปล่อยให้ล้นออกนอกกรอบ */
+  /* ตัวอักษรวาดด้วย textBaseline="top" จึงต้องคิดตำแหน่งบนเอง
+     สูตรเดิม (y+h/2+9) ใช้ได้เฉพาะแถวสูง ๆ พอแถวเตี้ยลงตัวหนังสือจะล้นออกนอกกรอบ
+     ตรงนี้จัดกึ่งกลางจริงจากความสูงของข้อความ จึงถูกทุกความสูงของแถว
+     คูณ 1.15 เผื่อสระบนกับวรรณยุกต์ของไทย ซึ่งสูงเกินตัว em ปกติ */
+  var row=function(a,b,cc,bold,h,fs){
+    var f=fs||28, lh=Math.round(f*1.32);
     x.strokeStyle="#1449C4"; x.lineWidth=3;
     x.strokeRect(c1,y,IN-8,h);
     x.beginPath(); x.moveTo(c2,y); x.lineTo(c2,y+h); x.moveTo(c3,y); x.lineTo(c3,y+h); x.stroke();
-    x.fillStyle="#000"; x.font=F(28,bold?600:400);
-    x.textAlign="center"; x.fillText(a,(c1+c2)/2,y+h/2+9);
+    x.fillStyle="#000"; x.font=F(f,bold?600:400);
+    var top=function(n){ return y+Math.round((h-((n-1)*lh+f*1.15))/2) };
+    x.textAlign="center"; x.fillText(a,(c1+c2)/2,top(1));
     x.textAlign="left";
     var lines=wrapText(x,b,c3-c2-24);
-    var sy=y+h/2+9-((lines.length-1)*17);
-    lines.forEach(function(l){ x.fillText(l,c2+12,sy); sy+=37; });
-    x.textAlign="center"; x.fillText(cc,(c3+W-pad-4)/2,y+h/2+9);
+    /* บรรทัดที่เกินกรอบต้องตัดพร้อมจุดไข่ปลา ไม่ใช่ปล่อยให้ทับแถวถัดไป */
+    var maxLines=Math.max(1,Math.floor((h-6)/lh));
+    if(lines.length>maxLines){
+      lines=lines.slice(0,maxLines);
+      var last=lines[maxLines-1];
+      while(last.length>1 && x.measureText(last+"…").width>c3-c2-24) last=last.slice(0,-1);
+      lines[maxLines-1]=last+"…";
+    }
+    var sy=top(lines.length);
+    lines.forEach(function(l){ x.fillText(l,c2+12,sy); sy+=lh; });
+    x.textAlign="center"; x.fillText(cc,(c3+W-pad-4)/2,top(1));
     x.textAlign="left";
     y+=h;
   };
@@ -189,21 +205,48 @@ async function buildLabel(o){
   var all=(o.items&&o.items.length)?o.items:[{name:o.pname||"-",qty:o.qty||0}];
   /* จำนวนรวมต้องนับจากรายการทั้งหมด ไม่ใช่เฉพาะที่พิมพ์ลงกระดาษ */
   var tq=0; all.forEach(function(it){ tq+=Number(it.qty)||0 });
-  /* กระดาษพิมพ์ได้ 4 บรรทัด ถ้ามีมากกว่านั้นพิมพ์ 3 แล้วบอกว่าเหลืออีกกี่รายการ ไม่ตัดทิ้งเงียบ ๆ */
-  var its=all.length>4?all.slice(0,3):all;
-  its.forEach(function(it,ix){ row(String(ix+1), it.name||"-", String(it.qty||0), false, 92); });
-  if(all.length>4){
-    var restN=all.length-3, restQ=0;
-    all.slice(3).forEach(function(it){ restQ+=Number(it.qty)||0 });
-    row("", "และอีก "+restN+" รายการ", String(restQ), false, 92);
+
+  /* บีบแถวให้พอดีกับที่ว่างที่เหลือจริง แทนที่จะตรึงความสูงไว้ 92 แล้วตัดที่ 4 บรรทัด
+
+     ของเดิมพิมพ์ได้สูงสุด 4 บรรทัด (3 + "และอีก N รายการ") ทั้งที่กระดาษยังว่าง
+     อยู่ราว 120 px ใบที่มี 7 รายการจึงบอกชื่อของจริงแค่ 3 ตัว คนแพ็กของต้องเปิด
+     ออเดอร์ในระบบดูอีกทีว่าอีก 4 ตัวคืออะไร — ซึ่งเป็นงานที่ใบปะหน้ามีไว้ตัดทิ้ง
+     (เจ้าของร้านแจ้งเอง 24 ต.ค. 69: "โชว์สินค้าไม่ครบ")
+
+     วัดที่ว่างตอนวาดจริง ไม่ฮาร์ดโค้ด เพราะบล็อกที่อยู่ผู้รับสูงไม่เท่ากันทุกใบ
+     ที่อยู่ยาวหลายบรรทัดดันรายการสินค้าลงมา ที่ว่างจึงเหลือไม่เท่ากัน */
+  var footTop=H-pad-190;
+  var room=footTop-30-56-y-(Number(o.disc)>0?56:0);
+  var H_FULL=92, H_MIN=44;
+  var rowH=Math.floor(room/Math.max(1,all.length));
+  if(rowH>H_FULL) rowH=H_FULL;
+
+  var its=all, restN=0;
+  if(rowH<H_MIN){
+    /* เตี้ยกว่านี้อ่านไม่ออกแล้ว — พิมพ์เท่าที่ลงได้ แล้วบอกว่าเหลืออีกกี่รายการ
+       เว้นที่ไว้ให้แถวสรุปหนึ่งแถวเสมอ ไม่ตัดทิ้งเงียบ ๆ */
+    rowH=H_MIN;
+    var fit=Math.max(1,Math.floor(room/H_MIN)-1);
+    its=all.slice(0,fit);
+    restN=all.length-fit;
   }
-  if(Number(o.disc)>0) row("", "ส่วนลด", "-"+baht(o.disc), false, 56);
+  var fs=rowH>=76?28:(rowH>=58?25:22);
+
+  its.forEach(function(it,ix){ row(String(ix+1), it.name||"-", String(it.qty||0), false, rowH, fs); });
+  if(restN>0){
+    var restQ=0;
+    all.slice(its.length).forEach(function(it){ restQ+=Number(it.qty)||0 });
+    row("", "และอีก "+restN+" รายการ", String(restQ), false, rowH, fs);
+  }
+  if(Number(o.disc)>0) row("", "ส่วนลด", "-"+baht(o.disc), false, 56, 28);
+  /* แถวจำนวนรวม — จัดกึ่งกลางแบบเดียวกับแถวสินค้า
+     ของเดิมใช้ y+37/y+38 ซึ่งกับกรอบสูง 56 ทำให้ตัวหนังสือล้นลงไปทับขอบล่าง */
   x.strokeStyle="#1449C4"; x.lineWidth=3; x.strokeRect(c1,y,IN-8,56);
   x.beginPath(); x.moveTo(c3,y); x.lineTo(c3,y+56); x.stroke();
   x.fillStyle="#000"; x.font=F(28,600); x.textAlign="right";
-  x.fillText("จำนวนรวม",c3-16,y+37);
+  x.fillText("จำนวนรวม",c3-16,y+Math.round((56-28*1.15)/2));
   x.textAlign="center"; x.font=F(31,700);
-  x.fillText(String(tq||o.qty||0),(c3+W-pad-4)/2,y+38);
+  x.fillText(String(tq||o.qty||0),(c3+W-pad-4)/2,y+Math.round((56-31*1.15)/2));
   x.textAlign="left";
 
   /* footer */
