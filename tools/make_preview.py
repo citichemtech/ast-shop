@@ -22,6 +22,16 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 GS = ROOT / "apps-script"
 
+def exp_in_days(n):
+    """เวลาเป็นมิลลิวินาทีของวันหมดอายุที่อีก n วันข้างหน้า (เที่ยงคืน UTC)
+
+    หน้าจอคิด "เหลืออีกกี่วัน" จากวันนี้ ค่าคงที่จึงเน่าตามเวลาเสมอ
+    """
+    import datetime
+    d = datetime.datetime.utcnow().date() + datetime.timedelta(days=n)
+    return int(datetime.datetime(d.year, d.month, d.day).timestamp()) * 1000
+
+
 PRODUCTS = [
     {"sku": "SKU-141", "group": "TOOLING", "unit": "ชิ้น", "perPack": 1, "price": 129, "remain": 980,
      "cost": 64, "name": "End Mill Corn cut 2F  3.0*15*3.175*38L (1pcs)"},
@@ -94,8 +104,12 @@ BOOT = {
     },
     "products": PRODUCTS,
     "lots": {
+        # วันหมดอายุต้องนับจากวันที่รันจริง ไม่ใช่เขียนวันตายตัว
+        # ของเดิมตรึงไว้ 31 ต.ค. 69 พอเลยวันนั้นมา หน้าจอเปลี่ยนจาก
+        # "อีก N วันหมดอายุ" เป็น "หมดอายุแล้ว N วัน" แล้วชุดทดสอบตกเอง
+        # ทั้งที่โค้ดไม่ได้เปลี่ยนอะไรเลย — ซึ่งกลบของจริงที่อาจพังอยู่
         "CHEM-001": {"total": 14, "count": 2,
-                     "next": {"lotNo": "L-2610", "exp": 1793404800000, "remain": 4}},
+                     "next": {"lotNo": "L-2610", "exp": exp_in_days(20), "remain": 4}},
     },
     "nextNo": "AST-26-0006",
 }
@@ -440,11 +454,19 @@ window.google = { script: { run: (function(){
     /* ค้นเอกสารทั้งชีท ทุกชนิด — ของจริงคือ findDocs ใน Api.gs
        ต่างจาก listDocs ตรงที่ไม่กรองใบที่มีเลขออเดอร์ทิ้ง (ใบกำกับภาษีมีเลขออเดอร์ทุกใบ) */
     findDocs: function(p){
+      window.SENT.push({ fn:"findDocs", q:(p&&p.q)||"", type:(p&&p.type)||"",
+                         from:(p&&p.from)||"", to:(p&&p.to)||"", limit:(p&&p.limit)||0 });
       reply(function(){
         p = p || {};
         var want = String(p.q||"").trim().toLowerCase();
         var type = String(p.type||"").trim();
-        var limit = Math.min(Math.max(Number(p.limit)||30, 1), 200);
+        /* ช่วงวันที่ — ต้องคิดแบบเดียวกับของจริง ไม่งั้นข้อสอบผ่านทั้งที่ของจริงพัง */
+        var isoD = /^\d{4}-\d{2}-\d{2}$/;
+        var from = isoD.test(String((p.from)||"").trim()) ? String(p.from).trim() : "";
+        var to = isoD.test(String((p.to)||"").trim()) ? String(p.to).trim() : "";
+        if(from && to && from > to){ var sw = from; from = to; to = sw }
+        var cap = (from || to) ? 2000 : 200;
+        var limit = Math.min(Math.max(Number(p.limit)||30, 1), cap);
         var hit = [], counts = {};
         MOCK_DOCS.slice().reverse().forEach(function(d){
           var rv = (String(d.note||"").match(/\[แก้ไขครั้งที่ [^\]]*\]/g) || []);
@@ -457,13 +479,17 @@ window.google = { script: { run: (function(){
             var hay = (row.no+" "+row.custName+" "+row.orderNo+" "+row.type).toLowerCase();
             if(hay.indexOf(want) < 0) return;
           }
+          /* ใบที่ไม่มีวันที่ต้องไม่หลุดเข้ามาในช่วง เหมือนของจริง */
+          if(from && !(row.date && row.date >= from)) return;
+          if(to && !(row.date && row.date <= to)) return;
           var c = counts[row.type] || (counts[row.type] = {n:0,live:0,revised:0,dead:0});
           c.n++;
           if(row.voidWhy) c.dead++; else if(row.revised) c.revised++; else c.live++;
           if(type && row.type !== type) return;
           hit.push(row);
         });
-        return { rows: hit.slice(0, limit), total: hit.length, counts: counts };
+        return { rows: hit.slice(0, limit), total: hit.length, counts: counts,
+                 from: from, to: to };
       });
     },
     editOrderItems: function(no, items, by, ck, opts){

@@ -13,6 +13,20 @@ var FS = require('./fakesheet');
 var DATA_ROW = FS.DATA_ROW;
 var SH_TEL = 5;   // ออเดอร์_หัวบิล คอลัมน์ E = เบอร์โทรลูกค้า
 
+/* วันหมดอายุของล็อตในชุดทดสอบ ต้องนับจากวันที่รันจริง ไม่ใช่เขียนปีตายตัว
+
+   ของเดิมเขียน '2026-10-31' ไว้เป็นล็อต "ใกล้หมดอายุ แต่ยังขายได้"
+   พอถึงวันนั้นจริง ด่านกันของหมดอายุก็เริ่มปัดล็อตนั้นออก ชุดทดสอบจึงตกเองทั้งชุด
+   ทั้งที่โค้ดไม่ได้เปลี่ยนอะไรเลย — ซึ่งกลบของจริงที่อาจพังอยู่ */
+function expIn(days) {
+  var d = new Date();
+  d.setDate(d.getDate() + days);
+  function p2(n) { return n < 10 ? '0' + n : '' + n; }
+  return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+}
+var EXP_SOON = expIn(30);    /* ใกล้หมดอายุ แต่ยังขายได้ — ตัวที่ FEFO ต้องหยิบก่อน */
+var EXP_LATER = expIn(200);  /* ยังอีกนาน — ตัวที่ต้องถูกหยิบทีหลัง */
+
 var fails = 0;
 function eq(label, got, want) {
   var ok = JSON.stringify(got) === JSON.stringify(want);
@@ -106,8 +120,8 @@ throws('ปฏิเสธคำขอที่ไม่มี clientKey', funct
 console.log('\n4. ตัดล็อตแบบ FEFO');
 var fx4 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'L-2703', exp: '2027-03-31', recv: '2026-01-10', qty: 10 },
-    { sku: 'CHEM-001', lotNo: 'L-2610', exp: '2026-10-31', recv: '2026-02-20', qty: 4 }
+    { sku: 'CHEM-001', lotNo: 'L-2703', exp: EXP_LATER, recv: '2026-01-10', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'L-2610', exp: EXP_SOON, recv: '2026-02-20', qty: 4 }
   ]
 });
 var api4 = FS.load(fx4);
@@ -127,8 +141,8 @@ eq('ไม่มีบรรทัดตัดล็อตเพิ่ม', rows
 
 console.log('\n   สินค้าตัวเดียวกันสองบรรทัดในใบเดียว ต้องไม่แย่งล็อตเดียวกัน');
 var fx4c = FS.build({
-  lots: [{ sku: 'CHEM-001', lotNo: 'L-A', exp: '2026-12-31', recv: '2026-01-01', qty: 5 },
-         { sku: 'CHEM-001', lotNo: 'L-B', exp: '2027-12-31', recv: '2026-01-01', qty: 5 }]
+  lots: [{ sku: 'CHEM-001', lotNo: 'L-A', exp: EXP_SOON, recv: '2026-01-01', qty: 5 },
+         { sku: 'CHEM-001', lotNo: 'L-B', exp: EXP_LATER, recv: '2026-01-01', qty: 5 }]
 });
 var api4c = FS.load(fx4c);
 api4c.createOrder(order({ items: [{ sku: 'CHEM-001', qty: 3, price: '' }, { sku: 'CHEM-001', qty: 4, price: '' }] }));
@@ -532,7 +546,7 @@ function isoToday() {
 }
 
 var fx17 = FS.build({
-  lots: [{ sku: 'CHEM-001', lotNo: 'L-2610', exp: '2026-10-31', recv: '2026-08-01', qty: 50 }]
+  lots: [{ sku: 'CHEM-001', lotNo: 'L-2610', exp: EXP_LATER, recv: '2026-08-01', qty: 50 }]
 });
 var api17 = FS.load(fx17);
 var TODAY = isoToday();
@@ -1077,8 +1091,8 @@ var SH_HEAD_CUST = 4, SH_HEAD_SHIP = 12;
 
 var fx30 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'L-EARLY', exp: '2026-10-01', recv: '2026-08-01', qty: 3 },
-    { sku: 'CHEM-001', lotNo: 'L-LATE',  exp: '2027-03-01', recv: '2026-08-01', qty: 50 }
+    { sku: 'CHEM-001', lotNo: 'L-EARLY', exp: EXP_SOON, recv: '2026-08-01', qty: 3 },
+    { sku: 'CHEM-001', lotNo: 'L-LATE',  exp: EXP_LATER, recv: '2026-08-01', qty: 50 }
   ]
 });
 var api30 = FS.load(fx30, {});
@@ -1190,8 +1204,8 @@ var SH_HEAD_STATUS = 17, SH_HEAD_NOTE = 20, SH_HEAD_DISC = 11, SH_HEAD_NET = 14;
 
 var fx31 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'L-A', exp: '2026-10-01', recv: '2026-08-01', qty: 10 },
-    { sku: 'CHEM-001', lotNo: 'L-B', exp: '2027-03-01', recv: '2026-08-01', qty: 10 }
+    { sku: 'CHEM-001', lotNo: 'L-A', exp: EXP_SOON, recv: '2026-08-01', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'L-B', exp: EXP_LATER, recv: '2026-08-01', qty: 10 }
   ]
 });
 var api31 = FS.load(fx31, {});
@@ -2285,7 +2299,7 @@ function recvPayload(extra) {
   return o;
 }
 
-var fx43 = FS.build({ lots: [{ sku: 'CHEM-001', lotNo: 'L-เดิม', exp: '2026-10-01', recv: '2026-08-01', qty: 3 }] });
+var fx43 = FS.build({ lots: [{ sku: 'CHEM-001', lotNo: 'L-เดิม', exp: EXP_SOON, recv: '2026-08-01', qty: 3 }] });
 var api43 = FS.load(fx43, {});
 api43.setup();
 
@@ -2746,8 +2760,8 @@ console.log('\n50. ลูกค้าคืนของ / ของตีกล�
 
 var fx50 = FS.build({
   lots: [
-    { sku: 'CHEM-001', lotNo: 'R-A', exp: '2026-10-01', recv: '2026-08-01', qty: 10 },
-    { sku: 'CHEM-001', lotNo: 'R-B', exp: '2027-03-01', recv: '2026-08-01', qty: 10 }
+    { sku: 'CHEM-001', lotNo: 'R-A', exp: EXP_SOON, recv: '2026-08-01', qty: 10 },
+    { sku: 'CHEM-001', lotNo: 'R-B', exp: EXP_LATER, recv: '2026-08-01', qty: 10 }
   ]
 });
 var api50 = FS.load(fx50, {});
@@ -4165,6 +4179,91 @@ console.log('\n   ไม่มีช่องสูตรถูกเขีย�
 var over67 = [];
 for (var nm67 in fx67.sheets) over67 = over67.concat(fx67.sheets[nm67].overwrittenFormulas);
 eq('ไม่มีช่องสูตรถูกแตะ', over67, []);
+
+/* ===================== 76. เปิดแฟ้มเอกสารตามช่วงวันที่
+
+   ของเดิมหาได้ทางเดียวคือพิมพ์เลขใบ/ชื่อลูกค้า ซึ่งแปลว่าต้องรู้คำตอบก่อนถึงจะถามได้
+   แต่เล่มใบกำกับภาษีตรวจกันเป็นเดือน — เปิดมาเพื่อไล่ดูว่าเลขเรียงครบไหม
+   (เจ้าของร้านขอเอง 5 พ.ย. 69: "อยากให้ค้นหาตั้งแต่วันที่ 1-31")            */
+console.log('\n76. เปิดแฟ้มเอกสารตามช่วงวันที่');
+var fx76 = FS.build();
+var api76 = FS.load(fx76, {});
+api76.setup();
+var IN76 = api76.SH.doc.IN;
+
+function put76(no, date, extra) {
+  var r = api76.nextRow_('doc', IN76.no);
+  var o = { no: no, type: 'ใบเสร็จรับเงิน', custName: 'ลูกค้า ' + no, total: 100 };
+  if (date) o.date = date;
+  for (var k in (extra || {})) o[k] = extra[k];
+  api76.writeRow_('doc', r, o);
+}
+function nos76(res) { return (res.rows || []).map(function (d) { return d.no }); }
+
+put76('ONIV26-00401', '2026-09-30');
+put76('ONIV26-00402', '2026-10-01');
+put76('ONIV26-00403', '2026-10-15');
+put76('ONIV26-00404', '2026-10-31');
+put76('ONIV26-00405', '2026-11-01');
+/* ใบที่ไม่มีวันที่ — เลขที่เติมกลับเข้าเล่ม */
+put76('ONIV26-00406', '', { voidWhy: 'ไม่ได้ใช้เลขนี้' });
+
+console.log('\n   ขอทั้งเดือนตุลาคม ต้องได้เฉพาะใบของเดือนนั้น');
+var oct76 = api76.findDocs({ from: '2026-10-01', to: '2026-10-31' });
+eq('ได้ครบ 3 ใบ ไม่ขาดใบวันที่ 1 และวันที่ 31',
+   nos76(oct76), ['ONIV26-00402', 'ONIV26-00403', 'ONIV26-00404']);
+eq('บอกจำนวนทั้งหมดด้วย', oct76.total, 3);
+eq('สะท้อนช่วงที่ใช้กรองกลับมา', [oct76.from, oct76.to], ['2026-10-01', '2026-10-31']);
+
+console.log('\n   ใบที่ไม่มีวันที่ ห้ามหลุดเข้ามาในช่วง');
+/* หลุดเข้ามาเมื่อไร ยอดของเดือนจะมีใบที่ไม่ใช่ของเดือนนั้นปนอยู่ */
+truthy2('ไม่มีใบที่ไม่มีวันที่ปนมา', nos76(oct76).indexOf('ONIV26-00406') < 0);
+truthy2('แต่ตอนไม่กรองวันที่ ยังเห็นเหมือนเดิม',
+   nos76(api76.findDocs({ limit: 200 })).indexOf('ONIV26-00406') > -1);
+
+console.log('\n   เรียงจากเลขน้อยไปมาก เพราะคนไล่เล่มอ่านจากเลขแรกของเดือน');
+eq('เลขแรกอยู่บนสุด', nos76(oct76)[0], 'ONIV26-00402');
+
+console.log('\n   ใส่แค่ข้างเดียวก็ได้');
+eq('ตั้งแต่ 2026-10-31 เป็นต้นไป',
+   nos76(api76.findDocs({ from: '2026-10-31' })), ['ONIV26-00404', 'ONIV26-00405']);
+eq('ถึง 2026-09-30', nos76(api76.findDocs({ to: '2026-09-30' })), ['ONIV26-00401']);
+
+console.log('\n   สลับวันที่มาให้ ต้องเข้าใจว่าหมายถึงช่วงเดียวกัน');
+/* คนกดปฏิทินผิดลำดับเป็นเรื่องปกติ ตอบว่า "ไม่พบ" คือโยนความผิดให้คนใช้ */
+eq('from > to ก็ยังได้ผลเหมือนสลับถูก',
+   nos76(api76.findDocs({ from: '2026-10-31', to: '2026-10-01' })),
+   ['ONIV26-00402', 'ONIV26-00403', 'ONIV26-00404']);
+
+console.log('\n   วันที่อ่านไม่ออก ถือว่าไม่ได้กรอง ดีกว่ากรองมั่ว');
+eq('ข้อความมั่วไม่ทำให้ผลหายไป',
+   nos76(api76.findDocs({ from: 'เมื่อวาน', limit: 200 })).length, 6);
+
+console.log('\n   ใช้คู่กับคำค้นได้ — หาเฉพาะในเดือนนั้น');
+eq('ได้ใบเดียวที่ทั้งเลขตรงและอยู่ในเดือน',
+   nos76(api76.findDocs({ q: '00403', from: '2026-10-01', to: '2026-10-31' })),
+   ['ONIV26-00403']);
+eq('เลขตรงแต่อยู่นอกเดือน ต้องไม่ติดมา',
+   nos76(api76.findDocs({ q: '00405', from: '2026-10-01', to: '2026-10-31' })), []);
+
+console.log('\n   เพดานต้องสูงพอสำหรับทั้งเดือน');
+/* เดือนหนึ่งเป็นร้อยใบ ถ้าเพดานเตี้ย เล่มจะขาดเลขโดยไม่มีใครรู้
+   ของเดิมหน้าจอขอมา 60 ใบ และฝั่งชีทเพดาน 200 */
+for (var i76 = 1; i76 <= 120; i76++) {
+  var r76 = api76.nextRow_('doc', IN76.no);
+  api76.writeRow_('doc', r76, { no: 'CS26-' + (1000 + i76), type: 'บิลเงินสด',
+                                date: '2026-10-20', custName: 'ก', total: 10 });
+}
+var big76 = api76.findDocs({ from: '2026-10-01', to: '2026-10-31', limit: 1000 });
+eq('ได้ครบทั้ง 123 ใบ ไม่ถูกตัดที่ 60 หรือ 200', big76.rows.length, 123);
+eq('และบอกจำนวนจริงตรงกัน', big76.total, 123);
+
+console.log('\n   ไม่ส่ง limit มา ยังได้ค่าเริ่มต้นเท่าเดิม ไม่ลากทั้งชีทขึ้นมา');
+/* เปิดแฟ้มเฉย ๆ ไม่ใช่การไล่เล่ม จึงไม่ควรดึงทุกแถวมาทุกครั้ง
+   (ตอนนี้ในชีทมี 126 ใบ ถ้าค่าเริ่มต้นหายไปจะได้มาทั้งหมด) */
+var def76 = api76.findDocs({});
+eq('ได้ 30 ใบตามค่าเริ่มต้น', def76.rows.length, 30);
+eq('แต่ยังบอกจำนวนจริงทั้งหมด', def76.total, 126);
 
 console.log('\n' + (fails ? 'ตก ' + fails + ' ข้อ' : 'ผ่านทั้งหมด'));
 process.exit(fails ? 1 : 0);

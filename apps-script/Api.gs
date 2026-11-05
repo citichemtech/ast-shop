@@ -1535,7 +1535,18 @@ function findDocs(p) {
   p = p || {};
   var want = String(p.q || '').trim().toLowerCase();
   var type = String(p.type || '').trim();
-  var limit = Math.min(Math.max(Number(p.limit) || 30, 1), 200);
+  /* ช่วงวันที่ — เปิดดูทั้งเดือนทีเดียว ไม่ต้องรู้เลขใบก่อน
+     เล่มใบกำกับภาษีตรวจกันเป็นเดือน ไม่ใช่ทีละใบ การบังคับให้พิมพ์เลขใบก่อน
+     แปลว่าต้องรู้คำตอบก่อนถึงจะถามได้ (เจ้าของร้านขอเอง 5 พ.ย. 69)
+     รับเฉพาะรูปแบบ 2026-10-01 ถ้าอ่านไม่ออกถือว่าไม่ได้กรอง ดีกว่ากรองมั่ว */
+  var iso = /^\d{4}-\d{2}-\d{2}$/;
+  var from = iso.test(String(p.from || '').trim()) ? String(p.from).trim() : '';
+  var to = iso.test(String(p.to || '').trim()) ? String(p.to).trim() : '';
+  if (from && to && from > to) { var sw = from; from = to; to = sw; }
+  /* เปิดทั้งเดือนได้เป็นร้อยใบ เพดานเดิม 200 จึงเตี้ยไป แต่ยังต้องมีเพดาน
+     ไม่งั้นวันที่ชีทโตขึ้นมาก หน้าจอจะค้างโดยไม่มีใครรู้ว่าเพราะอะไร */
+  var cap = (from || to) ? 2000 : 200;
+  var limit = Math.min(Math.max(Number(p.limit) || 30, 1), cap);
 
   var s = sheet_('doc');
   var last = formulaLimit_('doc');
@@ -1565,6 +1576,10 @@ function findDocs(p) {
       var hay = (d.no + ' ' + d.custName + ' ' + d.orderNo + ' ' + d.type).toLowerCase();
       if (hay.indexOf(want) < 0) continue;
     }
+    /* ใบที่ไม่มีวันที่ (เลขที่เติมกลับเข้าเล่ม) ต้องไม่หลุดเข้ามาในช่วงวันที่
+       ถ้าปล่อยเข้ามา ยอดรวมของเดือนจะมีใบที่ไม่ใช่ของเดือนนั้นปนอยู่ */
+    if (from && !(d.date && d.date >= from)) continue;
+    if (to && !(d.date && d.date <= to)) continue;
     /* นับแยกสามกอง ใบที่ยกเลิกแล้วไม่ควรถูกนับรวมเป็น "มีอยู่กี่ใบ"
        เพราะใบที่ยกเลิกคือใบที่ใช้ไม่ได้ ไม่ใช่ใบที่มี */
     var c = counts[d.type] || (counts[d.type] = { n: 0, live: 0, revised: 0, dead: 0 });
@@ -1594,7 +1609,13 @@ function findDocs(p) {
   if (type && !want) {
     hit.sort(function (a, b) { return docSeq_(b.no) - docSeq_(a.no); });
   }
-  return jsonSafe_({ rows: hit.slice(0, limit), total: hit.length, counts: counts });
+  /* เปิดดูเป็นช่วงวันที่ = กำลังไล่เล่ม จึงเรียงตามเลขใบเหมือนตอนเปิดแฟ้ม
+     เรียงจากน้อยไปมาก เพราะคนไล่เล่มอ่านจากเลขแรกของเดือนลงมา */
+  if ((from || to) && !want) {
+    hit.sort(function (a, b) { return docSeq_(a.no) - docSeq_(b.no); });
+  }
+  return jsonSafe_({ rows: hit.slice(0, limit), total: hit.length, counts: counts,
+                     from: from, to: to });
 }
 
 /**

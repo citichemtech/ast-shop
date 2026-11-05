@@ -4714,6 +4714,65 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       return MOCK_DOCS.filter(function (d) { return d.no === no })[0].doc.total;
     }, incl.no), incl.total);
 
+  console.log('\n20ง. แฟ้มเอกสาร — เปิดดูตามช่วงวันที่');
+  /* ของเดิมหาได้ทางเดียวคือพิมพ์เลขใบ ซึ่งต้องรู้คำตอบก่อนถึงจะถามได้
+     เล่มใบกำกับภาษีตรวจกันเป็นเดือน (เจ้าของร้านขอเอง 5 พ.ย. 69) */
+  await page.evaluate(function () { go('file') });
+  await page.waitForTimeout(800);
+  eq('มีช่องวันที่ให้กรอกสองช่อง',
+     await page.locator('#fl-from, #fl-to').count(), 2);
+  eq('และมีปุ่มลัดสามปุ่ม', await page.locator('#fl-quick button').count(), 3);
+
+  console.log('\n   กดเดือนนี้ ต้องเติมวันที่ 1 ถึงวันสุดท้ายของเดือนให้เอง');
+  await page.evaluate(function () { window.SENT = [] });
+  await page.locator('#fl-quick button[data-fq="this"]').click();
+  await page.waitForTimeout(900);
+  var rng = await page.evaluate(function () {
+    return { from: $('#fl-from').value, to: $('#fl-to').value };
+  });
+  /* วันสุดท้ายของเดือนต้องถูกทั้งเดือน 28/29/30/31 ไม่ใช่เหมาว่า 31 */
+  var now = new Date();
+  function pad2R(n) { return n < 10 ? '0' + n : '' + n; }
+  var y = now.getFullYear(), mo = now.getMonth();
+  var lastDay = new Date(y, mo + 1, 0).getDate();
+  eq('เริ่มวันที่ 1 ของเดือนนี้', rng.from, y + '-' + pad2R(mo + 1) + '-01');
+  eq('ถึงวันสุดท้ายจริงของเดือนนี้', rng.to, y + '-' + pad2R(mo + 1) + '-' + pad2R(lastDay));
+
+  console.log('\n   และต้องส่งช่วงวันที่ขึ้นไปจริง ไม่ใช่กรองแค่ในหน้าจอ');
+  var sentR = await page.evaluate(function () {
+    return (window.SENT || []).filter(function (x) { return x && x.fn === 'findDocs' }).pop() || null;
+  });
+  truthy('ยิง findDocs ไปใหม่', !!sentR);
+  eq('ส่งวันเริ่มไปด้วย', sentR && sentR.from, rng.from);
+  eq('ส่งวันสิ้นสุดไปด้วย', sentR && sentR.to, rng.to);
+  /* เปิดดูเป็นช่วงวันที่ = ดูข้ามชนิดใบเสมอ ไม่ใช่ติดอยู่ในแฟ้มเดียว */
+  eq('ไม่ล็อกไว้ที่แฟ้มชนิดเดียว', sentR && sentR.type, '');
+  truthy('ขอมาเกิน 60 ใบ เพราะเดือนหนึ่งเป็นร้อยใบ',
+     sentR && Number(sentR.limit) > 60);
+
+  console.log('\n   กดล้างช่วงวันที่ ต้องกลับไปหน้าแฟ้มตามเดิม');
+  await page.locator('#fl-quick button[data-fq="clear"]').click();
+  await page.waitForTimeout(800);
+  var cleared = await page.evaluate(function () {
+    return { from: $('#fl-from').value, to: $('#fl-to').value };
+  });
+  eq('ช่องวันที่ว่างแล้ว', [cleared.from, cleared.to], ['', '']);
+
+  console.log('\n   เดือนที่แล้วต้องไม่ข้ามปี ตอนอยู่เดือนมกราคม');
+  /* ใช้ new Date(ปี, เดือน-1, 1) ซึ่ง JavaScript ถอยปีให้เองเมื่อเดือนติดลบ */
+  await page.locator('#fl-quick button[data-fq="prev"]').click();
+  await page.waitForTimeout(800);
+  var prevR = await page.evaluate(function () {
+    return { from: $('#fl-from').value, to: $('#fl-to').value };
+  });
+  var pa = new Date(y, mo - 1, 1), pb = new Date(y, mo, 0);
+  eq('วันแรกของเดือนที่แล้ว', prevR.from,
+     pa.getFullYear() + '-' + pad2R(pa.getMonth() + 1) + '-01');
+  eq('วันสุดท้ายของเดือนที่แล้ว', prevR.to,
+     pb.getFullYear() + '-' + pad2R(pb.getMonth() + 1) + '-' + pad2R(pb.getDate()));
+  await page.locator('#fl-quick button[data-fq="clear"]').click();
+  await page.waitForTimeout(500);
+
   console.log('\n21. ความสะอาดของหน้าเว็บ');
   eq('ไม่มี javascript error เลย', errors, []);
 

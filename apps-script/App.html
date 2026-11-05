@@ -4452,12 +4452,19 @@ function drawFileDocs(){
   var box = $("#fl-docs");
   if(!box) return;
   var q = ($("#fl-q") && $("#fl-q").value.trim()) || "";
+  var from = ($("#fl-from") && $("#fl-from").value) || "";
+  var to = ($("#fl-to") && $("#fl-to").value) || "";
+  var ranged = !!(from || to);
   box.innerHTML = '<div class="load">กำลังเปิดแฟ้ม…</div>';
   /* ค้นหาแล้วไม่ต้องเข้าแฟ้ม — คนที่พิมพ์เลขใบมาคือคนที่รู้อยู่แล้วว่าจะหาใบไหน
-     บังคับให้เดาก่อนว่าใบนั้นชนิดอะไรคือทำให้ช่องค้นหาไร้ประโยชน์ */
-  api("findDocs", { q: q, type: q ? "" : FILE_KIND, limit: 60 }).then(function(res){
+     บังคับให้เดาก่อนว่าใบนั้นชนิดอะไรคือทำให้ช่องค้นหาไร้ประโยชน์
+
+     เลือกช่วงวันที่ก็เหมือนกัน — เปิดมาเพื่อไล่เล่มทั้งเดือน ไม่ใช่เปิดแฟ้มทีละชนิด
+     เพดานสูงกว่าปกติ เพราะเดือนหนึ่งเป็นร้อยใบ ตัดที่ 60 คือเล่มขาดเลขเงียบ ๆ */
+  api("findDocs", { q: q, type: (q || ranged) ? "" : FILE_KIND,
+                    from: from, to: to, limit: ranged ? 1000 : 60 }).then(function(res){
     var rows = (res && res.rows) || [], counts = (res && res.counts) || {};
-    if(q) drawDocHits(box, rows, q);
+    if(q || ranged) drawDocHits(box, rows, q, from, to, res.total || rows.length);
     else if(!FILE_KIND) drawDocFolders(box, counts);
     else drawDocOne(box, rows, counts, res.total || rows.length);
   }, function(e){
@@ -4557,10 +4564,22 @@ function docBackBar(){
 }
 
 /** ผลค้นหา — ยังแยกหัวข้อตามชนิดใบ ไม่เทรวมกันเป็นกองเดียว */
-function drawDocHits(box, rows, q){
+/** พาดหัวว่ากำลังดูอะไรอยู่ — คำค้น หรือช่วงวันที่ หรือทั้งสองอย่าง */
+function hitsHead(q, from, to){
+  var bits = [];
+  if(q) bits.push('ผลค้นหา “' + esc(q) + '”');
+  if(from && to) bits.push('วันที่ ' + esc(thaiDate(from)) + ' – ' + esc(thaiDate(to)));
+  else if(from) bits.push('ตั้งแต่ ' + esc(thaiDate(from)));
+  else if(to) bits.push('ถึง ' + esc(thaiDate(to)));
+  return bits.join(' · ');
+}
+
+function drawDocHits(box, rows, q, from, to, total){
   if(!rows.length){
-    box.innerHTML = '<div class="empty"><b>ไม่พบเอกสารที่ค้นหา</b>'
-      + 'พิมพ์เลขที่เอกสาร ชื่อลูกค้า หรือเลขออเดอร์บางส่วนก็ได้</div>';
+    box.innerHTML = '<div class="empty"><b>ไม่พบเอกสาร</b>'
+      + ((from || to)
+        ? 'ไม่มีใบที่ออกใน' + esc(hitsHead("", from, to)) + ' — ลองเปลี่ยนช่วงวันที่'
+        : 'พิมพ์เลขที่เอกสาร ชื่อลูกค้า หรือเลขออเดอร์บางส่วนก็ได้') + '</div>';
     return;
   }
   var by = {};
@@ -4569,8 +4588,12 @@ function drawDocHits(box, rows, q){
   for(var t in by) if(order.indexOf(t) < 0) order.push(t);
 
   var outId = "rp-out-hits";
-  box.innerHTML = '<div class="hint" style="padding:0 2px 8px">ผลค้นหา “' + esc(q) + '” · '
-      + rows.length + ' ใบ</div>'
+  /* total คือจำนวนที่ตรงจริงทั้งหมด rows คือที่ส่งมาแสดง — ถ้าไม่เท่ากันต้องบอก
+     ไม่งั้นคนไล่เล่มจะนึกว่าเดือนนั้นมีแค่เท่าที่เห็น แล้วเล่มขาดเลขโดยไม่รู้ตัว */
+  var n = Number(total) || rows.length;
+  box.innerHTML = '<div class="hint" style="padding:0 2px 8px">'
+      + hitsHead(q, from, to) + ' · <b>' + n + ' ใบ</b>'
+      + (n > rows.length ? ' (แสดง ' + rows.length + ' ใบแรก)' : '') + '</div>'
     + order.filter(function(t){ return by[t] }).map(function(t){
         var k = docKind(t);
         return '<div class="subhd">' + k.ic + ' ' + esc(k.label)
@@ -4618,8 +4641,45 @@ function fileInit(){
   }
   var bl = $("#fl-bill");
   if(bl && !bl.dataset.bound){ bl.dataset.bound = "1"; bl.onclick = openBill }
+
+  /* ช่วงวันที่ — เปลี่ยนแล้ววาดใหม่ทันที ไม่ต้องมีปุ่มค้นหาอีกปุ่ม
+     และต้องออกจากแฟ้มชนิดเดียวก่อน เพราะช่วงวันที่ดูข้ามชนิดเสมอ */
+  ["#fl-from", "#fl-to"].forEach(function(sel){
+    var el = $(sel);
+    if(!el || el.dataset.bound) return;
+    el.dataset.bound = "1";
+    el.onchange = function(){ FILE_KIND = ""; drawFileDocs() };
+  });
+  $$("#fl-quick button").forEach(function(b){
+    if(b.dataset.bound) return;
+    b.dataset.bound = "1";
+    b.onclick = function(){ flQuick(b.dataset.fq) };
+  });
+
   pasteInit();
   fileDraw();
+}
+
+/** ปุ่มลัดช่วงวันที่ — เดือนนี้ / เดือนที่แล้ว / ล้าง
+
+    คิดวันสุดท้ายของเดือนด้วย "วันที่ 0 ของเดือนถัดไป" จึงถูกทั้งเดือน 28/29/30/31
+    ไม่ต้องจำว่าเดือนไหนมีกี่วัน และปีอธิกสุรทินก็ถูกเอง */
+function flQuick(kind){
+  var f = $("#fl-from"), t = $("#fl-to");
+  if(!f || !t) return;
+  if(kind === "clear"){ f.value = ""; t.value = "" }
+  else {
+    var now = new Date();
+    var m = now.getMonth() + (kind === "prev" ? -1 : 0);
+    var a = new Date(now.getFullYear(), m, 1);
+    var b = new Date(now.getFullYear(), m + 1, 0);
+    f.value = isoOf(a.getTime());
+    t.value = isoOf(b.getTime());
+  }
+  /* คำค้นกับช่วงวันที่ใช้พร้อมกันได้ (หาชื่อลูกค้าเฉพาะเดือนนี้)
+     จึงไม่ล้างช่องค้นหาให้ แต่ต้องออกจากแฟ้มชนิดเดียว */
+  FILE_KIND = "";
+  drawFileDocs();
 }
 
 function fileDraw(){

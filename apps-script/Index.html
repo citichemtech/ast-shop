@@ -1077,6 +1077,19 @@ a.btn{display:block;box-sizing:border-box;text-align:center;text-decoration:none
     <div class="card" id="fl-doc-card">
       <input id="fl-q" placeholder="ค้นหา — เลขที่เอกสาร · ชื่อลูกค้า · เลขออเดอร์" autocomplete="off">
       <div class="hint">พิมพ์ค้นหา = หาทุกแฟ้มพร้อมกัน (ยังแยกหัวข้อตามชนิดใบให้)</div>
+
+      <!-- เปิดดูทั้งเดือนทีเดียว — เล่มใบกำกับภาษีตรวจกันเป็นเดือน ไม่ใช่ทีละใบ
+           ถ้ามีแต่ช่องค้นหา ต้องรู้เลขใบก่อนถึงจะถามได้ ซึ่งกลับหัวกลับหาง -->
+      <div class="subhd" style="margin-top:12px">หรือเปิดดูตามช่วงวันที่</div>
+      <div class="row">
+        <div class="i"><label>ตั้งแต่วันที่</label><input type="date" id="fl-from"></div>
+        <div class="i"><label>ถึงวันที่</label><input type="date" id="fl-to"></div>
+      </div>
+      <div class="chips" id="fl-quick" style="margin-top:8px">
+        <button type="button" data-fq="this">เดือนนี้</button>
+        <button type="button" data-fq="prev">เดือนที่แล้ว</button>
+        <button type="button" data-fq="clear">ล้างช่วงวันที่</button>
+      </div>
       <button class="btn ghost" id="fl-bill" style="margin-top:10px">＋ ออกใบวางบิล
         (รวมหลายบิลของลูกค้ารายเดียว)</button>
       <div id="fl-docs" style="margin-top:10px"><div class="load">กำลังโหลด…</div></div>
