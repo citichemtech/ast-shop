@@ -4122,6 +4122,56 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('กดกลับแล้วได้หน้าแฟ้มเหมือนเดิม', back45.folders, 6);
   eq('และไม่เหลือใบค้างอยู่', back45.rows, 0);
 
+  console.log('\n   §45ก บันทึกใบลงเครื่องได้จากในแถว ไม่ต้องกดพิมพ์ซ้ำก่อน');
+  /* ตอนรวมไฟล์ส่งบัญชีสิ้นเดือน เจ้าของร้านต้องเซฟหลายสิบใบติดกัน
+     ของเดิมต้องกดพิมพ์ซ้ำ รอรูป A4 วาดเสร็จขึ้นจอ แล้วค่อยกดบันทึกอีกที
+     ทุกใบ ทั้งที่ไม่ได้ดูรูปนั้นเลย — ข้อนี้คุมว่าปุ่มในแถวทำงานจริง
+     และได้ไฟล์ชื่อเดียวกับที่ปุ่มใต้ใบพิมพ์ซ้ำให้ ไม่ใช่คนละชนิดกัน */
+  var dlRow = await page.evaluate(async function () {
+    $('#fl-docs [data-fk="ใบเสร็จรับเงิน"]').click();
+    await new Promise(function (r) { setTimeout(r, 700) });
+    var rows = $$('#fl-docs .row');
+    return {
+      rows: rows.length,
+      /* ทุกแถวต้องมี ไม่ใช่มีแถวแรกแถวเดียว */
+      everyRow: rows.every(function (r) { return !!r.querySelector('[data-dl]') }),
+      label: ($('#fl-docs [data-dl]') || {}).textContent,
+      no: $('#fl-docs .row .i b').textContent.trim()
+    };
+  });
+  truthy('เปิดแฟ้มแล้วมีใบอยู่', dlRow.rows > 0);
+  truthy('ทุกแถวมีปุ่มบันทึกลงเครื่อง', dlRow.everyRow);
+  eq('ชื่อปุ่มตรงกับปุ่มใต้ใบที่พิมพ์ซ้ำ จะได้ไม่งงว่าสองปุ่มคนละเรื่อง',
+    String(dlRow.label || '').trim(), 'บันทึกลงเครื่อง');
+
+  var dlWait = page.waitForEvent('download', { timeout: 20000 });
+  await page.click('#fl-docs [data-dl]');
+  var dlGot = await dlWait;
+  var dlName = dlGot.suggestedFilename();
+  truthy('กดแล้วไฟล์ลงเครื่องจริง', !!dlName);
+  eq('ชื่อไฟล์เป็นเลขใบนั้น', dlName, dlRow.no + '.jpg');
+  truthy('และเป็นอักษรอังกฤษล้วน เบราว์เซอร์จะได้ไม่ทิ้งชื่อ',
+    /^[\x20-\x7E]+$/.test(dlName));
+
+  var dlAfter = await page.evaluate(function () {
+    var b = $('#fl-docs [data-dl]');
+    return { enabled: b && !b.disabled,
+             label: b ? b.textContent.trim() : '',
+             /* ไม่ต้องวาดรูปขึ้นจอให้เกะกะ แค่เซฟไฟล์เงียบ ๆ */
+             noImg: !$('#fl-docs img.docimg'),
+             said: (($('#toast') || {}).textContent || '') };
+  });
+  truthy('ปุ่มกลับมากดได้อีก เซฟใบถัดไปต่อได้เลย', dlAfter.enabled);
+  eq('และชื่อปุ่มกลับมาเหมือนเดิม', dlAfter.label, 'บันทึกลงเครื่อง');
+  truthy('ไม่โชว์รูปใบขึ้นจอ เพราะไม่ได้กดดู', dlAfter.noImg);
+  truthy('บอกว่าเซฟแล้วและไปหาไฟล์ที่ไหน',
+    dlAfter.said.indexOf('ดาวน์โหลด') > -1);
+
+  await page.evaluate(async function () {
+    $('#fl-docs .fold-back').click();
+    await new Promise(function (r) { setTimeout(r, 500) });
+  });
+
   console.log('\n   ค้นหาต้องเจอใบกำกับภาษี ทั้งที่ใบพวกนี้ผูกกับออเดอร์');
   var find45 = await page.evaluate(async function () {
     /* หาเลขใบจริงจากในแฟ้มก่อน แล้วค่อยเอาไปค้น จะได้ไม่ผูกกับเลขที่ตายตัว */

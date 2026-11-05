@@ -1906,6 +1906,10 @@ function docRowHtml(d){
            : '')
         +'</div><div class="acts">'
         +'<button class="mini" data-rp="'+esc(d.no)+'">พิมพ์ซ้ำ</button>'
+        /* เซฟไฟล์ได้จากในแถวเลย ไม่ต้องกดพิมพ์ซ้ำรอรูปขึ้นก่อนแล้วค่อยกดเซฟ
+           ตอนรวมไฟล์ส่งบัญชีสิ้นเดือนต้องเซฟหลายสิบใบติดกัน สองจังหวะต่อใบ
+           คือรอรูป A4 วาดเสร็จขึ้นจอทุกใบเปล่า ๆ ทั้งที่ไม่ได้ดูมันเลย */
+        +'<button class="mini" data-dl="'+esc(d.no)+'">บันทึกลงเครื่อง</button>'
         /* เล่มใบกำกับภาษีต้องมีเลขครบทุกเลข เลขที่ไม่ได้ใช้ก็ต้องส่งให้บัญชี
            ของเดิมปุ่มส่งบัญชีอยู่แต่บนแถวออเดอร์ เลขพวกนี้จึงส่งไม่ได้เลย */
         + (orphan ? '<button class="mini" data-ac="'+esc(d.no)+'">ส่งบัญชี</button>' : '')
@@ -1926,6 +1930,9 @@ function docRowHtml(d){
 function bindDocRows(box, outId, redraw){
   box.querySelectorAll("[data-rp]").forEach(function(b){
     b.onclick = function(){ reprint(b.getAttribute("data-rp"), b, "#"+outId) };
+  });
+  box.querySelectorAll("[data-dl]").forEach(function(b){
+    b.onclick = function(){ saveDocNow(b.getAttribute("data-dl"), b, "#"+outId) };
   });
   box.querySelectorAll("[data-q2o]").forEach(function(b){
     b.onclick = function(){ quoteToOrder(b.getAttribute("data-q2o"), b) };
@@ -2270,6 +2277,38 @@ function askVoid(no, btn, redraw){
       msg.textContent = "ยกเลิกไม่สำเร็จ: " + (e && e.message ? e.message : e);
     });
   };
+}
+
+/** บันทึกใบลงเครื่องตรง ๆ จากในรายการ — ดึงใบ วาดใหม่ แล้วเซฟ ไม่โชว์รูปบนจอ
+    ได้ไฟล์หน้าตาเดียวกับปุ่ม "บันทึกลงเครื่อง" ใต้ใบที่พิมพ์ซ้ำ เพราะใช้ทางเดียวกัน */
+function saveDocNow(no, btn, outSel){
+  var old = btn ? btn.textContent : "";
+  function done(){ if (btn) { btn.disabled = false; btn.textContent = old } }
+  if (btn) { btn.disabled = true; btn.textContent = "กำลังทำไฟล์…" }
+  api("getDoc", no).then(function(r){
+    var m = r.meta;
+    /* ใบเก่าที่ชีทยังไม่ได้เก็บรายการในใบ ต้องประกอบใหม่จากออเดอร์ ถ้ายอดที่
+       ประกอบได้ไม่ตรงกับยอดที่บันทึกไว้ แปลว่าออเดอร์ถูกแก้หลังออกใบไปแล้ว
+       ห้ามปล่อยไฟล์นั้นลงเครื่องเงียบ ๆ เพราะมันจะถูกส่งต่อให้ลูกค้าหรือบัญชี
+       โดยไม่มีใครเห็นคำเตือน — พาไปหน้าพิมพ์ซ้ำ ให้อ่านก่อนแล้วตัดสินใจเอง */
+    if (!r.exact && !r.same) {
+      done();
+      toast("ใบนี้ยอดที่ประกอบใหม่ไม่ตรงกับที่บันทึกไว้ — อ่านคำเตือนก่อนบันทึก");
+      reprint(no, null, outSel);
+      return null;
+    }
+    m.seller = CFG.docSeller||""; m.sellerEmail = CFG.docSellerEmail||"";
+    return buildDocPage(r.doc, m, CFG.doc||{}, "ต้นฉบับ").then(function(url){
+      return saveDocFile_(url, no + ".png", "a4").then(function(f){
+        done();
+        toast("บันทึก " + f.name + " แล้ว ดูในโฟลเดอร์ดาวน์โหลด"
+            + (m.voidWhy ? " · ใบนี้ยกเลิกแล้ว ใช้อ้างอิงทางบัญชีไม่ได้" : ""));
+      });
+    });
+  }).catch(function(e){
+    done();
+    toast("บันทึกไม่สำเร็จ: " + (e && e.message ? e.message : e));
+  });
 }
 
 function reprint(no, btn, outSel){
@@ -3548,6 +3587,36 @@ function savePdf(blob, pname){
   }catch(e){ toast("บันทึก PDF ไม่ได้") }
 }
 
+/* ทำไฟล์จากรูปใบที่วาดเสร็จ — ที่เดียวสำหรับทุกปุ่มที่บันทึกหรือแชร์ไฟล์ใบ
+   ปุ่ม "บันทึกลงเครื่อง" ใต้ใบที่พิมพ์ซ้ำ กับปุ่มบันทึกในแถวแฟ้มเอกสาร
+   ต้องได้ไฟล์ชนิดเดียวกันชื่อเดียวกัน ถ้าแยกโค้ดกันไว้ วันหนึ่งจะคนละอย่าง
+   โดยไม่มีใครรู้ แล้วไฟล์ที่ส่งบัญชีจากสองที่จะหน้าตาไม่เหมือนกัน */
+function docFileName_(name, paper){
+  return paper === "a4" ? String(name).replace(/\.png$/i, ".jpg") : String(name);
+}
+
+function docFileFrom_(url, name, paper){
+  var isDoc = paper === "a4";
+  var fileName = docFileName_(name, paper);
+  var fileType = isDoc ? "image/jpeg" : "image/png";
+  return (isDoc ? toJpegUrl(url, 0.85) : Promise.resolve(url)).then(function(u){
+    var b=atob(u.split(",")[1]), n=b.length, u8=new Uint8Array(n);
+    while(n--) u8[n]=b.charCodeAt(n);
+    var blob=new Blob([u8],{type:fileType});
+    return {blob:blob, file:new File([blob],fileName,{type:fileType}), name:fileName};
+  });
+}
+
+function saveDocFile_(url, name, paper){
+  return docFileFrom_(url, name, paper).then(function(f){
+    var href=URL.createObjectURL(f.blob);
+    var a=document.createElement("a"); a.href=href; a.download=f.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){URL.revokeObjectURL(href)},4000);
+    return f;
+  });
+}
+
 function bindLabelButtons(url, name, paper){
   /* paper "a4" สำหรับเอกสารขาย · ไม่ใส่ = ใบปะหน้าพัสดุ 100x150 มม. เหมือนเดิม
      ถ้าส่ง A4 ไปพิมพ์ด้วยขนาดซอง เครื่องพิมพ์จะย่อหน้าลง ตัวหนังสือที่เพิ่งขยายจะเล็กกลับไปอีก */
@@ -3562,19 +3631,8 @@ function bindLabelButtons(url, name, paper){
 
      ใบปะหน้าพัสดุยังเป็น PNG เพราะไฟล์เล็กอยู่แล้ว และเป็นเส้นคมล้วน
      ที่เครื่องพิมพ์ความร้อนพิมพ์ออกมาสวยกว่าเมื่อไม่มีรอยบีบ */
-  var isDoc = paper === "a4";
-  var fileName = isDoc ? name.replace(/\.png$/i, ".jpg") : name;
-  var fileType = isDoc ? "image/jpeg" : "image/png";
-  var filePromise = isDoc ? toJpegUrl(url, 0.85) : Promise.resolve(url);
-
-  var toFile=function(){
-    return filePromise.then(function(u){
-      var b=atob(u.split(",")[1]), n=b.length, u8=new Uint8Array(n);
-      while(n--) u8[n]=b.charCodeAt(n);
-      var blob=new Blob([u8],{type:fileType});
-      return {blob:blob, file:new File([blob],fileName,{type:fileType})};
-    });
-  };
+  var fileName = docFileName_(name, paper);
+  var toFile = function(){ return docFileFrom_(url, name, paper) };
   $("#lb-share").onclick=async function(){
     try{
       var f=await toFile();
@@ -3585,11 +3643,7 @@ function bindLabelButtons(url, name, paper){
     try{ window.print() }catch(e){ toast("เครื่องนี้แชร์ไม่ได้ ลองปุ่มบันทึกลงเครื่องแทน") }
   };
   $("#lb-save").onclick=function(){
-    toFile().then(function(f){
-      var href=URL.createObjectURL(f.blob);
-      var a=document.createElement("a"); a.href=href; a.download=fileName;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function(){URL.revokeObjectURL(href)},4000);
+    saveDocFile_(url, name, paper).then(function(){
       toast("บันทึกแล้ว ดูในโฟลเดอร์ดาวน์โหลด");
     }, function(){ toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่") });
   };
