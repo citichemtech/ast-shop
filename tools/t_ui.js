@@ -4122,15 +4122,27 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('กดกลับแล้วได้หน้าแฟ้มเหมือนเดิม', back45.folders, 6);
   eq('และไม่เหลือใบค้างอยู่', back45.rows, 0);
 
-  console.log('\n   §45ก บันทึกใบลงเครื่องได้จากในแถว ไม่ต้องกดพิมพ์ซ้ำก่อน');
+  console.log('\n   §45ก บันทึกสำเนาใบลงเครื่องได้จากในแถว ไม่ต้องกดพิมพ์ซ้ำก่อน');
   /* ตอนรวมไฟล์ส่งบัญชีสิ้นเดือน เจ้าของร้านต้องเซฟหลายสิบใบติดกัน
      ของเดิมต้องกดพิมพ์ซ้ำ รอรูป A4 วาดเสร็จขึ้นจอ แล้วค่อยกดบันทึกอีกที
      ทุกใบ ทั้งที่ไม่ได้ดูรูปนั้นเลย — ข้อนี้คุมว่าปุ่มในแถวทำงานจริง
-     และได้ไฟล์ชื่อเดียวกับที่ปุ่มใต้ใบพิมพ์ซ้ำให้ ไม่ใช่คนละชนิดกัน */
+
+     และคุมเรื่องที่สำคัญกว่า: ไฟล์ที่ได้ต้องเป็น "สำเนา" ไม่ใช่ต้นฉบับ
+     เพราะไฟล์ที่เซฟเก็บไว้คือไฟล์ที่เอาไปส่งบัญชี ส่วนต้นฉบับมีใบเดียว
+     อยู่ในมือลูกค้า ถ้าปุ่มนี้ให้ต้นฉบับ จะมีต้นฉบับสองใบลอยอยู่คนละที่ */
   var dlRow = await page.evaluate(async function () {
     $('#fl-docs [data-fk="ใบเสร็จรับเงิน"]').click();
     await new Promise(function (r) { setTimeout(r, 700) });
     var rows = $$('#fl-docs .row');
+    /* ดักดูว่าสั่งวาดใบด้วยตราอะไร — ตรานี้คือทั้งเรื่องของข้อนี้
+       ดูจากรูปที่ได้ไม่ได้ เพราะมันเป็นรูป ไม่ใช่ตัวหนังสือให้อ่าน */
+    window.STAMP = [];
+    window.BDP_REAL = window.buildDocPage;
+    var real = window.buildDocPage;
+    window.buildDocPage = function (d, m, cfg, copy) {
+      window.STAMP.push(String(copy || ''));
+      return real.apply(null, arguments);
+    };
     return {
       rows: rows.length,
       /* ทุกแถวต้องมี ไม่ใช่มีแถวแรกแถวเดียว */
@@ -4140,16 +4152,18 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
     };
   });
   truthy('เปิดแฟ้มแล้วมีใบอยู่', dlRow.rows > 0);
-  truthy('ทุกแถวมีปุ่มบันทึกลงเครื่อง', dlRow.everyRow);
-  eq('ชื่อปุ่มตรงกับปุ่มใต้ใบที่พิมพ์ซ้ำ จะได้ไม่งงว่าสองปุ่มคนละเรื่อง',
-    String(dlRow.label || '').trim(), 'บันทึกลงเครื่อง');
+  truthy('ทุกแถวมีปุ่มบันทึกสำเนา', dlRow.everyRow);
+  eq('ชื่อปุ่มบอกว่าได้สำเนา ไม่ใช่ "บันทึก" เฉย ๆ ที่อ่านได้ว่าต้นฉบับ',
+    String(dlRow.label || '').trim(), 'บันทึกสำเนา');
 
   var dlWait = page.waitForEvent('download', { timeout: 20000 });
   await page.click('#fl-docs [data-dl]');
   var dlGot = await dlWait;
   var dlName = dlGot.suggestedFilename();
   truthy('กดแล้วไฟล์ลงเครื่องจริง', !!dlName);
-  eq('ชื่อไฟล์เป็นเลขใบนั้น', dlName, dlRow.no + '.jpg');
+  eq('ชื่อไฟล์เป็นเลขใบนั้นและบอกว่าสำเนา', dlName, dlRow.no + '-copy.jpg');
+  /* ชื่อไฟล์ที่มีอักษรไทย บางเครื่องเบราว์เซอร์ทิ้งทั้งชื่อ เหลือไฟล์ชื่อ
+     "download" ไม่มีนามสกุล ซึ่งดับเบิลคลิกเปิดไม่ขึ้น จึงต้องอังกฤษล้วน */
   truthy('และเป็นอักษรอังกฤษล้วน เบราว์เซอร์จะได้ไม่ทิ้งชื่อ',
     /^[\x20-\x7E]+$/.test(dlName));
 
@@ -4159,15 +4173,21 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
              label: b ? b.textContent.trim() : '',
              /* ไม่ต้องวาดรูปขึ้นจอให้เกะกะ แค่เซฟไฟล์เงียบ ๆ */
              noImg: !$('#fl-docs img.docimg'),
+             stamp: (window.STAMP || []).slice(),
              said: (($('#toast') || {}).textContent || '') };
   });
+  eq('สั่งวาดใบครั้งเดียว ไม่ได้วาดทิ้งเปล่า ๆ ก่อน', dlAfter.stamp.length, 1);
+  eq('และวาดด้วยตรา "สำเนา" ไม่ใช่ต้นฉบับ', dlAfter.stamp[0], 'สำเนา');
   truthy('ปุ่มกลับมากดได้อีก เซฟใบถัดไปต่อได้เลย', dlAfter.enabled);
-  eq('และชื่อปุ่มกลับมาเหมือนเดิม', dlAfter.label, 'บันทึกลงเครื่อง');
+  eq('และชื่อปุ่มกลับมาเหมือนเดิม', dlAfter.label, 'บันทึกสำเนา');
   truthy('ไม่โชว์รูปใบขึ้นจอ เพราะไม่ได้กดดู', dlAfter.noImg);
-  truthy('บอกว่าเซฟแล้วและไปหาไฟล์ที่ไหน',
-    dlAfter.said.indexOf('ดาวน์โหลด') > -1);
+  truthy('บอกว่าเซฟสำเนาแล้วและไปหาไฟล์ที่ไหน',
+    dlAfter.said.indexOf('สำเนา') > -1 && dlAfter.said.indexOf('ดาวน์โหลด') > -1);
 
   await page.evaluate(async function () {
+    /* เอาตัวดักออก ไม่ให้ค้างไปกวนหมวดถัด ๆ ไปที่วาดใบเหมือนกัน */
+    if (window.BDP_REAL) { window.buildDocPage = window.BDP_REAL; delete window.BDP_REAL }
+    delete window.STAMP;
     $('#fl-docs .fold-back').click();
     await new Promise(function (r) { setTimeout(r, 500) });
   });
