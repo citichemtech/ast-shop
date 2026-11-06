@@ -1938,10 +1938,20 @@ function askOnLine(p){
   copyMsg("สนใจสินค้า: "+p.name+(p.sku?" ("+p.sku+")":"")+"\nราคา "+baht(p.price));
   if(CFG.line){
     toast("คัดลอกชื่อสินค้าให้แล้ว วางในแชทได้เลย");
-    setTimeout(function(){ window.open(CFG.line,"_blank") },500);
+    setTimeout(function(){ openUrl(CFG.line) },500);
   }else{
     toast("คัดลอกชื่อสินค้าแล้ว — ยังไม่ได้ใส่ลิงก์ไลน์ของร้าน");
   }
+}
+/* แอปที่ติดตั้งบนมือถือ (standalone) บล็อก window.open เงียบ ๆ
+   กดปุ่มแล้วไม่มีอะไรเกิดขึ้นเลย ไม่มีข้อความบอก ไม่มี error
+   ถ้าเปิดแท็บใหม่ไม่ได้ ให้พาไปทั้งหน้าแทน ดีกว่ากดแล้วเงียบ */
+function openUrl(u){
+  if(!u) return false;
+  var w=null;
+  try{ w=window.open(u,"_blank") }catch(e){}
+  if(!w){ location.href=u }
+  return true;
 }
 function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove("on")},1900)}
 function go(n){
@@ -2218,7 +2228,7 @@ function bindModalPick(obj){
 function openLineWith(msg){
   var u=CFG.line||"";
   var id=(u.match(/@[\w.\-]+/)||[""])[0];
-  window.open(id?("https://line.me/R/oaMessage/"+id+"/?"+encodeURIComponent(msg)):u,"_blank");
+  openUrl(id?("https://line.me/R/oaMessage/"+id+"/?"+encodeURIComponent(msg)):u);
 }
 
 /* ---------- ใบปะหน้าพัสดุ ---------- */
@@ -2398,7 +2408,7 @@ document.addEventListener("click",function(e){
     if(soldOut(pa2)){ toast(pa2.name+" — สินค้าหมด"); return; }
     askOnLine(pa2); return;
   }
-  if(t.id==="btn-line"){window.open(CFG.line||"#");return}
+  if(t.id==="btn-line"){ if(CFG.line) openUrl(CFG.line); else toast("ยังไม่ได้ใส่ลิงก์ไลน์ของร้าน"); return }
   /* admin */
   if(d.tab){
     $$(".ad-tabs button").forEach(function(b){b.classList.toggle("on",b===t)});
@@ -2538,7 +2548,7 @@ function askStockUrl(){
 if($("#go-stock")) $("#go-stock").onclick=function(){
   var u = stockUrl() || askStockUrl();
   if(!u) return;
-  window.open(u, "_blank");
+  openUrl(u);
 };
 /* แก้ลิงก์ได้ด้วยการกดค้างที่ปุ่มสองวินาที
    ยังต้องมีอยู่ เวลาลิงก์เสียจะได้แก้เองที่หน้างาน ไม่ต้องรอปล่อยไฟล์ใหม่
@@ -2563,8 +2573,8 @@ if($("#gw-edit")) $("#gw-edit").onclick=function(e){
 /* ใช้โลโก้ CITI ไม่ใช่ CFG.logo ของร้าน — ปุ่มนี้พาไปคนละระบบ
    ถ้าใช้โลโก้เดียวกับหัวหน้าจอ พนักงานจะดูไม่ออกว่ากดแล้วไปไหน */
 if($("#gw-ico")) $("#gw-ico").innerHTML='<img src="'+STOCK_LOGO+'" alt="ระบบตัดสต๊อก">';
-$("#btn-follow").onclick=function(){window.open(CFG.line||"#","_blank")};
-$("#btn-member").onclick=function(){if(CFG.member)window.open(CFG.member,"_blank")};
+$("#btn-follow").onclick=function(){ if(CFG.line) openUrl(CFG.line); else toast("ยังไม่ได้ใส่ลิงก์ไลน์ของร้าน") };
+$("#btn-member").onclick=function(){ openUrl(CFG.member) };
 /* หน้าร้านไม่มีปุ่มนี้ (สร้างด้วย tools/build.py) โค้ดต้องไม่พังเมื่อไม่เจอปุ่ม */
 if($("#gear")) $("#gear").onclick=function(){
   if(CFG.pin){$("#lock-pin").value="";$("#lock").classList.add("on");setTimeout(function(){$("#lock-pin").focus()},60);}

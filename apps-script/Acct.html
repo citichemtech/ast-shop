@@ -66,14 +66,30 @@ function acctRender() {
     +'ไฟล์จะถูกเก็บเข้าโฟลเดอร์ <b>AST_ส่งบัญชี</b> ในไดรฟ์ แยกโฟลเดอร์ย่อยตามเดือน '
     +'บัญชีเปิดดูได้เองตลอดเวลา ไม่ต้องรออีเมล</div>'
 
-    +'<div class="fld"><label>สถานะบัญชีตอนนี้</label>'
-    +'<select id="ac-st">'
-    + list.map(function (x) {
-        return '<option value="' + esc(x) + '"' + (x === now ? " selected" : "") + ">" + esc(x) + "</option>";
-      }).join("")
-    +'</select>'
-    +'<button class="mini" id="ac-save" style="margin-top:8px">บันทึกสถานะอย่างเดียว</button>'
-    +'<div class="hint">ใช้ตอน “รอเอกสาร” หรือ “บัญชีตีกลับ” ซึ่งยังไม่มีไฟล์จะส่ง</div></div>'
+    /* ใบที่ไม่มีออเดอร์ (เลขที่เติมกลับเข้าเล่ม · ใบยกเลิกที่ไม่เคยมีออเดอร์)
+       เก็บสถานะได้แค่สองแบบ เพราะมีแต่ช่อง "ส่งบัญชีแล้วเมื่อ" ไม่มีช่องสถานะ
+       ของเดิมโชว์รายการเต็มเหมือนออเดอร์ทั่วไป กดแล้วได้ "ไม่พบออเดอร์"
+       เจ้าของร้านจึงส่งบัญชีเลขที่เติมกลับ (00248/249/250) ไม่ได้เลย
+       ยื่นให้เลือกเฉพาะที่เก็บได้จริง ดีกว่าให้เลือกแล้วค่อยบอกว่าไม่ได้ */
+    + (p.docOnly
+      ? '<div class="fld"><label>สถานะบัญชีตอนนี้</label>'
+        +'<select id="ac-st">'
+        + ["ยังไม่ส่งบัญชี", "ส่งบัญชีแล้ว"].map(function (x) {
+            return '<option value="' + esc(x) + '"'
+              + (x === (p.acct || "ยังไม่ส่งบัญชี") ? " selected" : "") + ">" + esc(x) + "</option>";
+          }).join("")
+        +'</select>'
+        +'<button class="mini" id="ac-save" style="margin-top:8px">บันทึกสถานะอย่างเดียว</button>'
+        +'<div class="hint">ใบนี้<b>ไม่ได้ผูกกับออเดอร์</b> จึงมีได้แค่สองสถานะ · '
+        +'“รอเอกสาร” กับ “บัญชีตีกลับ” เก็บไม่ได้ เพราะไม่มีช่องให้เก็บ</div></div>'
+      : '<div class="fld"><label>สถานะบัญชีตอนนี้</label>'
+        +'<select id="ac-st">'
+        + list.map(function (x) {
+            return '<option value="' + esc(x) + '"' + (x === now ? " selected" : "") + ">" + esc(x) + "</option>";
+          }).join("")
+        +'</select>'
+        +'<button class="mini" id="ac-save" style="margin-top:8px">บันทึกสถานะอย่างเดียว</button>'
+        +'<div class="hint">ใช้ตอน “รอเอกสาร” หรือ “บัญชีตีกลับ” ซึ่งยังไม่มีไฟล์จะส่ง</div></div>')
 
     + (p.acctAt ? '<div class="msg ok" style="display:block">ส่งบัญชีไปแล้วเมื่อ <b>'
         + esc(p.acctAt) + "</b><br>" + esc(p.acctWhat || "") + "</div>" : "")
