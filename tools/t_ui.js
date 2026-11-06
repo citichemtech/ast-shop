@@ -4156,8 +4156,19 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ชื่อปุ่มบอกว่าได้สำเนา ไม่ใช่ "บันทึก" เฉย ๆ ที่อ่านได้ว่าต้นฉบับ',
     String(dlRow.label || '').trim(), 'บันทึกสำเนา');
 
-  var dlWait = page.waitForEvent('download', { timeout: 20000 });
+  /* ไฟล์ไม่ได้ลงจากหน้านี้ แต่ลงจากแท็บที่เปิดใหม่ เพราะ iframe ของ Apps Script
+     ไม่ได้เปิดสิทธิ์ allow-downloads — กดบันทึกในกรอบแล้วเบราว์เซอร์ทิ้งคำสั่งเงียบ ๆ
+     (ดู §45ข ที่พิสูจน์เรื่องนี้ในกรอบจริง) จึงต้องดักทั้ง context ไม่ใช่แค่ page */
+  var ctx45 = page.context();
+  var tabWait = ctx45.waitForEvent('page', { timeout: 20000 });
+  var dlWait = new Promise(function (res, rej) {
+    var t = setTimeout(function () { rej(new Error('ไม่มีไฟล์ลงเครื่องใน 20 วินาที')) }, 20000);
+    ctx45.on('page', function (pg) {
+      pg.on('download', function (d) { clearTimeout(t); res(d) });
+    });
+  });
   await page.click('#fl-docs [data-dl]');
+  var tab45 = await tabWait;
   var dlGot = await dlWait;
   var dlName = dlGot.suggestedFilename();
   truthy('กดแล้วไฟล์ลงเครื่องจริง', !!dlName);
@@ -4166,6 +4177,29 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
      "download" ไม่มีนามสกุล ซึ่งดับเบิลคลิกเปิดไม่ขึ้น จึงต้องอังกฤษล้วน */
   truthy('และเป็นอักษรอังกฤษล้วน เบราว์เซอร์จะได้ไม่ทิ้งชื่อ',
     /^[\x20-\x7E]+$/.test(dlName));
+
+  /* แท็บที่เปิดมาต้องใช้งานได้ด้วยตัวเอง ไม่ใช่แค่หน้าเปล่าที่เอาไว้ยิงไฟล์
+     เพราะถ้าไฟล์ไม่ลง (เครื่องบล็อก) นี่คือที่เดียวที่เจ้าของร้านยังทำอะไรต่อได้ */
+  await tab45.waitForTimeout(400);
+  var tabInfo = await tab45.evaluate(function () {
+    return { save: !!document.getElementById('b-save'),
+             share: !!document.getElementById('b-share'),
+             print: !!document.getElementById('b-print'),
+             img: !!document.querySelector('img#v'),
+             title: document.title,
+             say: (document.getElementById('say') || {}).textContent || '' };
+  });
+  truthy('แท็บที่เปิดมามีปุ่มบันทึกของตัวเอง เผื่อไฟล์ไม่ลงอัตโนมัติ', tabInfo.save);
+  truthy('มีปุ่มแชร์ — ในกรอบ iframe แชร์ไม่ได้เลย ต้องมาแชร์จากแท็บนี้', tabInfo.share);
+  truthy('มีปุ่มสั่งพิมพ์ ซึ่งในกรอบก็สั่งไม่ได้เหมือนกัน', tabInfo.print);
+  truthy('และเห็นใบอยู่ในแท็บนั้นด้วย กดค้างบันทึกรูปเองได้', tabInfo.img);
+  eq('ชื่อแท็บเป็นชื่อไฟล์ หาแท็บเจอตอนเปิดหลายใบ', tabInfo.title, dlRow.no + '-copy.jpg');
+  /* ข้อความในแท็บเปลี่ยนตามผล: เซฟสำเร็จต้องบอกว่าได้ไฟล์ชื่ออะไรและปิดแท็บได้
+     ไม่ใช่ค้างอยู่ที่ "กำลังบันทึก…" ให้คนนั่งรอว่าเสร็จหรือยัง */
+  truthy('เซฟเสร็จแล้วบอกชื่อไฟล์ที่ได้',
+    tabInfo.say.indexOf(dlRow.no + '-copy.jpg') > -1);
+  truthy('และบอกว่าปิดแท็บได้แล้ว', tabInfo.say.indexOf('ปิดแท็บ') > -1);
+  await tab45.close();
 
   var dlAfter = await page.evaluate(function () {
     var b = $('#fl-docs [data-dl]');
@@ -4181,8 +4215,8 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   truthy('ปุ่มกลับมากดได้อีก เซฟใบถัดไปต่อได้เลย', dlAfter.enabled);
   eq('และชื่อปุ่มกลับมาเหมือนเดิม', dlAfter.label, 'บันทึกสำเนา');
   truthy('ไม่โชว์รูปใบขึ้นจอ เพราะไม่ได้กดดู', dlAfter.noImg);
-  truthy('บอกว่าเซฟสำเนาแล้วและไปหาไฟล์ที่ไหน',
-    dlAfter.said.indexOf('สำเนา') > -1 && dlAfter.said.indexOf('ดาวน์โหลด') > -1);
+  truthy('หน้าแอปบอกว่าเปิดแท็บสำเนาให้แล้ว จะได้ไม่งงว่าแท็บที่เด้งมาคืออะไร',
+    dlAfter.said.indexOf('สำเนา') > -1 && dlAfter.said.indexOf('แท็บ') > -1);
 
   await page.evaluate(async function () {
     /* เอาตัวดักออก ไม่ให้ค้างไปกวนหมวดถัด ๆ ไปที่วาดใบเหมือนกัน */

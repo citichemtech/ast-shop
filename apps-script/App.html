@@ -2289,7 +2289,11 @@ function askVoid(no, btn, redraw){
     ต่างกันแค่ตราบนใบ: ตัวนี้เป็นสำเนา (เก็บส่งบัญชี) ไม่ใช่ต้นฉบับ (ให้ลูกค้า) */
 function saveDocNow(no, btn, outSel){
   var old = btn ? btn.textContent : "";
+  /* เปิดแท็บตั้งแต่จังหวะที่กด ก่อนจะยิงไปถามชีท — ถ้ารอให้ใบกลับมาก่อน
+     เบราว์เซอร์จะถือว่าไม่ได้มาจากการกดของคน แล้วบล็อกแท็บทิ้ง */
+  var win = openBlank_();
   function done(){ if (btn) { btn.disabled = false; btn.textContent = old } }
+  function giveUp(){ try{ if(win) win.close() }catch(e){} }
   if (btn) { btn.disabled = true; btn.textContent = "กำลังทำไฟล์…" }
   api("getDoc", no).then(function(r){
     var m = r.meta;
@@ -2298,7 +2302,7 @@ function saveDocNow(no, btn, outSel){
        ห้ามปล่อยไฟล์นั้นลงเครื่องเงียบ ๆ เพราะมันจะถูกส่งต่อให้ลูกค้าหรือบัญชี
        โดยไม่มีใครเห็นคำเตือน — พาไปหน้าพิมพ์ซ้ำ ให้อ่านก่อนแล้วตัดสินใจเอง */
     if (!r.exact && !r.same) {
-      done();
+      done(); giveUp();
       toast("ใบนี้ยอดที่ประกอบใหม่ไม่ตรงกับที่บันทึกไว้ — อ่านคำเตือนก่อนบันทึก");
       reprint(no, null, outSel);
       return null;
@@ -2307,14 +2311,16 @@ function saveDocNow(no, btn, outSel){
     return buildDocPage(r.doc, m, CFG.doc||{}, "สำเนา").then(function(url){
       /* ชื่อไฟล์เป็นอังกฤษล้วน — ชื่อที่มีอักษรไทยบางเครื่องเบราว์เซอร์ทิ้งทั้งชื่อ
          เหลือไฟล์ชื่อ "download" ไม่มีนามสกุล ซึ่งดับเบิลคลิกเปิดไม่ขึ้นเลย */
-      return saveDocFile_(url, no + "-copy.png", "a4").then(function(f){
+      return saveDocFile_(url, no + "-copy.png", "a4", win).then(function(f){
         done();
-        toast("บันทึกสำเนา " + f.name + " แล้ว ดูในโฟลเดอร์ดาวน์โหลด"
+        toast((f.blocked
+                ? "เบราว์เซอร์บล็อกแท็บใหม่ — อนุญาตป๊อปอัปของ script.google.com ก่อน"
+                : "เปิดแท็บสำเนา " + f.name + " ให้แล้ว กำลังบันทึกลงเครื่อง")
             + (m.voidWhy ? " · ใบนี้ยกเลิกแล้ว ใช้อ้างอิงทางบัญชีไม่ได้" : ""));
       });
     });
   }).catch(function(e){
-    done();
+    done(); giveUp();
     toast("บันทึกไม่สำเร็จ: " + (e && e.message ? e.message : e));
   });
 }
@@ -3567,7 +3573,9 @@ function openLabel(o){
        +'<button class="btn ghost" id="lb-open" style="margin-top:9px">เปิดในแท็บใหม่</button>'
        +'<button class="btn ghost" id="lb-pdf" style="margin-top:9px">บันทึกเป็นไฟล์ PDF</button>'
        +'<div class="hint" style="text-align:center;margin-top:10px">ขนาด 100×150 มม.</div>';
-      bindLabelButtons(url, "ใบปะหน้า-"+o.no+".png");
+      /* ชื่อไฟล์อังกฤษล้วน — ชื่อที่มีอักษรไทยบางเครื่องเบราว์เซอร์ทิ้งทั้งชื่อ
+       เหลือไฟล์ชื่อ "download" ไม่มีนามสกุล ซึ่งดับเบิลคลิกเปิดไม่ขึ้น */
+    bindLabelButtons(url, "label-"+o.no+".png");
     }, function(e){
       $("#lb-out").innerHTML='<div style="color:var(--red)">สร้างไม่สำเร็จ: '+esc(e&&e.message?e.message:e)+'</div>';
     });
@@ -3585,7 +3593,127 @@ function labelData(o, cod){
   };
 }
 
-function savePdf(blob, pname){
+/* ---------------------------------------- บันทึก/แชร์ไฟล์ออกจาก iframe
+
+   Apps Script ครอบหน้าเว็บของเราไว้ใน iframe ที่ "ไม่ได้" เปิดสิทธิ์ allow-downloads
+   กดปุ่มบันทึกในหน้านี้ เบราว์เซอร์จึงทิ้งคำสั่งไปเงียบ ๆ ไม่มีไฟล์ ไม่มี error
+   ไม่มีอะไรขึ้นบนจอเลย เหมือนปุ่มเสีย — และ navigator.share ก็ถูกปิดด้วยเหตุผลเดียวกัน
+   (Permissions-Policy ให้ web-share เฉพาะหน้าบนสุด ไม่ให้ iframe ข้ามโดเมน)
+   ลองจำลอง sandbox ชุดเดียวกันแล้ว ยืนยันว่าเป็นแบบนี้จริง ไม่ใช่โค้ดเราพัง
+
+   ทางออก: sandbox ของ Apps Script มี allow-popups-to-escape-sandbox อยู่
+   หน้าต่างที่เปิดใหม่จึง "หลุด" ออกจากกรอบ สั่งบันทึก แชร์ และสั่งพิมพ์ในนั้นได้ตามปกติ
+   ทุกปุ่มที่เอาไฟล์ออกจากแอปจึงต้องเดินทางนี้
+
+   ข้อบังคับ: window.open ต้องถูกเรียกใน onclick ทันที ห้ามรอ await ก่อน
+   ไม่งั้นเบราว์เซอร์ถือว่าไม่ได้มาจากการกดของคน แล้วบล็อกหน้าต่างทิ้ง
+   จึงแยกเป็นสองจังหวะ: openBlank_ ตอนกด แล้วค่อย fillSaveWindow_ ตอนไฟล์พร้อม
+
+   ใช้ชื่อหน้าต่างเดิมทุกครั้ง ("astfile") เซฟหลายใบติดกันตอนรวมไฟล์ส่งบัญชี
+   จึงใช้แท็บเดิมซ้ำ ไม่ใช่เปิดใหม่กองไว้สามสิบแท็บ */
+
+function openBlank_(){
+  var w = null;
+  try { w = window.open("", "astfile") } catch(e) {}
+  if (!w) return null;
+  try {
+    w.document.open();
+    w.document.write('<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">'
+      + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+      + '<title>กำลังเตรียมไฟล์…</title></head>'
+      + '<body style="margin:0;padding:28px;font:20px system-ui,sans-serif;'
+      + 'background:#0b2545;color:#fff">กำลังเตรียมไฟล์…</body></html>');
+    w.document.close();
+  } catch(e) {}
+  return w;
+}
+
+function fillSaveWindow_(w, dataUrl, name, paper, autoSave){
+  if (!w) return false;
+  var mime = (/^data:([^;,]+)/.exec(String(dataUrl)) || [])[1] || "application/octet-stream";
+  var isImg = /^image\//.test(mime);
+  var pg = paper === "a4" ? "@page{size:A4;margin:6mm}" : "@page{size:100mm 150mm;margin:0}";
+  /* กว้างคงที่ 1240 สำหรับ A4 หน้าเว็บจึงกว้างกว่าจอมือถือ เบราว์เซอร์เลยยอมให้
+     เลื่อนและถ่างนิ้วซูมได้จริง · ใบปะหน้าพัสดุเล็กอยู่แล้ว ใช้ความกว้างจอพอ */
+  var vp = (isImg && paper === "a4")
+    ? '<meta name="viewport" content="width=1240">'
+    : '<meta name="viewport" content="width=device-width,initial-scale=1">';
+  var view = isImg
+    ? '<img id="v" src="' + dataUrl + '" alt="' + esc(name) + '">'
+    : '<span id="v" data-src="' + dataUrl + '"></span>';
+  var html = '<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">' + vp
+    + '<title>' + esc(name) + '</title><style>' + pg
+    + 'body{margin:0;background:#555;font-family:system-ui,-apple-system,sans-serif}'
+    + '.bar{position:sticky;top:0;z-index:9;display:flex;gap:8px;flex-wrap:wrap;'
+    + 'padding:10px;background:#0b2545}'
+    + '.bar button{flex:1 1 150px;font-size:19px;font-weight:700;padding:14px 10px;'
+    + 'border:0;border-radius:10px;background:#fff;color:#0b2545}'
+    + '.hint{color:#fff;font-size:17px;line-height:1.55;margin:12px}'
+    + 'img#v{width:' + (paper === "a4" ? '1240px' : '100%') + ';max-width:none;display:block}'
+    + '@media print{.bar,.hint{display:none}body{background:#fff}img#v{width:100%}}'
+    + '</style></head><body>'
+    + '<div class="bar"><button id="b-save">⬇ บันทึกลงเครื่อง</button>'
+    + '<button id="b-share">📤 แชร์ / ส่งต่อ</button>'
+    + '<button id="b-print">🖨 สั่งพิมพ์</button></div>'
+    + '<div class="hint" id="say">ไฟล์ <b>' + esc(name) + '</b>'
+    + (autoSave ? ' กำลังบันทึกให้อัตโนมัติ' : ' พร้อมแล้ว')
+    + ' — ถ้าไฟล์ไม่ลง กดปุ่ม ⬇ อีกครั้ง'
+    + (isImg ? ' หรือกดค้างที่เอกสารแล้วเลือกบันทึกรูปภาพ' : '') + '</div>'
+    + view
+    + '<scr' + 'ipt>(function(){'
+    + 'var N=' + jsStr_(name) + ',M=' + jsStr_(mime) + ';'
+    + 'var el=document.getElementById("v");'
+    + 'var U=el.getAttribute("src")||el.getAttribute("data-src");'
+    + 'function blob(){var b=atob(U.slice(U.indexOf(",")+1)),n=b.length,u=new Uint8Array(n);'
+    + 'while(n--)u[n]=b.charCodeAt(n);return new Blob([u],{type:M})}'
+    + 'function say(t){var e=document.getElementById("say");if(e)e.innerHTML=t}'
+    + 'function save(){try{var a=document.createElement("a");'
+    + 'a.href=URL.createObjectURL(blob());a.download=N;'
+    + 'document.body.appendChild(a);a.click();a.remove();'
+    + 'say("บันทึก <b>"+N+"</b> แล้ว ดูในโฟลเดอร์ดาวน์โหลด · ปิดแท็บนี้ได้เลย")}'
+    + 'catch(e){say("บันทึกไม่สำเร็จ กดค้างที่เอกสารแล้วเลือกบันทึกรูปภาพแทน")}}'
+    + 'document.getElementById("b-save").onclick=save;'
+    + 'document.getElementById("b-print").onclick=function(){try{window.print()}catch(e){}};'
+    + 'document.getElementById("b-share").onclick=function(){var f=null;'
+    + 'try{f=new File([blob()],N,{type:M})}catch(e){}'
+    + 'if(f&&navigator.canShare&&navigator.canShare({files:[f]})){'
+    + 'navigator.share({files:[f],title:N})["catch"](function(){})}'
+    + 'else{say("เครื่องนี้ส่งต่อตรง ๆ ไม่ได้ — กด ⬇ บันทึกลงเครื่องก่อน '
+    + 'แล้วค่อยแนบไฟล์ส่งในไลน์หรืออีเมล")}};'
+    + (autoSave ? 'save();' : '')
+    + '})();<\/scr' + 'ipt></body></html>';
+  try {
+    w.document.open(); w.document.write(html); w.document.close();
+    try { w.focus() } catch(e) {}
+    return true;
+  } catch(e) { return false }
+}
+
+/* ข้อความที่ถูกเขียนลงในหน้าต่างใหม่ ต้องปลอดภัยทั้งในฐานะ JS และในฐานะ HTML
+   JSON.stringify กันเครื่องหมายคำพูดให้แล้ว เหลือ < ที่อาจไปปิดแท็กกลางคัน */
+function jsStr_(v){
+  return JSON.stringify(String(v)).replace(/</g, "\\u003c");
+}
+
+function savePdf(blob, pname, win){
+  /* หน้าต่างต้องถูกเปิดไว้ตั้งแต่ตอนกดปุ่มแล้ว ส่งต่อเข้ามาที่นี่ */
+  if (win) {
+    var fr = new FileReader();
+    fr.onload = function(){
+      if (fillSaveWindow_(win, String(fr.result), pname, "a4", true)) {
+        toast("เปิดแท็บไฟล์ PDF ให้แล้ว");
+      } else { savePdfDirect_(blob, pname) }
+    };
+    fr.onerror = function(){ savePdfDirect_(blob, pname) };
+    fr.readAsDataURL(blob);
+    return;
+  }
+  savePdfDirect_(blob, pname);
+}
+
+/* ทางตรง — ได้ผลเฉพาะตอนที่หน้านี้ไม่ได้อยู่ใน iframe ของ Apps Script
+   อยู่ในกรอบเมื่อไร คำสั่งนี้จะเงียบสนิท จึงเหลือไว้เป็นทางสำรองเท่านั้น */
+function savePdfDirect_(blob, pname){
   try{
     var href=URL.createObjectURL(blob);
     var a=document.createElement("a"); a.href=href; a.download=pname;
@@ -3611,16 +3739,21 @@ function docFileFrom_(url, name, paper){
     var b=atob(u.split(",")[1]), n=b.length, u8=new Uint8Array(n);
     while(n--) u8[n]=b.charCodeAt(n);
     var blob=new Blob([u8],{type:fileType});
-    return {blob:blob, file:new File([blob],fileName,{type:fileType}), name:fileName};
+    return {blob:blob, file:new File([blob],fileName,{type:fileType}),
+            name:fileName, dataUrl:u, type:fileType};
   });
 }
 
-function saveDocFile_(url, name, paper){
+function saveDocFile_(url, name, paper, win){
   return docFileFrom_(url, name, paper).then(function(f){
+    /* ทางหลัก: หน้าต่างใหม่ที่หลุดออกจาก iframe แล้ว — ที่เดียวที่บันทึกได้จริง */
+    if (fillSaveWindow_(win, f.dataUrl, f.name, paper, true)) return f;
+    /* ทางสำรอง: เบราว์เซอร์บล็อกแท็บใหม่ ลองทางตรงดู เผื่อไม่ได้อยู่ในกรอบ */
     var href=URL.createObjectURL(f.blob);
     var a=document.createElement("a"); a.href=href; a.download=f.name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function(){URL.revokeObjectURL(href)},4000);
+    f.blocked = true;
     return f;
   });
 }
@@ -3642,18 +3775,36 @@ function bindLabelButtons(url, name, paper){
   var fileName = docFileName_(name, paper);
   var toFile = function(){ return docFileFrom_(url, name, paper) };
   $("#lb-share").onclick=async function(){
+    /* ต้องเปิดหน้าต่างตั้งแต่จังหวะที่กด ก่อนจะ await อะไรทั้งนั้น
+       ไม่งั้นเบราว์เซอร์ถือว่าไม่ได้มาจากการกด แล้วบล็อกทิ้ง */
+    var w = openBlank_();
     try{
       var f=await toFile();
+      /* ในกรอบ iframe ของ Apps Script อันนี้ถูกปิดอยู่ จึงตกไปใช้หน้าต่างใหม่
+         แต่ถ้าวันหนึ่ง Google เปิดให้ ก็ได้แชร์ตรงเหมือนเดิมโดยไม่ต้องแก้อะไร */
       if(navigator.canShare && navigator.canShare({files:[f.file]})){
+        try{ if(w) w.close() }catch(e2){}
         await navigator.share({files:[f.file],title:fileName}); return;
       }
-    }catch(e){ if(e&&e.name==="AbortError") return; }
-    try{ window.print() }catch(e){ toast("เครื่องนี้แชร์ไม่ได้ ลองปุ่มบันทึกลงเครื่องแทน") }
+      if(fillSaveWindow_(w, f.dataUrl, f.name, paper, false)){
+        toast("เปิดแท็บไฟล์ให้แล้ว กดแชร์หรือสั่งพิมพ์ในแท็บนั้น"); return;
+      }
+    }catch(e){
+      if(e&&e.name==="AbortError") return;
+      try{ if(w) w.close() }catch(e2){}
+    }
+    toast("เบราว์เซอร์บล็อกแท็บใหม่ — อนุญาตป๊อปอัปของ script.google.com ก่อน");
   };
   $("#lb-save").onclick=function(){
-    saveDocFile_(url, name, paper).then(function(){
-      toast("บันทึกแล้ว ดูในโฟลเดอร์ดาวน์โหลด");
-    }, function(){ toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่") });
+    var w = openBlank_();
+    saveDocFile_(url, name, paper, w).then(function(f){
+      toast(f.blocked
+        ? "เบราว์เซอร์บล็อกแท็บใหม่ — อนุญาตป๊อปอัปของ script.google.com ก่อน"
+        : "เปิดแท็บไฟล์ให้แล้ว กำลังบันทึก " + f.name);
+    }, function(){
+      try{ if(w) w.close() }catch(e){}
+      toast("บันทึกไม่ได้ ลองปุ่มเปิดในแท็บใหม่");
+    });
   };
   /* แตะที่ตัวรูปได้เลย เท่ากับกดปุ่มเปิดในแท็บใหม่ — บนมือถือคนหาปุ่มไม่เจอ
      แล้วไปถ่างนิ้วบนรูปเล็กในแอปแทน ซึ่งซูมไม่ขึ้นเพราะติดกรอบ iframe ของ Apps Script */
@@ -3667,46 +3818,40 @@ function bindLabelButtons(url, name, paper){
      ไม่ต้องลุ้นว่าเครื่องพิมพ์จะย่อหรือขยายรูปเอง เขียนไฟล์เองในเครื่อง ไม่ต้องพึ่งเน็ต */
   if ($("#lb-pdf")) $("#lb-pdf").onclick=function(){
     var b=this; b.disabled=true; b.textContent="กำลังทำไฟล์ PDF…";
+    var pw = openBlank_();
     var mm = paper==="a4" ? [210,297] : [100,150];
     var pname = name.replace(/\.png$/,"") + ".pdf";
     pdfFromDataURL(url, mm[0], mm[1], name.replace(/\.png$/,"")).then(function(blob){
       b.disabled=false; b.textContent="บันทึกเป็นไฟล์ PDF";
       var f=new File([blob],pname,{type:"application/pdf"});
       /* มือถือเปิดแชร์ได้ ส่งเข้าไลน์/อีเมลได้เลยโดยไม่ต้องหาไฟล์ในเครื่องก่อน
-         เครื่องที่แชร์ไฟล์ไม่ได้ค่อยตกไปเป็นดาวน์โหลดตามปกติ */
+         ในกรอบ iframe ของ Apps Script อันนี้ถูกปิดอยู่ จึงตกไปใช้หน้าต่างใหม่ */
       if(navigator.canShare && navigator.canShare({files:[f]})){
+        try{ if(pw) pw.close() }catch(e2){}
         navigator.share({files:[f],title:pname}).catch(function(e){
           if(e&&e.name==="AbortError") return;
-          savePdf(blob,pname);
+          savePdfDirect_(blob,pname);
         });
         return;
       }
-      savePdf(blob,pname);
+      savePdf(blob,pname,pw);
     }, function(e){
       b.disabled=false; b.textContent="บันทึกเป็นไฟล์ PDF";
+      try{ if(pw) pw.close() }catch(e2){}
       toast("ทำไฟล์ PDF ไม่สำเร็จ: "+(e&&e.message?e.message:e));
     });
   };
+  /* เปิดดูเต็มจอ = หน้าต่างเดียวกับที่ใช้บันทึก ต่างแค่ไม่บันทึกให้เอง
+     หน้านั้นมีปุ่มบันทึก แชร์ และสั่งพิมพ์ครบ ซึ่งทั้งสามอย่างทำในกรอบ iframe ไม่ได้ */
   $("#lb-open").onclick=function(){
-    var w=window.open();
-    if(!w){ toast("เบราว์เซอร์บล็อกแท็บใหม่"); return }
-    if (paper === "a4") {
-      /* กว้างคงที่ 1240 (ไม่ใช่ 100%) หน้าเว็บจึงกว้างกว่าจอมือถือ
-         เบราว์เซอร์เลยยอมให้เลื่อนและถ่างนิ้วซูมได้จริง · initial-scale ปล่อยให้
-         เบราว์เซอร์ย่อลงมาพอดีจอเองตอนเปิด แล้วค่อยถ่างนิ้วขยายดูทีละส่วน
-         ตอนสั่งพิมพ์ @page A4 บังคับให้กลับไปเต็มหน้ากระดาษเหมือนเดิม */
-      w.document.write('<!DOCTYPE html><meta name="viewport" content="width=1240">'
-        +'<title>'+esc(name.replace(/\.png$/, ""))+'</title>'
-        +'<style>'+pg+'body{margin:0;background:#555}'
-        +'img{width:1240px;max-width:none;display:block}'
-        +'@media print{body{background:#fff}img{width:100%}}</style>'
-        +'<img src="'+url+'">');
-    } else {
-      w.document.write('<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1">'
-        +'<style>'+pg+'body{margin:0}img{width:100%;display:block}</style>'
-        +'<img src="'+url+'">');
-    }
-    w.document.close();
+    var w = openBlank_();
+    if(!w){ toast("เบราว์เซอร์บล็อกแท็บใหม่ — อนุญาตป๊อปอัปของ script.google.com ก่อน"); return }
+    toFile().then(function(f){
+      fillSaveWindow_(w, f.dataUrl, f.name, paper, false);
+    }, function(){
+      try{ w.close() }catch(e){}
+      toast("เปิดไม่สำเร็จ");
+    });
   };
 }
 
@@ -3759,7 +3904,7 @@ function bindDocCopy(boxSel, r, m, no){
     b.disabled = true; b.textContent = "กำลังวาด" + next + "…";
     buildDocPage(r.doc, m, CFG.doc||{}, next).then(function(url){
       box.querySelector("img.docimg").src = url;
-      bindLabelButtons(url, no + (next === "สำเนา" ? "-สำเนา" : "") + ".png", "a4");
+      bindLabelButtons(url, no + (next === "สำเนา" ? "-copy" : "") + ".png", "a4");
       bindDocCopy(boxSel, r, m, no);
       b.setAttribute("data-set", next);
       b.textContent = next === "สำเนา"
