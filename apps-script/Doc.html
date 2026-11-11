@@ -29,6 +29,45 @@ var DOC_TYPE_NAMES = [
 /* ใบวางบิลหนึ่งแผ่นพิมพ์ได้กี่บรรทัด — ต้องตรงกับ BILL_MAX_LINES ฝั่งชีท */
 var BILL_ROWS = 14;
 
+/* กล่องรายการสินค้าสูงเท่านี้เสมอ — วัดจากใบจริงที่พิมพ์ลงกระดาษมาตลอด
+   (สิบแถว แถวละ 62) ใต้กล่องนี้คือหมายเหตุ ยอดรวม และช่องลายเซ็น ซึ่งกินที่จน
+   หมึกบรรทัดสุดท้ายอยู่ที่ y≈1741 จากกระดาษสูง 1754 แล้ว — ขยายกล่องลงไปอีก
+   ไม่ได้ เพราะจะดันช่องลายเซ็นตกขอบกระดาษ */
+var DOC_BODY_H = 620;
+
+/* แถวเต็มความสูง = ชื่อสินค้าตัดได้สองบรรทัดแบบใบจริง
+   แถวต่ำสุด = ชื่อเหลือบรรทัดเดียว ตัวอักษรย่อลงเท่าที่ fitLeft ย่อให้ได้
+   ต่ำกว่านี้ตัวหนังสือเล็กจนอ่านบนกระดาษไม่ออก ยอมให้ล้นไปขึ้นบรรทัดแดงแทน */
+var DOC_ROW_FULL = 62, DOC_ROW_MIN = 36;
+
+/* ผลการจัดแถวของใบล่าสุด — ข้อสอบอ่านตรงนี้ เพราะพอวาดลงผ้าใบแล้ว
+   อ่านกลับไม่ได้ว่าพิมพ์ไปกี่แถว แถวสูงเท่าไร และชื่อได้กี่บรรทัด */
+var DOC_FIT_ = null;
+
+/**
+ * รายการ n บรรทัด จะพิมพ์ลงกล่องสูง DOC_BODY_H ได้กี่แถว แถวละเท่าไร
+ *
+ * ของเดิมตั้งไว้ 10 แถวตายตัว ใบที่มี 11 รายการจึงพิมพ์ได้ 10 แล้วขึ้นบรรทัดแดง
+ * "ยังมีอีก 1 รายการที่พิมพ์ไม่พอในใบนี้" (เจอจริงกับใบ ONIV26-00334)
+ * ใบกำกับภาษีที่พิมพ์รายการไม่ครบ ลูกค้าเอาไปอ้างอิงไม่ได้ บัญชีกระทบยอดไม่ลง
+ *
+ * ของใหม่: เกินสิบรายการเมื่อไร แถวจะเตี้ยลงให้พอดีกล่องแทนที่จะตัดรายการทิ้ง
+ * สิบรายการหรือน้อยกว่า คืนค่าเท่าของเดิมเป๊ะ ใบเก่าพิมพ์ซ้ำจึงได้กระดาษหน้าตาเดิม
+ */
+function docRowPlan_(n) {
+  n = Math.max(1, Number(n) || 0);
+  if (n <= 10) return { rowH: DOC_ROW_FULL, rows: 10, nameLines: 2, legacy: true };
+  var rowH = Math.max(DOC_ROW_MIN, Math.floor(DOC_BODY_H / n));
+  if (rowH > DOC_ROW_FULL) rowH = DOC_ROW_FULL;
+  return {
+    rowH: rowH,
+    rows: Math.max(10, Math.floor(DOC_BODY_H / rowH)),
+    /* สองบรรทัดต้องการ 26+26 บวกช่องไฟบนล่าง — ต่ำกว่า 58 ชนกันแน่ */
+    nameLines: rowH >= 58 ? 2 : 1,
+    legacy: false
+  };
+}
+
 var DOC_W = 1240, DOC_H = 1754;         /* A4 แนวตั้งที่ 150 dpi */
 
 /* วาดจริงที่ 300 dpi (คูณสอง) แต่พิกัดทุกจุดในไฟล์นี้ยังคิดที่ 150 dpi เหมือนเดิม
@@ -327,7 +366,13 @@ async function buildDocPage(d, m, cfg, copy) {
     { th: "จำนวนเงิน", en: "(Amount)", w: 152, al: "r" }
   ];
   var ty = by + 6, hh = 72;
-  var rowH = isBill ? 44 : 62, ROWS = isBill ? BILL_ROWS : 10, bodyH = rowH * ROWS;
+  var plan = docRowPlan_(d.lines.length);
+  var rowH = isBill ? 44 : plan.rowH;
+  var ROWS = isBill ? BILL_ROWS : plan.rows;
+  var bodyH = isBill ? rowH * ROWS : DOC_BODY_H;
+  DOC_FIT_ = { lines: d.lines.length, rowH: rowH, rows: ROWS,
+               nameLines: isBill ? 1 : plan.nameLines, legacy: !!plan.legacy,
+               bodyTop: ty + hh, bodyBottom: ty + hh + bodyH };
   var xs = [pad]; COLS.forEach(function (cc) { xs.push(xs[xs.length - 1] + cc.w); });
 
   x.fillStyle = C_TBL_HEAD; x.fillRect(pad, ty, IN, hh);
@@ -362,13 +407,24 @@ async function buildDocPage(d, m, cfg, copy) {
     });
   } else
   shown.forEach(function (ln, i) {
-    var ry2 = ty + hh + i * rowH + 12;
+    /* แถวความสูงเดิม (62) วางที่เดิมเป๊ะ ใบเก่าพิมพ์ซ้ำได้กระดาษหน้าตาเดิม
+       แถวที่เตี้ยลงเพราะรายการเยอะ จัดให้อยู่กลางแถวของมันเอง */
+    var ry2 = plan.legacy
+      ? ty + hh + i * rowH + 12
+      : ty + hh + i * rowH + Math.max(5, Math.round((rowH - plan.nameLines * 26) / 2));
     x.fillStyle = "#000";
     fitCenter(x, String(i + 1) + ".", xs[0] + COLS[0].w / 2, ry2, COLS[0].w - 10, F_BODY);
-    /* ชื่อสินค้ายาวตัดสองบรรทัดได้ ใบจริงก็ทำแบบนั้น (Single Flute Endmill 1F …) */
+    /* ชื่อสินค้ายาวตัดสองบรรทัดได้ ใบจริงก็ทำแบบนั้น (Single Flute Endmill 1F …)
+       รายการเยอะจนแถวเตี้ย เหลือบรรทัดเดียว — ตอนนั้นห้ามตัดคำท้ายทิ้ง
+       เพราะชื่อสินค้าที่ขาดครึ่งบนใบกำกับภาษี ลูกค้าเอาไปอ้างอิงไม่ได้
+       ส่งชื่อเต็มให้ fitLeft ย่อตัวอักษรลงแทน (ย่อได้ถึง 12 = ราว 6 pt) */
     x.font = docFont(F_BODY, 500);
-    var nm = wrapText(x, ln.name, COLS[1].w - 30).slice(0, 2);
-    nm.forEach(function (t2, k) { fitLeft(x, t2, xs[1] + 16, ry2 + k * 26, COLS[1].w - 30, F_BODY); });
+    if (plan.nameLines < 2) {
+      fitLeft(x, ln.name, xs[1] + 16, ry2, COLS[1].w - 30, F_BODY);
+    } else {
+      var nm = wrapText(x, ln.name, COLS[1].w - 30).slice(0, 2);
+      nm.forEach(function (t2, k) { fitLeft(x, t2, xs[1] + 16, ry2 + k * 26, COLS[1].w - 30, F_BODY); });
+    }
     /* ช่อง Customer/PO — บรรทัดไหนมี PO ของตัวเองใช้ตัวนั้น ไม่มีก็ใช้ PO ของทั้งใบ
 
        ของเดิมวาดเฉพาะ PO รายบรรทัด ซึ่งไม่มีหน้าจอไหนใส่ให้เลยสักที่

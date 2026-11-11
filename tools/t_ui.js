@@ -824,6 +824,77 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
       inv:       await drawnText('inv', 'INV26-00009', 'ต้นฉบับ')
     };
   });
+  console.log('\n   §28ข ใบที่มีเกินสิบรายการ ต้องพิมพ์ครบทุกบรรทัด');
+  /* 11 พ.ย. 69 เจ้าของร้านส่งใบ ONIV26-00334 มา: 11 รายการ พิมพ์ได้ 10
+     แล้วขึ้นบรรทัดแดง "ยังมีอีก 1 รายการที่พิมพ์ไม่พอในใบนี้"
+     ของเดิมตั้งจำนวนแถวไว้ 10 ตายตัว ไม่ว่าจะมีที่ว่างหรือไม่
+
+     ใบกำกับภาษีที่พิมพ์รายการไม่ครบ ลูกค้าเอาไปอ้างอิงไม่ได้ และบัญชี
+     กระทบยอดกับใบไม่ลง — ของใหม่ย่อความสูงแถวลงให้พอดีกล่องแทนที่จะตัดทิ้ง
+
+     ข้อนี้ดักที่ fitLeft เพราะชื่อสินค้าถูกวาดด้วยตัวนั้น พอเป็นรูปแล้ว
+     อ่านกลับไม่ได้ว่าบรรทัดไหนถูกพิมพ์ลงไปบ้าง */
+  var many = await page.evaluate(async function () {
+    function run(n) {
+      var seen = [], real = window.fitLeft;
+      window.fitLeft = function (x, t) {
+        seen.push(String(t == null ? '' : t)); return real.apply(this, arguments);
+      };
+      var lines = [];
+      for (var i = 0; i < n; i++) {
+        lines.push({ name: 'สินค้าหมายเลข ' + (i + 1) + ' Endmill 2F D4*32*4.0*55 Lmm',
+                     po: '', qty: 2, unit: 'ชิ้น', price: 79, amount: 158 });
+      }
+      var d = { no: 'ONIV26-00334', type: 'rec', vatRate: 0.07, lines: lines,
+                base: 4917, vat: 344.19, total: 5261.19, totalText: 'ห้าพัน' };
+      var m = { no: 'ONIV26-00334', date: '2026-10-02', cust: { name: 'ก' } };
+      return buildDocPage(d, m, { co: {} }, 'ต้นฉบับ').then(function () {
+        window.fitLeft = real;
+        return { seen: seen, fit: JSON.parse(JSON.stringify(window.DOC_FIT_)) };
+      }, function (e) { window.fitLeft = real; throw e });
+    }
+    var out = {};
+    for (var n of [10, 11, 14, 17, 25]) out['n' + n] = await run(n);
+    return out;
+  });
+
+  function drewAll(r, n) {
+    for (var i = 1; i <= n; i++) {
+      var want = 'สินค้าหมายเลข ' + i + ' ';
+      var hit = r.seen.some(function (t) { return t.indexOf(want) === 0 });
+      if (!hit) return i;        /* คืนเลขบรรทัดแรกที่หาย */
+    }
+    return 0;
+  }
+  function saidOver(r) {
+    return r.seen.some(function (t) { return t.indexOf('ยังมีอีก') > -1 });
+  }
+
+  eq('11 รายการ พิมพ์ครบทั้ง 11 (บรรทัดที่หายไป 0 = ครบ)', drewAll(many.n11, 11), 0);
+  eq('และไม่มีบรรทัดแดงบอกว่าพิมพ์ไม่พอ', saidOver(many.n11), false);
+  eq('14 รายการก็ครบ', drewAll(many.n14, 14), 0);
+  eq('17 รายการก็ยังครบ', drewAll(many.n17, 17), 0);
+  eq('และ 17 รายการยังไม่ต้องขึ้นบรรทัดแดง', saidOver(many.n17), false);
+  truthy('แถวเตี้ยลงตามจำนวนรายการ ไม่ได้ขยายตารางลงไปทับช่องลายเซ็น',
+     many.n17.fit.rowH < many.n11.fit.rowH && many.n11.fit.rowH < 62);
+
+  /* กล่องรายการต้องจบที่เดิมเสมอ ไม่ว่าจะมีกี่บรรทัด — ใต้กล่องคือยอดรวม
+     กับช่องลายเซ็นที่ยึดท้ายกระดาษ ถ้ากล่องยืดลงไป ช่องลายเซ็นจะตกขอบกระดาษ */
+  var bots = [many.n10, many.n11, many.n14, many.n17, many.n25]
+    .map(function (r) { return r.fit.bodyBottom });
+  eq('ขอบล่างของตารางอยู่ที่เดิมทุกใบ ไม่ว่ารายการจะมากแค่ไหน',
+     bots.filter(function (v) { return v === bots[0] }).length, bots.length);
+
+  /* เยอะเกินจริง ๆ ต้องยอมบอกตามตรง ห้ามย่อจนอ่านไม่ออกแล้วแกล้งว่าครบ */
+  eq('25 รายการ เกินที่กระดาษแผ่นเดียวรับไหว ยังต้องเตือนให้เห็น',
+     saidOver(many.n25), true);
+
+  /* ใบเก่าที่มีไม่เกินสิบรายการ ต้องพิมพ์ซ้ำได้กระดาษหน้าตาเดิมเป๊ะ
+     ไม่งั้นใบที่ลูกค้าถืออยู่กับใบที่พิมพ์ใหม่จะไม่เหมือนกัน */
+  eq('ไม่เกินสิบรายการยังใช้แถวสูง 62 เท่าเดิม', many.n10.fit.rowH, 62);
+  eq('และชื่อสินค้ายังตัดได้สองบรรทัดเหมือนเดิม', many.n10.fit.nameLines, 2);
+  eq('และยังนับเป็นสิบแถวเท่าเดิม', many.n10.fit.rows, 10);
+
   eq('ใบเสนอราคาไม่มีคำว่า "ต้นฉบับ"', qbadge.quote.indexOf('ต้นฉบับ'), -1);
   eq('และไม่มี "(Original)"', qbadge.quote.indexOf('(Original)'), -1);
   eq('ใบเสนอราคาเก่าที่ไม่ได้เก็บชนิดไว้ ก็ดูออกจากเลขใบ',
