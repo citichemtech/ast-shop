@@ -4974,6 +4974,41 @@ function drawDue(all){
    บอกสามอย่างที่ต้องรู้ก่อนกดโทร: ซื้อมาแล้วกี่ใบ · รวมเท่าไร · ค้างอยู่กี่ใบ
    แล้วปิดยอดใบที่กำลังดูอยู่ได้จากในนี้เลย ไม่ต้องย้อนออกไปหาใหม่           */
 
+/**
+ * สรุปประวัติลูกค้าจากใบที่โหลดมาไว้ในเครื่องแล้ว
+ *
+ * หน้าค้างชำระดึงออเดอร์มาเก็บไว้ 500 ใบตั้งแต่ตอนเปิดหน้า ลูกค้าที่กดดูประวัติ
+ * ก็คือลูกค้าของใบที่อยู่ในกองนั้นอยู่แล้ว — ของจริงอยู่ในมือครบตั้งแต่แรก
+ * แต่ของเดิมกดทีไรก็ยิงไปอ่านชีททั้งใบใหม่ทุกครั้ง (ชีทหัวบิลคืองานอ่านที่หนัก
+ * ที่สุดในระบบ) คนกดจึงนั่งรอหน้าจอ "กำลังโหลด…" ทุกครั้งที่จะโทรทวงสักราย
+ *
+ * คิดด้วยกติกาเดียวกับ getCustomerHistory ฝั่งชีทเป๊ะ ๆ — ใบที่ยกเลิก/ตีกลับ
+ * ไม่นับเป็นยอดซื้อ และใบที่สถานะไม่ใช่ "ชำระแล้ว" คือใบที่ยังค้าง
+ * ถ้าสองฝั่งคิดคนละแบบ ตัวเลขจะกระพริบเปลี่ยนตอนของจริงกลับมา
+ */
+function custStats_(cust, pool){
+  var want = String(cust||"").trim().toLowerCase();
+  if(!want || !pool || !pool.length) return null;
+  var list = pool.filter(function(o){
+    return String((o&&o.cust)||"").trim().toLowerCase() === want;
+  });
+  if(!list.length) return null;
+
+  var t = { cust:String(cust).trim(), orders:list.slice(0,60),
+            n:0, total:0, profit:0, due:0, dueN:0, cached:true };
+  list.forEach(function(o){
+    if(isDead(o)) return;
+    t.n++;
+    t.total += Number(o.net) || 0;
+    t.profit += Number(o.profit) || 0;
+    if(String((o&&o.status)||"").trim() !== "ชำระแล้ว"){
+      t.dueN++;
+      t.due += Number(o.net) || 0;
+    }
+  });
+  return t;
+}
+
 function openCustomer(name, no){
   var cust = String(name||"").trim();
   if(!cust){ toast("ใบนี้ไม่ได้ระบุชื่อลูกค้า จึงไม่มีประวัติให้ดู"); return }
@@ -4981,9 +5016,39 @@ function openCustomer(name, no){
   openModal("ประวัติคำสั่งซื้อ — " + cust,
     '<div id="cu-body"><div class="load">กำลังโหลด…</div></div>');
 
+  /* กองที่โหลดไว้แล้ว — หน้าสรุป/ค้างชำระเก็บไว้ 500 ใบ หน้าออเดอร์เก็บของมันเอง
+     อันไหนใหญ่กว่าใช้อันนั้น ยิ่งมีใบมาก ตัวเลขยิ่งใกล้ของจริง */
+  var pool = (SUM_CACHE && SUM_CACHE.length >= (ORDERS||[]).length) ? SUM_CACHE : ORDERS;
+  var quick = custStats_(cust, pool);
+  if(quick) drawCust_(quick, no);
+
   call("getCustomerHistory", [cust, 60], function(r){
+    drawCust_(r, no);
+  }, function(m){
+    var box = $("#cu-body");
+    /* กางของที่มีอยู่แล้วไว้ได้ ชีทตอบไม่ได้ไม่ได้แปลว่าข้อมูลในมือใช้ไม่ได้
+       แต่ต้องบอกให้รู้ว่าตัวเลขยังไม่ได้ทาบกับชีท ไม่ใช่เงียบแล้วปล่อยให้เชื่อเต็ม ๆ */
+    if(!box) return;
+    if(quick){
+      var warn = document.createElement("div");
+      warn.className = "msg err";
+      warn.style.display = "block";
+      warn.textContent = "ทาบกับชีทไม่สำเร็จ ตัวเลขนี้คิดจากใบที่โหลดไว้ในเครื่องเท่านั้น: " + m;
+      box.insertBefore(warn, box.firstChild);
+      return;
+    }
+    box.innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'
+      + esc(m) + '</div>';
+  });
+}
+
+function drawCust_(r, no){
+  (function(){
     var box = $("#cu-body");
     if(!box) return;
+    /* ปิดยอดไปแล้วในกล่องนี้ ห้ามวาดทับ ไม่งั้นข้อความ "บันทึกแล้ว" หายไปต่อหน้า
+       แล้วปุ่มเด้งกลับมาให้กดซ้ำได้อีก ทั้งที่ยอดปิดไปเรียบร้อยแล้ว */
+    if(box.dataset.done === "1") return;
     var list = (r && r.orders) || [];
     box.innerHTML =
         '<div class="kpis" style="margin-bottom:10px">'
@@ -5035,6 +5100,8 @@ function openCustomer(name, no){
     if(pd) pd.onclick = function(){
       if(!confirm("ทำเครื่องหมายว่าออเดอร์ " + no + " ชำระแล้ว?")) return;
       pd.disabled = true; pd.textContent = "กำลังบันทึก…";
+      /* กันไม่ให้ของที่ยังวิ่งอยู่กลับมาวาดทับผลที่เพิ่งบันทึก */
+      box.dataset.done = "1";
       api("setTracking", no, undefined, "ชำระแล้ว").then(function(){
         $("#cu-msg").innerHTML = '<div class="msg ok" style="display:block">บันทึกว่า <b>'
           + esc(no) + '</b> ชำระแล้ว</div>';
@@ -5042,16 +5109,13 @@ function openCustomer(name, no){
         SUM_CACHE = null; ORDERS = [];
         loadSummary();
       }, function(e){
+        box.dataset.done = "";
         pd.disabled = false; pd.textContent = "ทำเครื่องหมายว่า " + no + " ชำระแล้ว";
         $("#cu-msg").innerHTML = '<div class="msg err" style="display:block">'
           + esc(e && e.message ? e.message : e) + '</div>';
       });
     };
-  }, function(m){
-    var box = $("#cu-body");
-    if(box) box.innerHTML = '<div class="empty" style="color:var(--red)">โหลดไม่สำเร็จ<br>'
-      + esc(m) + '</div>';
-  });
+  })();
 }
 
 /* ------------------------------------------------------------- หน้าลูกค้า

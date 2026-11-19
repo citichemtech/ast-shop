@@ -3869,6 +3869,94 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
   eq('ไม่เจอก็บอกตรง ๆ ไม่ใช่โชว์ทุกคน', find41.none, []);
   eq('ล้างคำค้นแล้วกลับมาครบ', find41.back, 3);
 
+  console.log('\n   §41ก ประวัติลูกค้าต้องขึ้นทันที ไม่ต้องนั่งรอชีท');
+  /* 19 พ.ย. 69 เจ้าของร้านแจ้งว่า "ช้ามาก" ตอนกดดูประวัติลูกค้าจากหน้าค้างชำระ
+     ของเดิมกดทีไรก็ยิงไปอ่านชีทหัวบิลทั้งใบใหม่ทุกครั้ง ทั้งที่หน้าค้างชำระ
+     โหลดออเดอร์มาเก็บไว้ 500 ใบตั้งแต่ตอนเปิดหน้าแล้ว — ของอยู่ในมือครบ
+     แต่ยังให้คนนั่งดู "กำลังโหลด…" ทุกครั้งที่จะโทรทวงสักราย
+
+     ข้อนี้ทำให้ชีท "ไม่ตอบเลย" แล้ววัดว่าหน้าจอยังขึ้นตัวเลขให้ไหม
+     ถ้าวันหนึ่งมีใครเอาการคิดจากของในเครื่องออก ข้อนี้จะค้างอยู่ที่กำลังโหลดทันที */
+  var fast41 = await page.evaluate(async function () {
+    /* จำลองสภาพของหน้าค้างชำระ: ออเดอร์ถูกโหลดมาเก็บไว้แล้วตั้งแต่เปิดหน้า */
+    await new Promise(function (res) {
+      google.script.run
+        .withSuccessHandler(function (list) { SUM_CACHE = list || []; res() })
+        .withFailureHandler(function () { res() })
+        .getOrders(500);
+    });
+
+    var runner = google.script.run;
+    var real = runner.getCustomerHistory;
+    var asked = 0;
+    /* ชีทรับงานไปแล้วแต่ไม่ตอบกลับสักที — อาการเดียวกับตอนชีทช้า */
+    runner.getCustomerHistory = function () { asked++ };
+
+    openCustomer('ลูกค้าประจำ', 'CU-1');
+    await new Promise(function (r) { setTimeout(r, 400) });
+
+    var kpi = {};
+    $$('#cu-body .kpi').forEach(function (k) {
+      kpi[k.querySelector('span').textContent] = k.querySelector('b').textContent;
+    });
+    var out = {
+      pool: (SUM_CACHE || []).length,
+      asked: asked,
+      kpis: Object.keys(kpi).length,
+      bought: kpi['ซื้อไปแล้ว'] || '',
+      total: kpi['ยอดรวม'] || '',
+      rows: $$('#cu-body .row').length,
+      stillLoading: !!$('#cu-body .load'),
+      /* ปุ่มปิดยอดของใบที่กำลังดูอยู่ ต้องกดได้ตั้งแต่ยังไม่ทันได้คำตอบจากชีท
+         เพราะนี่คือสิ่งที่คนกดเข้ามาทำ ไม่ใช่มาอ่านเล่น */
+      canClose: !!$('#cu-paid')
+    };
+    runner.getCustomerHistory = real;
+    closeModal();
+    return out;
+  });
+  truthy('มีออเดอร์ที่โหลดไว้ในเครื่องอยู่แล้ว', fast41.pool > 0);
+  eq('ยังยิงไปถามชีทอยู่ (ตัวเลขต้องทาบกับของจริงเสมอ)', fast41.asked, 1);
+  eq('แต่ไม่ค้างอยู่ที่ "กำลังโหลด…"', fast41.stillLoading, false);
+  eq('ขึ้นตัวเลขสรุปครบทั้งหกช่องทันที', fast41.kpis, 6);
+  truthy('และเป็นตัวเลขจริง ไม่ใช่ศูนย์เปล่า ๆ', /[1-9]/.test(fast41.bought));
+  truthy('ยอดรวมก็ขึ้นให้แล้ว', /[1-9]/.test(fast41.total));
+  truthy('รายการใบของลูกค้ารายนี้ขึ้นมาด้วย', fast41.rows > 0);
+  truthy('กดปิดยอดได้เลยโดยไม่ต้องรอชีท', fast41.canClose);
+
+  console.log('\n   และตัวเลขที่ขึ้นทันที ต้องตรงกับที่ชีทตอบกลับมาทีหลัง');
+  /* ถ้าสองฝั่งคิดคนละกติกา ตัวเลขจะกระพริบเปลี่ยนต่อหน้าคนที่กำลังถือสายโทรทวงอยู่
+     ซึ่งแย่กว่าช้า เพราะเขาจะไม่รู้ว่าตัวไหนเชื่อได้ */
+  var same41 = await page.evaluate(async function () {
+    function kpis() {
+      var k = {};
+      $$('#cu-body .kpi').forEach(function (x) {
+        k[x.querySelector('span').textContent] = x.querySelector('b').textContent;
+      });
+      return k;
+    }
+    var runner = google.script.run;
+    var real = runner.getCustomerHistory;
+    runner.getCustomerHistory = function () {};
+    openCustomer('ลูกค้าประจำ', 'CU-1');
+    await new Promise(function (r) { setTimeout(r, 400) });
+    var before = kpis();
+    runner.getCustomerHistory = real;
+    closeModal();
+    await new Promise(function (r) { setTimeout(r, 200) });
+    /* คราวนี้ปล่อยให้ชีทตอบตามปกติ */
+    openCustomer('ลูกค้าประจำ', 'CU-1');
+    await new Promise(function (r) { setTimeout(r, 900) });
+    var after = kpis();
+    closeModal();
+    return { before: before, after: after };
+  });
+  eq('จำนวนใบตรงกัน', same41.before['ซื้อไปแล้ว'], same41.after['ซื้อไปแล้ว']);
+  eq('ยอดรวมตรงกัน', same41.before['ยอดรวม'], same41.after['ยอดรวม']);
+  eq('ยอดที่ค้างตรงกัน', same41.before['ยอดที่ค้าง'], same41.after['ยอดที่ค้าง']);
+  eq('กำไรตรงกัน', same41.before['กำไรจากลูกค้ารายนี้'], same41.after['กำไรจากลูกค้ารายนี้']);
+
+
   console.log('\n   กดชื่อลูกค้าแล้วได้ประวัติทุกใบ');
   await page.evaluate(function () { $('#cu-q').value = ''; $('#cu-q').oninput(); });
   /* เลือกจากชื่อ ไม่ใช่ลำดับที่เท่าไร ข้อสอบจะได้ไม่พังตอนเพิ่มบรรทัดหัวตาราง */
