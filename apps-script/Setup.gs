@@ -2794,6 +2794,85 @@ function oddScan_(key) {
  * เสมอไป — เจ้าของร้านอาจตั้งใจเขียนสูตรพิเศษไว้บางแถวก็ได้
  * ให้ดูรายงานจาก oddFormulas() ก่อนทุกครั้ง แล้วค่อยตัดสินใจเอง
  */
+/**
+ * ลบวันหมดอายุของล็อต — สำหรับสินค้าที่ไม่มีวันหมดอายุจริง ๆ
+ *
+ * ด่าน FEFO ไม่ยอมตัดขายล็อตที่เลยวันหมดอายุ ซึ่งถูกแล้วสำหรับของที่หมดอายุได้
+ * แต่สินค้าหลายตัวในร้านไม่มีวันหมดอายุเลย (เช่น ไอโซโพรพิลแอลกอฮอล์ และ
+ * เครื่องมือ) พอมีใครเผลอใส่วันไว้ในชีท ของทั้งล็อตก็ขายไม่ได้ทั้งที่ยังใช้ได้
+ * เจอจริง 19 พ.ย. 69 — SKU-Chem-0039 ล็อต I101126 ปิดการขายทั้งล็อต
+ *
+ * ทางแก้เดิมที่ข้อความบอกคือ "ปรับลดล็อตออกที่ชีทรับเข้า" ซึ่งผิดเรื่อง —
+ * นั่นคือการตัดของทิ้งทั้งที่ของยังอยู่บนชั้น ของที่ถูกคือลบวันหมดอายุออก
+ *
+ * ช่องวันหมดอายุว่าง = ไม่มีวันหมดอายุ (readLots_ อ่านเป็น null และ
+ * fefoExpired ข้ามให้) จึงลบทิ้งได้ตรง ๆ ไม่ต้องแตะจำนวนคงเหลือ
+ *
+ * ต้องส่งคำยืนยันมาด้วยเสมอ เพราะถ้าสินค้าตัวนั้นหมดอายุได้จริง
+ * การลบวันทิ้งคือการปล่อยของหมดอายุออกไปถึงมือลูกค้า
+ */
+function noExpiryLot(lotNo, confirm) {
+  var email = requireStaff_();
+  /* ข้อความแจ้งเตือนบอกได้ทีละหลายล็อต ("ล็อต A, B หมดอายุแล้ว")
+     ปุ่มในหน้าจอจึงส่งมาเป็นชุด ต้องรับได้ทั้งตัวเดียวและหลายตัว */
+  var want = String(lotNo || '').split(',')
+    .map(function (v) { return v.trim() })
+    .filter(function (v) { return !!v });
+  if (!want.length) {
+    var no = 'ต้องบอกเลขล็อตด้วย เช่น noExpiryLot("I101126", "ลบวันหมดอายุ")';
+    Logger.log(no);
+    throw new Error(no);
+  }
+
+  var s = sheet_('lot');
+  var last = formulaLimit_('lot');
+  var hits = [];
+  if (last >= DATA_ROW) {
+    var v = s.getRange(DATA_ROW, 1, last - DATA_ROW + 1, SH.lot.remain).getValues();
+    for (var i = 0; i < v.length; i++) {
+      if (want.indexOf(String(v[i][SH.lot.IN.lotNo - 1] || '').trim()) < 0) continue;
+      var exp = v[i][SH.lot.IN.exp - 1];
+      hits.push({
+        row: DATA_ROW + i,
+        sku: String(v[i][SH.lot.IN.sku - 1] || '').trim(),
+        exp: exp instanceof Date ? Utilities.formatDate(exp, tz_(), 'dd/MM/yyyy') : '',
+        hasExp: exp instanceof Date
+      });
+    }
+  }
+
+  if (!hits.length) {
+    var none = 'ไม่เจอล็อต ' + want.join(', ') + ' ในชีท ' + SH.lot.name;
+    Logger.log(none);
+    throw new Error(none);
+  }
+
+  var live = hits.filter(function (h) { return h.hasExp });
+  if (!live.length) {
+    var already = 'ล็อต ' + want.join(', ') + ' ไม่มีวันหมดอายุอยู่แล้ว (แถว ' +
+      hits.map(function (h) { return h.row }).join(', ') + ') ไม่ได้แก้อะไร';
+    Logger.log(already);
+    return { ok: true, cleared: 0, say: already };
+  }
+
+  if (String(confirm || '') !== 'ลบวันหมดอายุ') {
+    var ask = 'ยังไม่ได้ลบอะไร — ล็อต ' + want.join(', ') + ' มีวันหมดอายุอยู่ ' +
+      live.map(function (h) { return h.sku + ' แถว ' + h.row + ' (' + h.exp + ')' }).join(', ') +
+      '\nถ้าแน่ใจว่าสินค้าตัวนี้ไม่มีวันหมดอายุจริง ๆ ให้ยืนยันอีกครั้ง';
+    Logger.log(ask);
+    return { ok: false, needConfirm: true, cleared: 0, lots: live, say: ask };
+  }
+
+  for (var k = 0; k < live.length; k++) {
+    s.getRange(live[k].row, SH.lot.IN.exp).clearContent();
+    writeLog_(email, 'แก้ไข', SH.lot.name, live[k].sku, 'วันหมดอายุ',
+      live[k].exp, '(ไม่มีวันหมดอายุ)', 'ล็อต ' + want.join(', ') + ' — สินค้าตัวนี้ไม่มีวันหมดอายุ');
+  }
+  var done = 'ลบวันหมดอายุของล็อต ' + want.join(', ') + ' แล้ว ' + live.length + ' แถว — ขายได้ตามปกติ';
+  Logger.log(done);
+  return { ok: true, cleared: live.length, say: done };
+}
+
 function fixOddFormulas(confirm) {
   var email = requireStaff_();
   if (String(confirm || '') !== 'ซ่อม') {
@@ -3025,7 +3104,7 @@ function growProducts() {
     ' (เพิ่มที่ว่างอีก ' + (now - from) + ' รายการ)\n' +
     'ลอกเฉพาะคอลัมน์สูตร ' + calc.join(' · ') + ' ช่องกรอกยังว่างไว้ให้กรอกเอง';
   if (now < want) {
-    msg += '\n⚠ ได้ไม่ถึงแถว ' + want + ' ที่ตั้งใจไว้ — เปิดชีทดูว่าแถวท้าย ๆ ติดอะไรอยู่';
+    msg += '\n⚠ ได้ไม่ถึงแถว ' + want.join(', ') + ' ที่ตั้งใจไว้ — เปิดชีทดูว่าแถวท้าย ๆ ติดอะไรอยู่';
   }
 
   /* ขยายฐานสินค้าอย่างเดียวไม่พอ สูตรของชีทอื่นที่ชี้กลับมาหาฐานสินค้ายังมองช่วงเดิม

@@ -40,12 +40,30 @@ function showErr(msg, html){
 var FIX_TOOLS = [
   { fn:"growOrders",        label:"➕ ขยายที่ว่างของชีทออเดอร์", args:[] },
   { fn:"oddFormulas",       label:"🔍 หาแถวที่สูตรเพี้ยน",      args:[] },
-  { fn:"repairOrderSheets", label:"🛠 ซ่อมสูตรที่หายไป",        args:[] }
+  { fn:"repairOrderSheets", label:"🛠 ซ่อมสูตรที่หายไป",        args:[] },
+  /* ตัวนี้ต่างจากสามตัวบนสองอย่าง
+     หนึ่ง — ต้องรู้ว่าล็อตไหน ซึ่งมีอยู่ในข้อความแจ้งเตือนแล้ว ดึงออกมาจากตรงนั้น
+     สอง — มันแก้ข้อมูลจริงในชีท ไม่ใช่แค่อ่าน ถ้าสินค้าตัวนั้นหมดอายุได้จริง
+     การลบวันทิ้งคือการปล่อยของหมดอายุไปถึงมือลูกค้า จึงต้องกดย้ำก่อนเสมอ */
+  { fn:"noExpiryLot", label:"🗓 ล็อต {1} ไม่มีวันหมดอายุ — ลบวันออก",
+    from:/ล็อต\s+([^\n]+?)\s+หมดอายุแล้ว/, args:[], sure:"ลบวันหมดอายุ" }
 ];
 
 function fixBtns_(box, plain){
   var text = plain || box.textContent || "";
-  var want = FIX_TOOLS.filter(function(t){ return text.indexOf(t.fn) > -1 });
+  var want = [];
+  FIX_TOOLS.forEach(function(t){
+    if(text.indexOf(t.fn) < 0) return;
+    var args = t.args.slice();
+    if(t.from){
+      var m = t.from.exec(text);
+      /* บอกชื่อตัวแก้มา แต่อ่านไม่ออกว่าล็อตไหน — ไม่ขึ้นปุ่มดีกว่าขึ้นปุ่มที่กดแล้วพัง */
+      if(!m) return;
+      args.unshift(m[1]);
+    }
+    want.push({ fn:t.fn, args:args, sure:t.sure,
+                label:t.label.replace("{1}", args.length ? args[0] : "") });
+  });
   if(!want.length) return;
 
   var wrap = document.createElement("div");
@@ -57,7 +75,16 @@ function fixBtns_(box, plain){
     b.className = "btn ghost";
     b.style.cssText = "width:auto;flex:0 1 auto;padding:10px 14px;margin:0";
     b.textContent = t.label;
-    b.onclick = function(){ runFixTool_(t, b, wrap) };
+    b.onclick = function(){
+      /* ถามซ้ำในปุ่มเดิม ไม่ใช้ confirm() — หน้านี้อยู่ใน iframe ของ Google
+         แล้ว confirm บางเครื่องไม่ขึ้นเลย กดแล้วเงียบไปเฉย ๆ */
+      if(t.sure && b.dataset.sure !== "1"){
+        b.dataset.sure = "1";
+        b.textContent = "กดอีกครั้งเพื่อยืนยัน";
+        return;
+      }
+      runFixTool_({ fn:t.fn, args:t.sure ? t.args.concat([t.sure]) : t.args }, b, wrap);
+    };
     wrap.appendChild(b);
   });
   box.appendChild(wrap);
@@ -79,11 +106,15 @@ function runFixTool_(t, btn, wrap){
       "border:1px solid #ddd;border-radius:8px;padding:10px;max-height:46vh;overflow:auto";
     wrap.appendChild(out);
   }
-  out.textContent = "กำลังอ่านสูตรในชีท…";
+  out.textContent = "กำลังทำงานกับชีท…";
   btn.disabled = true;
   call(t.fn, t.args, function(r){
     btn.disabled = false;
-    out.textContent = String(r || "(ไม่มีคำตอบกลับมา)");
+    /* ตัวตรวจสูตรตอบกลับเป็นข้อความ ส่วนตัวที่แก้ข้อมูลตอบเป็นก้อนที่มีช่อง say
+       ถ้าแปลงเป็นข้อความดื้อ ๆ จะได้คำว่า [object Object] ซึ่งไม่บอกอะไรเลย */
+    out.textContent = (r && typeof r === "object")
+      ? String(r.say || JSON.stringify(r))
+      : String(r || "(ไม่มีคำตอบกลับมา)");
     /* รายงานบอกเองว่าต้องสั่งตัวซ่อมต่อ ก็ให้ปุ่มนั้นโผล่ตรงนี้เลย
        ไม่ต้องให้ไปหาเองอีกรอบ */
     if(String(r||"").indexOf("fixOddFormulasNow") > -1 && !wrap.querySelector(".fixodd")){

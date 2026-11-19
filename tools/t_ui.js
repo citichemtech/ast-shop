@@ -5951,6 +5951,57 @@ var SAMPLE = `🧾 สรุปคำสั่งซื้อ
      /ซ่อมสูตรที่หายไป/.test(await page.locator('#err button').first().innerText()));
   await page.evaluate(() => clearMsg());
 
+  console.log('\n20จ. ล็อตหมดอายุของสินค้าที่ไม่มีวันหมดอายุ');
+  /* 19 พ.ย. 69 เจ้าของร้านคีย์ขายไม่ได้: SKU-Chem-0039 ล็อต I101126
+     "หมดอายุแล้ว ระบบไม่ตัดขายให้" ทั้งที่เป็นไอโซโพรพิลแอลกอฮอล์ซึ่งไม่มีวันหมดอายุ
+     ข้อความเดิมบอกทางแก้ทางเดียวคือไปปรับลดล็อตออกที่ชีทรับเข้า ซึ่งแปลว่า
+     ตัดของทิ้งจากระบบทั้งที่ของยังเต็มชั้น — ชี้ผิดทางจนของหายไปเฉย ๆ */
+  var expFix = await page.evaluate(async function () {
+    showErr('บรรทัดที่ 1 (SKU-Chem-0039): ล็อต I101126 หมดอายุแล้ว ระบบไม่ตัดขายให้'
+      + '\n• ถ้าสินค้าตัวนี้ไม่มีวันหมดอายุจริง ๆ — สั่ง noExpiryLot เพื่อลบวันหมดอายุของล็อตนี้ทิ้ง'
+      + '\n• ถ้าของหมดอายุจริง — ให้ปรับลดล็อตนั้นออกที่ชีท รับเข้า ก่อน');
+    await new Promise(function (r) { setTimeout(r, 260) });
+    var btns = $$('#err button');
+    return { n: btns.length, label: btns.length ? btns[0].textContent : '' };
+  });
+  eq('กล่องแดงมีปุ่มแก้ให้กดหนึ่งปุ่ม', expFix.n, 1);
+  truthy('ปุ่มบอกเลขล็อตที่จะแก้ ไม่ใช่ปุ่มลอย ๆ ที่ไม่รู้ว่าทำกับอะไร',
+    expFix.label.indexOf('I101126') > -1);
+
+  console.log('\n   กดครั้งแรกต้องถามย้ำ เพราะมันแก้ข้อมูลจริงในชีท');
+  var expOnce = await page.evaluate(async function () {
+    window.SENT = [];
+    $$('#err button')[0].click();
+    await new Promise(function (r) { setTimeout(r, 300) });
+    return { sent: window.SENT.length, label: $$('#err button')[0].textContent };
+  });
+  eq('ครั้งแรกยังไม่ยิงอะไรไปที่ชีท', expOnce.sent, 0);
+  truthy('ปุ่มเปลี่ยนไปบอกว่าต้องกดย้ำ', expOnce.label.indexOf('ยืนยัน') > -1);
+
+  console.log('\n   กดย้ำแล้วต้องส่งเลขล็อตกับคำยืนยันไปครบ');
+  var expGo = await page.evaluate(async function () {
+    $$('#err button')[0].click();
+    await new Promise(function (r) { setTimeout(r, 500) });
+    var out = $('#err .fixout');
+    return { sent: window.SENT.slice(), said: out ? out.textContent : '' };
+  });
+  eq('ยิงไปที่ตัวลบวันหมดอายุ', (expGo.sent[0] || {}).fn, 'noExpiryLot');
+  eq('ส่งเลขล็อตที่อ่านมาจากข้อความ', (expGo.sent[0] || {}).lot, 'I101126');
+  eq('และส่งคำยืนยันไปด้วย ฝั่งชีทจะได้ยอมทำ', (expGo.sent[0] || {}).p, 'ลบวันหมดอายุ');
+  /* ของจริงตอบกลับเป็นก้อน ไม่ใช่ข้อความ ถ้าหน้าจอแปลงดื้อ ๆ จะได้ [object Object] */
+  truthy('กางคำตอบเป็นภาษาคน ไม่ใช่ [object Object]',
+    expGo.said.indexOf('ลบวันหมดอายุของล็อต I101126') > -1
+    && expGo.said.indexOf('object Object') < 0);
+
+  console.log('\n   ข้อความที่ไม่รู้ว่าล็อตไหน ต้องไม่งอกปุ่มที่กดแล้วพัง');
+  var expNo = await page.evaluate(async function () {
+    showErr('มีล็อตหมดอายุ ให้สั่ง noExpiryLot ดู');
+    await new Promise(function (r) { setTimeout(r, 260) });
+    return $$('#err button').length;
+  });
+  eq('อ่านเลขล็อตไม่ออก ก็ไม่ขึ้นปุ่ม', expNo, 0);
+  await page.evaluate(function () { window.SENT = [] });
+
   console.log('\n20ง. แฟ้มเอกสาร — เปิดดูตามช่วงวันที่');
   /* ของเดิมหาได้ทางเดียวคือพิมพ์เลขใบ ซึ่งต้องรู้คำตอบก่อนถึงจะถามได้
      เล่มใบกำกับภาษีตรวจกันเป็นเดือน (เจ้าของร้านขอเอง 5 พ.ย. 69) */

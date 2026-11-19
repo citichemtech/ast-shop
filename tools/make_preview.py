@@ -474,6 +474,22 @@ window.google = { script: { run: (function(){
       window.SENT.push({fn:"repairOrderSheets"});
       return reply(function(){ return "ซ่อมสูตรที่หายไปแล้ว\\n  ออเดอร์_รายการ: ซ่อม 12 ช่อง" });
     },
+    /* ลบวันหมดอายุของล็อต — ตอบกลับเป็นก้อน ไม่ใช่ข้อความ เหมือนของจริง
+       จะได้คุมได้ว่าหน้าจอกางช่อง say ออกมาอ่าน ไม่ใช่โชว์ [object Object] */
+    noExpiryLot: function(lotNo, confirmWord){
+      window.SENT.push({fn:"noExpiryLot", lot:lotNo, p:confirmWord});
+      return reply(function(){
+        var want = String(lotNo||"").split(",").map(function(v){return v.trim()})
+                    .filter(function(v){return !!v});
+        if(!want.length) throw new Error("ต้องบอกเลขล็อตด้วย");
+        if(confirmWord !== "ลบวันหมดอายุ")
+          return { ok:false, needConfirm:true, cleared:0,
+                   say:"ยังไม่ได้ลบอะไร — ล็อต "+want.join(", ")+" มีวันหมดอายุอยู่" };
+        return { ok:true, cleared:want.length,
+                 say:"ลบวันหมดอายุของล็อต "+want.join(", ")+" แล้ว "+want.length
+                     +" แถว — ขายได้ตามปกติ" };
+      });
+    },
     /* แก้ชื่อ/เบอร์/ที่อยู่ผู้รับ จากหน้าใบปะหน้าพัสดุ — กติกาเดียวกับของจริง
        ไม่ส่งช่องไหนมา = ไม่ได้จะแก้ช่องนั้น · ชื่อกับที่อยู่ว่างไม่ได้ เบอร์ว่างได้ */
     setShipTo: function(p){
