@@ -22,6 +22,38 @@ var ACCT_FOLDER_NAME = 'AST_ส่งบัญชี';
  * คืนเฉพาะของที่ "มีอยู่จริง" ไม่ใช่รายการตัวเลือกตายตัว ใบไหนยังไม่ได้ออกเอกสาร
  * จะไม่มีอะไรให้ติ๊ก ซึ่งเป็นคำตอบที่ตรงกว่าการโชว์ช่องติ๊กที่กดแล้วไม่มีอะไรเกิดขึ้น
  */
+/**
+ * แถวในทะเบียนเอกสารตามเลขใบ — คืน null ถ้าไม่มี
+ *
+ * ใช้ตอนที่เลขที่กดส่งบัญชีไม่ใช่เลขออเดอร์ แต่เป็นเลขเอกสารตรง ๆ
+ */
+function acctDocRow_(docNo) {
+  var want = String(docNo || '').trim();
+  if (!want) return null;
+  var row = docRow_(want);
+  if (!row) return null;
+  var s = sheet_('doc');
+  var C = SH.doc.IN;
+  /* ชีทที่ยังไม่ได้สั่ง setup หลังอัปเดต ยังไม่มีคอลัมน์ "ส่งบัญชีแล้วเมื่อ"
+     อ่านเลยขอบชีทจะโยน error ทันที — ตัดให้พอดีกับของจริง ช่องที่ยังไม่มีอ่านเป็นว่าง */
+  var wide = Math.min(C.acctAt, s.getMaxColumns());
+  var v = s.getRange(row, 1, 1, wide).getValues()[0];
+  var at = function (col) { return col <= wide ? v[col - 1] : ''; };
+  var d = at(C.date);
+  return {
+    row: row,
+    no: want,
+    type: String(at(C.type) || ''),
+    date: (d instanceof Date) ? isoDate_(d) : String(d || ''),
+    custName: String(at(C.custName) || ''),
+    total: Number(at(C.total) || 0),
+    vat: Number(at(C.vat) || 0),
+    voidWhy: String(at(C.voidWhy) || '').trim(),
+    hasSnap: !!String(at(C.snap) || '').trim(),
+    acctAt: String(at(C.acctAt) || '').trim()
+  };
+}
+
 function acctPack(orderNo) {
   requireStaff_();
   var no = String(orderNo || '').trim();
@@ -29,7 +61,28 @@ function acctPack(orderNo) {
 
   var rows = readOrders_({ limit: 0, match: function (o) { return o.no === no; } });
   var ord = rows[0];
-  if (!ord) throw new Error('ไม่พบออเดอร์ ' + no + ' ในชีท');
+
+  /* ไม่เจอออเดอร์ — อาจเป็น "เลขเอกสารที่ไม่มีออเดอร์" ซึ่งต้องส่งบัญชีได้เหมือนกัน
+
+     เลขที่ fillDocGaps เติมกลับเข้าเล่ม และใบที่ยกเลิกโดยไม่เคยผูกกับออเดอร์
+     ไม่มีแถวออเดอร์ให้เกาะ ของเดิมจึงตายตรงนี้ แล้วเล่มที่ส่งบัญชีขาดเลข
+     เล่มใบกำกับภาษีขาดเลขคือปัญหาตอนยื่นภาษี ไม่ใช่แค่ความไม่เรียบร้อย */
+  if (!ord) {
+    var one = acctDocRow_(no);
+    if (!one) {
+      throw new Error('ไม่พบออเดอร์หรือเอกสารเลขที่ ' + no + ' ในชีท');
+    }
+    return jsonSafe_({
+      no: one.no, date: one.date, channel: '', cust: one.custName,
+      net: one.total, vatAmt: one.vat, status: '',
+      /* ใบแบบนี้ไม่มีสถานะบัญชีของออเดอร์ให้แสดง ใช้ของตัวเองแทน */
+      docOnly: true,
+      acct: one.acctAt ? 'ส่งบัญชีแล้ว' : 'ยังไม่ส่งบัญชี',
+      acctAt: one.acctAt, acctWhat: '',
+      docs: [{ no: one.no, type: one.type, date: one.date, total: one.total,
+               hasSnap: one.hasSnap, voidWhy: one.voidWhy }]
+    });
+  }
 
   /* ใบที่ยกเลิกต้องส่งบัญชีด้วย ไม่ใช่กรองทิ้ง
      ของเดิมกรองออก ด้วยเหตุผลที่ฟังดูเข้าท่าว่า "ส่งไปก็ต้องตามไปบอกให้ถอนออก"
@@ -65,6 +118,19 @@ function setAcctStatus(orderNo, status, why) {
   var no = String(orderNo || '').trim();
   if (!no) throw new Error('ไม่ได้บอกว่าจะแก้สถานะบัญชีของใบไหน');
 
+  /* ใบที่ไม่มีออเดอร์ (เลขที่ fillDocGaps เติมกลับเข้าเล่ม · ใบยกเลิกที่ไม่เคยมีออเดอร์)
+     sendToAccounting รองรับมาตั้งแต่แรก แต่ปุ่ม "บันทึกสถานะอย่างเดียว" ไม่รองรับ
+     กดแล้วได้ "ไม่พบออเดอร์" — เจ้าของร้านจึงส่งบัญชีเลข 00248/249/250 ไม่ได้เลย
+
+     ใบแบบนี้ไม่มีคอลัมน์สถานะของตัวเอง มีแต่ "ส่งบัญชีแล้วเมื่อ" (วันเวลา)
+     จึงเก็บได้แค่สองสถานะจริง ๆ — ส่งแล้ว กับ ยังไม่ส่ง
+     สถานะอื่น (รอเอกสาร · บัญชีตีกลับ) เก็บไม่ได้ ต้องปฏิเสธตรง ๆ
+     ไม่ใช่รับไว้แล้วบันทึกเป็นอย่างอื่นเงียบ ๆ ซึ่งจะกลายเป็นสถานะที่ไม่จริง */
+  var docOne = null;
+  try { findOrderRow_(no); }
+  catch (e) { docOne = acctDocRow_(no); }
+  if (docOne) return setDocAcctStatus_(docOne, status, why, email);
+
   var lists = cfgLists_();
   var want = pickFrom_(status, lists.acct.length ? lists.acct : ACCT_LIST, 'สถานะบัญชี');
 
@@ -76,6 +142,43 @@ function setAcctStatus(orderNo, status, why) {
     before || '(ว่าง)', want, String(why || '').trim() || 'แก้จากในแอปโดย ' + email);
 
   return jsonSafe_({ ok: true, no: no, acct: want });
+}
+
+/**
+ * สถานะบัญชีของใบที่ไม่มีออเดอร์ — เก็บบนแถวเอกสาร ไม่ใช่แถวออเดอร์
+ *
+ * ที่เก็บได้มีช่องเดียวคือ "ส่งบัญชีแล้วเมื่อ" จึงมีได้แค่สองสถานะ
+ * มีวันเวลา = ส่งแล้ว · ว่าง = ยังไม่ส่ง
+ */
+var DOC_ACCT_SENT = 'ส่งบัญชีแล้ว';
+var DOC_ACCT_NOT = 'ยังไม่ส่งบัญชี';
+
+function setDocAcctStatus_(docOne, status, why, email) {
+  var want = String(status || '').trim();
+  var sent = want.indexOf(DOC_ACCT_SENT) > -1;
+  if (!sent && want !== DOC_ACCT_NOT) {
+    throw new Error('ใบ ' + docOne.no + ' ไม่ได้ผูกกับออเดอร์ จึงเก็บสถานะ "' + want +
+      '" ไม่ได้ — ใบแบบนี้มีได้แค่ "' + DOC_ACCT_SENT + '" กับ "' + DOC_ACCT_NOT + '"');
+  }
+
+  /* ชีทที่ยังไม่ได้สั่ง setup หลังอัปเดต ยังไม่มีคอลัมน์นี้ — เขียนเลยขอบชีทไม่ได้
+     บอกทางแก้ที่กดได้จริง ดีกว่า error เรื่องขอบชีทที่อ่านไม่รู้เรื่อง */
+  if (sheet_('doc').getMaxColumns() < SH.doc.IN.acctAt) {
+    throw new Error('ชีท ' + SH.doc.name + ' ยังไม่มีคอลัมน์ "ส่งบัญชีแล้วเมื่อ" — ' +
+      'สั่งฟังก์ชัน setup หนึ่งครั้งที่หน้าแก้ไขสคริปต์ แล้วกดใหม่');
+  }
+
+  var before = docOne.acctAt ? DOC_ACCT_SENT + ' (' + docOne.acctAt + ')' : DOC_ACCT_NOT;
+  var at = sent ? Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm') : '';
+  writeRow_('doc', docOne.row, { acctAt: at });
+  SpreadsheetApp.flush();
+
+  writeLog_(email, 'แก้สถานะบัญชี', SH.doc.name, docOne.no, 'เปลี่ยนสถานะบัญชี',
+    before, sent ? DOC_ACCT_SENT + ' (' + at + ')' : DOC_ACCT_NOT,
+    String(why || '').trim() || 'ใบที่ไม่มีออเดอร์ แก้จากในแอปโดย ' + email);
+
+  return jsonSafe_({ ok: true, no: docOne.no, docOnly: true,
+                     acct: sent ? DOC_ACCT_SENT : DOC_ACCT_NOT, acctAt: at });
 }
 
 /**
@@ -106,7 +209,15 @@ function sendToAccounting(payload) {
   var already = props.getProperty('ak_' + clientKey);
   if (already) return jsonSafe_({ ok: true, no: no, folderUrl: already, duplicate: true });
 
-  var found = findOrderRow_(no);
+  /* ใบที่ไม่มีออเดอร์ (เลขที่เติมกลับเข้าเล่ม · ใบยกเลิกที่ไม่เคยมีออเดอร์)
+     จดสถานะไว้บนแถวเอกสารแทน ไม่ใช่ปฏิเสธการส่ง — เล่มต้องมีเลขครบทุกเลข */
+  var found = null, docOne = null;
+  try { found = findOrderRow_(no); }
+  catch (e) {
+    docOne = acctDocRow_(no);
+    if (!docOne) throw new Error('ไม่พบออเดอร์หรือเอกสารเลขที่ ' + no + ' ในชีท');
+  }
+
   var folder = acctMonthFolder_(p.date || '');
   var made = [];
 
@@ -128,19 +239,33 @@ function sendToAccounting(payload) {
 
   var names = made.map(function (m) { return m.label; });
   var at = Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd HH:mm');
-  writeRow_('head', found.row, {
-    acct: 'ส่งบัญชีแล้ว',
-    acctAt: at,
-    acctWhat: names.join(' · ')
-  });
+  if (docOne) {
+    /* ไม่มีคอลัมน์ให้จด = จดไม่ได้ว่าส่งไปแล้ว แล้วจะส่งซ้ำวนไปโดยไม่มีใครรู้
+       บอกทางแก้ที่กดได้จริง ดีกว่าปล่อย error เรื่องขอบชีทที่อ่านไม่รู้เรื่อง
+       ไฟล์ลงไดรฟ์ไปแล้วตรงนี้ จึงบอกด้วยว่าของถึงบัญชีแล้ว ไม่ต้องส่งซ้ำ */
+    if (sheet_('doc').getMaxColumns() < SH.doc.IN.acctAt) {
+      throw new Error('ไฟล์ลงโฟลเดอร์บัญชีเรียบร้อยแล้ว แต่ยังจดในชีทไม่ได้ — ' +
+        'ชีท ' + SH.doc.name + ' ยังไม่มีคอลัมน์ "ส่งบัญชีแล้วเมื่อ"\n' +
+        'สั่งฟังก์ชัน setup หนึ่งครั้งที่หน้าแก้ไขสคริปต์ แล้วกดส่งใบนี้อีกที ' +
+        '(ไฟล์ที่ลงไปแล้วไม่ต้องลบ ระบบเขียนทับชื่อเดิม)');
+    }
+    writeRow_('doc', docOne.row, { acctAt: at });
+  } else {
+    writeRow_('head', found.row, {
+      acct: 'ส่งบัญชีแล้ว',
+      acctAt: at,
+      acctWhat: names.join(' · ')
+    });
+  }
 
   props.setProperty('ak_' + clientKey, folder.getUrl());
-  writeLog_(email, 'ส่งบัญชี', SH.head.name, no, 'ส่งเอกสารเข้าโฟลเดอร์บัญชี',
+  writeLog_(email, 'ส่งบัญชี', docOne ? SH.doc.name : SH.head.name, no,
+    docOne ? 'ส่งเอกสารที่ไม่มีออเดอร์เข้าโฟลเดอร์บัญชี' : 'ส่งเอกสารเข้าโฟลเดอร์บัญชี',
     '', names.join(' · '),
     'โฟลเดอร์ ' + folder.getName() + ' โดย ' + (String(p.by || '').trim() || email));
 
   return jsonSafe_({
-    ok: true, no: no, at: at, sent: names,
+    ok: true, no: no, at: at, sent: names, docOnly: !!docOne,
     folderUrl: folder.getUrl(), folderName: folder.getName(),
     /* บอกด้วยว่าที่ลงไปเป็น PDF หรือรูป — ตัวแปลงของ Google ไม่ได้ทำงานทุกที่
        ถ้าบอกไม่ตรง คนจะไปหาไฟล์ PDF ที่ไม่มีอยู่จริงในโฟลเดอร์ */

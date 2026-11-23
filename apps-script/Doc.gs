@@ -331,12 +331,16 @@ function buildDoc_(type, src, cfg) {
   var ship = Number(src.ship) || 0;
   if (ship > 0) {
     gross += ship;
-    lines.push({ name: 'ค่าจัดส่ง', po: '', qty: 1, unit: 'ครั้ง', price: ship, amount: ship });
+    /* extra = ไม่ใช่ตัวสินค้า ใบพิมพ์เอาไปใช้ตัดสินว่าไม่ต้องเติมเลข PO ให้
+       ค่าจัดส่งกับส่วนลดไม่ได้สั่งมาตาม PO ใส่เลข PO ลงไปก็ไม่ตรงความจริง */
+    lines.push({ name: 'ค่าจัดส่ง', po: '', extra: true,
+                 qty: 1, unit: 'ครั้ง', price: ship, amount: ship });
   }
   var discount = Number(src.discount) || 0;
   if (discount > 0) {
     gross -= discount;
-    lines.push({ name: 'ส่วนลด', po: '', qty: 1, unit: '-', price: -discount, amount: -discount });
+    lines.push({ name: 'ส่วนลด', po: '', extra: true,
+                 qty: 1, unit: '-', price: -discount, amount: -discount });
   }
 
   var v = vatSplit_(gross, rate, mode, lines);

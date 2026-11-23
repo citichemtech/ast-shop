@@ -28,9 +28,27 @@ Sheet.prototype.cell = function (r, c) {
   if (!this.cells[k]) this.cells[k] = { v: '', f: null };
   return this.cells[k];
 };
+/* ลากสูตรลงมาทีละแถว แบบเดียวกับที่คนลากในชีทจริง
+   ของเดิมวางข้อความสูตรก้อนเดิมเป๊ะ ๆ ทุกแถว ($D6 ติดอยู่กับทุกแถว)
+   ซึ่งไม่ตรงกับ Google Sheets ที่ขยับอ้างอิงสัมพัทธ์ตามแถวให้เอง
+   พอไม่ขยับ เครื่องมือที่เทียบรูปร่างสูตรระหว่างแถวจะเห็นแถว 6 เป็นตัวประหลาด
+   ทั้งที่ในชีทจริงทุกแถวเหมือนกันหมด */
 Sheet.prototype.setFormulaDown = function (col, fromRow, toRow, tag) {
-  for (var r = fromRow; r <= toRow; r++) this.cell(r, col).f = tag || ('=F' + col);
+  for (var r = fromRow; r <= toRow; r++) {
+    this.cell(r, col).f = tag ? shiftRows(tag, fromRow, r) : ('=F' + col);
+  }
 };
+
+/* ขยับเลขแถวของอ้างอิงสัมพัทธ์จาก base ไปเป็น row — $B$6 ที่ตรึงไว้ไม่ขยับ */
+function shiftRows(f, base, row) {
+  if (row === base) return f;
+  return String(f).replace(/(\$?)([A-Za-z\u0E00-\u0E7F]{1,3})(\$?)(\d+)/g,
+    function (m, d1, col, d2, num) {
+      if (d2) return m;
+      if (Number(num) !== base) return m;
+      return d1 + col + row;
+    });
+}
 Sheet.prototype.getName = function () { return this.name; };
 Sheet.prototype.getMaxRows = function () { return this.maxRows; };
 Sheet.prototype.getMaxColumns = function () { return this.cols; };
@@ -62,6 +80,22 @@ Sheet.prototype.setFrozenRows = function () { return this; };
 Sheet.prototype.setColumnWidth = function () { return this; };
 Sheet.prototype.hideColumns = function () { return this; };
 Sheet.prototype.insertRowsAfter = function (after, n) { this.maxRows += n; return this; };
+
+/* แทรกแถวกลางตาราง — ของที่อยู่ตั้งแต่แถวนั้นลงไปต้องเลื่อนลงจริง
+   ถ้าแค่เพิ่ม maxRows เฉย ๆ เหมือน insertRowsAfter ชุดทดสอบจะมองไม่เห็นเลยว่า
+   แถวรวมยอดเลื่อนไปไหน แล้วโค้ดที่แทรกผิดที่จะผ่านหน้าด่านไปได้
+   (ของจริง Google ขยายช่วงของสูตรที่คลุมแถวที่ถูกดันให้เองด้วย ตรงนี้ทำไม่ได้
+   จึงไม่เขียนข้อทดสอบที่อ้างว่าพิสูจน์เรื่องนั้น) */
+Sheet.prototype.insertRowsBefore = function (before, n) {
+  var moved = {};
+  for (var k in this.cells) {
+    var p = k.split(','), r = +p[0], c = +p[1];
+    moved[(r >= before ? r + n : r) + ',' + c] = this.cells[k];
+  }
+  this.cells = moved;
+  this.maxRows += n;
+  return this;
+};
 Sheet.prototype.insertColumnsAfter = function (after, n) { this.cols += n; return this; };
 
 function Range(sheet, r, c, nr, nc) {
@@ -71,9 +105,16 @@ function Range(sheet, r, c, nr, nc) {
    ทุกช่องต้องเดินทางข้ามเน็ตจาก Google กลับมา ข้อสอบเรื่องความเร็วจึงวัดตัวนี้
    ไม่ใช่จับเวลา ซึ่งบนเครื่องทดสอบเร็วจนไม่เห็นความต่าง */
 var CELLS_READ = { n: 0 };
+/* นับแยกรายชีทด้วย — ข้อสอบเรื่อง "หน้านี้ไม่ควรไปแตะชีทนั้น" ต้องพิสูจน์ได้ตรง ๆ
+   จำนวนช่องรวมพิสูจน์ไม่ได้ เพราะชีทเล็กในข้อสอบอาจใหญ่กว่าชีทใหญ่ของจริง */
+var SHEET_READ = {};
+function countRead_(name, n) {
+  CELLS_READ.n += n;
+  SHEET_READ[name] = (SHEET_READ[name] || 0) + n;
+}
 
 Range.prototype.getValues = function () {
-  CELLS_READ.n += this.nr * this.nc;
+  countRead_(this.s.name, this.nr * this.nc);
   var out = [];
   for (var i = 0; i < this.nr; i++) {
     var row = [];
@@ -97,7 +138,7 @@ Range.prototype.getA1Notation = function () {
 Range.prototype.getFormula = function () { return this.getFormulas()[0][0]; };
 Range.prototype.getDisplayValue = function () { return this.getDisplayValues()[0][0]; };
 Range.prototype.getFormulas = function () {
-  CELLS_READ.n += this.nr * this.nc;
+  countRead_(this.s.name, this.nr * this.nc);
   var out = [];
   for (var i = 0; i < this.nr; i++) {
     var row = [];
@@ -152,9 +193,15 @@ Range.prototype.setFormulas = function (rows) {
   }
   return this;
 };
+/* คัดลอกสูตร — Google Sheets ขยับอ้างอิงสัมพัทธ์ตามระยะแถวที่ย้ายไป
+   ของเดิมวางข้อความเดิมเป๊ะ ๆ ทุกแถว ทำให้ชีทจำลองมีแถว 6 เป็นตัวประหลาด
+   ตัวเดียวทั้งชีท ซึ่งไม่เคยเกิดในชีทจริง */
 Range.prototype.copyTo = function (dst) {
   var f = this.s.cell(this.r, this.c).f;
-  for (var i = 0; i < dst.nr; i++) for (var j = 0; j < dst.nc; j++) dst.s.cell(dst.r + i, dst.c + j).f = f;
+  for (var i = 0; i < dst.nr; i++) {
+    var moved = f ? shiftRows(f, this.r, dst.r + i) : f;
+    for (var j = 0; j < dst.nc; j++) dst.s.cell(dst.r + i, dst.c + j).f = moved;
+  }
   return this;
 };
 /* จำรูปแบบช่องไว้ตรวจได้ เบอร์โทรกับเลขภาษีต้องถูกตั้งเป็นข้อความก่อนเขียนเสมอ */
@@ -164,7 +211,7 @@ Range.prototype.setNumberFormat = function (f) {
   return this;
 };
 ['setBackground', 'setFontColor', 'setFontWeight', 'setFontSize', 'setVerticalAlignment',
-  'setHorizontalAlignment', 'setWrap', 'setDataValidation'
+  'setHorizontalAlignment', 'setWrap', 'setDataValidation', 'setNote'
 ].forEach(function (m) { Range.prototype[m] = function () { return this; }; });
 
 /* ------------------------------------------------------------ สร้างชีทตัวอย่าง */
@@ -212,6 +259,18 @@ function build(opts) {
   /* สต๊อกคงเหลือ — สูตรล้วน */
   var stock = mk('สต๊อกคงเหลือ', 15, 151);
   for (var sc = 1; sc <= 15; sc++) stock.setFormulaDown(sc, DATA_ROW, 150, '=calc');
+  /* ช่อง F (รับเข้า) กับ G (ปรับลด) เป็นสูตรของเจ้าของร้าน โปรเจกต์นี้ไม่ได้เขียน
+     (STOCK_ROW6 ใน Setup.gs ไม่มีคอลัมน์ 6 7 8 เลย) ชีทจำลองจึงต้องมีสูตรหน้าตาแบบนั้น
+     และตอนคิดยอดต้องเคารพคำในสูตรด้วย ไม่ใช่นับทุกอย่างที่ไม่ใช่ปรับลดเป็นรับเข้า
+     — ของจริงร้านนี้เจอว่าสูตรไม่ได้นับคำว่า "ปรับเพิ่ม" ลงไปเท่าไรยอดก็ไม่ขึ้น */
+  stock.setFormulaDown(6, DATA_ROW, 150,
+    '=IF($B6="","",SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"ซื้อเข้า")+SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"ปรับเพิ่ม")+SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"คืนจากลูกค้า"))');
+  stock.setFormulaDown(7, DATA_ROW, 150,
+    '=IF($B6="","",SUMIFS(\'รับเข้า\'!$H$6:$H,\'รับเข้า\'!$F$6:$F,$B6,' +
+    '\'รับเข้า\'!$D$6:$D,"ปรับลด"))');
   demo.forEach(function (p, i) {
     var r = DATA_ROW + i;
     stock.cell(r, 2).v = p.sku;
@@ -222,7 +281,7 @@ function build(opts) {
   /* กว้างเท่า SH.head.width จริง — ชีทของจริงถูก setup ขยายให้ครบแล้ว
    ชีทจำลองแคบกว่าเมื่อไร ช่องท้าย ๆ จะอ่านกลับมาเป็น 0 เงียบ ๆ
    แล้วข้อสอบจะผ่านทั้งที่เขียนลงไปแล้วอ่านไม่เจอ */
-var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
+var head = mk('ออเดอร์_หัวบิล', 27, headLimit + 1);
   [10, 13, 14, 15, 16, 18, 21].forEach(function (c) {
     head.setFormulaDown(c, DATA_ROW, headLimit, '=headcalc');
   });
@@ -238,6 +297,13 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
   item.setFormulaDown(5, DATA_ROW, itemLimit,
     '=IF($D6="","",IFERROR(VLOOKUP($D6,\'ฐานสินค้า\'!$B$6:$D$' +
     (opts.nameLookupLast || 150) + ',3,FALSE),"ไม่พบ SKU"))');
+  /* ช่องหน่วยนับก็เป็น VLOOKUP เหมือนช่องชื่อ ไม่ใช่ค่านิ่ง
+     คำในช่องนี้ถูกพิมพ์ลงใบกำกับภาษีในช่อง "จำนวน (Quantity)" ตรง ๆ
+     ชีทจำลองเดิมปล่อยว่าง ข้อสอบจึงไม่มีทางจับได้ว่าหน่วยที่แก้ในแอป
+     เดินทางไปถึงกระดาษจริงหรือเปล่า */
+  item.setFormulaDown(6, DATA_ROW, itemLimit,
+    '=IF($D6="","",IFERROR(VLOOKUP($D6,\'ฐานสินค้า\'!$B$6:$F$' +
+    (opts.nameLookupLast || 150) + ',5,FALSE),""))');
 
   /* รับเข้า / Log */
   var recv = mk('รับเข้า', 13, 401);
@@ -270,7 +336,7 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
     /* ราคามาตรฐานอ่านจากชีท ฐานสินค้า ไม่ใช่จากรายการตั้งต้น
        เพราะแอปเพิ่มสินค้าเข้าฐานเองได้ (ของซื้อมาขายไปที่พิมพ์ชื่อเอง)
        ถ้าอ่านจากรายการตั้งต้น สินค้าที่เพิ่งเพิ่มจะหายไปจากสูตรของชีทจำลอง */
-    var std = {}, pname = {};
+    var std = {}, pname = {}, punit = {};
     /* ชื่อสินค้าอ่านได้แค่ในช่วงที่สูตรมองถึงจริง ๆ — อ่านช่วงนั้นจากตัวสูตรเอง
        เพื่อให้ fixProductLinks ที่ไปขยายช่วง มีผลกับชีทจำลองทันทีเหมือนของจริง */
     var nameLast = 150;
@@ -281,7 +347,10 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
       var psku = prod.cell(pr, 2).v;
       if (psku) {
         std[psku] = Number(prod.cell(pr, 8).v || 0);
-        if (pr <= nameLast) pname[psku] = String(prod.cell(pr, 4).v || '');
+        if (pr <= nameLast) {
+          pname[psku] = String(prod.cell(pr, 4).v || '');
+          punit[psku] = String(prod.cell(pr, 6).v || '');
+        }
       }
     }
 
@@ -297,6 +366,7 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
          ของจริงเป็นแบบนี้ และคำนั้นเคยไปพิมพ์บนใบกำกับภาษีที่ส่งลูกค้าจริง
          ชีทจำลองไม่เคยคิดช่องนี้เลย ข้อสอบจึงไม่มีทางจับได้ */
       item.cell(r, 5).v = (pname[sku] === undefined) ? 'ไม่พบ SKU' : pname[sku];
+      item.cell(r, 6).v = (punit[sku] === undefined) ? '' : punit[sku];
       item.cell(r, 8).v = Number(std[sku] || 0);
       item.cell(r, 10).v = Math.round(qty * unit * 100) / 100;
       seen[no] = (seen[no] || 0) + 1;
@@ -327,14 +397,54 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
        ของเดิมชีทจำลองตั้งคงเหลือเป็นเลขนิ่ง 1000 ไว้เฉย ๆ ไม่เคยคิดจากเอกสารเลย
        ตัวที่เขียนแถว รับเข้า แล้วหวังให้ยอดขยับจึงทดสอบอะไรไม่ได้ — ผ่านทุกครั้ง
        เพราะไม่มีอะไรขยับตั้งแต่แรก ไม่ใช่เพราะโค้ดถูก */
+    /* อ่านคำจากสูตรช่อง F/G แล้วนับตามนั้น เหมือนที่ Google Sheets ทำกับ SUMIFS จริง
+       ประเภทที่ไม่มีคำไหนในสูตรตรงเลย จะไม่ถูกนับทั้งสองฝั่ง ซึ่งคือพฤติกรรมจริง
+       และคือเหตุที่ยอดไม่ขยับทั้งที่ลงแถวไปแล้ว */
+    function fxWords(f) {
+      var out = [], m, re = /"([^"]*)"/g, t = String(f || '');
+      while ((m = re.exec(t)) !== null) {
+        var w = m[1].trim();
+        if (!w || /^[<>=!]+$/.test(w) || /^[A-Za-z]{1,3}\d+$/.test(w)) continue;
+        if (out.indexOf(w) < 0) out.push(w);
+      }
+      return out;
+    }
+    /* ช่วงแถวท้ายสูตรก็สำคัญไม่แพ้คำในสูตร — ของจริงร้านนี้เขียนช่วงไว้ตายตัว
+       ถึงแถว 16 ตั้งแต่ตอนที่ชีทยังมีข้อมูลไม่กี่แถว พอกรอกเกินแถวนั้นไป
+       ชีทก็มองไม่เห็นอีกเลย และไม่มีอะไรฟ้อง — ของหาย 5,435 ชิ้นโดยไม่รู้ตัว
+       ชีทจำลองต้องเลียนแบบข้อนี้ด้วย ไม่งั้นข้อสอบจะผ่านทั้งที่ของจริงพัง */
+    function fxEndRow(f) {
+      var t = String(f || ''), m, lim = 0;
+      var re = /!\$?[A-Z]{1,3}\$?\d+:\$?[A-Z]{1,3}\$?(\d+)/g;
+      while ((m = re.exec(t)) !== null) {
+        var n = Number(m[1]);
+        if (!lim || n < lim) lim = n;
+      }
+      return lim || Infinity;
+    }
+    var upWords = fxWords(stock.cell(DATA_ROW, 6).f);
+    var dnWords = fxWords(stock.cell(DATA_ROW, 7).f);
+    var recvEnd = Math.min(fxEndRow(stock.cell(DATA_ROW, 6).f),
+                           fxEndRow(stock.cell(DATA_ROW, 7).f));
+    function hits(words, t) {
+      for (var q = 0; q < words.length; q++) if (t.indexOf(words[q]) > -1) return true;
+      return false;
+    }
+
     var gotBy = {}, adjBy = {}, soldBy = {};
-    for (var vr = DATA_ROW; vr <= 400; vr++) {
+    for (var vr = DATA_ROW; vr <= Math.min(400, recvEnd); vr++) {
       var vsku = recv.cell(vr, 6).v;
       if (!vsku) continue;
       var vq = Number(recv.cell(vr, 8).v || 0);
       var vt = String(recv.cell(vr, 4).v || '');
-      if (vt.indexOf('ปรับลด') > -1) adjBy[vsku] = (adjBy[vsku] || 0) + vq;
-      else gotBy[vsku] = (gotBy[vsku] || 0) + vq;
+      if (!upWords.length && !dnWords.length) {
+        if (vt.indexOf('ปรับลด') > -1) adjBy[vsku] = (adjBy[vsku] || 0) + vq;
+        else gotBy[vsku] = (gotBy[vsku] || 0) + vq;
+      } else if (hits(dnWords, vt)) {
+        adjBy[vsku] = (adjBy[vsku] || 0) + vq;
+      } else if (hits(upWords, vt)) {
+        gotBy[vsku] = (gotBy[vsku] || 0) + vq;
+      }
     }
     for (var xr = DATA_ROW; xr <= itemLimit; xr++) {
       var xsku = item.cell(xr, 4).v;
@@ -376,7 +486,7 @@ var head = mk('ออเดอร์_หัวบิล', 26, headLimit + 1);
   }
 
   recalc();   // ชีทจริงมีค่าจากสูตรอยู่แล้วตั้งแต่ก่อนเปิดแอป ชีทจำลองก็ต้องเหมือนกัน
-  return { sheets: sheets, recalc: recalc, demo: demo };
+  return { sheets: sheets, recalc: recalc, demo: demo, MAILS: [] };
 }
 
 /* ------------------------------------------------- โหลด .gs เข้ามารันใน node */
@@ -438,14 +548,25 @@ function fakeDrive(opts) {
         if (opts && opts.driveFail && files.length >= opts.driveFail) {
           throw new Error('ไดรฟ์เต็ม (จำลอง)');
         }
-        var fid = 'file-' + (++seq.n);
+        /* รหัสไฟล์ของไดรฟ์จริงยาว 33 ตัว โค้ดที่แปลงลิงก์แชร์เป็นที่อยู่รูป
+           ตรวจความยาวด้วย ของปลอมจึงต้องยาวใกล้เคียงกัน ไม่งั้นสอบผ่านทั้งที่ของจริงพัง */
+        var fid = '1FakeDriveFileId' + String(1000000 + (++seq.n)).slice(1) + 'AbCdEfGhIj';
         var file = {
           _folder: f, _blob: b, _trashed: false,
           getId: function () { return fid; },
           getUrl: function () { return 'https://drive.google.com/file/d/' + fid + '/view'; },
           getName: function () { return b.getName(); },
           getBlob: function () { return b; },
-          setTrashed: function (t) { file._trashed = !!t; return file; }
+          setTrashed: function (t) { file._trashed = !!t; return file; },
+          /* จำไว้ว่าถูกตั้งแชร์เป็นอะไร — ข้อสอบต้องพิสูจน์ได้ว่ารูปหน้าร้าน
+             ถูกตั้งให้คนนอกดูได้จริง ไม่ใช่แค่เรียกฟังก์ชันแล้วผ่าน */
+          setSharing: function (access, perm) {
+            if (opts && opts.shareDenied) {
+              throw new Error('ผู้ดูแลระบบปิดการแชร์นอกองค์กรไว้ (จำลอง)');
+            }
+            file._share = { access: access, perm: perm };
+            return file;
+          }
         };
         files.push(file);
         return file;
@@ -465,6 +586,8 @@ function fakeDrive(opts) {
         return folders[id];
       },
       createFolder: function (n) { return root.createFolder(n); },
+      Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK', ANYONE: 'ANYONE', PRIVATE: 'PRIVATE' },
+      Permission: { VIEW: 'VIEW', EDIT: 'EDIT', NONE: 'NONE' },
       getFileById: function () {
         return { getParents: function () {
           var done = false;
@@ -482,12 +605,24 @@ function load(fixture, opts) {
      จำเป็นเพราะ SHEET_ID อ่าน property ตั้งแต่ตอนไฟล์ถูกโหลด ถ้าตั้งทีหลังจะไม่ทัน */
   var props = {};
   for (var pk in (opts.props || {})) props[pk] = String(opts.props[pk]);
-  var cache = {};
+  /* แคชของ Apps Script เป็นของสคริปต์ ไม่ใช่ของแต่ละ execution
+     พนักงานกดบันทึกแล้วล้างแคช ลูกค้าที่เปิดถัดไปต้องได้ของใหม่
+     ถ้าจำลองให้แต่ละ context มีแคชของตัวเอง ข้อสอบจะผ่านทั้งที่ของจริงไม่ล้างให้ */
+  var cache = fixture.CACHE || (fixture.CACHE = {});
   var lockHeld = { v: false };
   function cacheStub_() {
     return {
-      get: function (k) { return Object.prototype.hasOwnProperty.call(cache, k) ? cache[k] : null; },
-      put: function (k, v) { cache[k] = String(v); }
+      get: function (k) {
+        if (ctx.__cacheOff) return null;          /* จำลองแคชหมดอายุหรือโดนล้าง */
+        return Object.prototype.hasOwnProperty.call(cache, k) ? cache[k] : null;
+      },
+      put: function (k, v) {
+        /* ของจริงเก็บได้ไม่เกิน 100 KB ต่อคีย์ เกินแล้วโยน error
+           ถ้าจำลองให้เก็บได้ไม่จำกัด ข้อสอบจะผ่านทั้งที่ของจริงพัง */
+        if (String(v).length > 100 * 1024) throw new Error('Argument too large: value');
+        cache[k] = String(v);
+      },
+      remove: function (k) { delete cache[k]; }
     };
   }
   var ctx = {
@@ -516,8 +651,17 @@ function load(fixture, opts) {
       },
       flush: function () { fixture.recalc(); },
       newDataValidation: function () {
-        var b = { requireValueInRange: function () { return b; }, setAllowInvalid: function () { return b; }, build: function () { return {}; } };
+        var b = { requireValueInRange: function () { return b; }, requireValueInList: function () { return b; }, setAllowInvalid: function () { return b; }, build: function () { return {}; } };
         return b;
+      }
+    },
+    /* กล่องจดหมายจำลอง — ข้อสอบวัดว่าส่งถึงใคร หัวข้ออะไร ในตัวอีเมลมีอะไรบ้าง
+       ไม่ใช่วัดแค่ว่า "มีการเรียกฟังก์ชันส่งเมล" ซึ่งผ่านได้ทั้งที่ส่งผิดคน
+       ctx.__mailFail = true เพื่อจำลองโควตาเต็มหรือเน็ตสะดุด */
+    GmailApp: {
+      sendEmail: function (to, subject, body, o) {
+        if (ctx.__mailFail) throw new Error('โควตาส่งอีเมลเต็มแล้ว');
+        fixture.MAILS.push({ to: to, subject: subject, body: body, opts: o || {} });
       }
     },
     Session: {
@@ -563,6 +707,7 @@ function load(fixture, opts) {
           return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
             p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
         }
+        if (fmt === 'HH:mm') { return p(d.getHours()) + ':' + p(d.getMinutes()); }
         if (fmt === 'd/M/yyyy HH:mm') {
           return d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear() +
             ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
@@ -607,6 +752,15 @@ function load(fixture, opts) {
       newBlob: function (data, type, name) { return blob_(data, type, name, opts); }
     },
     DriveApp: drive.app,
+    /* ลิงก์ของ deploy ที่กำลังเปิดอยู่ — ใช้ทำลิงก์ "ดูหน้าร้านเอง"
+       ห้ามเอาไปใช้เป็นลิงก์ของลูกค้า มีข้อสอบคุมเรื่องนี้ไว้ */
+    ScriptApp: {
+      getService: function () {
+        return { getUrl: function () {
+          return 'https://script.google.com/macros/s/STAFFDEPLOY/exec';
+        } };
+      }
+    },
     LockService: {
       getScriptLock: function () {
         return {
@@ -631,7 +785,7 @@ function load(fixture, opts) {
   var dir = path.join(__dirname, '..', 'apps-script');
   /* Doc.gs ต้องโหลดด้วย ไม่งั้น issueDoc/voidDoc เรียก docType_ ไม่เจอ
      ทะเบียนเอกสารเป็นของที่แก้ทีหลังไม่ได้ จึงต้องมีข้อสอบคุมเหมือนส่วนอื่น */
-  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs', 'Pay.gs',
+  var files = ['Sheets.gs', 'Fefo.gs', 'Doc.gs', 'Setup.gs', 'Api.gs', 'Acct.gs', 'Pay.gs', 'Shop.gs', 'ShopEdit.gs',
     'Pub.gs'];
   /* BUNDLE=1 = สอบไฟล์ที่รวมแล้วแทนไฟล์ต้นฉบับ
      ไฟล์ที่เอาไปวางใน Apps Script จริงคือไฟล์ที่รวมแล้ว ถ้าตัวรวมทำอะไรพัง
@@ -648,8 +802,14 @@ function load(fixture, opts) {
   /* ปิดสิทธิ์ไดรฟ์กลางคัน — ของจริงก็เป็นแบบนี้ คือคีย์ออเดอร์ได้ตามปกติ
      แล้วมาพังตอนแตะไฟล์ ไม่ได้พังตั้งแต่เปิดแอป */
   fixture.__denyDrive = function () { opts.driveDenied = true; };
+  /* Workspace บางที่ปิดการแชร์ลิงก์สาธารณะไว้ — อัปไฟล์ได้ แต่ตั้งแชร์ไม่ได้
+     ผูกไว้กับ ctx ด้วย เพราะแต่ละ load มีไดรฟ์ของตัวเอง
+     สั่งผ่าน fixture จะไปโดนตัวที่โหลดทีหลังเสมอ ซึ่งมักไม่ใช่ตัวที่กำลังสอบ */
+  fixture.__denyShare = function () { opts.shareDenied = true; };
+  ctx.__denyShare = function () { opts.shareDenied = true; };
+  ctx.__denyDrive = function () { opts.driveDenied = true; };
   return ctx;
 }
 
 module.exports = { build: build, load: load, DATA_ROW: DATA_ROW, HEAD_ROW: HEAD_ROW,
-  CELLS_READ: CELLS_READ };
+  CELLS_READ: CELLS_READ, SHEET_READ: SHEET_READ };
