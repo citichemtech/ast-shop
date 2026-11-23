@@ -3259,6 +3259,41 @@ function saveMonth(p) {
 function getCustomers(limit) {
   requireStaff_();
   var cap = Number(limit) || 400;
+  return customerMap_().slice(0, cap);
+}
+
+/**
+ * ค้นลูกค้าจากทะเบียน "ทั้งเล่ม" ไม่ใช่แค่ที่หน้าจอโหลดไว้
+ *
+ * หน้าคีย์ออเดอร์โหลดรายชื่อมาเก็บไว้ในเครื่องแค่ชุดหนึ่ง (เรียงคนซื้อล่าสุดก่อน)
+ * เพื่อให้พิมพ์แล้วขึ้นทันทีโดยไม่ต้องยิงชีททุกตัวอักษร — แต่พอร้านมีลูกค้า
+ * มากกว่านั้น ลูกค้าเก่าที่ไม่ได้ซื้อมานานจะตกขอบไปเลย แล้วหน้าจอก็บอกว่า
+ * "ไม่เจอในลูกค้าเก่า" ทั้งที่มีอยู่ในชีท — คนคีย์ก็จะคีย์เป็นลูกค้าใหม่ซ้ำเข้าไปอีก
+ * แล้วประวัติของรายนั้นก็ขาดเป็นสองก้อน (เจอจริง 23 พ.ย. 69)
+ *
+ * ตัวนี้ไว้ใช้ตอนที่ค้นในเครื่องแล้วไม่เจอ จึงยอมเสียเวลายิงชีทสักรอบ
+ * เทียบทั้งชื่อและเบอร์ เบอร์ต้องยาวพอ ไม่งั้นพิมพ์ "08" แล้วได้มาทั้งร้าน
+ */
+function findCustomers(q, limit) {
+  requireStaff_();
+  var want = String(q || '').trim().toLowerCase();
+  if (want.length < 2) return [];
+  var digits = want.replace(/\D/g, '');
+  var cap = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+  var all = customerMap_();
+  var hit = [];
+  for (var i = 0; i < all.length && hit.length < cap; i++) {
+    var c = all[i];
+    if (String(c.name || '').toLowerCase().indexOf(want) > -1) { hit.push(c); continue; }
+    if (digits.length >= 3 &&
+        String(c.tel || '').replace(/\D/g, '').indexOf(digits) > -1) hit.push(c);
+  }
+  return hit;
+}
+
+/** ทะเบียนลูกค้าทั้งเล่ม เรียงคนซื้อล่าสุดขึ้นก่อน — ตัวสร้างตัวเดียวของทั้งระบบ */
+function customerMap_() {
   var by = {};
 
   function key(name) { return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
@@ -3344,7 +3379,7 @@ function getCustomers(limit) {
     if (a.last !== b.last) return a.last < b.last ? 1 : -1;
     return a.name < b.name ? -1 : 1;
   });
-  return out.slice(0, cap);
+  return out;
 }
 
 /** ตรวจและเตรียมทุกอย่างให้ครบก่อน แล้วค่อยเริ่มเขียน — กันล้มกลางทางตั้งแต่ต้นทาง */

@@ -1116,7 +1116,30 @@ window.google = { script: { run: (function(){
         var out = [];
         for(var k in by) out.push(by[k]);
         out.sort(function(a,b){ return a.last < b.last ? 1 : (a.last > b.last ? -1 : 0) });
+        window.CUST_ALL = out;          /* ตัวค้นทั้งเล่มใช้กองเดียวกัน */
         return out.slice(0, Number(limit) || 400);
+      });
+    },
+    /* ค้นลูกค้าทั้งเล่ม — ของจริงอ่านชีทใหม่ ที่นี่ใช้กองที่ getCustomers สร้างไว้
+       สิ่งที่ต้องเหมือนของจริงคือ "ค้นจากทั้งหมด ไม่ใช่แค่ที่ส่งไปให้หน้าจอ" */
+    findCustomers: function(q, limit){
+      /* ไม่ลง window.SENT เพราะกองนั้นคือ "สิ่งที่เขียนขึ้นชีท"
+         ตัวนี้แค่อ่าน ข้อสอบที่นับว่ายังไม่ได้เขียนอะไรจะพังทันทีถ้าปนกัน */
+      (window.ASKED = window.ASKED || []).push({ fn:"findCustomers", q:q, limit:limit });
+      return reply(function(){
+        var want = String(q||"").trim().toLowerCase();
+        if(want.length < 2) return [];
+        var digits = want.replace(/\D/g,"");
+        var cap = Math.min(Math.max(Number(limit)||20, 1), 100);
+        var all = window.CUST_ALL || [];
+        var hit = [];
+        for(var i=0; i<all.length && hit.length<cap; i++){
+          var c = all[i];
+          if(String(c.name||"").toLowerCase().indexOf(want) > -1){ hit.push(c); continue }
+          if(digits.length >= 3 &&
+             String(c.tel||"").replace(/\D/g,"").indexOf(digits) > -1) hit.push(c);
+        }
+        return hit;
       });
     },
     saveSignature: function(which, sig){

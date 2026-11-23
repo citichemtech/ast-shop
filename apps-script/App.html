@@ -1824,28 +1824,13 @@ function custFind(q){
   return hit.slice(0,6).map(function(x){ return x[2] });
 }
 
-function bindCustFind(inSel, hitSel, fill){
-  var el = $(inSel), box = $(hitSel);
-  if(!el || !box) return;
-  function draw(){
-    var q = el.value.trim();
-    if(q.length < 2){ box.innerHTML = ""; return }
-    custList(function(){
-      /* พิมพ์ต่อไปแล้วระหว่างรอโหลด ผลของคำเก่าต้องไม่เด้งขึ้นมาทับ */
-      if(el.value.trim() !== q) return;
-      var hits = custFind(q);
-      if(!hits.length){
-        /* เงียบไปเฉย ๆ ทำให้แยกไม่ออกว่า "ไม่มีลูกค้าชื่อนี้" กับ "รายชื่อโหลดไม่ขึ้น"
-           สองอย่างนี้ต้องทำคนละอย่างกัน จึงต้องบอกให้รู้ว่าเป็นแบบไหน */
-        box.innerHTML = (CUSTS && CUSTS.length)
-          ? '<div class="none">ไม่เจอ “' + esc(q) + '” ในลูกค้าเก่า '
-            + '(ค้นจาก ' + CUSTS.length + ' ราย) — พิมพ์ต่อได้เลย '
-            + 'ระบบจะบันทึกเป็นลูกค้าใหม่ให้</div>'
-          : '<div class="none">ยังโหลดรายชื่อลูกค้าเก่าไม่ได้ — '
-            + 'พิมพ์ชื่อเองได้ตามปกติ ออเดอร์ลงชีทได้เหมือนเดิม</div>';
-        return;
-      }
-      box.innerHTML = hits.map(function(c,i){
+/* วาดรายชื่อที่ค้นเจอ — ใช้ร่วมกันทั้งผลจากในเครื่องและผลที่ค้นมาจากชีท
+   deep = ผลที่ได้มาจากการค้นทั้งเล่ม ต้องบอกให้รู้ว่าทำไมเพิ่งโผล่มาตอนนี้ */
+function drawCustHits_(box, hits, fill, deep){
+  box.innerHTML = (deep
+      ? '<div class="none" style="padding-bottom:4px">เจอในลูกค้าเก่าที่ไม่ได้ซื้อมานาน</div>'
+      : "")
+    + hits.map(function(c,i){
         var addr = String(c.addr || c.taxAddr || "").replace(/\s+/g," ").trim();
         return '<button type="button" data-cu="'+i+'"><b>'+esc(c.name)+'</b>'
           + (c.tel ? ' · '+esc(c.tel) : '')
@@ -1853,13 +1838,62 @@ function bindCustFind(inSel, hitSel, fill){
           + (addr ? '<br><span style="color:var(--gray)">'+esc(addr.slice(0,64))+'</span>' : '')
           + '</button>';
       }).join("");
-      box.querySelectorAll("[data-cu]").forEach(function(b){
-        b.onclick = function(){
-          var c = hits[+b.getAttribute("data-cu")];
-          box.innerHTML = "";
-          fill(c);
-        };
-      });
+  box.querySelectorAll("[data-cu]").forEach(function(b){
+    b.onclick = function(){
+      var c = hits[+b.getAttribute("data-cu")];
+      box.innerHTML = "";
+      fill(c);
+    };
+  });
+}
+
+/* ค้นทั้งเล่มที่ชีท — ใช้เมื่อค้นในเครื่องแล้วไม่เจอเท่านั้น
+   ยอมเสียเวลายิงชีทหนึ่งรอบ ดีกว่าบอกว่า "ไม่มี" ทั้งที่มีอยู่ในชีท */
+function custFindAll_(q, box, fill){
+  box.dataset.q = q;
+  call("findCustomers", [q, 20], function(list){
+    /* พิมพ์ต่อไปแล้วระหว่างรอ ผลของคำเก่าต้องไม่เด้งขึ้นมาทับ */
+    if(box.dataset.q !== q) return;
+    list = list || [];
+    if(!list.length){
+      box.innerHTML = '<div class="none">ไม่เจอ “' + esc(q) + '” ในลูกค้าเก่าเลยสักราย '
+        + '(ค้นทั้งชีทแล้ว) — พิมพ์ต่อได้เลย ระบบจะบันทึกเป็นลูกค้าใหม่ให้</div>';
+      return;
+    }
+    drawCustHits_(box, list.slice(0,6), fill, true);
+  }, function(m){
+    if(box.dataset.q !== q) return;
+    box.innerHTML = '<div class="none">ค้นในชีทไม่สำเร็จ (' + esc(m) + ') — '
+      + 'พิมพ์ชื่อเองได้ตามปกติ ออเดอร์ลงชีทได้เหมือนเดิม</div>';
+  });
+}
+
+function bindCustFind(inSel, hitSel, fill){
+  var el = $(inSel), box = $(hitSel);
+  if(!el || !box) return;
+  function draw(){
+    var q = el.value.trim();
+    box.dataset.q = q;
+    if(q.length < 2){ box.innerHTML = ""; return }
+    custList(function(){
+      /* พิมพ์ต่อไปแล้วระหว่างรอโหลด ผลของคำเก่าต้องไม่เด้งขึ้นมาทับ */
+      if(el.value.trim() !== q) return;
+      var hits = custFind(q);
+      if(hits.length){ drawCustHits_(box, hits, fill); return }
+
+      /* เงียบไปเฉย ๆ ทำให้แยกไม่ออกว่า "ไม่มีลูกค้าชื่อนี้" กับ "รายชื่อโหลดไม่ขึ้น"
+         สองอย่างนี้ต้องทำคนละอย่างกัน จึงต้องบอกให้รู้ว่าเป็นแบบไหน */
+      if(!(CUSTS && CUSTS.length)){
+        box.innerHTML = '<div class="none">ยังโหลดรายชื่อลูกค้าเก่าไม่ได้ — '
+          + 'พิมพ์ชื่อเองได้ตามปกติ ออเดอร์ลงชีทได้เหมือนเดิม</div>';
+        return;
+      }
+      /* ในเครื่องมีแค่ลูกค้าที่ซื้อล่าสุดชุดหนึ่ง ลูกค้าเก่าที่ไม่ได้ซื้อมานานตกขอบไป
+         "ไม่เจอในเครื่อง" จึงยังไม่ใช่ "ไม่มี" — ต้องไปค้นทั้งเล่มก่อนเสมอ
+         ไม่งั้นคนคีย์จะคีย์เป็นลูกค้าใหม่ซ้ำ แล้วประวัติรายนั้นขาดเป็นสองก้อน */
+      box.innerHTML = '<div class="none">ไม่เจอใน ' + CUSTS.length
+        + ' รายที่โหลดไว้ — กำลังค้นลูกค้าทั้งหมดในชีท…</div>';
+      custFindAll_(q, box, fill);
     });
   }
   el.oninput = draw;
