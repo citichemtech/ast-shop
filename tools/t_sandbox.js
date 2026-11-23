@@ -150,6 +150,66 @@ var SANDBOX = [
     await tab.close();
   }
 
+  console.log('\n3. กดแชร์ใบปะหน้า ตอนที่เบราว์เซอร์บอกว่าแชร์ได้แต่พอเรียกจริงกลับปฏิเสธ');
+  /* 23 พ.ย. 69 เจ้าของร้านแจ้งว่า "แชร์ใบปะหน้าไม่ได้" ทั้งที่เพิ่งลงรุ่นที่แก้
+     เรื่องนี้ไปแล้ว — สาเหตุอยู่ในโค้ดที่ผมเขียนเอง
+
+     navigator.canShare ตอบว่า "ได้" เพราะมันดูแค่ว่าเบราว์เซอร์แชร์ไฟล์เป็นไหม
+     ไม่ได้ดูว่าหน้านี้มีสิทธิ์หรือเปล่า · ตัวที่ปฏิเสธจริงคือ share() ตอนถูกเรียก
+     (ในกรอบ iframe ของ Apps Script สิทธิ์ web-share ถูกปิดอยู่)
+
+     ของเดิมปิดหน้าต่างที่เปิดเตรียมไว้ทิ้ง "ก่อน" จะเรียก share() พอถูกปฏิเสธ
+     ก็ไม่เหลืออะไรให้ถอยไปใช้ กดปุ่มแล้วไม่มีอะไรเกิดขึ้นเลย
+     ข้อนี้จำลองอาการนั้นเป๊ะ ๆ แล้ววัดว่ายังมีทางเอาไฟล์ออกอยู่ไหม */
+  var tabBefore = ctx.pages().length;
+  var shared = await app.locator('body').evaluate(async function () {
+    /* เบราว์เซอร์ที่บอกว่าแชร์ได้ แต่ปฏิเสธตอนเรียกจริง */
+    var tried = 0;
+    navigator.canShare = function () { return true };
+    navigator.share = function () {
+      tried++;
+      var err = new Error('Permission denied');
+      err.name = 'NotAllowedError';
+      return Promise.reject(err);
+    };
+    /* เปิดใบปะหน้าของออเดอร์ใบแรก */
+    var o = (window.ORDERS || [])[0];
+    if (!o) return { ok: false, why: 'ไม่มีออเดอร์ในข้อมูลจำลอง' };
+    openLabel(o);
+    await new Promise(function (r) { setTimeout(r, 700) });
+    if (!document.querySelector('#lb-make')) return { ok: false, why: 'ไม่เจอปุ่มสร้างใบปะหน้า' };
+    document.querySelector('#lb-make').click();
+    await new Promise(function (r) { setTimeout(r, 2500) });
+    if (!document.querySelector('#lb-share')) return { ok: false, why: 'ไม่เจอปุ่มแชร์' };
+    document.querySelector('#lb-share').click();
+    await new Promise(function (r) { setTimeout(r, 2500) });
+    return { ok: true, tried: tried,
+             said: ((document.querySelector('#toast') || {}).textContent || '') };
+  });
+  ok('เปิดใบปะหน้าแล้วกดแชร์ได้', shared.ok, JSON.stringify(shared));
+
+  if (shared.ok) {
+    eq('เรียกแชร์ตรงไปหนึ่งครั้ง (ยังพยายามทางที่ดีที่สุดก่อนเสมอ)', shared.tried, 1);
+    var tabAfter = ctx.pages().length;
+    ok('ถูกปฏิเสธแล้วยังเหลือแท็บไฟล์ให้ใช้ ไม่ใช่กดแล้วเงียบ',
+       tabAfter > tabBefore, 'แท็บก่อน ' + tabBefore + ' หลัง ' + tabAfter);
+    /* ต้องดูคำที่บอกว่า "สำเร็จแล้วไปทำต่อที่นั่น" ไม่ใช่แค่คำว่าแท็บ
+       เพราะข้อความตอนล้มเหลว ("เบราว์เซอร์บล็อกแท็บใหม่") ก็มีคำว่าแท็บเหมือนกัน */
+    ok('และบอกว่าไปกดแชร์ต่อที่แท็บนั้น',
+       shared.said.indexOf('กดแชร์หรือสั่งพิมพ์ในแท็บนั้น') > -1,
+       JSON.stringify(shared.said));
+
+    var tab2 = ctx.pages()[ctx.pages().length - 1];
+    var ui2 = await tab2.evaluate(function () {
+      return { share: !!document.getElementById('b-share'),
+               save: !!document.getElementById('b-save'),
+               img: !!document.querySelector('img#v') };
+    });
+    ok('แท็บนั้นมีปุ่มแชร์ของตัวเอง ซึ่งอยู่นอกกรอบแล้วจึงแชร์ได้จริง',
+       ui2.share && ui2.save && ui2.img, JSON.stringify(ui2));
+    await tab2.close();
+  }
+
   await browser.close();
   try { fs.unlinkSync(wrap) } catch (e) {}
   console.log(fails ? '\nไม่ผ่าน ' + fails + ' ข้อ' : '\nผ่านทั้งหมด');

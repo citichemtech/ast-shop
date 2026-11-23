@@ -3809,20 +3809,38 @@ function bindLabelButtons(url, name, paper){
     /* ต้องเปิดหน้าต่างตั้งแต่จังหวะที่กด ก่อนจะ await อะไรทั้งนั้น
        ไม่งั้นเบราว์เซอร์ถือว่าไม่ได้มาจากการกด แล้วบล็อกทิ้ง */
     var w = openBlank_();
-    try{
-      var f=await toFile();
-      /* ในกรอบ iframe ของ Apps Script อันนี้ถูกปิดอยู่ จึงตกไปใช้หน้าต่างใหม่
-         แต่ถ้าวันหนึ่ง Google เปิดให้ ก็ได้แชร์ตรงเหมือนเดิมโดยไม่ต้องแก้อะไร */
-      if(navigator.canShare && navigator.canShare({files:[f.file]})){
-        try{ if(w) w.close() }catch(e2){}
-        await navigator.share({files:[f.file],title:fileName}); return;
-      }
-      if(fillSaveWindow_(w, f.dataUrl, f.name, paper, false)){
-        toast("เปิดแท็บไฟล์ให้แล้ว กดแชร์หรือสั่งพิมพ์ในแท็บนั้น"); return;
-      }
-    }catch(e){
-      if(e&&e.name==="AbortError") return;
+    var f = null;
+    try{ f = await toFile() }
+    catch(e){
       try{ if(w) w.close() }catch(e2){}
+      toast("ทำไฟล์ไม่สำเร็จ: " + (e && e.message ? e.message : e));
+      return;
+    }
+
+    /* แชร์ตรงจากหน้านี้ — ในกรอบ iframe ของ Apps Script ถูกปิดอยู่
+       แต่ canShare ยัง "ตอบว่าได้" เพราะมันดูแค่ว่าเบราว์เซอร์แชร์ไฟล์เป็นไหม
+       ไม่ได้ดูว่าหน้านี้มีสิทธิ์หรือเปล่า — ตัวที่ปฏิเสธจริงคือ share() ตอนถูกเรียก
+
+       จึงห้ามปิดหน้าต่างทิ้งก่อนรู้ผล (ของเดิมปิดทิ้งตรงนี้ พอ share ถูกปฏิเสธ
+       ก็ไม่เหลืออะไรให้ถอยไปใช้ กดปุ่มแชร์ใบปะหน้าแล้วไม่มีอะไรเกิดขึ้นเลย)
+       ปิดได้เมื่อแชร์สำเร็จจริง หรือคนกดยกเลิกเอง เท่านั้น */
+    if(navigator.canShare && navigator.canShare({files:[f.file]})){
+      try{
+        await navigator.share({files:[f.file], title:f.name});
+        try{ if(w) w.close() }catch(e2){}
+        return;
+      }catch(e){
+        if(e && e.name === "AbortError"){
+          try{ if(w) w.close() }catch(e2){}
+          return;
+        }
+        /* แชร์ตรงไม่ได้ — หน้าต่างยังเปิดค้างอยู่ ใช้ต่อได้เลย */
+      }
+    }
+
+    if(fillSaveWindow_(w, f.dataUrl, f.name, paper, false)){
+      toast("เปิดแท็บไฟล์ให้แล้ว กดแชร์หรือสั่งพิมพ์ในแท็บนั้น");
+      return;
     }
     toast("เบราว์เซอร์บล็อกแท็บใหม่ — อนุญาตป๊อปอัปของ script.google.com ก่อน");
   };
@@ -3857,11 +3875,14 @@ function bindLabelButtons(url, name, paper){
       var f=new File([blob],pname,{type:"application/pdf"});
       /* มือถือเปิดแชร์ได้ ส่งเข้าไลน์/อีเมลได้เลยโดยไม่ต้องหาไฟล์ในเครื่องก่อน
          ในกรอบ iframe ของ Apps Script อันนี้ถูกปิดอยู่ จึงตกไปใช้หน้าต่างใหม่ */
+      /* เหตุผลเดียวกับปุ่มแชร์: ห้ามปิดหน้าต่างทิ้งก่อนรู้ว่าแชร์สำเร็จจริง
+         ถ้าถูกปฏิเสธแล้วไม่เหลือหน้าต่าง ก็ไม่เหลือทางเอาไฟล์ออกเลย */
       if(navigator.canShare && navigator.canShare({files:[f]})){
-        try{ if(pw) pw.close() }catch(e2){}
-        navigator.share({files:[f],title:pname}).catch(function(e){
-          if(e&&e.name==="AbortError") return;
-          savePdfDirect_(blob,pname);
+        navigator.share({files:[f],title:pname}).then(function(){
+          try{ if(pw) pw.close() }catch(e2){}
+        }, function(e){
+          if(e&&e.name==="AbortError"){ try{ if(pw) pw.close() }catch(e2){} return }
+          savePdf(blob,pname,pw);
         });
         return;
       }
