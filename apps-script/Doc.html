@@ -307,11 +307,30 @@ async function buildDocPage(d, m, cfg, copy) {
   pair("หมายเลขประจำตัวผู้เสียภาษี:", cu.taxId ? cu.taxId + (cu.branch ? "   " + cu.branch : "") : "",
        lx, lvx, ly, lvw); ly += 38;
   x.fillStyle = "#000"; fitLeft(x, "Address:", lx, ly, lvx - lx - 8, F_BODY, 400);
-  x.font = docFont(F_BODY, 500);
   /* ที่อยู่ลูกค้าบนใบกำกับภาษีต้องครบตามที่จดทะเบียน กฎหมายบังคับ
-     ตัวหนังสือใหญ่ขึ้นแล้วสองบรรทัดไม่พอ ตัดรหัสไปรษณีย์กับจังหวัดหาย จึงให้สามบรรทัด */
-  wrapText(x, cu.addr || "", lvw).slice(0, 3).forEach(function (ln, i) {
-    fitLeft(x, ln, lvx, ly + i * 28, lvw, F_BODY);
+
+     ของเดิมตัดไว้ที่สามบรรทัดตายตัว ที่อยู่ยาวกว่านั้นจึงขาดท้าย —
+     และท้ายที่อยู่คือจังหวัดกับรหัสไปรษณีย์พอดี (เจอจริงกับใบ ONIV26-00456
+     ของบริษัทที่อยู่ในนิคมอุตสาหกรรม ซึ่งชื่อถนนยาวกินไปทั้งบรรทัด)
+     ใบกำกับภาษีที่ที่อยู่ผู้ซื้อไม่ครบ สรรพากรตีเป็นใบที่ใช้ไม่ได้
+
+     เคยขยับจากสองบรรทัดเป็นสามมาแล้วครั้งหนึ่ง แล้วก็ตันอีก — รอบนี้จึงไม่
+     ตั้งจำนวนบรรทัดตายตัว แต่ย่อตัวอักษรลงจนที่อยู่ทั้งก้อนลงครบในที่ที่มี
+     ที่อยู่สั้นที่ลงสามบรรทัดได้อยู่แล้ว ยังวาดเท่าเดิมทุกจุด ใบเก่าพิมพ์ซ้ำ
+     จึงได้กระดาษหน้าตาเดิม */
+  var ADDR_H = 86, ADDR_MIN = 13;
+  var addr = String(cu.addr || "");
+  var afs = F_BODY, alh = 28, aLines;
+  x.font = docFont(afs, 500);
+  aLines = wrapText(x, addr, lvw);
+  while (aLines.length * alh > ADDR_H && afs > ADDR_MIN) {
+    afs -= 0.5;
+    alh = Math.round(afs * 1.22);
+    x.font = docFont(afs, 500);
+    aLines = wrapText(x, addr, lvw);
+  }
+  aLines.forEach(function (ln, i) {
+    fitLeft(x, ln, lvx, ly + i * alh, lvw, afs);
   });
   ly += 86;
   pair("Tel:", cu.tel, lx, lvx, ly, lvw); ly += 34;
