@@ -589,10 +589,19 @@ function fakeDrive(opts) {
       Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK', ANYONE: 'ANYONE', PRIVATE: 'PRIVATE' },
       Permission: { VIEW: 'VIEW', EDIT: 'EDIT', NONE: 'NONE' },
       getFileById: function () {
-        return { getParents: function () {
-          var done = false;
-          return { hasNext: function () { return !done; }, next: function () { done = true; return root; } };
-        } };
+        return {
+          getParents: function () {
+            var done = false;
+            return { hasNext: function () { return !done; }, next: function () { done = true; return root; } };
+          },
+          /* สิทธิ์ที่บัญชีนี้มีกับไฟล์ — ของจริงคืน OWNER / EDIT / VIEW / COMMENT
+             ตั้งได้ด้วย opts.access · ไม่ตั้ง = เจ้าของ (เหมือนที่เป็นมา)
+             opts.accessDenied = ถามไม่ได้ เช่นยังไม่ได้ขออนุญาตไดรฟ์ */
+          getAccess: function () {
+            if (opts.accessDenied) throw new Error(DRIVE_DENIED);
+            return String(opts.access || 'OWNER');
+          }
+        };
       }
     }
   };
@@ -808,6 +817,9 @@ function load(fixture, opts) {
   fixture.__denyShare = function () { opts.shareDenied = true; };
   ctx.__denyShare = function () { opts.shareDenied = true; };
   ctx.__denyDrive = function () { opts.driveDenied = true; };
+  /* ตั้งสิทธิ์ที่บัญชีนี้มีกับไฟล์ชีท — 'VIEW' = อ่านได้อย่างเดียว เขียนไม่ได้ */
+  ctx.__setAccess = function (v) { opts.access = v; };
+  ctx.__denyAccessCheck = function () { opts.accessDenied = true; };
   return ctx;
 }
 
